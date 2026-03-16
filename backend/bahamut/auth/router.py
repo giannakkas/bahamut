@@ -1,14 +1,15 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
+import traceback
 
 from bahamut.config import get_settings
 from bahamut.database import get_db
@@ -18,8 +19,8 @@ router = APIRouter()
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+logger = structlog.get_logger()
 
-# ── Default profile configs ──
 PROFILE_DEFAULTS = {
     "CONSERVATIVE": {
         "strong_signal_threshold": 0.82, "signal_threshold": 0.70,
@@ -73,7 +74,6 @@ PROFILE_DEFAULTS = {
 }
 
 
-# ── Schemas ──
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
@@ -93,15 +93,6 @@ class TokenResponse(BaseModel):
     user: dict
 
 
-class UserResponse(BaseModel):
-    id: UUID
-    email: str
-    full_name: str
-    role: str
-    workspace_id: UUID
-
-
-# ── Token utils ──
 def create_token(data: dict, secret: str, expires_delta: timedelta) -> str:
     to_encode = data.copy()
     to_encode["exp"] = datetime.now(timezone.utc) + expires_delta
@@ -144,67 +135,78 @@ async def get_current_user(
     return user
 
 
-# ── Routes ──
 @router.post("/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    # Check existing
-    existing = await db.execute(select(User).where(User.email == req.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
+    try:
+        # Check existing
+        existing = await db.execute(select(User).where(User.email == req.email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Create workspace
-    slug = req.workspace_name.lower().replace(" ", "-")[:50]
-    workspace = Workspace(name=req.workspace_name, slug=slug)
-    db.add(workspace)
-    await db.flush()
+        # Create workspace
+        slug = req.workspace_name.lower().replace(" ", "-")[:50]
+        workspace = Workspace(name=req.workspace_name, slug=slug)
+        db.add(workspace)
+        await db.flush()
 
-    # Create user
-    user = User(
-        email=req.email,
-        password_hash=pwd_context.hash(req.password),
-        full_name=req.full_name,
-        role="admin",
-        workspace_id=workspace.id,
-    )
-    db.add(user)
-    await db.flush()
-
-    # Create default trading profiles
-    for name, defaults in PROFILE_DEFAULTS.items():
-        profile = TradingProfile(
-            user_id=user.id,
-            name=name,
-            is_active=(name == "BALANCED"),
-            **defaults,
+        # Create user
+        user = User(
+            email=req.email,
+            password_hash=pwd_context.hash(req.password),
+            full_name=req.full_name,
+            role="admin",
+            workspace_id=workspace.id,
         )
-        db.add(profile)
+        db.add(user)
+        await db.flush()
 
-    await db.commit()
+        # Create default trading profiles
+        for name, defaults in PROFILE_DEFAULTS.items():
+            profile = TradingProfile(
+                user_id=user.id,
+                name=name,
+                is_active=(name == "BALANCED"),
+                **defaults,
+            )
+            db.add(profile)
 
-    return TokenResponse(
-        access_token=create_access_token(user),
-        refresh_token=create_refresh_token(user),
-        user={"id": str(user.id), "email": user.email, "full_name": user.full_name,
-              "role": user.role, "workspace_id": str(workspace.id)},
-    )
+        await db.commit()
+
+        return TokenResponse(
+            access_token=create_access_token(user),
+            refresh_token=create_refresh_token(user),
+            user={"id": str(user.id), "email": user.email, "full_name": user.full_name,
+                  "role": user.role, "workspace_id": str(workspace.id)},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("register_failed", error=str(e), traceback=traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == req.email))
-    user = result.scalar_one_or_none()
-    if not user or not pwd_context.verify(req.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    try:
+        result = await db.execute(select(User).where(User.email == req.email))
+        user = result.scalar_one_or_none()
+        if not user or not pwd_context.verify(req.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user.last_login_at = datetime.now(timezone.utc)
-    await db.commit()
+        user.last_login_at = datetime.now(timezone.utc)
+        await db.commit()
 
-    return TokenResponse(
-        access_token=create_access_token(user),
-        refresh_token=create_refresh_token(user),
-        user={"id": str(user.id), "email": user.email, "full_name": user.full_name,
-              "role": user.role, "workspace_id": str(user.workspace_id)},
-    )
+        return TokenResponse(
+            access_token=create_access_token(user),
+            refresh_token=create_refresh_token(user),
+            user={"id": str(user.id), "email": user.email, "full_name": user.full_name,
+                  "role": user.role, "workspace_id": str(user.workspace_id)},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("login_failed", error=str(e), traceback=traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
 
 
 @router.get("/me")
