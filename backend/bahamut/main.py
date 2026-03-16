@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import structlog
 
 from bahamut.config import get_settings
@@ -34,11 +35,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - permissive for Railway (tighten in production)
+# CORS - allow all origins without credentials flag
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Railway dynamic URLs - restrict to specific domains in prod
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
