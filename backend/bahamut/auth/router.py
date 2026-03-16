@@ -152,7 +152,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         # Create user
         user = User(
             email=req.email,
-            password_hash=pwd_context.hash(req.password),
+            password_hash=pwd_context.hash(req.password[:72]),
             full_name=req.full_name,
             role="admin",
             workspace_id=workspace.id,
@@ -190,7 +190,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(select(User).where(User.email == req.email))
         user = result.scalar_one_or_none()
-        if not user or not pwd_context.verify(req.password, user.password_hash):
+        if not user or not pwd_context.verify(req.password[:72], user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         user.last_login_at = datetime.now(timezone.utc)
