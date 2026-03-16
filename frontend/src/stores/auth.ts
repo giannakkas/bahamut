@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
-import type { User } from '@/lib/types';
+
+interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  workspace_id: string;
+}
 
 interface AuthStore {
   user: User | null;
@@ -10,7 +17,7 @@ interface AuthStore {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, workspace: string) => Promise<void>;
   logout: () => void;
-  setFromStorage: () => void;
+  loadFromStorage: () => void;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -24,8 +31,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const res = await api.login(email, password);
       api.setToken(res.access_token);
-      localStorage.setItem('bahamut_token', res.access_token);
-      localStorage.setItem('bahamut_user', JSON.stringify(res.user));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('bahamut_token', res.access_token);
+        localStorage.setItem('bahamut_user', JSON.stringify(res.user));
+      }
       set({ user: res.user, token: res.access_token, isAuthenticated: true, isLoading: false });
     } catch (e) {
       set({ isLoading: false });
@@ -38,8 +47,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const res = await api.register(email, password, name, workspace);
       api.setToken(res.access_token);
-      localStorage.setItem('bahamut_token', res.access_token);
-      localStorage.setItem('bahamut_user', JSON.stringify(res.user));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('bahamut_token', res.access_token);
+        localStorage.setItem('bahamut_user', JSON.stringify(res.user));
+      }
       set({ user: res.user, token: res.access_token, isAuthenticated: true, isLoading: false });
     } catch (e) {
       set({ isLoading: false });
@@ -49,12 +60,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: () => {
     api.clearToken();
-    localStorage.removeItem('bahamut_token');
-    localStorage.removeItem('bahamut_user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('bahamut_token');
+      localStorage.removeItem('bahamut_user');
+    }
     set({ user: null, token: null, isAuthenticated: false });
   },
 
-  setFromStorage: () => {
+  loadFromStorage: () => {
+    if (typeof window === 'undefined') return;
     const token = localStorage.getItem('bahamut_token');
     const userStr = localStorage.getItem('bahamut_user');
     if (token && userStr) {
