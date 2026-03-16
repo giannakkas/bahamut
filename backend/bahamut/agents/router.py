@@ -1,4 +1,3 @@
-"""Agent service API routes."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import json
@@ -29,17 +28,15 @@ async def trigger_signal_cycle(req: TriggerCycleRequest, user: User = Depends(ge
 
 @router.get("/latest-cycle/{asset}")
 async def get_latest_cycle(asset: str, user: User = Depends(get_current_user)):
-    """Get the most recent signal cycle result for an asset from Redis cache."""
     if redis_manager.redis:
         cached = await redis_manager.redis.get(f"bahamut:latest_cycle:{asset}")
         if cached:
             return json.loads(cached)
-    return {"message": f"No recent cycle found for {asset}. Trigger one first."}
+    return {"message": f"No recent cycle for {asset}. Trigger one first."}
 
 
 @router.get("/latest-cycles")
 async def get_all_latest_cycles(user: User = Depends(get_current_user)):
-    """Get latest cycle results for all monitored assets."""
     assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]
     results = {}
     if redis_manager.redis:
@@ -66,13 +63,24 @@ async def get_agent_trust(agent_id: str, user: User = Depends(get_current_user))
 @router.get("/health")
 async def health():
     from bahamut.ingestion.adapters.oanda import oanda
-    oanda_status = await oanda.health_check()
+    from bahamut.ingestion.adapters.twelvedata import twelve_data
+
+    td_health = await twelve_data.health_check()
+    oanda_health = await oanda.health_check()
+
+    data_source = "none"
+    if twelve_data.configured:
+        data_source = "twelvedata"
+    elif oanda.configured:
+        data_source = "oanda"
+
     return {
         "status": "healthy",
         "service": "agent-svc",
         "agents": ["macro_agent", "technical_agent", "risk_agent",
                     "volatility_agent", "sentiment_agent", "liquidity_agent"],
         "agent_count": 6,
-        "oanda_configured": oanda.configured,
-        "oanda_health": oanda_status,
+        "data_source": data_source,
+        "twelvedata": td_health,
+        "oanda": oanda_health,
     }
