@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-primary: #0A0A14;
+  --bg-secondary: #0F0F1E;
+  --bg-tertiary: #161628;
+  --bg-surface: #1C1C35;
+  --border-default: #2A2A4A;
+  --border-focus: #6C63FF;
+  --text-primary: #E8E8F0;
+  --text-secondary: #8888AA;
+  --text-muted: #555570;
+  --accent-violet: #6C63FF;
+  --accent-crimson: #E94560;
+  --accent-emerald: #10B981;
+  --accent-amber: #F59E0B;
+  --accent-cyan: #06B6D4;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Mono numbers */
+.font-mono-num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
