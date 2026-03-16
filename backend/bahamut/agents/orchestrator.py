@@ -1,18 +1,14 @@
 """
 Bahamut.AI Agent Orchestrator
-Runs the full 7-round consensus cycle: Independent Analysis -> Conflict Detection ->
-Challenge Routing -> Final Lock -> Consensus Calculation -> Execution Routing.
+Runs the full consensus cycle with real market data from OANDA.
 """
 import asyncio
 import time
 from uuid import uuid4
 from datetime import datetime, timezone
 from collections import Counter
-from typing import Optional
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from bahamut.agents.schemas import (
     SignalCycleRequest, AgentOutputSchema, ChallengeRequest,
@@ -22,8 +18,12 @@ from bahamut.agents.base import BaseAgent
 from bahamut.agents.technical_agent import TechnicalAgent
 from bahamut.agents.macro_agent import MacroAgent
 from bahamut.agents.risk_agent import RiskAgent
+from bahamut.agents.volatility_agent import VolatilityAgent
+from bahamut.agents.sentiment_agent import SentimentAgent
+from bahamut.agents.liquidity_agent import LiquidityAgent
 from bahamut.consensus.engine import consensus_engine
 from bahamut.consensus.trust_store import trust_store
+from bahamut.ingestion.market_data import market_data
 
 logger = structlog.get_logger()
 
@@ -31,85 +31,63 @@ logger = structlog.get_logger()
 DIRECTIONAL_AGENTS: dict[str, BaseAgent] = {
     "technical_agent": TechnicalAgent(),
     "macro_agent": MacroAgent(),
-    # Future agents will be added here as implemented:
-    # "flow_agent": FlowAgent(),
-    # "volatility_agent": VolatilityAgent(),
-    # "options_agent": OptionsGammaAgent(),
-    # "liquidity_agent": LiquidityStructureAgent(),
-    # "sentiment_agent": SentimentNarrativeAgent(),
-    # "learning_agent": LearningAgentImpl(),
+    "volatility_agent": VolatilityAgent(),
+    "sentiment_agent": SentimentAgent(),
+    "liquidity_agent": LiquidityAgent(),
 }
 
 RISK_AGENT = RiskAgent()
 
-# ── Feature routing per agent ──
-AGENT_FEATURE_MAP = {
-    "technical_agent": ["indicators", "ohlcv"],
-    "macro_agent": ["macro", "volatility", "regime"],
-    "flow_agent": ["flow", "currency_strength"],
-    "volatility_agent": ["volatility", "ohlcv"],
-    "options_agent": ["options", "ohlcv"],
-    "liquidity_agent": ["ohlcv", "volume_profile"],
-    "sentiment_agent": ["news", "sentiment"],
-    "learning_agent": ["performance_metrics"],
-}
-
 
 class AgentOrchestrator:
-    """Orchestrates the full multi-agent consensus cycle."""
 
     async def run_cycle(
         self,
         asset: str,
         asset_class: str,
         timeframe: str,
-        regime: str,
-        regime_confidence: float,
-        trading_profile: str,
-        features: dict,
+        regime: str = "RISK_ON",
+        regime_confidence: float = 0.78,
+        trading_profile: str = "BALANCED",
+        features: dict = None,
         portfolio_state: dict = None,
         triggered_by: str = "SCHEDULE",
     ) -> dict:
-        """
-        Execute a complete signal cycle.
-        Returns the full cycle result including consensus decision.
-        """
         cycle_id = uuid4()
         start_time = time.time()
 
         request = SignalCycleRequest(
-            cycle_id=cycle_id,
-            asset=asset,
-            asset_class=asset_class,
-            timeframe=timeframe,
-            triggered_by=triggered_by,
-            current_regime=regime,
-            regime_confidence=regime_confidence,
+            cycle_id=cycle_id, asset=asset, asset_class=asset_class,
+            timeframe=timeframe, triggered_by=triggered_by,
+            current_regime=regime, regime_confidence=regime_confidence,
             trading_profile=trading_profile,
         )
 
-        logger.info(
-            "signal_cycle_started",
-            cycle_id=str(cycle_id),
-            asset=asset,
-            timeframe=timeframe,
-            regime=regime,
-            profile=trading_profile,
-        )
+        logger.info("signal_cycle_started", cycle_id=str(cycle_id),
+                     asset=asset, timeframe=timeframe, regime=regime)
 
-        # ══════════════════════════════════════
+        # ═════════════════════════════════════
+        # FETCH REAL MARKET DATA
+        # ═════════════════════════════════════
+        if features is None:
+            features = await market_data.get_features_for_asset(asset, timeframe)
+
+        if portfolio_state is None:
+            portfolio_state = await market_data.get_account_state()
+
+        data_source = features.get("source", "unknown")
+        logger.info("market_data_loaded", source=data_source, symbol=asset,
+                     close=features.get("indicators", {}).get("close"))
+
+        # ═════════════════════════════════════
         # ROUND 1: Independent Analysis
-        # ══════════════════════════════════════
-        agent_features = self._route_features(features)
-
+        # ═════════════════════════════════════
         tasks = []
         for agent_id, agent in DIRECTIONAL_AGENTS.items():
-            agent_feat = agent_features.get(agent_id, {})
-            tasks.append(agent.run_with_timeout(request, agent_feat))
+            tasks.append(agent.run_with_timeout(request, features))
 
         directional_outputs = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Filter out exceptions
         valid_outputs: list[AgentOutputSchema] = []
         for output in directional_outputs:
             if isinstance(output, AgentOutputSchema):
@@ -119,67 +97,54 @@ class AgentOrchestrator:
 
         # Run Risk Agent
         risk_features = {
-            "portfolio": portfolio_state or {"open_trade_count": 0, "net_exposure_pct": 0, "max_correlation": 0},
-            "drawdown": portfolio_state.get("drawdown", {"daily": 0, "weekly": 0}) if portfolio_state else {"daily": 0, "weekly": 0},
+            "portfolio": portfolio_state,
+            "drawdown": portfolio_state.get("drawdown", {"daily": 0, "weekly": 0}),
         }
         risk_output = await RISK_AGENT.run_with_timeout(request, risk_features)
-
         all_outputs = valid_outputs + [risk_output]
 
-        # ══════════════════════════════════════
+        # ═════════════════════════════════════
         # ROUND 2: Conflict Detection
-        # ══════════════════════════════════════
+        # ═════════════════════════════════════
         conflict_map = self._detect_conflicts(cycle_id, valid_outputs)
 
-        # ══════════════════════════════════════
+        # ═════════════════════════════════════
         # ROUND 3: Challenge Routing
-        # ══════════════════════════════════════
-        challenges = await self._route_challenges(
-            cycle_id, valid_outputs, risk_output, conflict_map
-        )
+        # ═════════════════════════════════════
+        challenges = await self._route_challenges(cycle_id, valid_outputs, risk_output, conflict_map)
 
-        # Apply challenge results to outputs
-        for challenge_resp in challenges:
-            if challenge_resp.response == "PARTIAL" and challenge_resp.revised_confidence is not None:
+        for ch_resp in challenges:
+            if ch_resp.response == "PARTIAL" and ch_resp.revised_confidence is not None:
                 for output in valid_outputs:
-                    if output.agent_id == challenge_resp.target_agent:
-                        output.confidence = challenge_resp.revised_confidence
-            elif challenge_resp.response == "ACCEPT" and challenge_resp.revised_bias:
+                    if output.agent_id == ch_resp.target_agent:
+                        output.confidence = ch_resp.revised_confidence
+            elif ch_resp.response == "ACCEPT" and ch_resp.revised_bias:
                 for output in valid_outputs:
-                    if output.agent_id == challenge_resp.target_agent:
-                        output.directional_bias = challenge_resp.revised_bias
+                    if output.agent_id == ch_resp.target_agent:
+                        output.directional_bias = ch_resp.revised_bias
 
-        # ══════════════════════════════════════
-        # ROUNDS 4-5: Lock & Consensus
-        # ══════════════════════════════════════
+        # ═════════════════════════════════════
+        # ROUNDS 4-7: Consensus
+        # ═════════════════════════════════════
         trust_scores = trust_store.get_scores_for_context(regime, asset_class, timeframe)
 
-        # Load weight overrides from profile
         from bahamut.auth.router import PROFILE_DEFAULTS
         profile_config = PROFILE_DEFAULTS.get(trading_profile, {})
         weight_overrides = profile_config.get("weight_overrides", {})
 
         decision = consensus_engine.calculate(
-            agent_outputs=all_outputs,
-            asset_class=asset_class,
-            regime=regime,
-            trading_profile=trading_profile,
-            trust_scores=trust_scores,
-            weight_overrides=weight_overrides,
+            agent_outputs=all_outputs, asset_class=asset_class,
+            regime=regime, trading_profile=trading_profile,
+            trust_scores=trust_scores, weight_overrides=weight_overrides,
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
 
-        logger.info(
-            "signal_cycle_completed",
-            cycle_id=str(cycle_id),
-            asset=asset,
-            direction=decision.direction,
-            score=decision.final_score,
-            decision=decision.decision,
-            agreement=decision.agreement_pct,
-            elapsed_ms=elapsed_ms,
-        )
+        logger.info("signal_cycle_completed", cycle_id=str(cycle_id),
+                     asset=asset, direction=decision.direction,
+                     score=decision.final_score, decision=decision.decision,
+                     agreement=decision.agreement_pct, elapsed_ms=elapsed_ms,
+                     data_source=data_source, agents_responded=len(valid_outputs))
 
         return {
             "cycle_id": str(cycle_id),
@@ -188,116 +153,86 @@ class AgentOrchestrator:
             "challenges": [c.model_dump() for c in challenges],
             "conflict_map": conflict_map.model_dump(),
             "elapsed_ms": elapsed_ms,
+            "data_source": data_source,
+            "market_price": features.get("indicators", {}).get("close"),
         }
 
-    def _route_features(self, features: dict) -> dict[str, dict]:
-        """Route feature subsets to each agent based on AGENT_FEATURE_MAP."""
-        routed = {}
-        for agent_id, required_keys in AGENT_FEATURE_MAP.items():
-            agent_features = {}
-            for key in required_keys:
-                if key in features:
-                    agent_features[key] = features[key]
-            routed[agent_id] = agent_features
-        return routed
-
-    def _detect_conflicts(
-        self, cycle_id, outputs: list[AgentOutputSchema]
-    ) -> ConflictMap:
-        """Round 2: Identify agreement, disagreement, and contradictions."""
+    def _detect_conflicts(self, cycle_id, outputs):
         dir_counts = Counter(
-            o.directional_bias for o in outputs
-            if o.directional_bias not in ("NO_TRADE",)
+            o.directional_bias for o in outputs if o.directional_bias != "NO_TRADE"
         )
         total = len([o for o in outputs if o.directional_bias != "NO_TRADE"])
         majority = dir_counts.most_common(1)[0][1] if dir_counts else 0
         agreement_pct = majority / total if total > 0 else 0
 
-        # Find contradictions (opposing high-confidence agents)
         contradictions = []
         high_conf = [o for o in outputs if o.confidence > 0.6 and o.directional_bias in ("LONG", "SHORT")]
         for i, a in enumerate(high_conf):
-            for b in high_conf[i + 1:]:
-                if a.directional_bias != b.directional_bias:
-                    severity = "HIGH" if min(a.confidence, b.confidence) > 0.7 else "MEDIUM"
+            for b_item in high_conf[i + 1:]:
+                if a.directional_bias != b_item.directional_bias:
                     contradictions.append({
-                        "agent_a": a.agent_id,
-                        "agent_b": b.agent_id,
+                        "agent_a": a.agent_id, "agent_b": b_item.agent_id,
                         "agent_a_bias": a.directional_bias,
-                        "agent_b_bias": b.directional_bias,
-                        "severity": severity,
+                        "agent_b_bias": b_item.directional_bias,
+                        "severity": "HIGH" if min(a.confidence, b_item.confidence) > 0.7 else "MEDIUM",
                     })
-
-        timed_out = [o.agent_id for o in outputs if o.meta.get("timed_out")]
 
         return ConflictMap(
             cycle_id=cycle_id,
-            total_agents_responded=len(outputs) - len(timed_out),
-            timed_out_agents=timed_out,
+            total_agents_responded=len(outputs),
+            timed_out_agents=[o.agent_id for o in outputs if o.meta.get("timed_out")],
             direction_counts=dict(dir_counts),
             agreement_pct=round(agreement_pct, 3),
             contradictions=contradictions,
             unanimous=len(dir_counts) == 1 and total > 1,
         )
 
-    async def _route_challenges(
-        self,
-        cycle_id,
-        directional_outputs: list[AgentOutputSchema],
-        risk_output: AgentOutputSchema,
-        conflict_map: ConflictMap,
-    ) -> list[ChallengeResponseSchema]:
-        """Round 3: Route targeted challenges based on rule table."""
+    async def _route_challenges(self, cycle_id, directional_outputs, risk_output, conflict_map):
         challenges = []
 
-        # Risk Agent challenges all directional agents
+        # Risk checks all directional agents
         for output in directional_outputs:
             if output.directional_bias in ("LONG", "SHORT"):
-                challenge = ChallengeRequest(
-                    challenge_id=uuid4(),
-                    cycle_id=cycle_id,
-                    challenger="risk_agent",
-                    target_agent=output.agent_id,
+                ch = ChallengeRequest(
+                    challenge_id=uuid4(), cycle_id=cycle_id,
+                    challenger="risk_agent", target_agent=output.agent_id,
                     challenge_type="RISK_CHECK",
-                    trigger_reason=f"Standard risk check for {output.directional_bias} signal",
+                    trigger_reason=f"Risk check for {output.directional_bias}",
                 )
-                response = await DIRECTIONAL_AGENTS[output.agent_id].respond_to_challenge(
-                    challenge, output
-                ) if output.agent_id in DIRECTIONAL_AGENTS else ChallengeResponseSchema(
-                    challenge_id=challenge.challenge_id,
-                    challenger="risk_agent",
-                    target_agent=output.agent_id,
-                    challenge_type="RISK_CHECK",
-                    response="ACCEPT",
-                    justification="Default accept",
-                )
-                challenges.append(response)
+                if output.agent_id in DIRECTIONAL_AGENTS:
+                    resp = await DIRECTIONAL_AGENTS[output.agent_id].respond_to_challenge(ch, output)
+                    challenges.append(resp)
 
-        # Macro vs Technical conflict
-        macro_out = next((o for o in directional_outputs if o.agent_id == "macro_agent"), None)
-        tech_out = next((o for o in directional_outputs if o.agent_id == "technical_agent"), None)
-
-        if (macro_out and tech_out and
-                macro_out.directional_bias != tech_out.directional_bias and
-                macro_out.directional_bias in ("LONG", "SHORT") and
-                tech_out.directional_bias in ("LONG", "SHORT") and
-                macro_out.confidence > 0.6 and tech_out.confidence > 0.6):
-
-            challenge = ChallengeRequest(
-                challenge_id=uuid4(),
-                cycle_id=cycle_id,
-                challenger="macro_agent",
-                target_agent="technical_agent",
+        # Macro vs Technical
+        macro = next((o for o in directional_outputs if o.agent_id == "macro_agent"), None)
+        tech = next((o for o in directional_outputs if o.agent_id == "technical_agent"), None)
+        if (macro and tech and
+                macro.directional_bias != tech.directional_bias and
+                macro.directional_bias in ("LONG", "SHORT") and
+                tech.directional_bias in ("LONG", "SHORT") and
+                macro.confidence > 0.6 and tech.confidence > 0.6):
+            ch = ChallengeRequest(
+                challenge_id=uuid4(), cycle_id=cycle_id,
+                challenger="macro_agent", target_agent="technical_agent",
                 challenge_type="REGIME_OVERRIDE",
-                trigger_reason=f"Macro ({macro_out.directional_bias}) conflicts with Technical ({tech_out.directional_bias})",
+                trigger_reason=f"Macro ({macro.directional_bias}) vs Technical ({tech.directional_bias})",
             )
-            response = await DIRECTIONAL_AGENTS["technical_agent"].respond_to_challenge(
-                challenge, tech_out
+            resp = await DIRECTIONAL_AGENTS["technical_agent"].respond_to_challenge(ch, tech)
+            challenges.append(resp)
+
+        # Volatility challenges Technical in high-vol
+        vol = next((o for o in directional_outputs if o.agent_id == "volatility_agent"), None)
+        if vol and vol.meta.get("vol_score", 0) < -10 and tech and tech.confidence > 0.5:
+            ch = ChallengeRequest(
+                challenge_id=uuid4(), cycle_id=cycle_id,
+                challenger="volatility_agent", target_agent="technical_agent",
+                challenge_type="VOL_REJECT",
+                trigger_reason="High volatility environment - timing risk",
             )
-            challenges.append(response)
+            resp = await DIRECTIONAL_AGENTS["technical_agent"].respond_to_challenge(ch, tech)
+            challenges.append(resp)
 
         return challenges
 
 
-# Singleton
 orchestrator = AgentOrchestrator()

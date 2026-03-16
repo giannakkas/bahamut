@@ -8,22 +8,23 @@ import { AGENT_META } from '@/lib/types';
 export default function AgentCouncilPage() {
   const [trustScores, setTrustScores] = useState<any>(null);
   const [cycling, setCycling] = useState(false);
-  const [cycleResult, setCycleResult] = useState<string | null>(null);
+  const [cycleResult, setCycleResult] = useState<any>(null);
   const [selectedAsset, setSelectedAsset] = useState('EURUSD');
   const [selectedTF, setSelectedTF] = useState('4H');
   const [selectedProfile, setSelectedProfile] = useState('BALANCED');
   const [thresholds, setThresholds] = useState<any>(null);
+  const [agentHealth, setAgentHealth] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const [ts, th] = await Promise.allSettled([
-          api.getTrustScores(),
-          api.getThresholds(),
-        ]);
-        if (ts.status === 'fulfilled') setTrustScores(ts.value);
-        if (th.status === 'fulfilled') setThresholds(th.value);
-      } catch (e) { console.error(e); }
+      const [ts, th, ah, lc] = await Promise.allSettled([
+        api.getTrustScores(), api.getThresholds(), api.getAgentHealth(),
+        api.getLatestCycle(selectedAsset),
+      ]);
+      if (ts.status === 'fulfilled') setTrustScores(ts.value);
+      if (th.status === 'fulfilled') setThresholds(th.value);
+      if (ah.status === 'fulfilled') setAgentHealth(ah.value);
+      if (lc.status === 'fulfilled' && lc.value?.decision) setCycleResult(lc.value);
     };
     load();
   }, []);
@@ -32,16 +33,25 @@ export default function AgentCouncilPage() {
     setCycling(true);
     setCycleResult(null);
     try {
-      const res = await api.triggerCycle(selectedAsset, 'fx', selectedTF, selectedProfile);
-      setCycleResult(`Signal cycle queued: Task ${res.task_id?.slice(0, 8)}... for ${selectedAsset} ${selectedTF}`);
+      await api.triggerCycle(selectedAsset, selectedAsset === 'XAUUSD' ? 'commodities' : 'fx', selectedTF, selectedProfile);
+      // Poll for result
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const result = await api.getLatestCycle(selectedAsset);
+          if (result?.decision) { setCycleResult(result); break; }
+        } catch {}
+      }
     } catch (e: any) {
-      setCycleResult(`Error: ${e.message}`);
+      setCycleResult({ error: e.message });
     } finally {
       setCycling(false);
     }
   };
 
-  const agents = Object.keys(AGENT_META);
+  const decision = cycleResult?.decision;
+  const agentOutputs = cycleResult?.agent_outputs || [];
+  const challenges = cycleResult?.challenges || [];
 
   return (
     <AppShell>
@@ -49,117 +59,188 @@ export default function AgentCouncilPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Agent Council</h1>
-            <p className="text-sm text-text-secondary mt-1">Multi-agent analysis, debate, and consensus engine</p>
+            <p className="text-sm text-text-secondary mt-1">
+              {agentHealth?.agent_count || 0} agents active
+              {agentHealth?.oanda_configured ? ' · OANDA connected' : ' · Demo data'}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <select value={selectedAsset} onChange={e => setSelectedAsset(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              <option value="EURUSD">EURUSD</option>
-              <option value="XAUUSD">XAUUSD</option>
-              <option value="GBPUSD">GBPUSD</option>
-              <option value="USDJPY">USDJPY</option>
-            </select>
-            <select value={selectedTF} onChange={e => setSelectedTF(e.target.value)}
-              className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              <option value="1H">1H</option>
-              <option value="4H">4H</option>
-              <option value="1D">1D</option>
+              {['EURUSD','GBPUSD','USDJPY','XAUUSD'].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <select value={selectedProfile} onChange={e => setSelectedProfile(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              <option value="CONSERVATIVE">Conservative</option>
-              <option value="BALANCED">Balanced</option>
-              <option value="AGGRESSIVE">Aggressive</option>
+              {['CONSERVATIVE','BALANCED','AGGRESSIVE'].map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             <button onClick={triggerCycle} disabled={cycling}
-              className="bg-accent-violet hover:bg-accent-violet/90 text-white font-semibold px-4 py-1.5 rounded-md text-sm transition-colors disabled:opacity-50">
-              {cycling ? 'Running...' : 'Trigger Signal Cycle'}
+              className="bg-accent-violet hover:bg-accent-violet/90 text-white font-semibold px-4 py-1.5 rounded-md text-sm disabled:opacity-50">
+              {cycling ? 'Running cycle...' : 'Trigger Signal Cycle'}
             </button>
           </div>
         </div>
 
-        {cycleResult && (
-          <div className={`p-3 rounded-md text-sm border ${cycleResult.startsWith('Error') ? 'bg-accent-crimson/10 border-accent-crimson/30 text-accent-crimson' : 'bg-accent-emerald/10 border-accent-emerald/30 text-accent-emerald'}`}>
-            {cycleResult}
+        {/* Consensus Result Panel */}
+        {decision && !cycleResult?.error && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-5">
+            <div className="flex items-center gap-6">
+              {/* Score Ring */}
+              <div className="flex-shrink-0 w-24 h-24 relative">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  <circle cx="50" cy="50" r="42" stroke="#2A2A4A" strokeWidth="8" fill="none" />
+                  <circle cx="50" cy="50" r="42" strokeWidth="8" fill="none"
+                    stroke={decision.final_score > 0.7 ? '#10B981' : decision.final_score > 0.5 ? '#F59E0B' : '#E94560'}
+                    strokeDasharray={`${decision.final_score * 264} 264`} strokeLinecap="round" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="font-mono text-2xl font-bold">{(decision.final_score * 100).toFixed(0)}</span>
+                </div>
+              </div>
+
+              <div className="flex-1 grid grid-cols-4 gap-4">
+                <div>
+                  <div className="text-xs text-text-muted">Direction</div>
+                  <div className={`text-lg font-bold ${decision.direction === 'LONG' ? 'text-accent-emerald' : decision.direction === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted'}`}>
+                    {decision.direction === 'LONG' ? '▲' : decision.direction === 'SHORT' ? '▼' : '─'} {decision.direction}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-text-muted">Decision</div>
+                  <div className={`text-lg font-bold ${decision.decision === 'STRONG_SIGNAL' ? 'text-accent-emerald' : decision.decision === 'SIGNAL' ? 'text-accent-violet' : 'text-text-secondary'}`}>{decision.decision}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-text-muted">Agreement</div>
+                  <div className="text-lg font-mono font-bold">{(decision.agreement_pct * 100).toFixed(0)}%</div>
+                </div>
+                <div>
+                  <div className="text-xs text-text-muted">Mode</div>
+                  <div className="text-lg font-bold">{decision.execution_mode}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Data source badge */}
+            <div className="mt-3 flex items-center gap-3">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${cycleResult.data_source === 'oanda_live' ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'}`}>
+                {cycleResult.data_source === 'oanda_live' ? 'LIVE OANDA DATA' : 'DEMO DATA'}
+              </span>
+              {cycleResult.market_price && (
+                <span className="text-xs text-text-muted">Price: <span className="font-mono text-text-primary">{cycleResult.market_price}</span></span>
+              )}
+              <span className="text-xs text-text-muted">Elapsed: <span className="font-mono">{cycleResult.elapsed_ms}ms</span></span>
+            </div>
           </div>
         )}
 
-        {/* Thresholds Panel */}
-        {thresholds && (
+        {cycleResult?.error && (
+          <div className="p-3 bg-accent-crimson/10 border border-accent-crimson/30 rounded-md text-accent-crimson text-sm">{cycleResult.error}</div>
+        )}
+
+        {/* Agent Outputs Grid */}
+        {agentOutputs.length > 0 && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-3">Decision Thresholds by Profile</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {Object.entries(thresholds).map(([profile, vals]: [string, any]) => (
-                <div key={profile} className={`p-3 rounded-md border ${profile === selectedProfile ? 'border-accent-violet bg-accent-violet/5' : 'border-border-default'}`}>
-                  <div className={`text-sm font-semibold mb-2 ${profile === selectedProfile ? 'text-accent-violet' : 'text-text-primary'}`}>{profile}</div>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between"><span className="text-text-muted">Strong Signal</span><span className="font-mono">{'>='} {vals.strong_signal}</span></div>
-                    <div className="flex justify-between"><span className="text-text-muted">Signal</span><span className="font-mono">{'>='} {vals.signal}</span></div>
-                    <div className="flex justify-between"><span className="text-text-muted">Weak Signal</span><span className="font-mono">{'>='} {vals.weak_signal}</span></div>
-                    <div className="flex justify-between"><span className="text-text-muted">Min Agreement</span><span className="font-mono">{vals.min_agreement}/9</span></div>
-                    <div className="flex justify-between"><span className="text-text-muted">Min Confidence</span><span className="font-mono">{vals.min_confidence}</span></div>
+            <h3 className="text-sm font-semibold mb-3">Agent Outputs ({agentOutputs.length} agents)</h3>
+            <div className="grid grid-cols-3 gap-3">
+              {agentOutputs.map((output: any) => {
+                const meta = AGENT_META[output.agent_id] || { name: output.agent_id, icon: '?', color: '#888' };
+                const arrow = output.directional_bias === 'LONG' ? '▲' : output.directional_bias === 'SHORT' ? '▼' : '─';
+                const arrowColor = output.directional_bias === 'LONG' ? 'text-accent-emerald' : output.directional_bias === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted';
+                return (
+                  <div key={output.agent_id} className="bg-bg-tertiary border border-border-default rounded-md p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: meta.color }}>{meta.icon}</div>
+                      <div className="text-sm font-semibold">{meta.name}</div>
+                      <div className={`ml-auto text-lg font-bold ${arrowColor}`}>{arrow}</div>
+                    </div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-text-muted">Confidence</span>
+                      <span className="font-mono font-semibold">{(output.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-bg-surface rounded-full overflow-hidden mb-2">
+                      <div className="h-full bg-accent-violet rounded-full" style={{ width: `${output.confidence * 100}%` }} />
+                    </div>
+                    {output.evidence?.[0] && (
+                      <div className="text-[10px] text-text-muted leading-tight">{output.evidence[0].claim}</div>
+                    )}
+                    {output.risk_notes?.length > 0 && (
+                      <div className="text-[10px] text-accent-amber mt-1">{output.risk_notes[0]}</div>
+                    )}
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Challenges Log */}
+        {challenges.length > 0 && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-3">Challenge Log ({challenges.length} challenges)</h3>
+            <div className="space-y-2">
+              {challenges.map((ch: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 p-2 bg-bg-tertiary rounded-md text-sm">
+                  <span className="text-accent-amber font-mono text-xs">[{i + 1}]</span>
+                  <span className="text-text-secondary">{ch.challenger}</span>
+                  <span className="text-text-muted">→</span>
+                  <span className="text-text-secondary">{ch.target_agent}</span>
+                  <span className="text-text-muted">({ch.challenge_type})</span>
+                  <span className={`ml-auto font-semibold text-xs ${ch.response === 'ACCEPT' || ch.response === 'PARTIAL' ? 'text-accent-amber' : ch.response === 'VETO' ? 'text-accent-crimson' : 'text-text-muted'}`}>
+                    {ch.response}
+                  </span>
+                  {ch.revised_confidence && (
+                    <span className="text-xs text-text-muted font-mono">conf→{(ch.revised_confidence * 100).toFixed(0)}%</span>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Agent Trust Scores Grid */}
+        {/* Trust Scores */}
         <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold">Agent Trust Scores</h3>
-            {trustScores && <span className="text-[10px] text-accent-emerald">LIVE FROM API</span>}
-          </div>
+          <h3 className="text-sm font-semibold mb-3">Agent Trust Scores</h3>
           <div className="grid grid-cols-3 gap-3">
-            {agents.map(agentId => {
+            {Object.keys(AGENT_META).map(agentId => {
               const meta = AGENT_META[agentId];
               const scores = trustScores?.[agentId] || {};
               const globalScore = scores?.global?.score ?? 1.0;
-              const samples = scores?.global?.samples ?? 0;
-
               return (
                 <div key={agentId} className="bg-bg-tertiary border border-border-default rounded-md p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                      style={{ backgroundColor: meta.color }}>{meta.icon}</div>
-                    <div>
-                      <div className="text-sm font-semibold">{meta.name}</div>
-                      <div className="text-[10px] text-text-muted">{agentId}</div>
-                    </div>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white" style={{ backgroundColor: meta.color }}>{meta.icon}</div>
+                    <span className="text-sm font-semibold">{meta.name}</span>
+                    <span className={`ml-auto font-mono text-sm font-bold ${globalScore > 1.05 ? 'text-accent-emerald' : globalScore < 0.95 ? 'text-accent-crimson' : 'text-text-primary'}`}>
+                      {globalScore.toFixed(3)}
+                    </span>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-text-muted">Global Trust</span>
-                      <span className={`font-mono font-semibold ${globalScore > 1.1 ? 'text-accent-emerald' : globalScore < 0.9 ? 'text-accent-crimson' : 'text-text-primary'}`}>
-                        {globalScore.toFixed(4)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-text-muted">Samples</span>
-                      <span className="font-mono text-text-secondary">{samples}</span>
-                    </div>
-                    {/* Trust bar */}
-                    <div className="h-1.5 bg-bg-surface rounded-full overflow-hidden mt-1">
-                      <div className={`h-full rounded-full ${globalScore > 1.1 ? 'bg-accent-emerald' : globalScore < 0.9 ? 'bg-accent-crimson' : 'bg-accent-violet'}`}
-                        style={{ width: `${Math.min(100, (globalScore / 2) * 100)}%` }} />
-                    </div>
-                    {/* Dimension previews */}
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {Object.entries(scores).slice(0, 4).map(([dim, val]: [string, any]) => (
-                        dim !== 'global' && (
-                          <span key={dim} className="text-[9px] px-1.5 py-0.5 bg-bg-surface rounded text-text-muted">
-                            {dim.replace('regime:', '').replace('asset:', '')}: {val.score?.toFixed(2)}
-                          </span>
-                        )
-                      ))}
-                    </div>
+                  <div className="h-1.5 bg-bg-surface rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${globalScore > 1.05 ? 'bg-accent-emerald' : globalScore < 0.95 ? 'bg-accent-crimson' : 'bg-accent-violet'}`}
+                      style={{ width: `${Math.min(100, (globalScore / 2) * 100)}%` }} />
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* Thresholds */}
+        {thresholds && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-3">Decision Thresholds</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {Object.entries(thresholds).map(([profile, vals]: [string, any]) => (
+                <div key={profile} className={`p-3 rounded-md border ${profile === selectedProfile ? 'border-accent-violet bg-accent-violet/5' : 'border-border-default'}`}>
+                  <div className={`text-sm font-semibold mb-2 ${profile === selectedProfile ? 'text-accent-violet' : 'text-text-primary'}`}>{profile}</div>
+                  <div className="space-y-1 text-xs">
+                    {Object.entries(vals).map(([k, v]: [string, any]) => (
+                      <div key={k} className="flex justify-between"><span className="text-text-muted">{k.replace(/_/g, ' ')}</span><span className="font-mono">{v}</span></div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );
