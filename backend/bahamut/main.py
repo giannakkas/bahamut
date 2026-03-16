@@ -34,10 +34,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS - permissive for Railway (tighten in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],  # Railway dynamic URLs - restrict to specific domains in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

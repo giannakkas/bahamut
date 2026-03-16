@@ -12,6 +12,8 @@ from bahamut.config import get_settings
 
 config = context.config
 settings = get_settings()
+
+# Use sync URL for Alembic (always needs postgresql://, not asyncpg)
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)
 
 if config.config_file_name is not None:

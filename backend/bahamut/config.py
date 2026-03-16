@@ -10,8 +10,25 @@ class Settings(BaseSettings):
     api_version: str = "v1"
 
     # ── Database ──
-    database_url: str = "postgresql+asyncpg://bahamut:bahamut_dev_2026@localhost:5432/bahamut"
-    database_url_sync: str = "postgresql://bahamut:bahamut_dev_2026@localhost:5432/bahamut"
+    # Railway injects DATABASE_URL as postgresql://
+    # We auto-convert for async driver
+    database_url: str = "postgresql://bahamut:bahamut_dev_2026@localhost:5432/bahamut"
+
+    @property
+    def database_url_async(self) -> str:
+        """Convert Railway's postgresql:// to postgresql+asyncpg://"""
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
+    @property
+    def database_url_sync(self) -> str:
+        """Ensure sync URL uses postgresql://"""
+        url = self.database_url
+        if url.startswith("postgresql+asyncpg://"):
+            return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        return url
 
     # ── Redis ──
     redis_url: str = "redis://localhost:6379/0"
@@ -32,11 +49,15 @@ class Settings(BaseSettings):
 
     # ── Agent Configuration ──
     max_agent_timeout_seconds: int = 10
-    signal_cycle_interval_seconds: int = 900  # 15 min
+    signal_cycle_interval_seconds: int = 900
     max_slippage_bps: int = 50
 
     # ── CORS ──
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "https://*.up.railway.app"]
+
+    # ── Railway ──
+    railway_environment: str = ""
+    port: int = 8000
 
     class Config:
         env_file = ".env"

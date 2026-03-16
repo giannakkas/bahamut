@@ -23,17 +23,16 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    broker_connection_retry_on_startup=True,
     task_routes={
         "bahamut.ingestion.*": {"queue": "ingestion"},
         "bahamut.agents.*": {"queue": "agents"},
-        "bahamut.consensus.*": {"queue": "agents"},
         "bahamut.learning.*": {"queue": "learning"},
         "bahamut.reports.*": {"queue": "reports"},
         "bahamut.risk.*": {"queue": "critical"},
         "bahamut.execution.*": {"queue": "critical"},
     },
     beat_schedule={
-        # ── Ingestion ──
         "ingest-ohlcv": {
             "task": "bahamut.ingestion.tasks.ingest_ohlcv",
             "schedule": 60.0,
@@ -46,7 +45,6 @@ celery_app.conf.update(
             "task": "bahamut.ingestion.tasks.ingest_news",
             "schedule": 300.0,
         },
-        # ── Features ──
         "compute-features": {
             "task": "bahamut.features.tasks.compute_features",
             "schedule": 60.0,
@@ -55,12 +53,10 @@ celery_app.conf.update(
             "task": "bahamut.features.tasks.detect_regime",
             "schedule": 300.0,
         },
-        # ── Signal Cycles ──
         "run-signal-cycles": {
             "task": "bahamut.agents.tasks.run_all_signal_cycles",
             "schedule": settings.signal_cycle_interval_seconds,
         },
-        # ── Learning ──
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",
             "schedule": crontab(hour=0, minute=15),
@@ -77,7 +73,6 @@ celery_app.conf.update(
             "task": "bahamut.learning.tasks.monthly_calibration",
             "schedule": crontab(day_of_month=1, hour=2, minute=0),
         },
-        # ── Reports ──
         "daily-brief": {
             "task": "bahamut.reports.tasks.generate_daily_brief",
             "schedule": crontab(hour=6, minute=0),

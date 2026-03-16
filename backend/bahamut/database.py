@@ -7,8 +7,8 @@ settings = get_settings()
 
 # Async engine for FastAPI
 async_engine = create_async_engine(
-    settings.database_url,
-    echo=settings.environment == "development",
+    settings.database_url_async,
+    echo=(settings.environment == "development"),
     pool_size=20,
     max_overflow=10,
 )
