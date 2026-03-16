@@ -1,11 +1,10 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bahamut-production.up.railway.app';
+const API_URL = 'https://bahamut-production.up.railway.app';
 
 class ApiClient {
   private token: string | null = null;
 
   setToken(token: string) { this.token = token; }
   clearToken() { this.token = null; }
-  getToken() { return this.token; }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
@@ -22,7 +21,6 @@ class ApiClient {
     return res.json();
   }
 
-  // Auth
   async login(email: string, password: string) {
     return this.request<{ access_token: string; refresh_token: string; user: any }>(
       '/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }
@@ -34,8 +32,6 @@ class ApiClient {
     );
   }
   async getMe() { return this.request<any>('/auth/me'); }
-
-  // Agents
   async triggerCycle(asset: string, asset_class: string = 'fx', timeframe: string = '4H', trading_profile: string = 'BALANCED') {
     return this.request<any>('/agents/trigger', {
       method: 'POST', body: JSON.stringify({ asset, asset_class, timeframe, trading_profile }),
@@ -43,23 +39,13 @@ class ApiClient {
   }
   async getTrustScores() { return this.request<any>('/agents/trust-scores'); }
   async getAgentHealth() { return this.request<any>('/agents/health'); }
-
-  // Consensus
   async getThresholds() { return this.request<any>('/consensus/thresholds'); }
   async getWeights(assetClass: string) { return this.request<any>(`/consensus/weights/${assetClass}`); }
-
-  // Risk
   async getRiskDashboard() { return this.request<any>('/risk/dashboard'); }
-
-  // Execution
   async killSwitch() { return this.request<any>('/execution/kill-switch', { method: 'POST' }); }
   async getExecutionStatus() { return this.request<any>('/execution/status'); }
-
-  // Learning
   async getStrategyFitness() { return this.request<any>('/learning/fitness'); }
   async emergencyRecalibrate() { return this.request<any>('/learning/emergency-recalibrate', { method: 'POST' }); }
-
-  // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }
 }
 
