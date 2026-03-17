@@ -28,7 +28,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!mounted) return null;
   if (!isAuthenticated) {
-    if (typeof window !== 'undefined') window.location.href = '/login';
+    if (typeof window !== 'undefined') window.location.href = '/landing';
     return null;
   }
 
@@ -57,7 +57,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <a href="/settings" className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-text-secondary hover:bg-bg-tertiary">
             <span className="w-5 text-center">⚙</span><span>Settings</span>
           </a>
-          <button onClick={() => { logout(); window.location.href = '/login'; }}
+          <button onClick={() => { logout(); window.location.href = '/landing'; }}
             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-accent-crimson hover:bg-bg-tertiary w-full text-left">
             <span className="w-5 text-center">↪</span><span>Sign Out</span>
           </button>
