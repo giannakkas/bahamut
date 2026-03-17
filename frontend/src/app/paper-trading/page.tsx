@@ -187,6 +187,8 @@ export default function PaperTradingPage() {
 
   const p = portfolio;
   const totalUnrealized = p?.open_positions?.reduce((sum: number, pos: any) => sum + (pos.unrealized_pnl || 0), 0) || 0;
+  const totalAtRisk = p?.open_positions?.reduce((sum: number, pos: any) => sum + (pos.risk_amount || 0), 0) || 0;
+  const availableBalance = (p?.balance || 100_000) - totalAtRisk;
 
   return (
     <AppShell>
@@ -219,7 +221,7 @@ export default function PaperTradingPage() {
         <StatCard
           label="Balance"
           value={`$${(p?.balance || 100_000).toLocaleString()}`}
-          sub="Updates when trades close"
+          sub={`$${Math.round(totalAtRisk).toLocaleString()} at risk · $${Math.round(availableBalance).toLocaleString()} available`}
         />
         <StatCard
           label="Unrealized P&L"
