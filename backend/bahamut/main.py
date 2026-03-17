@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 import traceback
@@ -38,7 +40,16 @@ app = FastAPI(
     description="Institutional-Grade AI Trading Intelligence Platform",
     version="1.0.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "defaultModelsExpandDepth": -1,
+        "docExpansion": "list",
+    },
 )
+
+# Mount static files (logo etc.)
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Custom middleware to always add CORS headers, even on 500 errors
@@ -96,6 +107,25 @@ async def health_check():
         "version": "1.0.0",
         "environment": settings.environment,
     }
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse("""<!DOCTYPE html>
+<html><head><title>Bahamut.AI API</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0b0f;color:#d4af37;font-family:system-ui,sans-serif}
+img{max-width:480px;width:90%}
+h2{font-weight:400;color:#888;font-size:16px;margin-top:12px}
+a{color:#d4af37;text-decoration:none;border:1px solid #d4af3744;padding:10px 28px;border-radius:8px;margin-top:24px;transition:all .2s}
+a:hover{background:#d4af3722;border-color:#d4af37}
+</style></head><body>
+<img src="/static/logo.png" alt="Bahamut.AI"/>
+<h2>Institutional-Grade AI Trading Intelligence</h2>
+<a href="/docs">API Documentation</a>
+</body></html>""")
+
 
 
 @app.get("/debug/data-source")
