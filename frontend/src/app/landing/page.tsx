@@ -90,8 +90,10 @@ function Counter({ target, suffix = '' }: { target: string; suffix?: string }) {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
+    <div className="min-h-screen bg-[#050505] text-white" style={{ fontFamily: "Outfit, sans-serif" }}>
+
       <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
         @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         .animate-scroll { animation: scroll 30s linear infinite; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
@@ -135,7 +137,7 @@ export default function LandingPage() {
             <span className="text-sm text-[#C9A94E]/80">Live — analyzing 10 assets across FX, Crypto & Stocks</span>
           </div>
 
-          <h1 className="text-7xl font-black leading-[1.05] mb-7 tracking-tight fade-d1">
+          <h1 className="text-7xl leading-[1.05] mb-7 tracking-tight fade-d1" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>
             Stop Guessing.<br />
             <span className="gold-shimmer">Start Knowing.</span>
           </h1>
@@ -174,7 +176,7 @@ export default function LandingPage() {
 
       {/* Pain Points */}
       <section className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl font-black text-center mb-3">Sound Familiar?</h2>
+        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Sound Familiar?</h2>
         <p className="text-center text-white/20 mb-12">Every trader faces these. Bahamut fixes all of them.</p>
         <div className="space-y-3">
           {[
@@ -201,7 +203,7 @@ export default function LandingPage() {
       {/* Agents */}
       <section id="agents" className="px-8 py-20 bg-[#080808] border-y border-[#1a1a1a]">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-3">Your AI Trading Council</h2>
+          <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your AI Trading Council</h2>
           <p className="text-center text-white/20 mb-12">6 specialists. They argue. They challenge. Then they vote.</p>
 
           <div className="grid grid-cols-3 gap-4">
@@ -234,7 +236,7 @@ export default function LandingPage() {
 
       {/* Safety */}
       <section id="safety" className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl font-black text-center mb-3">Your Capital is Protected</h2>
+        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your Capital is Protected</h2>
         <p className="text-center text-white/20 mb-12">Multiple layers of protection. No exceptions.</p>
         <div className="grid grid-cols-3 gap-4">
           {[
@@ -279,7 +281,7 @@ export default function LandingPage() {
 
       {/* Pricing */}
       <section id="pricing" className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl font-black text-center mb-3">One Bad Trade Costs More<br />Than a Year of Bahamut</h2>
+        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>One Bad Trade Costs More<br />Than a Year of Bahamut</h2>
         <p className="text-center text-white/20 mb-12">Start free. Upgrade when you see results.</p>
         <div className="grid grid-cols-3 gap-5">
           {[
@@ -318,7 +320,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 opacity-25"><CandlestickBG /></div>
         <div className="absolute inset-0 bg-gradient-to-b from-[#050505] via-transparent to-[#050505]" />
         <div className="relative z-10">
-          <h2 className="text-5xl font-black mb-5">Ready to Trade<br /><span className="gold-shimmer">With Confidence?</span></h2>
+          <h2 className="text-5xl mb-5" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Ready to Trade<br /><span className="gold-shimmer">With Confidence?</span></h2>
           <p className="text-white/25 mb-8 max-w-lg mx-auto">Join traders who stopped guessing and started letting AI protect and grow their capital.</p>
           <a href="/login" className="inline-block bg-gradient-to-r from-[#C9A94E] to-[#A07C30] text-black font-black px-14 py-4 rounded-xl text-lg gold-glow hover:scale-105 transition-all">
             Start Free Trial Now
