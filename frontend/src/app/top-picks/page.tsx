@@ -120,7 +120,16 @@ export default function TopPicksPage() {
                   <span className="font-mono text-sm text-text-secondary">${pick.price}</span>
                 </div>
                 <ScoreBar score={pick.score} />
-                <div className="mt-2 text-[10px] text-text-muted leading-tight">
+                <div className="mt-2 flex items-center gap-2">
+                  {pick.whale_score > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      pick.whale_score >= 20 ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'
+                    }`}>
+                      🐋 {pick.whale_signal === 'EXTREME_SPIKE' ? 'EXTREME' : pick.whale_signal === 'MAJOR_SPIKE' ? 'MAJOR' : 'ACTIVE'} · Vol {pick.volume_ratio}x
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-[10px] text-text-muted leading-tight">
                   {pick.reasons?.slice(0, 2).join(' · ')}
                 </div>
                 {pick.agent_decision && (
@@ -155,7 +164,7 @@ export default function TopPicksPage() {
 
         {/* Full Table */}
         <div className="bg-bg-secondary border border-border-default rounded-lg overflow-x-auto">
-          <table className="w-full min-w-[700px]">
+          <table className="w-full min-w-[800px]">
             <thead>
               <tr className="border-b border-border-default text-xs text-text-muted uppercase tracking-wider">
                 <th className="text-left py-3 px-4">Rank</th>
@@ -165,6 +174,7 @@ export default function TopPicksPage() {
                 <th className="text-right py-3 px-4">Change</th>
                 <th className="text-center py-3 px-4">Direction</th>
                 <th className="text-right py-3 px-4">Score</th>
+                <th className="text-center py-3 px-4">Whales</th>
                 <th className="text-right py-3 px-4">RSI</th>
                 <th className="text-right py-3 px-4">ADX</th>
                 <th className="text-left py-3 px-4">Reasons</th>
@@ -172,9 +182,9 @@ export default function TopPicksPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="py-12 text-center text-text-muted text-sm">Loading scanner results...</td></tr>
+                <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">Loading scanner results...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={10} className="py-12 text-center text-text-muted text-sm">
+                <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">
                   No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 30 min).
                 </td></tr>
               ) : (
@@ -201,6 +211,23 @@ export default function TopPicksPage() {
                         </span>
                       </td>
                       <td className="py-2.5 px-4 text-right"><ScoreBar score={r.score} /></td>
+                      <td className="py-2.5 px-4 text-center">
+                        {r.whale_score > 0 ? (
+                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                            r.whale_score >= 20 ? 'bg-accent-emerald/20 text-accent-emerald' :
+                            r.whale_score >= 10 ? 'bg-accent-amber/20 text-accent-amber' :
+                            'bg-bg-surface text-text-muted'
+                          }`} title={`Volume ${r.volume_ratio}x avg`}>
+                            🐋 {r.whale_score > 20 ? '+++' : r.whale_score > 10 ? '++' : '+'}
+                          </span>
+                        ) : r.whale_score < 0 ? (
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-accent-crimson/20 text-accent-crimson">
+                            🐋 −
+                          </span>
+                        ) : (
+                          <span className="text-xs text-text-muted">—</span>
+                        )}
+                      </td>
                       <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.rsi < 30 || r.rsi > 70 ? 'text-accent-amber font-bold' : 'text-text-secondary'}`}>
                         {r.rsi}
                       </td>
@@ -220,9 +247,10 @@ export default function TopPicksPage() {
 
         {/* Info */}
         <div className="bg-bg-secondary/50 border border-border-default/50 rounded-xl p-4 text-xs text-text-muted">
-          <strong className="text-text-secondary">How the scanner works:</strong> Every 30 minutes, Bahamut scans all 57 assets
-          (8 FX pairs, 12 cryptocurrencies, 29 stocks, 2 commodities). Each asset gets a quick score based on RSI, EMA alignment,
-          MACD momentum, ADX trend strength, and Bollinger Band breakouts. The top 10 then get a full 6-agent deep analysis.
+          <strong className="text-text-secondary">How the scanner works:</strong> Every 30 minutes, Bahamut scans all 45 assets
+          (8 FX pairs, 10 cryptocurrencies, 25 stocks, 2 commodities). Each asset gets a technical score based on RSI, EMA alignment,
+          MACD momentum, ADX trend strength, and Bollinger Band breakouts. <strong className="text-text-secondary">Whale detection</strong> adds bonus points for
+          unusual volume spikes (🐋) — large volume = institutional/whale activity. The top 10 then get a full 6-agent deep analysis.
           Scores above 70 = strong opportunity. Scores below 30 = no clear setup.
         </div>
       </div>

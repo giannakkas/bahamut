@@ -100,3 +100,40 @@ async def test_scan(user=Depends(get_current_user)):
         except Exception as e:
             errors.append({"symbol": symbol, "error": str(e)})
     return {"results": results, "errors": errors}
+
+
+@router.get("/whales/{symbol}")
+async def get_whale_data(symbol: str, user=Depends(get_current_user)):
+    """Get detailed whale analysis for a specific asset."""
+    from bahamut.whales.tracker import get_whale_score
+    from bahamut.scanner.scanner import SYMBOL_CLASS
+
+    asset_class = SYMBOL_CLASS.get(symbol, "indices")
+
+    # Fetch candles for volume analysis
+    from bahamut.ingestion.adapters.twelvedata import twelve_data, to_twelve_symbol
+    candles = await twelve_data.get_candles(to_twelve_symbol(symbol), "4h", 30)
+
+    result = await get_whale_score(symbol, asset_class, candles)
+    result["symbol"] = symbol
+    result["asset_class"] = asset_class
+    return result
+
+
+@router.get("/whales")
+async def get_all_whale_activity(user=Depends(get_current_user)):
+    """Get whale activity summary across all scanned assets."""
+    if redis_manager.redis:
+        cached = await redis_manager.redis.get("bahamut:market_scan")
+        if cached:
+            data = json.loads(cached)
+            results = data.get("all_results", [])
+            # Filter to assets with whale activity
+            whale_active = [r for r in results if r.get("whale_score", 0) != 0]
+            whale_active.sort(key=lambda x: abs(x.get("whale_score", 0)), reverse=True)
+            return {
+                "active": whale_active,
+                "count": len(whale_active),
+                "total_scanned": len(results),
+            }
+    return {"active": [], "count": 0}

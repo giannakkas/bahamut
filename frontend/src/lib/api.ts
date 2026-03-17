@@ -89,6 +89,8 @@ class ApiClient {
   }
   async triggerScan() { return this.request<any>('/scanner/trigger', { method: 'POST' }); }
   async getDeepResults() { return this.request<any>('/scanner/deep-results'); }
+  async getWhaleData(symbol: string) { return this.request<any>(`/scanner/whales/${symbol}`); }
+  async getAllWhaleActivity() { return this.request<any>('/scanner/whales'); }
 }
 
 export const api = new ApiClient();

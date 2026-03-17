@@ -171,7 +171,7 @@ def score_opportunity(indicators: dict) -> dict:
 
 
 async def scan_single_asset(symbol: str, timeframe: str = "4h") -> dict | None:
-    """Scan a single asset — fetch candles, compute indicators, score it."""
+    """Scan a single asset — fetch candles, compute indicators, score it, check whales."""
     try:
         td_symbol = to_twelve_symbol(symbol)
         candles = await twelve_data.get_candles(td_symbol, timeframe, 60)
@@ -187,12 +187,24 @@ async def scan_single_asset(symbol: str, timeframe: str = "4h") -> dict | None:
         price = indicators.get("close", 0)
         prev_close = candles[-2]["close"] if len(candles) >= 2 else price
 
+        # Whale detection
+        from bahamut.whales.tracker import detect_volume_spikes
+        whale_data = detect_volume_spikes(candles)
+        whale_score = whale_data.get("whale_score", 0)
+
+        # Combined score: technical + whale bonus
+        total_score = min(100, opportunity["score"] + whale_score)
+
         return {
             "symbol": symbol,
             "asset_class": SYMBOL_CLASS.get(symbol, "unknown"),
             "price": price,
             "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
-            "score": opportunity["score"],
+            "score": total_score,
+            "tech_score": opportunity["score"],
+            "whale_score": whale_score,
+            "whale_signal": whale_data.get("signal", "NORMAL"),
+            "volume_ratio": whale_data.get("volume_ratio", 1.0),
             "direction": opportunity["direction"],
             "reasons": opportunity["reasons"],
             "rsi": round(indicators.get("rsi_14", 50), 1),
