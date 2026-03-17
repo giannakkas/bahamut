@@ -137,7 +137,7 @@ export default function AgentCouncilPage() {
             </h3>
             {chartLoading && <span className="text-xs text-text-muted">Loading...</span>}
           </div>
-          <CandlestickChart
+          <CandlestickChart loading={chartLoading}
             candles={candles}
             height={350}
             signalDirection={decision?.direction}

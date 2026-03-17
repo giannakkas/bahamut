@@ -146,7 +146,7 @@ export default function MacroArenaPage() {
               </span>
             )}
           </div>
-          <CandlestickChart candles={selectedCandles} height={400}
+          <CandlestickChart candles={selectedCandles} height={400} loading={loading}
             signalDirection={selectedCycle?.decision?.direction}
             signalPrice={selectedCycle?.market_price} />
         </div>

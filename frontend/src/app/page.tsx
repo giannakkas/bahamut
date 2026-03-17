@@ -73,10 +73,8 @@ export default function DashboardPage() {
         if (r.status === 'fulfilled') setRisk(r.value);
         if (b.status === 'fulfilled') setBrief(b.value);
         if (c.status === 'fulfilled') setCycles(c.value);
-        const ba = results[3] || { status: 'rejected' };
-        if (typeof ba === 'object' && 'status' in ba && ba.status === 'fulfilled') setBreakingAlerts((ba as any).value?.alerts || []);
-        try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
       } catch (e) { console.error(e); }
+      try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
       setLoading(false);
     };
     load();

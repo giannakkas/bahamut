@@ -14,21 +14,31 @@ interface Candle {
 interface CandlestickChartProps {
   candles: Candle[];
   height?: number;
-  indicators?: {
-    ema_20?: number;
-    ema_50?: number;
-    ema_200?: number;
-  };
   signalDirection?: string;
   signalPrice?: number;
+  loading?: boolean;
+}
+
+function LoadingSpinner({ height }: { height: number }) {
+  return (
+    <div className="flex items-center justify-center bg-bg-secondary rounded-lg border border-border-default" style={{ height }}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative w-12 h-12">
+          <div className="absolute inset-0 rounded-full border-2 border-border-default"></div>
+          <div className="absolute inset-0 rounded-full border-2 border-t-accent-violet animate-spin"></div>
+        </div>
+        <span className="text-xs text-text-muted">Loading market data...</span>
+      </div>
+    </div>
+  );
 }
 
 export default function CandlestickChart({
-  candles, height = 400, indicators, signalDirection, signalPrice
+  candles, height = 400, signalDirection, signalPrice, loading = false
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [chartReady, setChartReady] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current || candles.length === 0) return;
@@ -39,7 +49,6 @@ export default function CandlestickChart({
       try {
         const LWC = await import('lightweight-charts');
 
-        // Clear previous chart
         if (chartRef.current) {
           chartRef.current.remove();
           chartRef.current = null;
@@ -76,7 +85,6 @@ export default function CandlestickChart({
 
         chartRef.current = chart;
 
-        // Candlestick series
         const candleSeries = chart.addCandlestickSeries({
           upColor: '#10B981',
           downColor: '#E94560',
@@ -86,7 +94,6 @@ export default function CandlestickChart({
           wickDownColor: '#E9456080',
         });
 
-        // Format candle data
         const formattedCandles = candles.map(c => {
           let ts: number;
           if (c.time.includes('T') || c.time.includes('-')) {
@@ -99,7 +106,6 @@ export default function CandlestickChart({
 
         candleSeries.setData(formattedCandles);
 
-        // Volume series
         if (candles.some(c => c.volume && c.volume > 0)) {
           const volumeSeries = chart.addHistogramSeries({
             color: '#6C63FF33',
@@ -109,18 +115,15 @@ export default function CandlestickChart({
           volumeSeries.priceScale().applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
           });
-
           const volData = candles.map((c, i) => ({
             time: formattedCandles[i]?.time,
             value: c.volume || 0,
             color: c.close >= c.open ? '#10B98133' : '#E9456033',
           })).filter(v => v.time);
-
           volumeSeries.setData(volData);
         }
 
-        // Signal marker
-        if (signalDirection && signalPrice && formattedCandles.length > 0) {
+        if (signalDirection && formattedCandles.length > 0) {
           const lastCandle = formattedCandles[formattedCandles.length - 1];
           candleSeries.setMarkers([{
             time: lastCandle.time,
@@ -131,47 +134,36 @@ export default function CandlestickChart({
           }]);
         }
 
-        // Fit content
         chart.timeScale().fitContent();
-        setLoaded(true);
+        setChartReady(true);
 
-        // Resize observer
         const observer = new ResizeObserver(() => {
           if (containerRef.current && chart) {
             chart.applyOptions({ width: containerRef.current.clientWidth });
           }
         });
         observer.observe(containerRef.current!);
-
         return () => observer.disconnect();
       } catch (e) {
-        console.error('Chart init error:', e);
+        console.error('Chart error:', e);
       }
     };
 
     initChart();
-
     return () => {
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-      }
+      if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
     };
   }, [candles, height, signalDirection, signalPrice]);
 
+  // Show loading spinner
+  if (loading || (candles.length === 0)) {
+    return <LoadingSpinner height={height} />;
+  }
+
   return (
     <div className="relative">
-      {!loaded && candles.length > 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bg-secondary z-10">
-          <span className="text-sm text-text-muted">Loading chart...</span>
-        </div>
-      )}
-      {candles.length === 0 && (
-        <div className="flex items-center justify-center bg-bg-secondary rounded-lg border border-border-default" style={{ height }}>
-          <span className="text-sm text-text-muted">No candle data available</span>
-        </div>
-      )}
-      <div ref={containerRef} className="rounded-lg overflow-hidden" style={{ height: candles.length > 0 ? height : 0 }} />
+      {!chartReady && <LoadingSpinner height={height} />}
+      <div ref={containerRef} className="rounded-lg overflow-hidden" style={{ height: chartReady ? height : 0 }} />
     </div>
   );
 }
