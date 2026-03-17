@@ -139,7 +139,7 @@ export default function DashboardPage() {
               <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
               <span className="text-sm font-bold text-accent-crimson">Breaking News Alert</span>
             </div>
-            {[...new Map(alerts.slice(0, 5).map((a: any) => [a.headline, a])).values()].slice(0, 3).map((alert: any, i: number) => (
+            {Array.from(new Map(alerts.slice(0, 5).map((a: any) => [a.headline, a])).values()).slice(0, 3).map((alert: any, i: number) => (
               <div key={i} className="flex items-center justify-between py-1.5 border-b border-accent-crimson/10 last:border-0">
                 <div className="flex-1">
                   <span className="text-sm text-text-primary">{alert.headline}</span>
