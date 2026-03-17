@@ -1,21 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
-
-// Static economic calendar (in production: pull from API like Trading Economics)
-const EVENTS = [
-  { time: '08:30', date: 'Today', event: 'US Core CPI m/m', currency: 'USD', impact: 'HIGH', forecast: '0.3%', previous: '0.4%', actual: null, affects: ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD'] },
-  { time: '10:00', date: 'Today', event: 'US Consumer Sentiment', currency: 'USD', impact: 'MEDIUM', forecast: '76.5', previous: '79.4', actual: null, affects: ['EURUSD', 'USDJPY'] },
-  { time: '13:00', date: 'Today', event: 'FOMC Member Speech', currency: 'USD', impact: 'MEDIUM', forecast: null, previous: null, actual: null, affects: ['EURUSD', 'XAUUSD'] },
-  { time: '02:00', date: 'Tomorrow', event: 'UK GDP m/m', currency: 'GBP', impact: 'HIGH', forecast: '0.1%', previous: '-0.1%', actual: null, affects: ['GBPUSD'] },
-  { time: '04:30', date: 'Tomorrow', event: 'ECB Interest Rate Decision', currency: 'EUR', impact: 'HIGH', forecast: '3.65%', previous: '3.65%', actual: null, affects: ['EURUSD'] },
-  { time: '08:30', date: 'Tomorrow', event: 'US Retail Sales m/m', currency: 'USD', impact: 'HIGH', forecast: '0.2%', previous: '0.4%', actual: null, affects: ['EURUSD', 'GBPUSD', 'USDJPY'] },
-  { time: '08:30', date: 'Tomorrow', event: 'US Unemployment Claims', currency: 'USD', impact: 'MEDIUM', forecast: '215K', previous: '211K', actual: null, affects: ['EURUSD', 'USDJPY'] },
-  { time: '10:00', date: 'Wed', event: 'US Existing Home Sales', currency: 'USD', impact: 'LOW', forecast: '3.95M', previous: '4.08M', actual: null, affects: ['USDJPY'] },
-  { time: '19:00', date: 'Wed', event: 'FOMC Minutes', currency: 'USD', impact: 'HIGH', forecast: null, previous: null, actual: null, affects: ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD'] },
-  { time: '04:00', date: 'Thu', event: 'China GDP y/y', currency: 'CNY', impact: 'HIGH', forecast: '5.0%', previous: '5.4%', actual: null, affects: ['XAUUSD'] },
-];
+import { api } from '@/lib/api';
 
 function ImpactBadge({ impact }: { impact: string }) {
   const colors: Record<string, string> = {
@@ -31,17 +18,39 @@ function ImpactBadge({ impact }: { impact: string }) {
 }
 
 export default function EventRadarPage() {
+  const [events, setEvents] = useState<any[]>([]);
+  const [news, setNews] = useState<any[]>([]);
   const [filterImpact, setFilterImpact] = useState<string>('ALL');
-  const [filterCurrency, setFilterCurrency] = useState<string>('ALL');
+  const [newsQuery, setNewsQuery] = useState('forex market');
+  const [eventsSource, setEventsSource] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
-  const filtered = EVENTS.filter(e => {
-    if (filterImpact !== 'ALL' && e.impact !== filterImpact) return false;
-    if (filterCurrency !== 'ALL' && e.currency !== filterCurrency) return false;
-    return true;
-  });
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [cal, n] = await Promise.allSettled([
+          api.getCalendar(7),
+          api.getNews(newsQuery, 15),
+        ]);
+        if (cal.status === 'fulfilled') {
+          setEvents(cal.value.events || []);
+          setEventsSource(cal.value.source || 'none');
+        }
+        if (n.status === 'fulfilled') {
+          setNews(n.value.articles || []);
+        }
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    };
+    load();
+  }, [newsQuery]);
 
-  const todayEvents = filtered.filter(e => e.date === 'Today');
-  const futureEvents = filtered.filter(e => e.date !== 'Today');
+  const filteredEvents = events.filter(e =>
+    filterImpact === 'ALL' || e.impact === filterImpact
+  );
+
+  const highImpact = filteredEvents.filter(e => e.impact === 'HIGH');
+  const otherEvents = filteredEvents.filter(e => e.impact !== 'HIGH');
 
   return (
     <AppShell>
@@ -49,106 +58,166 @@ export default function EventRadarPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Event Radar</h1>
-            <p className="text-sm text-text-secondary mt-1">Economic calendar with AI impact analysis</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-sm text-text-secondary">Economic calendar and market news</span>
+              {eventsSource === 'twelvedata' && (
+                <span className="flex items-center gap-1.5 text-sm text-accent-emerald">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
+                  </span>
+                  Live Data
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <select value={filterImpact} onChange={e => setFilterImpact(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
               {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(v => <option key={v} value={v}>{v === 'ALL' ? 'All Impact' : v}</option>)}
             </select>
-            <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value)}
-              className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              {['ALL', 'USD', 'EUR', 'GBP', 'CNY'].map(v => <option key={v} value={v}>{v === 'ALL' ? 'All Currencies' : v}</option>)}
-            </select>
           </div>
         </div>
 
-        {/* Today */}
-        {todayEvents.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-accent-amber mb-3 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-accent-amber animate-pulse" />
-              Today ({todayEvents.length} events)
-            </h2>
-            <div className="space-y-2">
-              {todayEvents.map((ev, i) => (
-                <div key={i} className="bg-bg-secondary border border-border-default rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="text-center w-14">
-                        <div className="font-mono text-sm font-semibold">{ev.time}</div>
-                        <div className="text-[10px] text-text-muted">UTC</div>
+        <div className="grid grid-cols-3 gap-5">
+          {/* Economic Calendar - 2 columns */}
+          <div className="col-span-2 space-y-4">
+            {/* High Impact Events */}
+            {highImpact.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-accent-crimson mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
+                  High Impact Events ({highImpact.length})
+                </h2>
+                <div className="space-y-2">
+                  {highImpact.map((ev, i) => (
+                    <div key={i} className="bg-bg-secondary border border-accent-crimson/20 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="text-center w-16">
+                            <div className="font-mono text-xs">{ev.time?.split(' ')[0] || ''}</div>
+                            <div className="text-[10px] text-text-muted">{ev.time?.split(' ')[1] || ''}</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm flex items-center gap-2">
+                              {ev.event}
+                              <ImpactBadge impact={ev.impact} />
+                              {ev.currency && <span className="text-xs text-accent-violet font-mono">{ev.currency}</span>}
+                            </div>
+                            {ev.country && <div className="text-xs text-text-muted mt-0.5">{ev.country}</div>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6 text-sm">
+                          {ev.forecast != null && (
+                            <div className="text-center">
+                              <div className="text-[10px] text-text-muted">Forecast</div>
+                              <div className="font-mono">{ev.forecast}</div>
+                            </div>
+                          )}
+                          {ev.previous != null && (
+                            <div className="text-center">
+                              <div className="text-[10px] text-text-muted">Previous</div>
+                              <div className="font-mono text-text-secondary">{ev.previous}</div>
+                            </div>
+                          )}
+                          {ev.actual != null && (
+                            <div className="text-center">
+                              <div className="text-[10px] text-text-muted">Actual</div>
+                              <div className="font-mono font-semibold">{ev.actual}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-semibold text-sm flex items-center gap-2">
+                      <div className="mt-2 pt-2 border-t border-border-default text-xs text-accent-amber">
+                        Agent freeze: Trading signals will be held for manual approval around this event.
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Other events */}
+            {otherEvents.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-text-secondary mb-3">
+                  Other Events ({otherEvents.length})
+                </h2>
+                <div className="space-y-1.5">
+                  {otherEvents.map((ev, i) => (
+                    <div key={i} className="bg-bg-secondary border border-border-default rounded-lg p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="font-mono text-xs text-text-muted w-16">{ev.time?.split(' ')[0] || ''}</div>
+                        <div className="text-sm flex items-center gap-2">
                           {ev.event}
                           <ImpactBadge impact={ev.impact} />
-                        </div>
-                        <div className="text-xs text-text-muted mt-0.5">
-                          <span className="font-semibold text-text-secondary">{ev.currency}</span>
-                          {ev.affects.length > 0 && <span className="ml-2">Affects: {ev.affects.join(', ')}</span>}
+                          {ev.currency && <span className="text-xs text-text-muted font-mono">{ev.currency}</span>}
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-6 text-sm">
-                      <div className="text-center">
-                        <div className="text-[10px] text-text-muted">Forecast</div>
-                        <div className="font-mono">{ev.forecast || '—'}</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-[10px] text-text-muted">Previous</div>
-                        <div className="font-mono text-text-secondary">{ev.previous || '—'}</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-[10px] text-text-muted">Actual</div>
-                        <div className="font-mono">{ev.actual || '—'}</div>
+                      <div className="flex items-center gap-4 text-xs text-text-muted">
+                        {ev.forecast != null && <span>F: <span className="font-mono">{ev.forecast}</span></span>}
+                        {ev.previous != null && <span>P: <span className="font-mono">{ev.previous}</span></span>}
                       </div>
                     </div>
-                  </div>
-                  {ev.impact === 'HIGH' && (
-                    <div className="mt-2 pt-2 border-t border-border-default">
-                      <div className="text-xs text-accent-amber">
-                        Agent Council event freeze: Signals within {ev.currency === 'USD' ? '2' : '1'} hours of release will be held for approval regardless of auto-trade settings.
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Upcoming */}
-        {futureEvents.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-text-secondary mb-3">Upcoming ({futureEvents.length} events)</h2>
-            <div className="space-y-2">
-              {futureEvents.map((ev, i) => (
-                <div key={i} className="bg-bg-secondary border border-border-default rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="text-center w-20">
-                      <div className="text-xs text-text-muted">{ev.date}</div>
-                      <div className="font-mono text-xs">{ev.time}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm flex items-center gap-2">
-                        {ev.event} <ImpactBadge impact={ev.impact} />
-                      </div>
-                      <div className="text-xs text-text-muted">
-                        <span className="font-semibold text-text-secondary">{ev.currency}</span>
-                        <span className="ml-2">{ev.affects.join(', ')}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs">
-                    <span className="text-text-muted">F: <span className="font-mono">{ev.forecast || '—'}</span></span>
-                    <span className="text-text-muted">P: <span className="font-mono">{ev.previous || '—'}</span></span>
-                  </div>
+            {events.length === 0 && !loading && (
+              <div className="bg-bg-secondary border border-border-default rounded-lg p-8 text-center">
+                <div className="text-text-muted text-sm">
+                  Economic calendar requires a data source. Events will appear here when available.
                 </div>
-              ))}
-            </div>
+                <div className="text-text-muted text-xs mt-1">
+                  Add NEWSAPI_KEY to Railway for real news headlines.
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* News Feed - 1 column */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold">Market News</h2>
+              <select value={newsQuery} onChange={e => setNewsQuery(e.target.value)}
+                className="bg-bg-surface border border-border-default rounded-md px-2 py-1 text-xs text-text-primary">
+                <option value="forex market">Forex</option>
+                <option value="cryptocurrency bitcoin">Crypto</option>
+                <option value="stock market earnings">Stocks</option>
+                <option value="gold commodities">Commodities</option>
+                <option value="federal reserve ECB interest rate">Central Banks</option>
+              </select>
+            </div>
+
+            {news.length > 0 ? (
+              <div className="space-y-2">
+                {news.map((article, i) => (
+                  <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+                    className="block bg-bg-secondary border border-border-default rounded-lg p-3 hover:border-border-focus transition-colors">
+                    <div className="text-sm font-medium leading-tight">{article.title}</div>
+                    {article.description && (
+                      <div className="text-xs text-text-muted mt-1 leading-relaxed line-clamp-2">{article.description}</div>
+                    )}
+                    <div className="flex items-center gap-2 mt-2 text-[10px] text-text-muted">
+                      {article.source && <span className="text-accent-violet">{article.source}</span>}
+                      {article.published && (
+                        <span>{new Date(article.published).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-bg-secondary border border-border-default rounded-lg p-6 text-center">
+                <div className="text-text-muted text-sm">No news available</div>
+                <div className="text-text-muted text-xs mt-1">
+                  Add NEWSAPI_KEY to Railway for live financial news.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </AppShell>
   );

@@ -65,3 +65,38 @@ async def get_price(symbol: str, user: User = Depends(get_current_user)):
             return price
 
     return {"instrument": symbol, "mid": 0, "message": "No data source"}
+
+
+@router.get("/calendar")
+async def get_economic_calendar(
+    days: int = 7,
+    user: User = Depends(get_current_user),
+):
+    """Get upcoming economic events."""
+    from bahamut.ingestion.adapters.news import econ_calendar
+    events = await econ_calendar.get_upcoming_events(days)
+    return {"events": events, "count": len(events), "source": "twelvedata" if events else "none"}
+
+
+@router.get("/news")
+async def get_market_news(
+    query: str = "forex market trading",
+    count: int = 10,
+    user: User = Depends(get_current_user),
+):
+    """Get financial news headlines."""
+    from bahamut.ingestion.adapters.news import news_adapter
+    articles = await news_adapter.get_headlines(query, count)
+    return {"articles": articles, "count": len(articles)}
+
+
+@router.get("/news/{symbol}")
+async def get_asset_news(
+    symbol: str,
+    count: int = 5,
+    user: User = Depends(get_current_user),
+):
+    """Get news for a specific asset."""
+    from bahamut.ingestion.adapters.news import news_adapter
+    articles = await news_adapter.get_asset_news(symbol, count)
+    return {"symbol": symbol, "articles": articles, "count": len(articles)}
