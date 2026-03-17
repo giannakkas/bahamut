@@ -16,7 +16,7 @@ settings = get_settings()
 class SentimentAgent(BaseAgent):
     agent_id = "sentiment_agent"
     display_name = "Sentiment / Narrative"
-    timeout_seconds = 30  # Opus needs more time for deep analysis
+    timeout_seconds = 15  # Opus needs more time for deep analysis
 
     async def analyze(self, request: SignalCycleRequest, features: dict) -> AgentOutputSchema:
         asset = request.asset
@@ -110,8 +110,8 @@ Respond with ONLY this JSON (no other text):
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-opus-4-6",
-                    "max_tokens": 1000,
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 500,
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
@@ -161,7 +161,7 @@ Respond with ONLY this JSON (no other text):
             evidence=evidence_list, risk_notes=risk_notes,
             urgency="NEXT_BAR",
             meta={
-                "model": "claude-opus-4-6",
+                "model": "claude-haiku-4-5-20251001",
                 "news_count": len(headlines),
                 "news_impact": result.get("news_impact", "unknown"),
                 "bullish_factors": result.get("bullish_factors", []),
