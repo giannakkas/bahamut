@@ -86,9 +86,9 @@ export default function EventRadarPage() {
           </select>
         </div>
 
-        <div className="grid grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Calendar - 2 columns */}
-          <div className="col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-4">
             {highImpact.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-accent-crimson mb-3 flex items-center gap-2">
@@ -152,8 +152,8 @@ export default function EventRadarPage() {
 
             {events.length === 0 && !loading && (
               <div className="bg-bg-secondary border border-border-default rounded-lg p-8 text-center">
-                <div className="text-text-muted text-sm">Add FINNHUB_KEY to Railway for real economic calendar data.</div>
-                <div className="text-text-muted text-xs mt-1">Free at finnhub.io — real-time, no delay.</div>
+                <div className="text-text-muted text-sm">No economic events found for this week.</div>
+                <div className="text-text-muted text-xs mt-1">Calendar refreshes automatically with data from Finnhub.</div>
               </div>
             )}
           </div>
@@ -197,8 +197,7 @@ export default function EventRadarPage() {
               </div>
             ) : (
               <div className="bg-bg-secondary border border-border-default rounded-lg p-6 text-center">
-                <div className="text-text-muted text-sm">Add FINNHUB_KEY for real-time news</div>
-                <div className="text-text-muted text-xs mt-1">Free at finnhub.io — no delay</div>
+                <div className="text-text-muted text-sm">Loading news feed...</div>
               </div>
             )}
           </div>

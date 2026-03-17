@@ -19,17 +19,70 @@ class EconomicCalendarAdapter:
     """Free economic calendar from multiple sources."""
 
     async def get_upcoming_events(self, days_ahead: int = 7) -> list[dict]:
-        # Try Forex Factory free JSON feed
+        # Try Finnhub economic calendar first (most reliable, key already works)
+        events = await self._from_finnhub()
+        if events:
+            return events
+
+        # Fallback to Forex Factory free JSON feed
         events = await self._from_forex_factory()
         if events:
             return events
 
-        # Try Twelve Data earnings (free tier)
+        # Last resort: Twelve Data earnings
         events = await self._from_twelvedata_earnings()
         if events:
             return events
 
         return []
+
+    async def _from_finnhub(self) -> list[dict]:
+        """Finnhub economic calendar — uses existing FINNHUB_KEY."""
+        key = settings.finnhub_key
+        if not key:
+            return []
+        try:
+            from datetime import datetime, timezone, timedelta
+            start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get("https://finnhub.io/api/v1/calendar/economic", params={
+                    "from": start, "to": end, "token": key,
+                })
+                resp.raise_for_status()
+                data = resp.json()
+
+            raw_events = data.get("economicCalendar", data.get("result", []))
+            if not raw_events:
+                logger.warning("finnhub_calendar_empty", keys=list(data.keys()))
+                return []
+
+            events = []
+            for ev in raw_events:
+                impact_raw = ev.get("impact", "low")
+                impact = impact_raw if impact_raw in ("high", "medium", "low") else "low"
+
+                events.append({
+                    "time": ev.get("time", ""),
+                    "date": ev.get("date", ev.get("time", "")[:10] if ev.get("time") else ""),
+                    "event": ev.get("event", "Unknown"),
+                    "country": ev.get("country", ""),
+                    "currency": ev.get("country", ""),
+                    "impact": impact,
+                    "actual": ev.get("actual") if ev.get("actual") is not None else None,
+                    "estimate": ev.get("estimate") if ev.get("estimate") is not None else None,
+                    "prev": ev.get("prev") if ev.get("prev") is not None else None,
+                    "unit": ev.get("unit", ""),
+                    "source": "finnhub",
+                })
+
+            logger.info("finnhub_calendar_fetched", count=len(events))
+            return events
+
+        except Exception as e:
+            logger.error("finnhub_calendar_error", error=str(e))
+            return []
 
     async def _from_forex_factory(self) -> list[dict]:
         """Forex Factory publishes a free JSON calendar feed."""
