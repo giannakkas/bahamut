@@ -14,7 +14,7 @@ router = APIRouter()
 # In-memory candle cache — avoids hammering Twelve Data on every page load
 _candle_cache: dict[str, dict] = {}
 _candle_cache_ts: dict[str, float] = {}
-CANDLE_CACHE_TTL = 300  # 5 minutes — save API credits
+CANDLE_CACHE_TTL = 120  # 2 minutes — Grow plan has unlimited credits
 
 
 @router.get("/candles/{symbol}")
