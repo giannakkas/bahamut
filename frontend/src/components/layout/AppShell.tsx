@@ -38,9 +38,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="w-[260px] bg-bg-secondary border-r border-border-default flex flex-col shrink-0">
-        <div className="h-14 flex items-center px-5 border-b border-border-default">
-          <span className="text-xl font-bold text-accent-violet tracking-tight">BAHAMUT</span>
-          <span className="text-xl font-bold text-text-muted">.AI</span>
+        {/* Logo */}
+        <div className="h-16 flex items-center px-4 border-b border-border-default">
+          <img src="/logo.png" alt="Bahamut.AI" className="h-10 w-auto" />
         </div>
         <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map(item => (

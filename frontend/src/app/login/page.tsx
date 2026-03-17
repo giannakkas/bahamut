@@ -35,11 +35,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-bg-primary flex items-center justify-center">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold">
-            <span className="text-accent-violet">BAHAMUT</span>
-            <span className="text-text-muted">.AI</span>
-          </h1>
-          <p className="text-text-secondary text-sm mt-2">Institutional-Grade Trading Intelligence</p>
+          <img src="/logo.png" alt="Bahamut.AI" className="h-16 mx-auto mb-4" />
+          <p className="text-text-secondary text-sm">Institutional-Grade Trading Intelligence</p>
         </div>
 
         <div className="bg-bg-secondary border border-border-default rounded-lg p-6">

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # ── Auth ──
     jwt_secret: str = "dev-jwt-secret-change-in-production-2026"
     jwt_refresh_secret: str = "dev-refresh-secret-change-in-production"
-    jwt_access_expire_minutes: int = 15
+    jwt_access_expire_minutes: int = 1440
     jwt_refresh_expire_days: int = 7
 
     # ── External APIs ──
