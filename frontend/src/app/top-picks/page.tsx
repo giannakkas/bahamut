@@ -30,6 +30,10 @@ export default function TopPicksPage() {
   const [filter, setFilter] = useState('all');
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [countdown, setCountdown] = useState('');
+  const [modal, setModal] = useState<{ symbol: string; reasons: string[]; direction: string; score: number } | null>(null);
+
+  const SCAN_INTERVAL = 30 * 60; // 30 minutes in seconds
 
   const fetchData = useCallback(async () => {
     try {
@@ -44,6 +48,22 @@ export default function TopPicksPage() {
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Countdown timer
+  useEffect(() => {
+    const tick = () => {
+      if (!data?.scanned_at) { setCountdown('--:--'); return; }
+      const scannedAt = new Date(data.scanned_at).getTime();
+      const nextScan = scannedAt + SCAN_INTERVAL * 1000;
+      const remaining = Math.max(0, Math.floor((nextScan - Date.now()) / 1000));
+      const min = Math.floor(remaining / 60);
+      const sec = remaining % 60;
+      setCountdown(remaining <= 0 ? 'Scanning...' : `${min}:${sec.toString().padStart(2, '0')}`);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [data?.scanned_at]);
 
   const triggerScan = async () => {
     setScanning(true);
@@ -90,10 +110,16 @@ export default function TopPicksPage() {
               AI scanner ranks all assets by opportunity strength · Last scan: {scanTime}
             </p>
           </div>
-          <button onClick={triggerScan} disabled={scanning}
-            className="bg-accent-violet hover:bg-accent-violet/90 text-white font-semibold px-4 py-1.5 rounded-md text-sm disabled:opacity-50 shrink-0">
-            {scanning ? 'Scanning ~2 min...' : 'Scan Now'}
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <div className="text-[10px] text-text-muted uppercase tracking-wider">Next scan</div>
+              <div className="text-sm font-mono font-bold text-accent-violet">{countdown}</div>
+            </div>
+            <button onClick={triggerScan} disabled={scanning}
+              className="bg-accent-violet hover:bg-accent-violet/90 text-white font-semibold px-4 py-1.5 rounded-md text-sm disabled:opacity-50 shrink-0">
+              {scanning ? 'Scanning ~2 min...' : 'Scan Now'}
+            </button>
+          </div>
         </div>
 
         {/* Top 5 Cards */}
@@ -234,8 +260,14 @@ export default function TopPicksPage() {
                       <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.adx > 25 ? 'text-accent-emerald' : 'text-text-muted'}`}>
                         {r.adx}
                       </td>
-                      <td className="py-2.5 px-4 text-xs text-text-muted max-w-[200px] truncate">
-                        {r.reasons?.join(' · ')}
+                      <td className="py-2.5 px-4">
+                        <button
+                          onClick={() => setModal({ symbol: r.symbol, reasons: r.reasons || [], direction: r.direction, score: r.score })}
+                          className="text-xs text-accent-violet hover:text-accent-violet/80 hover:underline text-left max-w-[200px] truncate cursor-pointer"
+                          title="Click to see full analysis"
+                        >
+                          {r.reasons?.join(' · ') || '—'}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -254,6 +286,52 @@ export default function TopPicksPage() {
           Scores above 70 = strong opportunity. Scores below 30 = no clear setup.
         </div>
       </div>
+
+      {/* Reasons Modal */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setModal(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative bg-bg-secondary border border-border-default rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`text-2xl font-bold ${modal.direction === 'LONG' ? 'text-accent-emerald' : modal.direction === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted'}`}>
+                  {modal.direction === 'LONG' ? '▲' : '▼'}
+                </span>
+                <div>
+                  <div className="text-lg font-bold">{modal.symbol}</div>
+                  <div className={`text-sm font-semibold ${modal.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>
+                    {modal.direction} · Score {modal.score}/100
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setModal(null)} className="text-text-muted hover:text-text-primary text-xl leading-none p-1">✕</button>
+            </div>
+
+            <div className="mb-4">
+              <div className="text-xs text-text-muted uppercase tracking-wider mb-2">Why this asset scored high</div>
+              <div className="space-y-2">
+                {modal.reasons.length > 0 ? modal.reasons.map((reason, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 bg-bg-tertiary rounded-lg border border-border-default">
+                    <span className="text-accent-violet font-bold text-sm mt-0.5">{i + 1}</span>
+                    <span className="text-sm text-text-primary leading-relaxed">{reason}</span>
+                  </div>
+                )) : (
+                  <div className="text-sm text-text-muted p-3">No specific reasons recorded.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <a href="/agent-council" className="flex-1 text-center py-2 bg-accent-violet/20 text-accent-violet rounded-lg text-sm font-semibold hover:bg-accent-violet/30 transition-colors">
+                Deep Analysis in Agent Council
+              </a>
+              <button onClick={() => setModal(null)} className="px-4 py-2 bg-bg-tertiary text-text-secondary rounded-lg text-sm hover:bg-bg-surface transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
