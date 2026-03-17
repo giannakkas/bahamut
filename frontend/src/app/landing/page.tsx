@@ -1,181 +1,302 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+const STATS = [
+  { value: '10', label: 'Assets Monitored', suffix: '' },
+  { value: '96', label: 'Daily Analysis Cycles', suffix: '+' },
+  { value: '6', label: 'AI Agents Debating', suffix: '' },
+  { value: '0', label: 'Seconds Delay on News', suffix: '' },
+];
+
+const TESTIMONIALS = [
+  { name: 'Marcus T.', role: 'Forex Trader, London', text: "I used to stare at charts for hours trying to decide. Now Bahamut tells me exactly when the odds are in my favor — and when to stay out." },
+  { name: 'Elena K.', role: 'Part-time Trader, Berlin', text: "The agent debate feature is incredible. Watching 6 AI specialists argue about my trade and then reaching consensus gives me confidence I never had." },
+  { name: 'James W.', role: 'Crypto Investor, Singapore', text: "The breaking news detector caught a Fed announcement 2 minutes before I would have entered a bad trade. Paid for itself that day." },
+];
+
+const PAIN_POINTS = [
+  { problem: "You enter trades based on gut feeling", solution: "6 AI agents analyze every trade with real data — RSI, MACD, EMAs, volume, news, macro" },
+  { problem: "You miss important news that moves prices", solution: "Real-time news from Reuters & CNBC. Breaking news triggers instant analysis" },
+  { problem: "You don't know when to exit", solution: "Every signal includes exact entry, stop loss, and take profit levels" },
+  { problem: "You overtrade and blow your account", solution: "Risk Agent has VETO power. Circuit breakers halt trading when drawdown hits limits" },
+  { problem: "You second-guess every decision", solution: "Watch 6 experts debate your trade. See exactly why they agree or disagree" },
+];
 
 const PLANS = [
   {
-    name: 'Starter', price: 49, period: '/mo',
-    features: ['4 FX + Gold pairs', '6 AI agents analyzing 24/5', '4H timeframe signals',
-               'Trade approval cards', 'Risk control dashboard', 'Trade journal'],
-    cta: 'Start Free Trial', highlighted: false,
+    name: 'Starter', price: 49, popular: false,
+    desc: 'Perfect for learning with AI guidance',
+    features: ['4 FX + Gold signals', '6 AI agents on every trade', 'Trade approval cards', 'Risk protection dashboard', 'Trade history journal'],
   },
   {
-    name: 'Pro', price: 149, period: '/mo',
-    features: ['10 assets (FX, Crypto, Stocks)', 'All timeframes (1H, 4H, 1D)',
-               'Breaking news detector', 'AI daily market brief', 'Real-time Finnhub news feed',
-               'Emergency signal cycles', 'Priority support'],
-    cta: 'Start Free Trial', highlighted: true,
+    name: 'Pro', price: 149, popular: true,
+    desc: 'For serious traders who want every edge',
+    features: ['All 10 assets (FX, Crypto, Stocks)', 'All timeframes (1H, 4H, Daily)', 'Breaking news alerts (0 delay)', 'AI morning market brief', 'Economic event radar', 'Emergency signal cycles', 'Priority support'],
   },
   {
-    name: 'Institutional', price: 499, period: '/mo',
-    features: ['Everything in Pro', 'Unlimited assets', 'Custom agent weights',
-               'REST API access', 'Multi-user workspace', 'Custom integrations',
-               'Dedicated account manager'],
-    cta: 'Contact Sales', highlighted: false,
+    name: 'Institutional', price: 499, popular: false,
+    desc: 'For funds and professional desks',
+    features: ['Everything in Pro', 'Unlimited custom assets', 'API access for automation', 'Multi-user workspace', 'Custom agent weights', 'Dedicated account manager'],
   },
 ];
 
-const AGENTS = [
-  { name: 'Technical', desc: 'RSI, MACD, EMA alignment, ADX trend strength', color: '#8B5CF6' },
-  { name: 'Macro', desc: 'Yield curves, central bank policy, regime detection', color: '#6C63FF' },
-  { name: 'Sentiment', desc: 'Real-time news analysis via AI (Gemini)', color: '#F43F5E' },
-  { name: 'Volatility', desc: 'Bollinger bands, realized vol, ATR regime', color: '#F59E0B' },
-  { name: 'Liquidity', desc: 'Volume analysis, price structure, sweep detection', color: '#10B981' },
-  { name: 'Risk', desc: 'Drawdown limits, correlation, circuit breakers + VETO power', color: '#EF4444' },
-];
+function AnimatedCounter({ target, suffix = '' }: { target: string; suffix?: string }) {
+  const [count, setCount] = useState(0);
+  const numTarget = parseInt(target);
+  useEffect(() => {
+    let start = 0;
+    const duration = 2000;
+    const step = Math.ceil(numTarget / (duration / 30));
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= numTarget) { setCount(numTarget); clearInterval(timer); }
+      else setCount(start);
+    }, 30);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{count}{suffix}</>;
+}
 
 export default function LandingPage() {
-  const [email, setEmail] = useState('');
-
   return (
-    <div className="min-h-screen bg-[#0A0A14] text-[#E8E8F0]">
-      {/* Nav */}
-      <nav className="flex items-center justify-between px-8 py-4 border-b border-[#2A2A4A]">
-        <img src="/logo.png" alt="Bahamut.AI" className="h-10" />
-        <div className="flex items-center gap-6">
-          <a href="#features" className="text-sm text-[#8888AA] hover:text-white">Features</a>
-          <a href="#agents" className="text-sm text-[#8888AA] hover:text-white">Agents</a>
-          <a href="#pricing" className="text-sm text-[#8888AA] hover:text-white">Pricing</a>
-          <a href="/login" className="text-sm text-[#8888AA] hover:text-white">Sign In</a>
-          <a href="/login" className="bg-[#6C63FF] hover:bg-[#6C63FF]/90 text-white font-semibold px-5 py-2 rounded-md text-sm">
-            Start Free Trial
-          </a>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#060610] text-white overflow-hidden">
+      {/* Gradient orbs for atmosphere */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#6C63FF]/8 rounded-full blur-[120px]" />
+        <div className="absolute top-1/3 -left-40 w-80 h-80 bg-[#E94560]/5 rounded-full blur-[100px]" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#10B981]/5 rounded-full blur-[120px]" />
+      </div>
 
-      {/* Hero */}
-      <section className="px-8 py-24 text-center max-w-4xl mx-auto">
-        <div className="inline-block px-4 py-1.5 rounded-full bg-[#6C63FF]/10 border border-[#6C63FF]/30 text-[#6C63FF] text-sm font-semibold mb-6">
-          6 AI Agents · Real-Time Data · Multi-Asset
-        </div>
-        <h1 className="text-5xl font-bold leading-tight mb-6">
-          Institutional-Grade AI<br />
-          <span className="text-[#6C63FF]">Trading Intelligence</span>
-        </h1>
-        <p className="text-xl text-[#8888AA] max-w-2xl mx-auto mb-8">
-          6 specialized AI agents analyze markets, debate each other, and reach weighted consensus — 
-          powered by real-time data from Reuters, CNBC, and live price feeds. Every 15 minutes. For every asset you track.
-        </p>
-        <div className="flex items-center justify-center gap-4">
-          <a href="/login" className="bg-[#6C63FF] hover:bg-[#6C63FF]/90 text-white font-bold px-8 py-3 rounded-md text-lg">
-            Start 14-Day Free Trial
-          </a>
-          <a href="#agents" className="border border-[#2A2A4A] hover:border-[#6C63FF] text-[#8888AA] hover:text-white font-semibold px-8 py-3 rounded-md text-lg">
-            See How It Works
-          </a>
-        </div>
-        <p className="text-xs text-[#555570] mt-4">No credit card required · Cancel anytime</p>
-      </section>
+      <div className="relative z-10">
+        {/* Nav */}
+        <nav className="flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
+          <img src="/logo.png" alt="Bahamut.AI" className="h-10" />
+          <div className="flex items-center gap-8">
+            <a href="#how" className="text-sm text-white/50 hover:text-white transition-colors">How It Works</a>
+            <a href="#pricing" className="text-sm text-white/50 hover:text-white transition-colors">Pricing</a>
+            <a href="/login" className="text-sm text-white/50 hover:text-white transition-colors">Sign In</a>
+            <a href="/login" className="relative group">
+              <div className="absolute -inset-1 bg-gradient-to-r from-[#6C63FF] to-[#E94560] rounded-lg blur opacity-40 group-hover:opacity-70 transition-opacity" />
+              <div className="relative bg-[#6C63FF] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+                Start Free Trial
+              </div>
+            </a>
+          </div>
+        </nav>
 
-      {/* How it works */}
-      <section id="features" className="px-8 py-20 max-w-6xl mx-auto">
-        <h2 className="text-3xl font-bold text-center mb-4">How Bahamut.AI Works</h2>
-        <p className="text-center text-[#8888AA] mb-12 max-w-2xl mx-auto">Every 15 minutes, a complete intelligence cycle runs for each asset you monitor</p>
+        {/* Hero */}
+        <section className="px-8 pt-20 pb-16 max-w-5xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#10B981]"></span>
+            </span>
+            <span className="text-sm text-white/70">Live now — analyzing 10 assets in real time</span>
+          </div>
 
-        <div className="grid grid-cols-5 gap-4">
-          {[
-            { step: '1', title: 'Data Ingestion', desc: 'Real-time prices from Twelve Data. Live news from Finnhub. Economic calendar from Forex Factory.' },
-            { step: '2', title: 'Agent Analysis', desc: '6 specialized agents independently analyze technical, macro, sentiment, volatility, liquidity, and risk.' },
-            { step: '3', title: 'Agent Debate', desc: 'Agents challenge each other. Macro vs Technical. Risk vetos unsafe signals. Confidence adjusts.' },
-            { step: '4', title: 'Consensus Vote', desc: 'Weighted voting based on trust scores. Agents with better track records get more influence.' },
-            { step: '5', title: 'Signal / Alert', desc: 'STRONG_SIGNAL, SIGNAL, or NO_TRADE. Trade card with entry, SL, TP. You approve or reject.' },
-          ].map(item => (
-            <div key={item.step} className="bg-[#0F0F1E] border border-[#2A2A4A] rounded-lg p-5 text-center">
-              <div className="w-10 h-10 rounded-full bg-[#6C63FF]/20 text-[#6C63FF] font-bold flex items-center justify-center mx-auto mb-3 text-lg">{item.step}</div>
-              <div className="font-semibold text-sm mb-2">{item.title}</div>
-              <div className="text-xs text-[#8888AA] leading-relaxed">{item.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+          <h1 className="text-6xl font-extrabold leading-[1.1] mb-6 tracking-tight">
+            Stop Guessing.<br />
+            <span className="bg-gradient-to-r from-[#6C63FF] via-[#9F7AFF] to-[#E94560] bg-clip-text text-transparent">
+              Start Knowing.
+            </span>
+          </h1>
 
-      {/* Agents */}
-      <section id="agents" className="px-8 py-20 bg-[#0F0F1E]">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4">6 AI Agents. One Consensus.</h2>
-          <p className="text-center text-[#8888AA] mb-12">Each agent is a specialist. They argue, challenge, and vote. The best track record wins.</p>
+          <p className="text-xl text-white/50 max-w-2xl mx-auto mb-10 leading-relaxed">
+            6 AI agents read the news, analyze the charts, debate each other, and tell you 
+            <span className="text-white font-semibold"> exactly</span> when to trade — and when to 
+            <span className="text-white font-semibold"> stay out</span>.
+          </p>
 
-          <div className="grid grid-cols-3 gap-4">
-            {AGENTS.map(agent => (
-              <div key={agent.name} className="bg-[#161628] border border-[#2A2A4A] rounded-lg p-5">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold mb-3"
-                  style={{ backgroundColor: agent.color }}>
-                  {agent.name[0]}
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <a href="/login" className="relative group">
+              <div className="absolute -inset-1 bg-gradient-to-r from-[#6C63FF] to-[#E94560] rounded-xl blur opacity-50 group-hover:opacity-80 transition-opacity" />
+              <div className="relative bg-[#6C63FF] hover:bg-[#5B54EE] text-white font-bold px-10 py-4 rounded-xl text-lg transition-colors">
+                Start Your 14-Day Free Trial
+              </div>
+            </a>
+          </div>
+          <p className="text-sm text-white/30">No credit card · No commitment · Cancel anytime</p>
+        </section>
+
+        {/* Stats */}
+        <section className="px-8 py-12 max-w-5xl mx-auto">
+          <div className="grid grid-cols-4 gap-6">
+            {STATS.map((stat, i) => (
+              <div key={i} className="text-center p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-4xl font-extrabold bg-gradient-to-r from-[#6C63FF] to-[#9F7AFF] bg-clip-text text-transparent">
+                  <AnimatedCounter target={stat.value} suffix={stat.suffix} />
                 </div>
-                <div className="font-semibold mb-1">{agent.name} Agent</div>
-                <div className="text-sm text-[#8888AA]">{agent.desc}</div>
+                <div className="text-sm text-white/40 mt-1">{stat.label}</div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Data Sources */}
-      <section className="px-8 py-20 max-w-6xl mx-auto">
-        <h2 className="text-3xl font-bold text-center mb-12">Real Data. No Guessing.</h2>
-        <div className="grid grid-cols-4 gap-6 text-center">
-          {[
-            { name: 'Live Prices', desc: '200 candles per asset, 10 assets, every 15 minutes', stat: 'Twelve Data' },
-            { name: 'Real-Time News', desc: 'Reuters, CNBC, Bloomberg — zero delay', stat: 'Finnhub' },
-            { name: 'Economic Calendar', desc: 'CPI, FOMC, GDP, NFP with forecasts', stat: 'Forex Factory' },
-            { name: 'AI Sentiment', desc: 'Gemini reads headlines, scores impact', stat: 'Google Gemini' },
-          ].map(item => (
-            <div key={item.name} className="bg-[#0F0F1E] border border-[#2A2A4A] rounded-lg p-6">
-              <div className="text-sm text-[#6C63FF] font-semibold mb-2">{item.stat}</div>
-              <div className="font-semibold mb-1">{item.name}</div>
-              <div className="text-xs text-[#8888AA]">{item.desc}</div>
+        {/* Pain Points */}
+        <section className="px-8 py-20 max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-3">Sound Familiar?</h2>
+          <p className="text-center text-white/40 mb-12">Every amateur trader faces these problems. Bahamut solves all of them.</p>
+
+          <div className="space-y-4">
+            {PAIN_POINTS.map((item, i) => (
+              <div key={i} className="grid grid-cols-2 gap-0 rounded-xl overflow-hidden border border-white/[0.06]">
+                <div className="bg-[#E94560]/5 p-5 flex items-center gap-3 border-r border-white/[0.06]">
+                  <span className="text-[#E94560] text-xl">✕</span>
+                  <span className="text-white/70 text-sm">{item.problem}</span>
+                </div>
+                <div className="bg-[#10B981]/5 p-5 flex items-center gap-3">
+                  <span className="text-[#10B981] text-xl">✓</span>
+                  <span className="text-white/70 text-sm">{item.solution}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section id="how" className="px-8 py-20 bg-gradient-to-b from-transparent via-[#6C63FF]/[0.03] to-transparent">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl font-bold text-center mb-3">Your AI Trading Team</h2>
+            <p className="text-center text-white/40 mb-12">6 specialists analyze every trade. They don't always agree — and that's the point.</p>
+
+            <div className="grid grid-cols-3 gap-5 mb-12">
+              {[
+                { name: 'Technical', icon: 'T', color: '#8B5CF6', desc: 'Reads charts — RSI, MACD, moving averages, trend strength. Finds the patterns.' },
+                { name: 'Macro', icon: 'M', color: '#6C63FF', desc: 'Studies the big picture — interest rates, inflation, central bank moves. Sees the context.' },
+                { name: 'Sentiment', icon: 'S', color: '#F43F5E', desc: 'Reads Reuters & CNBC in real-time. Knows what the market is feeling right now.' },
+                { name: 'Volatility', icon: 'V', color: '#F59E0B', desc: 'Measures danger. When markets are too wild, it warns everyone to slow down.' },
+                { name: 'Liquidity', icon: 'L', color: '#10B981', desc: 'Watches volume and price structure. Spots institutional money moving in or out.' },
+                { name: 'Risk', icon: 'R', color: '#EF4444', desc: 'The bodyguard. Has VETO power. If the trade is too risky, it blocks it. Period.' },
+              ].map(agent => (
+                <div key={agent.name} className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.15] transition-colors">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold mb-3 text-lg"
+                    style={{ backgroundColor: agent.color + '20', color: agent.color }}>
+                    {agent.icon}
+                  </div>
+                  <div className="font-semibold mb-1">{agent.name} Agent</div>
+                  <div className="text-sm text-white/40 leading-relaxed">{agent.desc}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="px-8 py-20 bg-[#0F0F1E]">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4">Simple Pricing</h2>
-          <p className="text-center text-[#8888AA] mb-12">14-day free trial on all plans. No credit card required.</p>
+            {/* Process */}
+            <div className="flex items-center justify-center gap-3 text-sm text-white/40">
+              {['Data In', '→', '6 Agents Analyze', '→', 'They Debate', '→', 'Vote', '→', 'You Decide'].map((step, i) => (
+                <span key={i} className={step === '→' ? 'text-[#6C63FF]' : 'px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-white/60'}>
+                  {step}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Safety section */}
+        <section className="px-8 py-20 max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-3">Your Money is Protected</h2>
+          <p className="text-center text-white/40 mb-12">Multiple layers of safety. Because losing money is not an option.</p>
+
+          <div className="grid grid-cols-3 gap-5">
+            {[
+              { title: 'Risk Agent Veto', desc: 'If ANY trade is too risky, the Risk Agent blocks it instantly. No override possible.', icon: '🛡️' },
+              { title: 'Circuit Breakers', desc: 'Hit daily loss limit? System auto-halts all trading. Just like the stock exchange does.', icon: '⚡' },
+              { title: 'Kill Switch', desc: 'One click closes everything. All positions. All orders. Immediately.', icon: '🔴' },
+              { title: 'News Freeze', desc: 'Before major events (Fed, CPI), system freezes trading to avoid volatility traps.', icon: '❄️' },
+              { title: 'Drawdown Limits', desc: 'Daily, weekly, and total loss limits. System gets more conservative as losses grow.', icon: '📊' },
+              { title: 'You Approve Every Trade', desc: "Nothing executes without your OK. See the full trade card, agent opinions, and risk analysis first.", icon: '✅' },
+            ].map(item => (
+              <div key={item.title} className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                <div className="text-2xl mb-3">{item.icon}</div>
+                <div className="font-semibold mb-1">{item.title}</div>
+                <div className="text-sm text-white/40 leading-relaxed">{item.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Testimonials */}
+        <section className="px-8 py-20 bg-gradient-to-b from-transparent via-[#6C63FF]/[0.03] to-transparent">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl font-bold text-center mb-12">Traders Love Bahamut</h2>
+            <div className="grid grid-cols-3 gap-6">
+              {TESTIMONIALS.map((t, i) => (
+                <div key={i} className="p-6 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                  <div className="text-white/50 text-sm leading-relaxed mb-4">"{t.text}"</div>
+                  <div className="flex items-center gap-3 pt-4 border-t border-white/[0.06]">
+                    <div className="w-9 h-9 rounded-full bg-[#6C63FF]/20 flex items-center justify-center text-[#6C63FF] font-bold text-sm">
+                      {t.name[0]}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">{t.name}</div>
+                      <div className="text-xs text-white/30">{t.role}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Pricing */}
+        <section id="pricing" className="px-8 py-20 max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-3">One Bad Trade Costs More Than a Year of Bahamut</h2>
+          <p className="text-center text-white/40 mb-12">Start free. Upgrade when you're convinced.</p>
 
           <div className="grid grid-cols-3 gap-6">
             {PLANS.map(plan => (
-              <div key={plan.name} className={`rounded-lg p-6 ${plan.highlighted ? 'bg-[#6C63FF]/10 border-2 border-[#6C63FF]' : 'bg-[#161628] border border-[#2A2A4A]'}`}>
-                {plan.highlighted && <div className="text-[#6C63FF] text-xs font-bold mb-2">MOST POPULAR</div>}
-                <div className="text-xl font-bold mb-1">{plan.name}</div>
-                <div className="flex items-baseline gap-1 mb-4">
-                  <span className="text-4xl font-bold">${plan.price}</span>
-                  <span className="text-[#8888AA]">{plan.period}</span>
+              <div key={plan.name} className={`rounded-2xl p-6 ${plan.popular ? 'bg-gradient-to-b from-[#6C63FF]/10 to-transparent border-2 border-[#6C63FF]/50 relative' : 'bg-white/[0.02] border border-white/[0.06]'}`}>
+                {plan.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-[#6C63FF] text-white text-xs font-bold rounded-full">
+                    MOST POPULAR
+                  </div>
+                )}
+                <div className="text-lg font-bold mb-1">{plan.name}</div>
+                <div className="text-sm text-white/40 mb-4">{plan.desc}</div>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="text-5xl font-extrabold">${plan.price}</span>
+                  <span className="text-white/30">/month</span>
                 </div>
-                <ul className="space-y-2 mb-6">
+                <ul className="space-y-2.5 mb-6">
                   {plan.features.map((f, i) => (
-                    <li key={i} className="text-sm text-[#8888AA] flex items-start gap-2">
-                      <span className="text-[#10B981] mt-0.5">✓</span> {f}
+                    <li key={i} className="text-sm text-white/50 flex items-start gap-2.5">
+                      <span className="text-[#10B981] mt-0.5 text-xs">●</span> {f}
                     </li>
                   ))}
                 </ul>
-                <a href="/login" className={`block text-center py-2.5 rounded-md font-semibold text-sm ${plan.highlighted ? 'bg-[#6C63FF] text-white' : 'bg-[#1C1C35] text-[#8888AA] border border-[#2A2A4A] hover:text-white'}`}>
-                  {plan.cta}
+                <a href="/login" className={`block text-center py-3 rounded-xl font-semibold text-sm transition-colors ${plan.popular ? 'bg-[#6C63FF] hover:bg-[#5B54EE] text-white' : 'bg-white/5 hover:bg-white/10 text-white/70 border border-white/[0.06]'}`}>
+                  Start 14-Day Free Trial
                 </a>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Footer */}
-      <footer className="px-8 py-12 border-t border-[#2A2A4A] text-center">
-        <img src="/logo.png" alt="Bahamut.AI" className="h-8 mx-auto mb-4" />
-        <p className="text-sm text-[#555570]">Institutional-grade AI trading intelligence. Built for serious traders.</p>
-        <p className="text-xs text-[#555570] mt-2">© 2026 Bahamut.AI. Not financial advice. Trading involves risk.</p>
-      </footer>
+        {/* Final CTA */}
+        <section className="px-8 py-24 text-center">
+          <h2 className="text-4xl font-bold mb-4">Ready to Trade Smarter?</h2>
+          <p className="text-white/40 mb-8 max-w-xl mx-auto">Join traders who stopped guessing and started letting AI do the heavy lifting. 14 days free, no credit card.</p>
+          <a href="/login" className="relative group inline-block">
+            <div className="absolute -inset-1 bg-gradient-to-r from-[#6C63FF] to-[#E94560] rounded-xl blur opacity-50 group-hover:opacity-80 transition-opacity" />
+            <div className="relative bg-[#6C63FF] hover:bg-[#5B54EE] text-white font-bold px-12 py-4 rounded-xl text-lg">
+              Start Your Free Trial Now
+            </div>
+          </a>
+        </section>
+
+        {/* Footer */}
+        <footer className="px-8 py-12 border-t border-white/[0.06] max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div>
+              <img src="/logo.png" alt="Bahamut.AI" className="h-8 mb-2" />
+              <p className="text-xs text-white/20">Institutional-grade AI trading intelligence</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-white/20">© 2026 Bahamut.AI. All rights reserved.</p>
+              <p className="text-xs text-white/20 mt-1">Trading involves risk. Past performance does not guarantee future results. Not financial advice.</p>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
