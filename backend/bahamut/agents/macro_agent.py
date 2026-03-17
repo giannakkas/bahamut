@@ -69,12 +69,34 @@ class MacroAgent(BaseAgent):
             score -= 10
 
         # Convert to bias
-        if score > 10:
+        # Use indicators from price data if available for better analysis
+        indicators = features.get("indicators", {})
+        ema_20 = indicators.get("ema_20", 0)
+        ema_200 = indicators.get("ema_200", 0)
+        close = indicators.get("close", 0)
+        
+        # EMA structure adds to macro view
+        if close and ema_200:
+            if close > ema_200 * 1.01:
+                score += 8
+                evidence.append(Evidence(
+                    claim="Price above 200 EMA - macro uptrend intact",
+                    data_point=f"Close={close:.5f} > EMA200={ema_200:.5f}", weight=0.6,
+                ))
+            elif close < ema_200 * 0.99:
+                score -= 8
+                evidence.append(Evidence(
+                    claim="Price below 200 EMA - macro downtrend",
+                    data_point=f"Close={close:.5f} < EMA200={ema_200:.5f}", weight=0.6,
+                ))
+
+        # Looser thresholds - agents should have opinions
+        if score > 5:
             bias = "LONG"
-            confidence = min(0.90, 0.5 + (score / 80) * 0.4)
-        elif score < -10:
+            confidence = min(0.85, 0.40 + (score / 60) * 0.45)
+        elif score < -5:
             bias = "SHORT"
-            confidence = min(0.90, 0.5 + (abs(score) / 80) * 0.4)
+            confidence = min(0.85, 0.40 + (abs(score) / 60) * 0.45)
         else:
             bias = "NEUTRAL"
             confidence = 0.35

@@ -70,9 +70,22 @@ class RiskAgent(BaseAgent):
                 data_point=f"DD_daily={daily_dd:.2%}, exposure={net_exposure:.2%}", weight=0.5,
             ))
 
+        # Risk agent provides mild directional opinion based on technical structure
+        ind = features.get("indicators", {})
+        r_close = ind.get("close", 0)
+        r_ema20 = ind.get("ema_20", 0)
+        r_rsi = ind.get("rsi_14", 50)
+        
+        risk_bias = "NEUTRAL"
+        if r_close and r_ema20:
+            if r_close > r_ema20 and r_rsi < 70:
+                risk_bias = "LONG"
+            elif r_close < r_ema20 and r_rsi > 30:
+                risk_bias = "SHORT"
+
         return self._make_output(
             request=request,
-            bias="NEUTRAL",
+            bias=risk_bias,
             confidence=0.8 if not has_critical_flags else 0.95,
             evidence=evidence,
             risk_notes=risk_notes,

@@ -77,12 +77,28 @@ class LiquidityAgent(BaseAgent):
             ))
 
         # Convert to bias
-        if score > 10:
+        # EMA structure adds to liquidity view
+        if close and ema_20 and ema_50:
+            if close > ema_20 > ema_50:
+                score += 8
+                evidence.append(Evidence(
+                    claim="Price structure bullish (above key EMAs)",
+                    data_point=f"Close > EMA20 > EMA50", weight=0.5,
+                ))
+            elif close < ema_20 < ema_50:
+                score -= 8
+                evidence.append(Evidence(
+                    claim="Price structure bearish (below key EMAs)",
+                    data_point=f"Close < EMA20 < EMA50", weight=0.5,
+                ))
+
+        # Looser thresholds
+        if score > 5:
             bias = "LONG"
-            confidence = min(0.85, 0.5 + score / 80)
-        elif score < -10:
+            confidence = min(0.80, 0.40 + score / 50)
+        elif score < -5:
             bias = "SHORT"
-            confidence = min(0.85, 0.5 + abs(score) / 80)
+            confidence = min(0.80, 0.40 + abs(score) / 50)
         else:
             bias = "NEUTRAL"
             confidence = 0.35

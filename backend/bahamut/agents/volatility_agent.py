@@ -60,10 +60,40 @@ class VolatilityAgent(BaseAgent):
         if atr_pct > 0.01:
             risk_notes.append(f"Wide ATR ({atr_pct:.3%} of price) - volatile conditions")
 
-        # Vol agent is mostly NEUTRAL - it assesses conditions, not direction
+        # Vol agent also provides directional bias based on BB position
+        indicators = features.get("indicators", {})
+        close_price = indicators.get("close", 0)
+        bb_upper = indicators.get("bb_upper", 0)
+        bb_lower = indicators.get("bb_lower", 0)
+        bb_mid = indicators.get("bb_middle", 0)
+        
+        if close_price and bb_upper and bb_lower:
+            if close_price > bb_mid:
+                score += 5
+            elif close_price < bb_mid:
+                score -= 5
+            # Near bands = reversal potential
+            if bb_upper > 0 and close_price > bb_upper * 0.998:
+                score -= 8  # overbought
+                evidence.append(Evidence(
+                    claim="Price at upper Bollinger Band - overbought risk",
+                    data_point=f"Close near BB upper", weight=0.6,
+                ))
+            elif bb_lower > 0 and close_price < bb_lower * 1.002:
+                score += 8  # oversold
+                evidence.append(Evidence(
+                    claim="Price at lower Bollinger Band - oversold bounce potential",
+                    data_point=f"Close near BB lower", weight=0.6,
+                ))
+
         bias = "NEUTRAL"
         confidence = 0.5 + abs(score) / 100
 
+        if score > 5:
+            bias = "LONG"
+        elif score < -5:
+            bias = "SHORT"
+        
         if score < -15:
             risk_notes.append("VOLATILITY AGENT RECOMMENDS CAUTION: reduce exposure or wait")
         elif score > 10:

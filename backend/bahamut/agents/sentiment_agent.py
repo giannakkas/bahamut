@@ -26,8 +26,7 @@ class SentimentAgent(BaseAgent):
         news_headlines = await self._fetch_news(asset)
 
         # Try Gemini first (FREE), fallback to Claude
-        import os as _os
-        gemini_key = settings.gemini_api_key or _os.environ.get('GEMINI_API_KEY', '')
+        gemini_key = settings.gemini_api_key or __import__('os').environ.get('GEMINI_API_KEY', '')
         if gemini_key:
             try:
                 return await self._gemini_analysis(request, indicators, news_headlines)

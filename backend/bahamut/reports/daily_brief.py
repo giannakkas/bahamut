@@ -70,8 +70,7 @@ Respond ONLY with this JSON:
 {{"overview": "...", "key_movers": "...", "signal_summary": "...", "risk_events": "...", "outlook": "...", "regime_assessment": "RISK_ON or RISK_OFF or MIXED"}}"""
 
     # Try Gemini
-    import os
-    gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
+    gemini_key = settings.gemini_api_key or __import__('os').environ.get('GEMINI_API_KEY', '')
     if gemini_key:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
