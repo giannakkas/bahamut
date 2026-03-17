@@ -61,7 +61,7 @@ export default function AgentCouncilPage() {
             <h1 className="text-2xl font-bold">Agent Council</h1>
             <p className="text-sm text-text-secondary mt-1">
               {agentHealth?.agent_count || 0} agents active
-              {agentHealth?.oanda_configured ? ' · OANDA connected' : ' · Demo data'}
+              {agentHealth?.data_source !== 'none' ? ` · ${agentHealth.data_source} connected` : ' · Demo data'}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -121,8 +121,8 @@ export default function AgentCouncilPage() {
 
             {/* Data source badge */}
             <div className="mt-3 flex items-center gap-3">
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${cycleResult.data_source === 'oanda_live' ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'}`}>
-                {cycleResult.data_source === 'oanda_live' ? 'LIVE OANDA DATA' : 'DEMO DATA'}
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${cycleResult.data_source?.includes('live') ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'}`}>
+                {cycleResult.data_source?.includes('live') ? 'LIVE DATA' : 'DEMO DATA'}
               </span>
               {cycleResult.market_price && (
                 <span className="text-xs text-text-muted">Price: <span className="font-mono text-text-primary">{cycleResult.market_price}</span></span>
