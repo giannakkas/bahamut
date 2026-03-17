@@ -37,7 +37,7 @@ async def get_latest_cycle(asset: str, user: User = Depends(get_current_user)):
 
 @router.get("/latest-cycles")
 async def get_all_latest_cycles(user: User = Depends(get_current_user)):
-    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]
+    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "ETHUSD", "AAPL", "TSLA", "NVDA", "META"]
     results = {}
     if redis_manager.redis:
         for asset in assets:
@@ -129,7 +129,7 @@ async def macro_overview(user: User = Depends(get_current_user)):
     """Cross-asset overview with latest prices and indicators."""
     from bahamut.ingestion.market_data import market_data
 
-    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]
+    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "ETHUSD", "AAPL", "TSLA", "NVDA", "META"]
     overview = {}
 
     for asset in assets:

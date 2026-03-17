@@ -53,6 +53,10 @@ celery_app.conf.update(
             "task": "bahamut.features.tasks.detect_regime",
             "schedule": 300.0,
         },
+        "run-stock-cycles": {
+            "task": "bahamut.agents.tasks.run_stock_cycles",
+            "schedule": 1800.0,  # Every 30 minutes
+        },
         "run-signal-cycles": {
             "task": "bahamut.agents.tasks.run_all_signal_cycles",
             "schedule": settings.signal_cycle_interval_seconds,

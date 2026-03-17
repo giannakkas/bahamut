@@ -1,6 +1,7 @@
 """Celery tasks for agent orchestration with live market data."""
 import asyncio
 import json
+from datetime import datetime, timezone
 from bahamut.celery_app import celery_app
 from bahamut.agents.orchestrator import orchestrator
 from bahamut.agents.persistence import save_cycle_to_db
@@ -8,12 +9,30 @@ import structlog
 
 logger = structlog.get_logger()
 
-ACTIVE_ASSETS = [
+# Assets monitored - split by market type for scheduling
+FX_ASSETS = [
     {"symbol": "EURUSD", "asset_class": "fx"},
     {"symbol": "GBPUSD", "asset_class": "fx"},
     {"symbol": "USDJPY", "asset_class": "fx"},
+]
+
+COMMODITY_ASSETS = [
     {"symbol": "XAUUSD", "asset_class": "commodities"},
 ]
+
+CRYPTO_ASSETS = [
+    {"symbol": "BTCUSD", "asset_class": "crypto"},
+    {"symbol": "ETHUSD", "asset_class": "crypto"},
+]
+
+STOCK_ASSETS = [
+    {"symbol": "AAPL", "asset_class": "indices"},
+    {"symbol": "TSLA", "asset_class": "indices"},
+    {"symbol": "NVDA", "asset_class": "indices"},
+    {"symbol": "META", "asset_class": "indices"},
+]
+
+ALL_ASSETS = FX_ASSETS + COMMODITY_ASSETS + CRYPTO_ASSETS + STOCK_ASSETS
 
 
 def _cache_to_redis(asset: str, result: dict):
@@ -27,34 +46,50 @@ def _cache_to_redis(asset: str, result: dict):
         logger.warning("redis_cache_failed", error=str(e))
 
 
-@celery_app.task(name="bahamut.agents.tasks.run_all_signal_cycles")
-def run_all_signal_cycles():
-    logger.info("signal_cycles_batch_started", assets=len(ACTIVE_ASSETS))
+def _run_assets(assets: list, timeframe: str = "4H"):
     loop = asyncio.new_event_loop()
-
-    for asset_info in ACTIVE_ASSETS:
+    for asset_info in assets:
         try:
             result = loop.run_until_complete(
                 orchestrator.run_cycle(
                     asset=asset_info["symbol"],
                     asset_class=asset_info["asset_class"],
-                    timeframe="4H",
+                    timeframe=timeframe,
                     trading_profile="BALANCED",
                 )
             )
             d = result.get("decision", {})
             logger.info("cycle_result", asset=asset_info["symbol"],
                         direction=d.get("direction"), score=d.get("final_score"),
-                        decision=d.get("decision"), source=result.get("data_source"))
+                        source=result.get("data_source"))
 
             _cache_to_redis(asset_info["symbol"], result)
             save_cycle_to_db(result)
 
         except Exception as e:
             logger.exception("cycle_failed", asset=asset_info["symbol"], error=str(e))
-
     loop.close()
-    logger.info("signal_cycles_batch_completed")
+
+
+@celery_app.task(name="bahamut.agents.tasks.run_all_signal_cycles")
+def run_all_signal_cycles():
+    """Runs FX + Commodity + Crypto every 15 min."""
+    logger.info("signal_cycles_fx_crypto_started")
+    _run_assets(FX_ASSETS + COMMODITY_ASSETS + CRYPTO_ASSETS)
+    logger.info("signal_cycles_fx_crypto_completed")
+
+
+@celery_app.task(name="bahamut.agents.tasks.run_stock_cycles")
+def run_stock_cycles():
+    """Runs stocks every 30 min during market hours."""
+    now = datetime.now(timezone.utc)
+    # US market hours: 13:30-20:00 UTC (9:30am-4pm ET)
+    if now.weekday() < 5 and 13 <= now.hour < 20:
+        logger.info("stock_cycles_started")
+        _run_assets(STOCK_ASSETS, timeframe="1D")
+        logger.info("stock_cycles_completed")
+    else:
+        logger.info("stock_cycles_skipped", reason="outside_market_hours")
 
 
 @celery_app.task(name="bahamut.agents.tasks.run_single_cycle")

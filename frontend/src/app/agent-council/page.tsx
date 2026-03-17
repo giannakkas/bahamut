@@ -21,6 +21,14 @@ export default function AgentCouncilPage() {
   const [candles, setCandles] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
+
+  const getAssetClass = (symbol: string) => {
+    if (['XAUUSD', 'XAGUSD'].includes(symbol)) return 'commodities';
+    if (['BTCUSD', 'ETHUSD', 'SOLUSD'].includes(symbol)) return 'crypto';
+    if (['AAPL', 'TSLA', 'NVDA', 'META', 'MSFT', 'AMZN', 'GOOGL', 'SPX', 'IXIC'].includes(symbol)) return 'indices';
+    return 'fx';
+  };
+
   const loadData = async (asset?: string) => {
     const a = asset || selectedAsset;
     const [ts, th, ah, lc] = await Promise.allSettled([
@@ -59,7 +67,7 @@ export default function AgentCouncilPage() {
     setCycling(true);
     setCycleResult(null);
     try {
-      await api.triggerCycle(selectedAsset, selectedAsset === 'XAUUSD' ? 'commodities' : 'fx', selectedTF, selectedProfile);
+      await api.triggerCycle(selectedAsset, getAssetClass(selectedAsset), selectedTF, selectedProfile);
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 2000));
         try {
@@ -104,7 +112,7 @@ export default function AgentCouncilPage() {
           <div className="flex items-center gap-3">
             <select value={selectedAsset} onChange={e => handleAssetChange(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              {['EURUSD','GBPUSD','USDJPY','XAUUSD'].map(a => <option key={a} value={a}>{a}</option>)}
+              {['EURUSD','GBPUSD','USDJPY','XAUUSD','BTCUSD','ETHUSD','AAPL','TSLA','NVDA','META'].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <select value={selectedTF} onChange={e => { setSelectedTF(e.target.value); loadCandles(); }}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">

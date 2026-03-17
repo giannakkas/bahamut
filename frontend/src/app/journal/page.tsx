@@ -46,7 +46,7 @@ export default function TradeJournalPage() {
           <div className="flex items-center gap-3">
             <select value={filterAsset} onChange={e => { setFilterAsset(e.target.value); setLoading(true); }}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              {['ALL', 'EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD'].map(v => <option key={v} value={v}>{v === 'ALL' ? 'All Assets' : v}</option>)}
+              {['ALL', 'EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'BTCUSD', 'ETHUSD', 'AAPL', 'TSLA', 'NVDA', 'META'].map(v => <option key={v} value={v}>{v === 'ALL' ? 'All Assets' : v}</option>)}
             </select>
             <select value={filterDirection} onChange={e => setFilterDirection(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">

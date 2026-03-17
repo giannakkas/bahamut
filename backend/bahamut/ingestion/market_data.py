@@ -147,6 +147,18 @@ class MarketDataService:
                        "ema_20": 1.2700, "ema_50": 1.2685, "ema_200": 1.2650, "atr": 0.0055, "stoch_k": 58.2},
             "USDJPY": {"close": 149.85, "rsi": 48.3, "macd_hist": -0.045, "adx": 24.5,
                        "ema_20": 150.10, "ema_50": 150.50, "ema_200": 148.90, "atr": 0.65, "stoch_k": 42.1},
+            "BTCUSD": {"close": 87250.00, "rsi": 54.2, "macd_hist": 125.0, "adx": 26.5,
+                       "ema_20": 86800, "ema_50": 85500, "ema_200": 78000, "atr": 1250, "stoch_k": 55.3},
+            "ETHUSD": {"close": 2280.50, "rsi": 51.8, "macd_hist": 8.5, "adx": 21.3,
+                       "ema_20": 2260, "ema_50": 2210, "ema_200": 2050, "atr": 65, "stoch_k": 48.7},
+            "AAPL": {"close": 228.50, "rsi": 58.7, "macd_hist": 0.85, "adx": 25.1,
+                     "ema_20": 226.80, "ema_50": 223.50, "ema_200": 215.00, "atr": 3.2, "stoch_k": 62.4},
+            "TSLA": {"close": 265.30, "rsi": 62.1, "macd_hist": 2.15, "adx": 31.8,
+                     "ema_20": 258.50, "ema_50": 248.00, "ema_200": 220.00, "atr": 8.5, "stoch_k": 71.2},
+            "NVDA": {"close": 138.75, "rsi": 55.4, "macd_hist": 1.20, "adx": 23.9,
+                     "ema_20": 136.50, "ema_50": 132.00, "ema_200": 118.00, "atr": 4.1, "stoch_k": 57.8},
+            "META": {"close": 612.40, "rsi": 57.9, "macd_hist": 3.50, "adx": 27.4,
+                     "ema_20": 605.00, "ema_50": 590.00, "ema_200": 540.00, "atr": 12.5, "stoch_k": 60.1},
         }
         d = demo.get(symbol, demo["EURUSD"])
         return {

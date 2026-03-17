@@ -91,9 +91,15 @@ export default function SettingsPage() {
         {/* Monitored Assets */}
         <div className="bg-bg-secondary border border-border-default rounded-lg p-5">
           <h2 className="text-sm font-semibold mb-3">Monitored Assets</h2>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {[
               { symbol: 'EURUSD', name: 'Euro / US Dollar', class: 'FX' },
+              { symbol: 'BTCUSD', name: 'Bitcoin / US Dollar', class: 'Crypto' },
+              { symbol: 'ETHUSD', name: 'Ethereum / US Dollar', class: 'Crypto' },
+              { symbol: 'AAPL', name: 'Apple Inc.', class: 'Stock' },
+              { symbol: 'TSLA', name: 'Tesla Inc.', class: 'Stock' },
+              { symbol: 'NVDA', name: 'Nvidia Corp.', class: 'Stock' },
+              { symbol: 'META', name: 'Meta Platforms', class: 'Stock' },
               { symbol: 'GBPUSD', name: 'British Pound / US Dollar', class: 'FX' },
               { symbol: 'USDJPY', name: 'US Dollar / Japanese Yen', class: 'FX' },
               { symbol: 'XAUUSD', name: 'Gold / US Dollar', class: 'Commodity' },
