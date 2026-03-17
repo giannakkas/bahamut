@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/execution', label: 'Execution', icon: '⚡' },
   { href: '/risk-control', label: 'Risk Control', icon: '◆' },
   { href: '/journal', label: 'Trade Journal', icon: '☰' },
+  { href: '/paper-trading', label: 'Self-Learning', icon: '🧠' },
   { href: '/learning-lab', label: 'Learning Lab', icon: '◐' },
   { href: '/intel-reports', label: 'Intel Reports', icon: '▤' },
 ];

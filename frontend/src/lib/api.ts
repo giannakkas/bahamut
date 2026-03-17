@@ -61,6 +61,22 @@ class ApiClient {
   async getCalendar(days: number = 7) { return this.request<any>(`/market/calendar?days=${days}`); }
   async getNews(query: string = "forex market", count: number = 10) { return this.request<any>(`/market/news?query=${query}&count=${count}`); }
   async getAssetNews(symbol: string) { return this.request<any>(`/market/news/${symbol}`); }
+
+  // Paper Trading / Self-Learning
+  async getPaperPortfolio() { return this.request<any>('/paper-trading/portfolio'); }
+  async getPaperPositions(status?: string, asset?: string, limit: number = 50) {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (asset) params.set('asset', asset);
+    params.set('limit', String(limit));
+    return this.request<any>(`/paper-trading/positions?${params}`);
+  }
+  async getPaperLeaderboard() { return this.request<any>('/paper-trading/leaderboard'); }
+  async getPaperAgentDetail(agent: string) { return this.request<any>(`/paper-trading/agent-performance/${agent}`); }
+  async getPaperLearningLog(limit: number = 30) { return this.request<any>(`/paper-trading/learning-log?limit=${limit}`); }
+  async getPaperStats() { return this.request<any>('/paper-trading/stats'); }
+  async resetPaperPortfolio() { return this.request<any>('/paper-trading/reset', { method: 'POST' }); }
+  async togglePaperTrading(active: boolean) { return this.request<any>(`/paper-trading/toggle?active=${active}`, { method: 'POST' }); }
 }
 
 export const api = new ApiClient();

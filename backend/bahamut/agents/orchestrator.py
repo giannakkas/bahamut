@@ -146,6 +146,37 @@ class AgentOrchestrator:
                      agreement=decision.agreement_pct, elapsed_ms=elapsed_ms,
                      data_source=data_source, agents_responded=len(valid_outputs))
 
+        # ═════════════════════════════════════
+        # PAPER TRADING HOOK — auto-execute demo trades
+        # ═════════════════════════════════════
+        try:
+            from bahamut.paper_trading.tasks import on_signal_complete
+
+            agent_votes = {}
+            for o in all_outputs:
+                agent_votes[o.agent_id.replace("_agent", "")] = {
+                    "direction": o.directional_bias,
+                    "confidence": o.confidence,
+                    "score": o.score if hasattr(o, "score") else 0.0,
+                }
+
+            current_price = features.get("indicators", {}).get("close", 0)
+            atr = features.get("indicators", {}).get("atr", current_price * 0.01)
+
+            if decision.direction in ("LONG", "SHORT") and current_price > 0:
+                on_signal_complete.delay(
+                    asset=asset,
+                    direction=decision.direction,
+                    consensus_score=decision.final_score,
+                    signal_label=decision.decision,
+                    entry_price=current_price,
+                    atr=atr if atr else current_price * 0.01,
+                    agent_votes=agent_votes,
+                    cycle_id=str(cycle_id),
+                )
+        except Exception as e:
+            logger.warning("paper_trading_hook_failed", error=str(e))
+
         return {
             "cycle_id": str(cycle_id),
             "decision": decision.model_dump(),

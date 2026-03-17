@@ -57,7 +57,418 @@ def ensure_tables():
                 )
             """))
             conn.commit()
+            
+            # Paper trading tables
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_portfolios (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) DEFAULT 'SYSTEM_DEMO',
+                    initial_balance FLOAT DEFAULT 100000,
+                    current_balance FLOAT DEFAULT 100000,
+                    total_pnl FLOAT DEFAULT 0,
+                    total_pnl_pct FLOAT DEFAULT 0,
+                    total_trades INTEGER DEFAULT 0,
+                    winning_trades INTEGER DEFAULT 0,
+                    losing_trades INTEGER DEFAULT 0,
+                    win_rate FLOAT DEFAULT 0,
+                    best_trade_pnl FLOAT DEFAULT 0,
+                    worst_trade_pnl FLOAT DEFAULT 0,
+                    max_drawdown FLOAT DEFAULT 0,
+                    peak_balance FLOAT DEFAULT 100000,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    risk_per_trade_pct FLOAT DEFAULT 2.0,
+                    max_open_positions INTEGER DEFAULT 5,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER REFERENCES paper_portfolios(id),
+                    asset VARCHAR(20) NOT NULL,
+                    direction VARCHAR(10) NOT NULL,
+                    entry_price FLOAT NOT NULL,
+                    quantity FLOAT NOT NULL,
+                    position_value FLOAT NOT NULL,
+                    entry_signal_score FLOAT NOT NULL,
+                    entry_signal_label VARCHAR(30),
+                    stop_loss FLOAT NOT NULL,
+                    take_profit FLOAT NOT NULL,
+                    risk_amount FLOAT NOT NULL,
+                    atr_at_entry FLOAT,
+                    current_price FLOAT,
+                    unrealized_pnl FLOAT DEFAULT 0,
+                    unrealized_pnl_pct FLOAT DEFAULT 0,
+                    exit_price FLOAT,
+                    realized_pnl FLOAT,
+                    realized_pnl_pct FLOAT,
+                    status VARCHAR(20) DEFAULT 'OPEN',
+                    agent_votes JSONB NOT NULL,
+                    consensus_score FLOAT NOT NULL,
+                    cycle_id VARCHAR(100),
+                    opened_at TIMESTAMP DEFAULT NOW(),
+                    closed_at TIMESTAMP,
+                    max_favorable FLOAT DEFAULT 0,
+                    max_adverse FLOAT DEFAULT 0,
+                    learning_processed BOOLEAN DEFAULT FALSE
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_trade_performance (
+                    id SERIAL PRIMARY KEY,
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    total_signals INTEGER DEFAULT 0,
+                    correct_signals INTEGER DEFAULT 0,
+                    wrong_signals INTEGER DEFAULT 0,
+                    neutral_signals INTEGER DEFAULT 0,
+                    accuracy FLOAT DEFAULT 0,
+                    profit_factor FLOAT DEFAULT 0,
+                    avg_confidence_when_correct FLOAT DEFAULT 0,
+                    avg_confidence_when_wrong FLOAT DEFAULT 0,
+                    total_pnl_when_agreed FLOAT DEFAULT 0,
+                    total_pnl_when_disagreed FLOAT DEFAULT 0,
+                    current_streak INTEGER DEFAULT 0,
+                    best_streak INTEGER DEFAULT 0,
+                    worst_streak INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(agent_name, asset)
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS learning_events (
+                    id SERIAL PRIMARY KEY,
+                    position_id INTEGER REFERENCES paper_positions(id),
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    agent_direction VARCHAR(10),
+                    actual_outcome VARCHAR(10),
+                    agent_confidence FLOAT,
+                    was_correct BOOLEAN,
+                    trust_before FLOAT,
+                    trust_after FLOAT,
+                    trust_delta FLOAT,
+                    position_pnl FLOAT,
+                    position_pnl_pct FLOAT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.commit()
             logger.info("persistence_tables_ensured")
+
+            # Paper trading tables
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_portfolios (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) DEFAULT 'SYSTEM_DEMO',
+                    initial_balance FLOAT DEFAULT 100000,
+                    current_balance FLOAT DEFAULT 100000,
+                    total_pnl FLOAT DEFAULT 0,
+                    total_pnl_pct FLOAT DEFAULT 0,
+                    total_trades INTEGER DEFAULT 0,
+                    winning_trades INTEGER DEFAULT 0,
+                    losing_trades INTEGER DEFAULT 0,
+                    win_rate FLOAT DEFAULT 0,
+                    best_trade_pnl FLOAT DEFAULT 0,
+                    worst_trade_pnl FLOAT DEFAULT 0,
+                    max_drawdown FLOAT DEFAULT 0,
+                    peak_balance FLOAT DEFAULT 100000,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    risk_per_trade_pct FLOAT DEFAULT 2.0,
+                    max_open_positions INTEGER DEFAULT 5,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER REFERENCES paper_portfolios(id),
+                    asset VARCHAR(20) NOT NULL,
+                    direction VARCHAR(10) NOT NULL,
+                    entry_price FLOAT NOT NULL,
+                    quantity FLOAT NOT NULL,
+                    position_value FLOAT NOT NULL,
+                    entry_signal_score FLOAT NOT NULL,
+                    entry_signal_label VARCHAR(30),
+                    stop_loss FLOAT NOT NULL,
+                    take_profit FLOAT NOT NULL,
+                    risk_amount FLOAT NOT NULL,
+                    atr_at_entry FLOAT,
+                    current_price FLOAT,
+                    unrealized_pnl FLOAT DEFAULT 0,
+                    unrealized_pnl_pct FLOAT DEFAULT 0,
+                    exit_price FLOAT,
+                    realized_pnl FLOAT,
+                    realized_pnl_pct FLOAT,
+                    status VARCHAR(20) DEFAULT 'OPEN',
+                    agent_votes JSONB NOT NULL,
+                    consensus_score FLOAT NOT NULL,
+                    cycle_id VARCHAR(100),
+                    opened_at TIMESTAMP DEFAULT NOW(),
+                    closed_at TIMESTAMP,
+                    max_favorable FLOAT DEFAULT 0,
+                    max_adverse FLOAT DEFAULT 0,
+                    learning_processed BOOLEAN DEFAULT FALSE
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_trade_performance (
+                    id SERIAL PRIMARY KEY,
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    total_signals INTEGER DEFAULT 0,
+                    correct_signals INTEGER DEFAULT 0,
+                    wrong_signals INTEGER DEFAULT 0,
+                    neutral_signals INTEGER DEFAULT 0,
+                    accuracy FLOAT DEFAULT 0,
+                    profit_factor FLOAT DEFAULT 0,
+                    avg_confidence_when_correct FLOAT DEFAULT 0,
+                    avg_confidence_when_wrong FLOAT DEFAULT 0,
+                    total_pnl_when_agreed FLOAT DEFAULT 0,
+                    total_pnl_when_disagreed FLOAT DEFAULT 0,
+                    current_streak INTEGER DEFAULT 0,
+                    best_streak INTEGER DEFAULT 0,
+                    worst_streak INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(agent_name, asset)
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS learning_events (
+                    id SERIAL PRIMARY KEY,
+                    position_id INTEGER REFERENCES paper_positions(id),
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    agent_direction VARCHAR(10),
+                    actual_outcome VARCHAR(10),
+                    agent_confidence FLOAT,
+                    was_correct BOOLEAN,
+                    trust_before FLOAT,
+                    trust_after FLOAT,
+                    trust_delta FLOAT,
+                    position_pnl FLOAT,
+                    position_pnl_pct FLOAT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.commit()
+            logger.info("paper_trading_tables_ensured")
+
+            # Paper trading tables
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_portfolios (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) DEFAULT 'SYSTEM_DEMO' NOT NULL,
+                    initial_balance FLOAT DEFAULT 100000.0 NOT NULL,
+                    current_balance FLOAT DEFAULT 100000.0 NOT NULL,
+                    total_pnl FLOAT DEFAULT 0.0,
+                    total_pnl_pct FLOAT DEFAULT 0.0,
+                    total_trades INTEGER DEFAULT 0,
+                    winning_trades INTEGER DEFAULT 0,
+                    losing_trades INTEGER DEFAULT 0,
+                    win_rate FLOAT DEFAULT 0.0,
+                    best_trade_pnl FLOAT DEFAULT 0.0,
+                    worst_trade_pnl FLOAT DEFAULT 0.0,
+                    max_drawdown FLOAT DEFAULT 0.0,
+                    peak_balance FLOAT DEFAULT 100000.0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    risk_per_trade_pct FLOAT DEFAULT 2.0,
+                    max_open_positions INTEGER DEFAULT 5,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER REFERENCES paper_portfolios(id),
+                    asset VARCHAR(20) NOT NULL,
+                    direction VARCHAR(10) NOT NULL,
+                    entry_price FLOAT NOT NULL,
+                    quantity FLOAT NOT NULL,
+                    position_value FLOAT NOT NULL,
+                    entry_signal_score FLOAT NOT NULL,
+                    entry_signal_label VARCHAR(30),
+                    stop_loss FLOAT NOT NULL,
+                    take_profit FLOAT NOT NULL,
+                    risk_amount FLOAT NOT NULL,
+                    atr_at_entry FLOAT,
+                    current_price FLOAT,
+                    unrealized_pnl FLOAT DEFAULT 0.0,
+                    unrealized_pnl_pct FLOAT DEFAULT 0.0,
+                    exit_price FLOAT,
+                    realized_pnl FLOAT,
+                    realized_pnl_pct FLOAT,
+                    status VARCHAR(20) DEFAULT 'OPEN',
+                    agent_votes JSONB NOT NULL,
+                    consensus_score FLOAT NOT NULL,
+                    cycle_id VARCHAR(100),
+                    opened_at TIMESTAMP DEFAULT NOW(),
+                    closed_at TIMESTAMP,
+                    max_favorable FLOAT DEFAULT 0.0,
+                    max_adverse FLOAT DEFAULT 0.0,
+                    learning_processed BOOLEAN DEFAULT FALSE
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_trade_performance (
+                    id SERIAL PRIMARY KEY,
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    total_signals INTEGER DEFAULT 0,
+                    correct_signals INTEGER DEFAULT 0,
+                    wrong_signals INTEGER DEFAULT 0,
+                    neutral_signals INTEGER DEFAULT 0,
+                    accuracy FLOAT DEFAULT 0.0,
+                    profit_factor FLOAT DEFAULT 0.0,
+                    avg_confidence_when_correct FLOAT DEFAULT 0.0,
+                    avg_confidence_when_wrong FLOAT DEFAULT 0.0,
+                    total_pnl_when_agreed FLOAT DEFAULT 0.0,
+                    total_pnl_when_disagreed FLOAT DEFAULT 0.0,
+                    current_streak INTEGER DEFAULT 0,
+                    best_streak INTEGER DEFAULT 0,
+                    worst_streak INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(agent_name, asset)
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS learning_events (
+                    id SERIAL PRIMARY KEY,
+                    position_id INTEGER REFERENCES paper_positions(id),
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    agent_direction VARCHAR(10),
+                    actual_outcome VARCHAR(10),
+                    agent_confidence FLOAT,
+                    was_correct BOOLEAN,
+                    trust_before FLOAT,
+                    trust_after FLOAT,
+                    trust_delta FLOAT,
+                    position_pnl FLOAT,
+                    position_pnl_pct FLOAT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_status ON paper_positions(status);
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_asset ON paper_positions(asset);
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_opened_at ON paper_positions(opened_at);
+                CREATE INDEX IF NOT EXISTS ix_agent_perf_name_asset ON agent_trade_performance(agent_name, asset);
+                CREATE INDEX IF NOT EXISTS ix_learning_events_agent ON learning_events(agent_name);
+                CREATE INDEX IF NOT EXISTS ix_learning_events_created ON learning_events(created_at);
+            """))
+            conn.commit()
+            logger.info("paper_trading_tables_ensured")
+
+            # Paper trading tables
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_portfolios (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) DEFAULT 'SYSTEM_DEMO',
+                    initial_balance FLOAT DEFAULT 100000,
+                    current_balance FLOAT DEFAULT 100000,
+                    total_pnl FLOAT DEFAULT 0,
+                    total_pnl_pct FLOAT DEFAULT 0,
+                    total_trades INTEGER DEFAULT 0,
+                    winning_trades INTEGER DEFAULT 0,
+                    losing_trades INTEGER DEFAULT 0,
+                    win_rate FLOAT DEFAULT 0,
+                    best_trade_pnl FLOAT DEFAULT 0,
+                    worst_trade_pnl FLOAT DEFAULT 0,
+                    max_drawdown FLOAT DEFAULT 0,
+                    peak_balance FLOAT DEFAULT 100000,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    risk_per_trade_pct FLOAT DEFAULT 2.0,
+                    max_open_positions INTEGER DEFAULT 5,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    portfolio_id INTEGER REFERENCES paper_portfolios(id),
+                    asset VARCHAR(20) NOT NULL,
+                    direction VARCHAR(10) NOT NULL,
+                    entry_price FLOAT NOT NULL,
+                    quantity FLOAT NOT NULL,
+                    position_value FLOAT NOT NULL,
+                    entry_signal_score FLOAT NOT NULL,
+                    entry_signal_label VARCHAR(30),
+                    stop_loss FLOAT NOT NULL,
+                    take_profit FLOAT NOT NULL,
+                    risk_amount FLOAT NOT NULL,
+                    atr_at_entry FLOAT,
+                    current_price FLOAT,
+                    unrealized_pnl FLOAT DEFAULT 0,
+                    unrealized_pnl_pct FLOAT DEFAULT 0,
+                    exit_price FLOAT,
+                    realized_pnl FLOAT,
+                    realized_pnl_pct FLOAT,
+                    status VARCHAR(20) DEFAULT 'OPEN',
+                    agent_votes JSONB NOT NULL,
+                    consensus_score FLOAT NOT NULL,
+                    cycle_id VARCHAR(100),
+                    opened_at TIMESTAMP DEFAULT NOW(),
+                    closed_at TIMESTAMP,
+                    max_favorable FLOAT DEFAULT 0,
+                    max_adverse FLOAT DEFAULT 0,
+                    learning_processed BOOLEAN DEFAULT FALSE
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_trade_performance (
+                    id SERIAL PRIMARY KEY,
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    total_signals INTEGER DEFAULT 0,
+                    correct_signals INTEGER DEFAULT 0,
+                    wrong_signals INTEGER DEFAULT 0,
+                    neutral_signals INTEGER DEFAULT 0,
+                    accuracy FLOAT DEFAULT 0,
+                    profit_factor FLOAT DEFAULT 0,
+                    avg_confidence_when_correct FLOAT DEFAULT 0,
+                    avg_confidence_when_wrong FLOAT DEFAULT 0,
+                    total_pnl_when_agreed FLOAT DEFAULT 0,
+                    total_pnl_when_disagreed FLOAT DEFAULT 0,
+                    current_streak INTEGER DEFAULT 0,
+                    best_streak INTEGER DEFAULT 0,
+                    worst_streak INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(agent_name, asset)
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS learning_events (
+                    id SERIAL PRIMARY KEY,
+                    position_id INTEGER REFERENCES paper_positions(id),
+                    agent_name VARCHAR(50) NOT NULL,
+                    asset VARCHAR(20) NOT NULL,
+                    agent_direction VARCHAR(10),
+                    actual_outcome VARCHAR(10),
+                    agent_confidence FLOAT,
+                    was_correct BOOLEAN,
+                    trust_before FLOAT,
+                    trust_after FLOAT,
+                    trust_delta FLOAT,
+                    position_pnl FLOAT,
+                    position_pnl_pct FLOAT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_status ON paper_positions(status);
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_asset ON paper_positions(asset);
+                CREATE INDEX IF NOT EXISTS ix_paper_positions_opened_at ON paper_positions(opened_at);
+                CREATE INDEX IF NOT EXISTS ix_agent_perf_name_asset ON agent_trade_performance(agent_name, asset);
+                CREATE INDEX IF NOT EXISTS ix_learning_events_agent ON learning_events(agent_name);
+                CREATE INDEX IF NOT EXISTS ix_learning_events_created ON learning_events(created_at);
+            """))
+            conn.commit()
+            logger.info("paper_trading_tables_ensured")
     except Exception as e:
         logger.error("table_creation_failed", error=str(e))
 

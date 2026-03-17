@@ -187,3 +187,30 @@ class MarketDataService:
 
 
 market_data = MarketDataService()
+
+
+async def get_current_prices() -> dict[str, float]:
+    """
+    Fetch current prices for all monitored assets.
+    Returns: {"EURUSD": 1.0850, "BTCUSD": 67500.0, ...}
+    Used by paper trading engine to check SL/TP.
+    """
+    from bahamut.ingestion.adapters.twelvedata import twelve_data, to_twelve_symbol
+
+    assets = [
+        "EURUSD", "GBPUSD", "USDJPY", "XAUUSD",
+        "BTCUSD", "ETHUSD",
+        "AAPL", "TSLA", "NVDA", "META",
+    ]
+
+    prices = {}
+    for asset in assets:
+        try:
+            td_symbol = to_twelve_symbol(asset)
+            result = await twelve_data.get_latest_price(td_symbol)
+            if result and result.get("mid"):
+                prices[asset] = result["mid"]
+        except Exception:
+            continue
+
+    return prices

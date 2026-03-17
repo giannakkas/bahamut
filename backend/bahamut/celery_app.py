@@ -14,6 +14,7 @@ celery_app = Celery(
         "bahamut.agents.tasks",
         "bahamut.learning.tasks",
         "bahamut.reports.tasks",
+        "bahamut.paper_trading.tasks",
     ],
 )
 
@@ -31,6 +32,7 @@ celery_app.conf.update(
         "bahamut.reports.*": {"queue": "reports"},
         "bahamut.risk.*": {"queue": "critical"},
         "bahamut.execution.*": {"queue": "critical"},
+        "paper_trading.*": {"queue": "agents"},
     },
     beat_schedule={
         "ingest-ohlcv": {
@@ -84,6 +86,14 @@ celery_app.conf.update(
         "daily-brief": {
             "task": "bahamut.reports.tasks.generate_daily_brief",
             "schedule": crontab(hour=6, minute=0),
+        },
+        "check-paper-positions": {
+            "task": "paper_trading.check_positions",
+            "schedule": 60.0,
+        },
+        "paper-trading-daily-report": {
+            "task": "paper_trading.daily_report",
+            "schedule": crontab(hour=22, minute=0),
         },
     },
 )

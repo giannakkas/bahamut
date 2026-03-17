@@ -37,3 +37,15 @@ async def get_db() -> AsyncSession:
             yield session
         finally:
             await session.close()
+
+
+# Aliases used by paper_trading module
+async_session_factory = AsyncSessionLocal
+
+
+async def get_session() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
