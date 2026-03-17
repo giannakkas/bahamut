@@ -37,35 +37,35 @@ celery_app.conf.update(
     beat_schedule={
         "ingest-ohlcv": {
             "task": "bahamut.ingestion.tasks.ingest_ohlcv",
-            "schedule": 60.0,
+            "schedule": 300.0,  # Every 5 min (was 60s)
         },
         "ingest-volatility": {
             "task": "bahamut.ingestion.tasks.ingest_volatility",
-            "schedule": 60.0,
+            "schedule": 600.0,  # Every 10 min (was 60s)
         },
         "ingest-news": {
             "task": "bahamut.ingestion.tasks.ingest_news",
-            "schedule": 300.0,
+            "schedule": 600.0,  # Every 10 min (was 5 min)
         },
         "compute-features": {
             "task": "bahamut.features.tasks.compute_features",
-            "schedule": 60.0,
+            "schedule": 300.0,  # Every 5 min (was 60s)
         },
         "detect-regime": {
             "task": "bahamut.features.tasks.detect_regime",
-            "schedule": 300.0,
+            "schedule": 600.0,  # Every 10 min (was 5 min)
         },
         "monitor-breaking-news": {
             "task": "bahamut.ingestion.tasks.monitor_breaking_news",
-            "schedule": 120.0,  # Every 2 minutes
+            "schedule": 300.0,  # Every 5 min (was 2 min)
         },
         "run-stock-cycles": {
             "task": "bahamut.agents.tasks.run_stock_cycles",
-            "schedule": 1800.0,  # Every 30 minutes
+            "schedule": 3600.0,  # Every 60 min (was 30 min)
         },
         "run-signal-cycles": {
             "task": "bahamut.agents.tasks.run_all_signal_cycles",
-            "schedule": settings.signal_cycle_interval_seconds,
+            "schedule": 1800.0,  # Every 30 min (was 15 min) — saves ~50% credits
         },
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",
@@ -89,7 +89,7 @@ celery_app.conf.update(
         },
         "check-paper-positions": {
             "task": "paper_trading.check_positions",
-            "schedule": 60.0,
+            "schedule": 300.0,  # Every 5 min (was 60s) — saves API credits
         },
         "paper-trading-daily-report": {
             "task": "paper_trading.daily_report",

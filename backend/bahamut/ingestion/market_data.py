@@ -18,7 +18,7 @@ logger = structlog.get_logger()
 
 _cache: dict[str, dict] = {}
 _cache_ts: dict[str, float] = {}
-CACHE_TTL = 30
+CACHE_TTL = 300  # 5 minutes — save API credits (free tier: 800/day)
 
 
 class MarketDataService:
