@@ -15,6 +15,7 @@ celery_app = Celery(
         "bahamut.learning.tasks",
         "bahamut.reports.tasks",
         "bahamut.paper_trading.tasks",
+        "bahamut.scanner.tasks",
     ],
 )
 
@@ -33,6 +34,7 @@ celery_app.conf.update(
         "bahamut.risk.*": {"queue": "critical"},
         "bahamut.execution.*": {"queue": "critical"},
         "paper_trading.*": {"queue": "agents"},
+        "scanner.*": {"queue": "agents"},
     },
     beat_schedule={
         "ingest-ohlcv": {
@@ -94,6 +96,10 @@ celery_app.conf.update(
         "paper-trading-daily-report": {
             "task": "paper_trading.daily_report",
             "schedule": crontab(hour=22, minute=0),
+        },
+        "market-scanner": {
+            "task": "scanner.run_market_scan",
+            "schedule": 1800.0,  # Every 30 min — scans all 57 assets + deep analyzes top 10
         },
     },
 )

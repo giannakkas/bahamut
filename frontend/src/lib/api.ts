@@ -77,6 +77,18 @@ class ApiClient {
   async getPaperStats() { return this.request<any>('/paper-trading/stats'); }
   async resetPaperPortfolio() { return this.request<any>('/paper-trading/reset', { method: 'POST' }); }
   async togglePaperTrading(active: boolean) { return this.request<any>(`/paper-trading/toggle?active=${active}`, { method: 'POST' }); }
+
+  // Scanner
+  async getTopPicks() { return this.request<any>('/scanner/top-picks'); }
+  async getAllScanned(assetClass?: string, minScore?: number, direction?: string) {
+    const params = new URLSearchParams();
+    if (assetClass) params.set('asset_class', assetClass);
+    if (minScore) params.set('min_score', String(minScore));
+    if (direction) params.set('direction', direction);
+    return this.request<any>(`/scanner/all?${params}`);
+  }
+  async triggerScan() { return this.request<any>('/scanner/trigger', { method: 'POST' }); }
+  async getDeepResults() { return this.request<any>('/scanner/deep-results'); }
 }
 
 export const api = new ApiClient();

@@ -20,6 +20,7 @@ from bahamut.billing.router import router as billing_router
 from bahamut.ingestion.router import router as market_router
 from bahamut.ws.gateway import router as ws_router
 from bahamut.paper_trading.router import router as paper_trading_router
+from bahamut.scanner.router import router as scanner_router
 from bahamut.shared.redis_client import redis_manager
 
 settings = get_settings()
@@ -104,6 +105,7 @@ app.include_router(billing_router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["market"])
 app.include_router(ws_router, tags=["websocket"])
 app.include_router(paper_trading_router, prefix="/api/v1", tags=["paper-trading"])
+app.include_router(scanner_router, prefix="/api/v1", tags=["scanner"])
 
 
 @app.get("/health")

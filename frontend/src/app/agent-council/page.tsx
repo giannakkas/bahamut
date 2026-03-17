@@ -23,10 +23,11 @@ export default function AgentCouncilPage() {
 
 
   const getAssetClass = (symbol: string) => {
-    if (['XAUUSD', 'XAGUSD'].includes(symbol)) return 'commodities';
-    if (['BTCUSD', 'ETHUSD', 'SOLUSD'].includes(symbol)) return 'crypto';
-    if (['AAPL', 'TSLA', 'NVDA', 'META', 'MSFT', 'AMZN', 'GOOGL', 'SPX', 'IXIC'].includes(symbol)) return 'indices';
-    return 'fx';
+    if (['XAUUSD', 'XAGUSD', 'WTIUSD', 'BCOUSD'].includes(symbol)) return 'commodities';
+    if (['BTCUSD', 'ETHUSD', 'SOLUSD', 'BNBUSD', 'XRPUSD', 'ADAUSD', 'DOGEUSD', 'AVAXUSD', 'DOTUSD', 'LINKUSD', 'MATICUSD', 'SHIBUSD'].includes(symbol)) return 'crypto';
+    if (symbol.includes('USD') && symbol.length === 6) return 'fx';
+    if (['EURGBP'].includes(symbol)) return 'fx';
+    return 'indices';
   };
 
   const loadData = async (asset?: string) => {
@@ -121,7 +122,17 @@ export default function AgentCouncilPage() {
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <select value={selectedAsset} onChange={e => handleAssetChange(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
-              {['EURUSD','GBPUSD','USDJPY','XAUUSD','BTCUSD','ETHUSD','AAPL','TSLA','NVDA','META'].map(a => <option key={a} value={a}>{a}</option>)}
+              {[
+                // FX
+                'EURUSD','GBPUSD','USDJPY','AUDUSD','USDCHF','USDCAD','NZDUSD','EURGBP',
+                // Commodities
+                'XAUUSD','XAGUSD',
+                // Crypto
+                'BTCUSD','ETHUSD','SOLUSD','BNBUSD','XRPUSD','ADAUSD','DOGEUSD','AVAXUSD','DOTUSD','LINKUSD','MATICUSD','SHIBUSD',
+                // Stocks
+                'AAPL','MSFT','GOOGL','AMZN','NVDA','META','TSLA','JPM','V','UNH','MA','HD','PG','JNJ',
+                'AMD','CRM','NFLX','ADBE','INTC','PYPL','UBER','SQ','SHOP','SNOW','PLTR','COIN','RBLX','MARA','RIOT',
+              ].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <select value={selectedTF} onChange={e => { setSelectedTF(e.target.value); loadCandles(); }}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">

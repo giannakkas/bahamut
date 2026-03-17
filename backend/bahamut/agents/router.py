@@ -37,10 +37,10 @@ async def get_latest_cycle(asset: str, user: User = Depends(get_current_user)):
 
 @router.get("/latest-cycles")
 async def get_all_latest_cycles(user: User = Depends(get_current_user)):
-    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "ETHUSD", "AAPL", "TSLA", "NVDA", "META"]
+    from bahamut.scanner.scanner import ALL_SYMBOLS
     results = {}
     if redis_manager.redis:
-        for asset in assets:
+        for asset in ALL_SYMBOLS:
             cached = await redis_manager.redis.get(f"bahamut:latest_cycle:{asset}")
             if cached:
                 results[asset] = json.loads(cached)

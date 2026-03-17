@@ -105,31 +105,30 @@ class TwelveDataAdapter:
 # ── Symbol Maps ──
 # Twelve Data uses standard ticker format
 TWELVE_SYMBOL_MAP = {
-    # FX
-    "EURUSD": "EUR/USD",
-    "GBPUSD": "GBP/USD",
-    "USDJPY": "USD/JPY",
-    "AUDUSD": "AUD/USD",
-    "USDCHF": "USD/CHF",
-    "USDCAD": "USD/CAD",
-    # Commodities
-    "XAUUSD": "XAU/USD",
-    "XAGUSD": "XAG/USD",
-    # Crypto (Twelve Data uses /USD format)
-    "BTCUSD": "BTC/USD",
-    "ETHUSD": "ETH/USD",
-    "SOLUSD": "SOL/USD",
-    # US Stocks (Twelve Data uses plain tickers)
-    "AAPL": "AAPL",
-    "TSLA": "TSLA",
-    "NVDA": "NVDA",
-    "META": "META",
-    "MSFT": "MSFT",
-    "AMZN": "AMZN",
-    "GOOGL": "GOOGL",
-    # Indices
-    "SPX": "SPX",
-    "IXIC": "IXIC",
+    # FX (8)
+    "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
+    "AUDUSD": "AUD/USD", "USDCHF": "USD/CHF", "USDCAD": "USD/CAD",
+    "NZDUSD": "NZD/USD", "EURGBP": "EUR/GBP",
+    # Commodities (4)
+    "XAUUSD": "XAU/USD", "XAGUSD": "XAG/USD",
+    "WTIUSD": "WTI/USD", "BCOUSD": "BRENT/USD",
+    # Crypto (12)
+    "BTCUSD": "BTC/USD", "ETHUSD": "ETH/USD", "SOLUSD": "SOL/USD",
+    "BNBUSD": "BNB/USD", "XRPUSD": "XRP/USD", "ADAUSD": "ADA/USD",
+    "DOGEUSD": "DOGE/USD", "AVAXUSD": "AVAX/USD", "DOTUSD": "DOT/USD",
+    "LINKUSD": "LINK/USD", "MATICUSD": "MATIC/USD", "SHIBUSD": "SHIB/USD",
+    # US Mega Cap (15)
+    "AAPL": "AAPL", "MSFT": "MSFT", "GOOGL": "GOOGL", "AMZN": "AMZN",
+    "NVDA": "NVDA", "META": "META", "TSLA": "TSLA", "BRK.B": "BRK.B",
+    "JPM": "JPM", "V": "V", "UNH": "UNH", "MA": "MA",
+    "HD": "HD", "PG": "PG", "JNJ": "JNJ",
+    # US Growth / Tech (15)
+    "AMD": "AMD", "CRM": "CRM", "NFLX": "NFLX", "ADBE": "ADBE",
+    "INTC": "INTC", "PYPL": "PYPL", "UBER": "UBER", "SQ": "SQ",
+    "SHOP": "SHOP", "SNOW": "SNOW", "PLTR": "PLTR", "COIN": "COIN",
+    "RBLX": "RBLX", "MARA": "MARA", "RIOT": "RIOT",
+    # Indices (3)
+    "SPX": "SPX", "IXIC": "IXIC", "DJI": "DJI",
 }
 
 TWELVE_INTERVAL_MAP = {

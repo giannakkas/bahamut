@@ -39,17 +39,34 @@ MIN_SCORE_TO_TRADE = 0.45       # Minimum consensus score to open a trade
 
 # Asset-specific lot sizes for position value calculation
 ASSET_CONFIG = {
+    # FX
     "EURUSD": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
     "GBPUSD": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
     "USDJPY": {"pip_value": 0.01, "lot_size": 100_000, "min_qty": 0.01},
+    "AUDUSD": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
+    "USDCHF": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
+    "USDCAD": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
+    "NZDUSD": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
+    "EURGBP": {"pip_value": 0.0001, "lot_size": 100_000, "min_qty": 0.01},
+    # Commodities
     "XAUUSD": {"pip_value": 0.01, "lot_size": 100, "min_qty": 0.01},
+    "XAGUSD": {"pip_value": 0.01, "lot_size": 5000, "min_qty": 0.01},
+    # Crypto
     "BTCUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.001},
     "ETHUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.01},
-    "AAPL":   {"pip_value": 0.01, "lot_size": 1, "min_qty": 1},
-    "TSLA":   {"pip_value": 0.01, "lot_size": 1, "min_qty": 1},
-    "NVDA":   {"pip_value": 0.01, "lot_size": 1, "min_qty": 1},
-    "META":   {"pip_value": 0.01, "lot_size": 1, "min_qty": 1},
+    "SOLUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.1},
+    "BNBUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.01},
+    "XRPUSD": {"pip_value": 0.0001, "lot_size": 1, "min_qty": 1},
+    "ADAUSD": {"pip_value": 0.0001, "lot_size": 1, "min_qty": 1},
+    "DOGEUSD": {"pip_value": 0.00001, "lot_size": 1, "min_qty": 10},
+    "AVAXUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.1},
+    "DOTUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.1},
+    "LINKUSD": {"pip_value": 0.01, "lot_size": 1, "min_qty": 0.1},
+    "MATICUSD": {"pip_value": 0.0001, "lot_size": 1, "min_qty": 1},
+    "SHIBUSD": {"pip_value": 0.00000001, "lot_size": 1, "min_qty": 100000},
 }
+# All stocks default to: lot_size=1, min_qty=1 (whole shares)
+_STOCK_DEFAULTS = {"pip_value": 0.01, "lot_size": 1, "min_qty": 1}
 
 
 async def get_or_create_portfolio(session: AsyncSession) -> PaperPortfolio:
@@ -113,7 +130,7 @@ def calculate_position_size(
     Calculate position size based on risk management.
     Returns: (quantity, position_value, risk_amount)
     """
-    config = ASSET_CONFIG.get(asset, {"lot_size": 1, "min_qty": 1})
+    config = ASSET_CONFIG.get(asset, _STOCK_DEFAULTS)
     risk_amount = portfolio_balance * (risk_pct / 100.0)
     sl_distance = abs(entry_price - stop_loss)
 
@@ -135,7 +152,7 @@ def calculate_position_size(
     quantity = max(quantity, min_qty)
 
     # Round appropriately
-    if asset in ("AAPL", "TSLA", "NVDA", "META"):
+    if config["lot_size"] == 1 and config["min_qty"] >= 1:
         quantity = round(quantity)  # Whole shares
         quantity = max(quantity, 1)
     else:
@@ -295,16 +312,12 @@ async def update_open_positions(price_data: dict[str, float]) -> list[dict]:
                     continue
 
                 # Update current price and unrealized PnL
+                config = ASSET_CONFIG.get(pos.asset, _STOCK_DEFAULTS)
+                lot = config["lot_size"]
                 if pos.direction == TradeDirection.LONG.value:
-                    pnl = (current_price - pos.entry_price) * pos.quantity
-                    if pos.asset in ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD"):
-                        config = ASSET_CONFIG[pos.asset]
-                        pnl = (current_price - pos.entry_price) * pos.quantity * config["lot_size"]
+                    pnl = (current_price - pos.entry_price) * pos.quantity * lot
                 else:
-                    pnl = (pos.entry_price - current_price) * pos.quantity
-                    if pos.asset in ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD"):
-                        config = ASSET_CONFIG[pos.asset]
-                        pnl = (pos.entry_price - current_price) * pos.quantity * config["lot_size"]
+                    pnl = (pos.entry_price - current_price) * pos.quantity * lot
 
                 pnl_pct = (pnl / pos.position_value * 100) if pos.position_value else 0
 
@@ -353,16 +366,12 @@ async def close_position(
 ) -> dict:
     """Close a position and update portfolio stats."""
     # Calculate final PnL
+    config = ASSET_CONFIG.get(position.asset, _STOCK_DEFAULTS)
+    lot = config["lot_size"]
     if position.direction == TradeDirection.LONG.value:
-        pnl = (exit_price - position.entry_price) * position.quantity
-        if position.asset in ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD"):
-            config = ASSET_CONFIG[position.asset]
-            pnl = (exit_price - position.entry_price) * position.quantity * config["lot_size"]
+        pnl = (exit_price - position.entry_price) * position.quantity * lot
     else:
-        pnl = (position.entry_price - exit_price) * position.quantity
-        if position.asset in ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD"):
-            config = ASSET_CONFIG[position.asset]
-            pnl = (position.entry_price - exit_price) * position.quantity * config["lot_size"]
+        pnl = (position.entry_price - exit_price) * position.quantity * lot
 
     pnl_pct = (pnl / position.position_value * 100) if position.position_value else 0
 

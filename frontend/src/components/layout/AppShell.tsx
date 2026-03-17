@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Command', icon: '⊞' },
+  { href: '/top-picks', label: 'Top Picks', icon: '🎯' },
   { href: '/macro-arena', label: 'Macro Arena', icon: '◉' },
   { href: '/event-radar', label: 'Event Radar', icon: '◈' },
   { href: '/agent-council', label: 'Agent Council', icon: '◎' },
