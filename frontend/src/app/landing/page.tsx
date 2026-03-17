@@ -109,7 +109,7 @@ export default function LandingPage() {
 
       {/* Nav */}
       <nav className="flex items-center justify-between px-8 py-4 max-w-7xl mx-auto relative z-20 border-b border-[#1a1a1a]">
-        <img src="/logo.png" alt="Bahamut.AI" className="h-14" />
+        <img src="/logo.png" alt="Bahamut.AI" className="h-20 -my-3" />
         <div className="flex items-center gap-8">
           <a href="#agents" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">AI Agents</a>
           <a href="#safety" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Safety</a>
