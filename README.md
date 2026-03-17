@@ -1,158 +1,180 @@
-# BAHAMUT.AI
+# Bahamut.AI — Institutional-Grade AI Trading Intelligence Platform
 
-**Institutional-Grade AI Trading Intelligence Platform**
+![Bahamut.AI](frontend/public/logo.png)
 
-Multi-agent AI system where 11 specialized agents analyze markets, debate internally, reach weighted consensus, and continuously self-calibrate from trade outcomes.
+## What is Bahamut.AI?
+
+Bahamut.AI is a self-learning AI trading platform that monitors **45 financial assets** (FX, crypto, stocks, commodities), runs **6 AI agents** that independently analyze markets, makes them debate each other, reaches weighted consensus, and tells users whether to buy, sell, or hold.
+
+**Live:** [frontend-production-947b.up.railway.app](https://frontend-production-947b.up.railway.app)
+**API:** [bahamut-production.up.railway.app](https://bahamut-production.up.railway.app)
 
 ---
 
 ## Architecture
 
-```
-DATA → AGENT ANALYSIS → AGENT DEBATE → CONSENSUS → SIGNAL → EXECUTION → OUTCOME → LEARNING → RECALIBRATION
-```
+### Infrastructure (Railway — 6 Services)
 
-**Agents:** Macro, Flow, Volatility, Options/Gamma, Liquidity/Structure, Sentiment/Narrative, Technical/Timing, Risk (veto power), Execution, Learning, Supervisor/Consensus
+| Service | Type | Purpose |
+|---------|------|---------|
+| **bahamut** | FastAPI | REST API, serves all endpoints |
+| **WORKER** | Celery Worker | Processes signal cycles, scans, paper trades |
+| **BEAT** | Celery Beat | Scheduler — triggers periodic tasks |
+| **FRONTEND** | Next.js 14 | React/TypeScript dashboard |
+| **PostgreSQL** | Database | Users, cycles, paper trades, agent performance |
+| **Redis** | Cache/Broker | Celery broker + result cache (30min TTL) |
 
-**Profiles:** Conservative | Balanced | Aggressive — each deeply modifies thresholds, risk limits, agent weights, and execution behavior
+### Tech Stack
 
-**Modes:** Auto-Trade (11 safety gates) | Approval Required (full trade cards)
-
----
-
-## Quick Start
-
-```bash
-# 1. Clone and configure
-cp .env.example .env
-# Edit .env with your API keys
-
-# 2. Start everything
-make up
-
-# 3. Verify
-make health
-
-# 4. Access
-# Frontend: http://localhost:3000
-# API:      http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-## Key Commands
-
-```bash
-make up              # Start all services
-make down            # Stop all services
-make logs            # Follow all logs
-make logs-api        # Follow API logs only
-make logs-worker     # Follow Celery worker logs
-make cycle           # Manually trigger signal cycle for all assets
-make cycle-single    # Trigger cycle for EURUSD only
-make db-shell        # PostgreSQL shell
-make redis-shell     # Redis CLI
-make migrate         # Run database migrations
-make reset           # Full reset (wipes database)
-make health          # Check API health
-```
-
-## Project Structure
-
-```
-bahamut/
-├── backend/
-│   ├── bahamut/
-│   │   ├── main.py              # FastAPI app
-│   │   ├── celery_app.py        # Celery + beat schedule
-│   │   ├── config.py            # Pydantic Settings
-│   │   ├── database.py          # SQLAlchemy async engine
-│   │   ├── models.py            # All 20+ database tables
-│   │   ├── auth/                # JWT auth, registration, RBAC
-│   │   ├── agents/              # Agent framework + implementations
-│   │   │   ├── base.py          # BaseAgent ABC
-│   │   │   ├── orchestrator.py  # 7-round consensus cycle
-│   │   │   ├── technical_agent.py
-│   │   │   ├── macro_agent.py
-│   │   │   ├── risk_agent.py
-│   │   │   └── schemas.py       # Pydantic models for all agent I/O
-│   │   ├── consensus/
-│   │   │   ├── engine.py        # Weighted consensus algorithm
-│   │   │   └── trust_store.py   # Multi-dimensional trust scores
-│   │   ├── execution/           # Auto-trade pipeline + kill switch
-│   │   ├── learning/            # Trust updates, calibration, regime memory
-│   │   ├── risk/                # Drawdown, correlation, circuit breakers
-│   │   ├── reports/             # AI-generated briefs
-│   │   ├── ws/                  # WebSocket gateway + Redis pub/sub
-│   │   └── ingestion/           # Data source adapters
-│   ├── alembic/                 # Database migrations
-│   └── tests/
-├── frontend/
-│   ├── src/
-│   │   ├── app/                 # Next.js pages (10 modules)
-│   │   ├── components/          # React components (70+)
-│   │   ├── stores/              # Zustand state management
-│   │   ├── lib/                 # API client, types, WebSocket
-│   │   └── styles/              # Design system CSS
-│   └── tailwind.config.ts       # Institutional dark theme
-├── docker-compose.yml
-├── Makefile
-└── .env.example
-```
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| API | FastAPI + Uvicorn |
-| Database | PostgreSQL 16 + TimescaleDB |
-| Cache | Redis 7 |
-| Task Queue | Celery + Redis |
-| Frontend | Next.js 14 + React + TypeScript |
-| Styling | Tailwind CSS (dark institutional theme) |
-| Charts | Lightweight Charts + Recharts |
-| State | Zustand |
-| AI/LLM | Anthropic Claude API |
-| Deployment | Docker Compose → Railway |
-
-## API Endpoints
-
-| Group | Key Routes |
-|-------|-----------|
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me` |
-| Agents | `POST /agents/trigger`, `GET /agents/trust-scores` |
-| Consensus | `GET /consensus/thresholds`, `GET /consensus/weights/:class` |
-| Execution | `POST /execution/kill-switch`, `GET /execution/status` |
-| Risk | `GET /risk/dashboard` |
-| Learning | `GET /learning/trust-scores`, `POST /learning/emergency-recalibrate` |
-| Reports | `GET /reports/daily-brief` |
-| WebSocket | `ws://localhost:8000/ws?token=JWT` |
-
-## MVP Status
-
-**Working now:**
-- Full database schema (20+ tables with relationships)
-- JWT authentication with registration and login
-- 3 agent implementations (Macro, Technical, Risk with veto)
-- 7-round consensus cycle (independent → conflict → challenge → consensus)
-- Weighted consensus algorithm with trust scores and regime relevance
-- Multi-dimensional trust score store with asymmetric learning rates
-- Celery beat scheduling (15-min signal cycles + daily/weekly/monthly calibration)
-- WebSocket gateway with Redis pub/sub
-- Risk dashboard API with drawdown and circuit breaker state
-- Kill switch endpoint
-- Dark institutional frontend with dashboard, sidebar nav, and 10 page stubs
-- Docker Compose (PostgreSQL + TimescaleDB + Redis + API + Worker + Beat + Frontend)
-
-**Next to build:**
-- Real market data ingestion (OANDA / Twelve Data adapters)
-- Feature engineering service (indicator computation from live data)
-- Remaining 8 agents (Flow, Volatility, Options, Liquidity, Sentiment, Execution, Learning, full Supervisor)
-- Trade card approval UI
-- Trade execution + broker integration
-- Full learning loop (post-trade attribution → trust updates → threshold recalibration)
-- Agent Council interactive frontend page
-- Regime memory engine with cosine similarity
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy (async+sync), Celery, Redis, PostgreSQL
+- **Frontend:** Next.js 14, React 18, TypeScript, Tailwind CSS, TradingView Lightweight Charts
+- **AI:** Google Gemini 2.0 Flash (sentiment, daily briefs), 6 custom scoring agents
+- **Data:** Twelve Data Grow plan (unlimited daily, 55 req/min), Finnhub (news + calendar)
 
 ---
 
-*Built for serious traders and funds. Not a toy. Not a dashboard.*
+## 45 Monitored Assets
+
+| Class | Assets | Count |
+|-------|--------|-------|
+| **FX** | EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CHF, USD/CAD, NZD/USD, EUR/GBP | 8 |
+| **Crypto** | BTC, ETH, SOL, BNB, XRP, ADA, DOGE, AVAX, DOT, LINK | 10 |
+| **Stocks** | AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM, V, UNH, MA, HD, PG, JNJ, AMD, CRM, NFLX, ADBE, INTC, PYPL, UBER, SQ, SHOP, PLTR, COIN | 25 |
+| **Commodities** | Gold (XAU/USD), Silver (XAG/USD) | 2 |
+
+---
+
+## 6 AI Agents
+
+| Agent | Role | What It Analyzes |
+|-------|------|-----------------|
+| **Technical** | Chart reader | RSI, MACD, EMA alignment (20/50/200), ADX, Stochastic |
+| **Macro** | Economist | Yield curve, DXY, VIX, EMA200 structure |
+| **Sentiment** | News reader | Gemini reads real Finnhub headlines, scores bullish/bearish |
+| **Volatility** | Risk measurer | Bollinger Bands, realized vol, ATR, BB position |
+| **Liquidity / Whales** | Money tracker | Volume spikes (whale detection), EMA structure, sweep detection |
+| **Risk** | Guardian | Drawdown limits, correlation, VETO power |
+
+### Consensus Formula
+```
+FinalScore = SUM(Wi x Ci x Ti x Ri) / SUM(Wi x Ti x Ri)
+```
+Where: W=base weight, C=confidence, T=trust score, R=regime relevance
+
+### Decision Thresholds (BALANCED profile)
+- **STRONG_SIGNAL:** score >= 0.72 (AUTO execute)
+- **SIGNAL:** score >= 0.58 (APPROVAL required)
+- **WEAK_SIGNAL:** score >= 0.45 (WATCH only)
+- **NO_TRADE:** below 0.45
+
+---
+
+## Market Scanner
+
+Every 30 minutes, the scanner:
+1. Quick-scans all 45 assets (60 candles each, RSI/EMA/MACD/ADX/BB/Stochastic scoring)
+2. Whale detection (volume vs 20-period avg: 2x=+15, 3x=+22, 5x=+30 bonus)
+3. Deep analysis on top 10 picks (full 6-agent cycle)
+4. Results cached in Redis, displayed on Top Picks page with countdown timer
+
+---
+
+## Self-Learning Paper Trading Engine
+
+Trades with $100,000 demo money automatically:
+
+1. Signal fires (consensus >= 0.58) -> paper trade opens
+2. ATR-based SL (2x) and TP (3x), 2% risk per trade, max 5 positions
+3. Positions checked every 60s for SL/TP/timeout (48h max)
+4. On close -> each agent graded: correct +0.015 trust, wrong -0.025 trust (asymmetric)
+5. Trust scores feed back into consensus weights
+6. System gets smarter every day
+
+---
+
+## Whale Detection
+
+| Method | Source | Detection |
+|--------|--------|-----------|
+| Volume Spikes | Candle data | Current vs 20-period avg (EXTREME/MAJOR/SPIKE) |
+| Insider Transactions | Finnhub | CEO/CFO buys/sells for stocks |
+| Whale Alert | API | Large crypto transfers to/from exchanges |
+
+---
+
+## Frontend Pages
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| Command | `/` | Dashboard: signals, risk, news feed, consensus, daily brief |
+| Top Picks | `/top-picks` | Scanner ranked results + countdown + clickable reasons |
+| Macro Arena | `/macro-arena` | Multi-asset overview with charts |
+| Event Radar | `/event-radar` | Economic calendar + real-time news |
+| Agent Council | `/agent-council` | TradingView chart + trigger cycles + agent outputs |
+| Execution | `/execution` | Trade approval: approve/reject/snooze |
+| Risk Control | `/risk-control` | Drawdown meters, circuit breakers, kill switch |
+| Trade Journal | `/journal` | Paper trades + signal cycle history |
+| Self-Learning | `/paper-trading` | Portfolio, agent leaderboard, learning log |
+| Learning Lab | `/learning-lab` | Strategy fitness, trust scores |
+| Intel Reports | `/intel-reports` | AI daily brief (Gemini-generated) |
+| Landing | `/landing` | Marketing page (black+gold, animated) |
+
+All pages are mobile responsive with hamburger menu sidebar.
+
+---
+
+## Celery Beat Schedule
+
+| Task | Interval | Purpose |
+|------|----------|---------|
+| OHLCV/Features | 2 min | Fetch candles + compute indicators |
+| Breaking news | 2 min | Scan for market-moving headlines |
+| Signal cycles | 15 min | Full 6-agent analysis (FX/Crypto) |
+| Stock cycles | 30 min | US market hours only |
+| Market scanner | 30 min | Scan all 45 assets + deep analyze top 10 |
+| Position check | 1 min | Paper trading SL/TP/timeout |
+| Daily brief | 06:00 UTC | AI morning market brief |
+| Daily report | 22:00 UTC | Paper trading performance summary |
+
+---
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection |
+| `REDIS_URL` | Redis connection |
+| `TWELVE_DATA_KEY` | Market data (Grow plan) |
+| `FINNHUB_KEY` | News + economic calendar |
+| `GEMINI_API_KEY` | Sentiment analysis + daily briefs |
+| `JWT_SECRET` | Auth token signing |
+| `ANTHROPIC_API_KEY` | Claude API (fallback) |
+
+---
+
+## Pricing
+
+| Plan | Price | Assets | Features |
+|------|-------|--------|----------|
+| Starter | $49/mo | 4 FX + Gold | 6 agents, basic alerts, journal |
+| Pro | $149/mo | All 45 | All timeframes, scanner, news, AI brief |
+| Institutional | $499/mo | Unlimited | API, multi-user, custom weights |
+
+14-day free trial on all plans.
+
+---
+
+## What's Next
+
+- [ ] Telegram/Email alerts on STRONG_SIGNAL
+- [ ] Alpaca integration (stocks + crypto execution)
+- [ ] OANDA integration (FX execution)
+- [ ] Custom domain (bahamut.ai)
+- [ ] Stripe billing
+- [ ] Demo mode (no-login preview)
+- [ ] WebSocket live updates
+- [ ] Backtest framework
+
+---
+
+*Built by Chris Giannakkas | 2026 Bahamut.AI*

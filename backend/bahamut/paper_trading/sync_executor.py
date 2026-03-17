@@ -111,7 +111,7 @@ def process_signal_sync(
                 ) VALUES (
                     :pid, :asset, :dir, :price, :qty, :val,
                     :score, :label, :sl, :tp,
-                    :risk, :atr, :price, :votes, :cscore,
+                    :risk, :atr, :price, CAST(:votes AS jsonb), :cscore,
                     :cid, 'OPEN', NOW()
                 )
             """), {

@@ -307,3 +307,40 @@ async def get_performance_stats(session: AsyncSession = Depends(get_db)):
         },
         "by_signal_type": label_stats,
     }
+
+
+@router.post("/debug-test")
+async def debug_test_trade():
+    """
+    Debug: directly test the sync executor with a fake trade.
+    This bypasses Celery to isolate if the issue is DB or task queue.
+    """
+    from bahamut.agents.persistence import ensure_tables
+    try:
+        ensure_tables()
+        tables_ok = True
+    except Exception as e:
+        return {"error": f"ensure_tables failed: {str(e)}"}
+
+    from bahamut.paper_trading.sync_executor import process_signal_sync
+    try:
+        result = process_signal_sync(
+            asset="BTCUSD",
+            direction="LONG",
+            consensus_score=0.65,
+            signal_label="SIGNAL",
+            entry_price=84000.0,
+            atr=1200.0,
+            agent_votes={
+                "technical": {"direction": "LONG", "confidence": 0.8},
+                "macro": {"direction": "LONG", "confidence": 0.5},
+                "sentiment": {"direction": "NEUTRAL", "confidence": 0.35},
+                "volatility": {"direction": "LONG", "confidence": 0.6},
+                "liquidity": {"direction": "LONG", "confidence": 0.7},
+            },
+            cycle_id="debug-test-001",
+        )
+        return {"tables_ok": tables_ok, "result": result}
+    except Exception as e:
+        import traceback
+        return {"tables_ok": tables_ok, "error": str(e), "traceback": traceback.format_exc()}
