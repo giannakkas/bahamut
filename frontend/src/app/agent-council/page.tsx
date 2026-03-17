@@ -58,7 +58,7 @@ export default function AgentCouncilPage() {
   const handleAssetChange = (asset: string) => {
     setSelectedAsset(asset);
     setCycleResult(null);
-    setCandles([]);
+    // Don't clear candles — keep old chart visible while new data loads
     loadData(asset);
     loadCandles(asset);
   };

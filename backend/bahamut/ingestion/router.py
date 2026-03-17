@@ -1,4 +1,5 @@
 """Market data API routes."""
+import time
 from fastapi import APIRouter, Depends, Query
 import structlog
 from bahamut.auth.router import get_current_user
@@ -10,20 +11,42 @@ from bahamut.ingestion.adapters.oanda import oanda, to_oanda_instrument, to_oand
 logger = structlog.get_logger()
 router = APIRouter()
 
+# In-memory candle cache — avoids hammering Twelve Data on every page load
+_candle_cache: dict[str, dict] = {}
+_candle_cache_ts: dict[str, float] = {}
+CANDLE_CACHE_TTL = 60  # seconds
+
 
 @router.get("/candles/{symbol}")
 async def get_candles(
     symbol: str, timeframe: str = Query("4H"), count: int = Query(200, ge=10, le=500),
     user: User = Depends(get_current_user),
 ):
+    cache_key = f"{symbol}:{timeframe}:{count}"
+    now = time.time()
+
+    # Return cached if fresh
+    if cache_key in _candle_cache and (now - _candle_cache_ts.get(cache_key, 0)) < CANDLE_CACHE_TTL:
+        return _candle_cache[cache_key]
+
+    # Fetch from Twelve Data
     if twelve_data.configured:
         candles = await twelve_data.get_candles(to_twelve_symbol(symbol), to_twelve_interval(timeframe), count)
         if candles:
-            return {"symbol": symbol, "timeframe": timeframe, "source": "live", "count": len(candles), "candles": candles}
+            result = {"symbol": symbol, "timeframe": timeframe, "source": "live", "count": len(candles), "candles": candles}
+            _candle_cache[cache_key] = result
+            _candle_cache_ts[cache_key] = now
+            return result
+
+    # Fallback to OANDA
     if oanda.configured:
         candles = await oanda.get_candles(to_oanda_instrument(symbol), to_oanda_granularity(timeframe), count)
         if candles:
-            return {"symbol": symbol, "timeframe": timeframe, "source": "live", "count": len(candles), "candles": candles}
+            result = {"symbol": symbol, "timeframe": timeframe, "source": "live", "count": len(candles), "candles": candles}
+            _candle_cache[cache_key] = result
+            _candle_cache_ts[cache_key] = now
+            return result
+
     return {"symbol": symbol, "source": "none", "count": 0, "candles": []}
 
 
