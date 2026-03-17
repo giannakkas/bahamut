@@ -13,6 +13,9 @@ interface Position {
   entry_price: number;
   current_price: number;
   exit_price: number | null;
+  quantity: number;
+  position_value: number;
+  risk_amount: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   realized_pnl: number | null;
@@ -183,6 +186,7 @@ export default function PaperTradingPage() {
   }
 
   const p = portfolio;
+  const totalUnrealized = p?.open_positions?.reduce((sum: number, pos: any) => sum + (pos.unrealized_pnl || 0), 0) || 0;
 
   return (
     <AppShell>
@@ -211,16 +215,22 @@ export default function PaperTradingPage() {
       </div>
 
       {/* Portfolio Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <StatCard
           label="Balance"
           value={`$${(p?.balance || 100_000).toLocaleString()}`}
-          sub={`Started: $${(p?.initial_balance || 100_000).toLocaleString()}`}
+          sub="Updates when trades close"
+        />
+        <StatCard
+          label="Unrealized P&L"
+          value={`${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}`}
+          sub={`${(p?.open_positions?.length || 0)} open positions`}
+          color={totalUnrealized >= 0 ? "text-emerald-400" : "text-red-400"}
         />
         <StatCard
           label="Total P&L"
           value={`${(p?.total_pnl || 0) >= 0 ? "+" : ""}$${(p?.total_pnl || 0).toLocaleString()}`}
-          sub={`${(p?.total_pnl_pct || 0) >= 0 ? "+" : ""}${(p?.total_pnl_pct || 0).toFixed(2)}%`}
+          sub={`${(p?.total_pnl_pct || 0) >= 0 ? "+" : ""}${(p?.total_pnl_pct || 0).toFixed(2)}% realized`}
           color={(p?.total_pnl || 0) >= 0 ? "text-emerald-400" : "text-red-400"}
         />
         <StatCard
@@ -260,6 +270,8 @@ export default function PaperTradingPage() {
                 <tr className="text-gray-400 text-xs uppercase border-b border-gray-700">
                   <th className="text-left py-2 px-3">Asset</th>
                   <th className="text-left py-2 px-3">Direction</th>
+                  <th className="text-right py-2 px-3">Invested</th>
+                  <th className="text-right py-2 px-3">Risk</th>
                   <th className="text-right py-2 px-3">Entry</th>
                   <th className="text-right py-2 px-3">Current</th>
                   <th className="text-right py-2 px-3">SL</th>
@@ -273,6 +285,8 @@ export default function PaperTradingPage() {
                   <tr key={pos.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td className="py-2 px-3 font-medium text-white">{pos.asset}</td>
                     <td className="py-2 px-3"><DirectionBadge direction={pos.direction} /></td>
+                    <td className="py-2 px-3 text-right font-mono text-gray-300">${pos.position_value ? Math.round(pos.position_value).toLocaleString() : '—'}</td>
+                    <td className="py-2 px-3 text-right font-mono text-yellow-400/70">${pos.risk_amount ? Math.round(pos.risk_amount).toLocaleString() : '—'}</td>
                     <td className="py-2 px-3 text-right font-mono text-gray-300">{pos.entry_price}</td>
                     <td className="py-2 px-3 text-right font-mono text-gray-300">{pos.current_price}</td>
                     <td className="py-2 px-3 text-right font-mono text-red-400/70">{pos.stop_loss}</td>
