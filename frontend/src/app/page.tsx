@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [cycles, setCycles] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [headlines, setHeadlines] = useState<any[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -68,13 +69,13 @@ export default function DashboardPage() {
           api.getRiskDashboard(),
           api.getDailyBrief(),
           api.getAllLatestCycles(),
-          api.getBreakingAlerts(),
         ]);
         if (r.status === 'fulfilled') setRisk(r.value);
         if (b.status === 'fulfilled') setBrief(b.value);
         if (c.status === 'fulfilled') setCycles(c.value);
       } catch (e) { console.error(e); }
       try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
+      try { const n = await api.getNews('general', 10); setHeadlines(n.articles || []); } catch {}
       setLoading(false);
     };
     load();
@@ -181,23 +182,48 @@ export default function DashboardPage() {
           </div>
 
           {/* Risk Status - LIVE */}
-          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Risk Status</h3>
-              {risk && <span className="text-[10px] text-accent-emerald">LIVE</span>}
+          <div className="space-y-3 sm:space-y-4">
+            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Risk Status</h3>
+                {risk && <span className="text-[10px] text-accent-emerald">LIVE</span>}
+              </div>
+              <div className="space-y-3">
+                <DrawdownBar label="Daily" value={dd.daily} max={limits.daily} />
+                <DrawdownBar label="Weekly" value={dd.weekly} max={limits.weekly} />
+                <DrawdownBar label="Total" value={dd.total} max={limits.total} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                {risk?.circuit_breakers?.map((cb: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${cb.active ? 'bg-accent-amber' : 'bg-accent-emerald'}`} />
+                    <span className="text-text-secondary text-xs">{cb.name}: <span className={cb.active ? 'text-accent-amber' : 'text-accent-emerald'}>{cb.active ? cb.reason || 'ON' : 'OK'}</span></span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-3">
-              <DrawdownBar label="Daily" value={dd.daily} max={limits.daily} />
-              <DrawdownBar label="Weekly" value={dd.weekly} max={limits.weekly} />
-              <DrawdownBar label="Total" value={dd.total} max={limits.total} />
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              {risk?.circuit_breakers?.map((cb: any, i: number) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${cb.active ? 'bg-accent-amber' : 'bg-accent-emerald'}`} />
-                  <span className="text-text-secondary text-xs">{cb.name}: <span className={cb.active ? 'text-accent-amber' : 'text-accent-emerald'}>{cb.active ? cb.reason || 'ON' : 'OK'}</span></span>
+
+            {/* Top Headlines */}
+            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Top Headlines</h3>
+                <a href="/event-radar" className="text-[10px] text-accent-violet hover:underline">View all</a>
+              </div>
+              {headlines.length > 0 ? (
+                <div className="space-y-0">
+                  {headlines.slice(0, 8).map((article: any, i: number) => (
+                    <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-start gap-2 py-2 border-b border-border-default last:border-0 hover:bg-bg-tertiary/50 -mx-1 px-1 rounded transition-colors">
+                      <span className="text-text-muted text-[10px] mt-0.5 shrink-0">{
+                        article.published ? new Date(article.published).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
+                      }</span>
+                      <span className="text-xs text-text-primary leading-tight line-clamp-2">{article.title}</span>
+                    </a>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <div className="text-xs text-text-muted text-center py-3">Loading headlines...</div>
+              )}
             </div>
           </div>
 
