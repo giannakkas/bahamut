@@ -62,7 +62,7 @@ async def get_asset_news(symbol: str, count: int = 5, user: User = Depends(get_c
 
 
 @router.get("/calendar-debug")
-async def debug_calendar(user: User = Depends(get_current_user)):
+async def debug_calendar():
     """Debug: test Finnhub calendar directly."""
     import httpx, os
     from datetime import datetime, timezone, timedelta
