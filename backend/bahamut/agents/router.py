@@ -158,3 +158,55 @@ async def macro_overview(user: User = Depends(get_current_user)):
             overview[asset] = {"error": str(e)}
 
     return overview
+
+
+@router.get("/history")
+async def get_cycle_history(
+    asset: str = None,
+    limit: int = 50,
+    user=Depends(get_current_user),
+):
+    """Get historical signal cycle results from database."""
+    from sqlalchemy import text
+    from bahamut.database import async_engine
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    query = """
+        SELECT cd.id, cd.cycle_id, cd.asset, cd.direction, cd.final_score,
+               cd.decision, cd.agreement_pct, cd.regime, cd.trading_profile,
+               cd.execution_mode, cd.blocked, cd.explanation,
+               cd.agent_contributions, cd.risk_flags, cd.created_at
+        FROM consensus_decisions cd
+    """
+    params = {"limit": limit}
+
+    if asset:
+        query += " WHERE cd.asset = :asset"
+        params["asset"] = asset
+
+    query += " ORDER BY cd.created_at DESC LIMIT :limit"
+
+    try:
+        async with AsyncSession(async_engine) as session:
+            result = await session.execute(text(query), params)
+            rows = result.mappings().all()
+
+        return [{
+            "id": str(r["id"]),
+            "cycle_id": str(r["cycle_id"]),
+            "asset": r["asset"],
+            "direction": r["direction"],
+            "score": float(r["final_score"]) if r["final_score"] else 0,
+            "decision": r["decision"],
+            "agreement": float(r["agreement_pct"]) if r["agreement_pct"] else 0,
+            "regime": r["regime"],
+            "profile": r["trading_profile"],
+            "mode": r["execution_mode"],
+            "blocked": r["blocked"],
+            "explanation": r["explanation"],
+            "risk_flags": r["risk_flags"] if isinstance(r["risk_flags"], list) else [],
+            "created_at": str(r["created_at"]) if r["created_at"] else "",
+        } for r in rows]
+    except Exception as e:
+        logger.error("history_query_failed", error=str(e))
+        return []

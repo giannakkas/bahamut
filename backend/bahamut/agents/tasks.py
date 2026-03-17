@@ -1,10 +1,10 @@
 """Celery tasks for agent orchestration with live market data."""
 import asyncio
+import json
 from bahamut.celery_app import celery_app
 from bahamut.agents.orchestrator import orchestrator
-from bahamut.shared.redis_client import RedisManager
+from bahamut.agents.persistence import save_cycle_to_db
 import structlog
-import json
 
 logger = structlog.get_logger()
 
@@ -14,6 +14,17 @@ ACTIVE_ASSETS = [
     {"symbol": "USDJPY", "asset_class": "fx"},
     {"symbol": "XAUUSD", "asset_class": "commodities"},
 ]
+
+
+def _cache_to_redis(asset: str, result: dict):
+    try:
+        import redis
+        from bahamut.config import get_settings
+        r = redis.from_url(get_settings().redis_url)
+        r.set(f"bahamut:latest_cycle:{asset}", json.dumps(result, default=str), ex=1800)
+        r.close()
+    except Exception as e:
+        logger.warning("redis_cache_failed", error=str(e))
 
 
 @celery_app.task(name="bahamut.agents.tasks.run_all_signal_cycles")
@@ -32,29 +43,12 @@ def run_all_signal_cycles():
                 )
             )
             d = result.get("decision", {})
-            logger.info("cycle_result",
-                        asset=asset_info["symbol"],
-                        direction=d.get("direction"),
-                        score=d.get("final_score"),
-                        decision=d.get("decision"),
-                        source=result.get("data_source"),
-                        price=result.get("market_price"),
-                        elapsed=result.get("elapsed_ms"))
+            logger.info("cycle_result", asset=asset_info["symbol"],
+                        direction=d.get("direction"), score=d.get("final_score"),
+                        decision=d.get("decision"), source=result.get("data_source"))
 
-            # Store latest result in Redis for API access
-            try:
-                import redis
-                from bahamut.config import get_settings
-                settings = get_settings()
-                r = redis.from_url(settings.redis_url)
-                r.set(
-                    f"bahamut:latest_cycle:{asset_info['symbol']}",
-                    json.dumps(result, default=str),
-                    ex=1800,  # 30 min TTL
-                )
-                r.close()
-            except Exception as e:
-                logger.warning("redis_cache_failed", error=str(e))
+            _cache_to_redis(asset_info["symbol"], result)
+            save_cycle_to_db(result)
 
         except Exception as e:
             logger.exception("cycle_failed", asset=asset_info["symbol"], error=str(e))
@@ -75,18 +69,8 @@ def run_single_cycle(asset: str, asset_class: str = "fx",
                 triggered_by="MANUAL",
             )
         )
-
-        # Cache in Redis
-        try:
-            import redis
-            from bahamut.config import get_settings
-            settings = get_settings()
-            r = redis.from_url(settings.redis_url)
-            r.set(f"bahamut:latest_cycle:{asset}", json.dumps(result, default=str), ex=1800)
-            r.close()
-        except Exception:
-            pass
-
+        _cache_to_redis(asset, result)
+        save_cycle_to_db(result)
         return result
     except Exception as e:
         logger.exception("single_cycle_failed", error=str(e))
