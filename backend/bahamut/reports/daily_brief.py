@@ -70,11 +70,13 @@ Respond ONLY with this JSON:
 {{"overview": "...", "key_movers": "...", "signal_summary": "...", "risk_events": "...", "outlook": "...", "regime_assessment": "RISK_ON or RISK_OFF or MIXED"}}"""
 
     # Try Gemini
-    if settings.gemini_api_key:
+    import os
+    gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
+    if gemini_key:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 resp = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}",
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
                     json={
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {

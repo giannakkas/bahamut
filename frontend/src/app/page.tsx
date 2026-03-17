@@ -96,7 +96,7 @@ export default function DashboardPage() {
       decision: d.decision || 'NO_TRADE',
       mode: d.execution_mode || 'WATCH',
     };
-  }).filter(s => s.decision !== 'NO_TRADE');
+  });
 
   // Build agent consensus from most recent cycle
   const latestCycle = Object.values(cycles)[0] as any;
@@ -106,7 +106,7 @@ export default function DashboardPage() {
   const latestAsset = latestCycle?.decision?.asset || '';
 
   // Count active signals
-  const signalCount = Object.keys(cycles).length;
+  const signalCount = signals.length;
   const strongSignals = signals.filter(s => s.decision === 'STRONG_SIGNAL' || s.decision === 'SIGNAL').length;
 
   return (

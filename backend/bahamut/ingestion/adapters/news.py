@@ -155,7 +155,7 @@ class NewsAdapter:
             return await self._company_news(symbol, count)
 
         category_map = {
-            "EURUSD": "forex", "GBPUSD": "forex", "USDJPY": "forex",
+            "EURUSD": "general", "GBPUSD": "general", "USDJPY": "general",
             "XAUUSD": "general", "BTCUSD": "crypto", "ETHUSD": "crypto",
         }
         category = category_map.get(symbol, "general")

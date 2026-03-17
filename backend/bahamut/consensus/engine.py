@@ -19,7 +19,7 @@ BASE_WEIGHTS = {
     "fx": {
         "macro_agent": 0.18, "flow_agent": 0.15, "volatility_agent": 0.10,
         "options_agent": 0.05, "liquidity_agent": 0.12, "sentiment_agent": 0.10,
-        "technical_agent": 0.15, "learning_agent": 0.05,
+        "technical_agent": 0.15, "risk_agent": 0.10, "learning_agent": 0.05,
     },
     "indices": {
         "macro_agent": 0.15, "flow_agent": 0.12, "volatility_agent": 0.12,
@@ -186,19 +186,31 @@ class ConsensusEngine:
         raw_score = max(0.0, min(1.0, (aligned_sum - opposed_penalty) / total_weight))
 
         # ── Step 4: Agreement penalty ──
+        # Agreement: only count agents with a directional opinion (not NEUTRAL)
         dir_counts = Counter(
             o.directional_bias for o in directional_outputs
-            if o.directional_bias != "NO_TRADE"
+            if o.directional_bias not in ("NO_TRADE", "NEUTRAL")
         )
-        total_voting = sum(dir_counts.values())
+        total_directional = sum(dir_counts.values())
+        total_agents = len(directional_outputs)
         aligned_count = dir_counts.get(candidate_dir, 0)
-        agreement_pct = aligned_count / total_voting if total_voting > 0 else 0
+        
+        # Agreement = aligned / total participating agents (including neutral)
+        agreement_pct = aligned_count / total_agents if total_agents > 0 else 0
 
         thresholds = PROFILE_THRESHOLDS.get(trading_profile, PROFILE_THRESHOLDS["BALANCED"])
-        min_agree_pct = thresholds["min_agreement"] / 9.0
-        if agreement_pct < min_agree_pct:
-            shortfall = min_agree_pct - agreement_pct
-            raw_score = max(0.0, raw_score - shortfall * 2.0)
+        
+        # Softer penalty: only penalize if fewer than half of DIRECTIONAL agents agree
+        min_agree_ratio = thresholds["min_agreement"] / 9.0
+        if total_directional > 0:
+            directional_agreement = aligned_count / total_directional
+            if directional_agreement < 0.5:
+                # Opposing majority - penalize
+                raw_score = max(0.0, raw_score * 0.5)
+        
+        # Still apply threshold check but less aggressively
+        if agreement_pct < min_agree_ratio * 0.5:
+            raw_score = max(0.0, raw_score * 0.7)
 
         # ── Step 5: Confidence floor filter ──
         min_conf = thresholds["min_confidence"]

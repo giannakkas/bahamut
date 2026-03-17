@@ -7,12 +7,67 @@ from sqlalchemy import text
 from bahamut.config import get_settings
 from bahamut.database import sync_engine
 
+def ensure_tables():
+    """Create tables if they don't exist."""
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS signal_cycles (
+                    id VARCHAR PRIMARY KEY,
+                    asset VARCHAR(20),
+                    timeframe VARCHAR(10),
+                    triggered_by VARCHAR(20) DEFAULT 'SCHEDULE',
+                    status VARCHAR(20) DEFAULT 'COMPLETED',
+                    started_at TIMESTAMP DEFAULT NOW(),
+                    completed_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS consensus_decisions (
+                    id VARCHAR PRIMARY KEY,
+                    cycle_id VARCHAR,
+                    asset VARCHAR(20),
+                    direction VARCHAR(20),
+                    final_score FLOAT DEFAULT 0,
+                    decision VARCHAR(30),
+                    agreement_pct FLOAT DEFAULT 0,
+                    regime VARCHAR(30),
+                    trading_profile VARCHAR(30),
+                    execution_mode VARCHAR(20),
+                    blocked BOOLEAN DEFAULT FALSE,
+                    explanation TEXT,
+                    agent_contributions JSONB,
+                    dissenting_agents JSONB,
+                    risk_flags JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_outputs (
+                    id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    cycle_id VARCHAR,
+                    agent_id VARCHAR(30),
+                    directional_bias VARCHAR(20),
+                    confidence FLOAT,
+                    evidence JSONB,
+                    risk_notes JSONB,
+                    invalidation_conditions JSONB,
+                    meta JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.commit()
+            logger.info("persistence_tables_ensured")
+    except Exception as e:
+        logger.error("table_creation_failed", error=str(e))
+
 logger = structlog.get_logger()
 settings = get_settings()
 
 
 def save_cycle_to_db(result: dict):
     """Persist a complete signal cycle result to the database."""
+    ensure_tables()
     try:
         decision = result.get("decision", {})
         cycle_id = result.get("cycle_id", "")

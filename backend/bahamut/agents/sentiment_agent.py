@@ -26,7 +26,9 @@ class SentimentAgent(BaseAgent):
         news_headlines = await self._fetch_news(asset)
 
         # Try Gemini first (FREE), fallback to Claude
-        if settings.gemini_api_key:
+        import os as _os
+        gemini_key = settings.gemini_api_key or _os.environ.get('GEMINI_API_KEY', '')
+        if gemini_key:
             try:
                 return await self._gemini_analysis(request, indicators, news_headlines)
             except Exception as e:
@@ -96,7 +98,7 @@ Respond ONLY with this JSON:
 
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
-                f"{GEMINI_URL}?key={settings.gemini_api_key}",
+                f"{GEMINI_URL}?key={gemini_key}",
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
