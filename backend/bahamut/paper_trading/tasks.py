@@ -33,6 +33,12 @@ def check_paper_positions(self):
     updates unrealized PnL, and closes positions that hit SL/TP/timeout.
     """
     try:
+        from bahamut.agents.persistence import ensure_tables
+        ensure_tables()
+    except Exception:
+        pass
+
+    try:
         closed = run_async(_check_positions_async())
         if closed:
             logger.info("paper_positions_closed", count=len(closed),
@@ -134,11 +140,26 @@ def on_signal_complete(
     Hook called by orchestrator after every signal cycle completes.
     This is the bridge between the existing signal system and paper trading.
     """
+    # Ensure tables exist (first run after deploy)
+    try:
+        from bahamut.agents.persistence import ensure_tables
+        ensure_tables()
+    except Exception as e:
+        logger.warning("ensure_tables_failed", error=str(e))
+
+    logger.info("paper_trading_signal_received",
+                asset=asset, direction=direction,
+                score=consensus_score, label=signal_label,
+                price=entry_price, atr=atr)
+
     try:
         result = run_async(_process_signal_async(
             asset, direction, consensus_score, signal_label,
             entry_price, atr, agent_votes, cycle_id
         ))
+        logger.info("paper_trading_signal_result",
+                    asset=asset, action=result.get("action"),
+                    reason=result.get("reason", ""))
         if result.get("action") == "OPENED":
             logger.info("paper_trade_auto_opened",
                         asset=asset, direction=direction,
@@ -146,6 +167,8 @@ def on_signal_complete(
         return result
     except Exception as e:
         logger.error("on_signal_complete_failed", error=str(e), asset=asset)
+        import traceback
+        logger.error("on_signal_complete_traceback", tb=traceback.format_exc())
         return {"error": str(e)}
 
 

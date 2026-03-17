@@ -161,21 +161,29 @@ class AgentOrchestrator:
                 }
 
             current_price = features.get("indicators", {}).get("close", 0)
-            atr = features.get("indicators", {}).get("atr", current_price * 0.01)
+            atr = features.get("indicators", {}).get("atr_14", 0) or (current_price * 0.01)
 
             if decision.direction in ("LONG", "SHORT") and current_price > 0:
+                logger.info("paper_trading_hook_firing",
+                            asset=asset, direction=decision.direction,
+                            score=decision.final_score, label=decision.decision,
+                            price=current_price, atr=atr)
                 on_signal_complete.delay(
                     asset=asset,
                     direction=decision.direction,
                     consensus_score=decision.final_score,
                     signal_label=decision.decision,
                     entry_price=current_price,
-                    atr=atr if atr else current_price * 0.01,
+                    atr=atr,
                     agent_votes=agent_votes,
                     cycle_id=str(cycle_id),
                 )
+            else:
+                logger.info("paper_trading_hook_skipped",
+                            asset=asset, direction=decision.direction,
+                            score=decision.final_score, price=current_price)
         except Exception as e:
-            logger.warning("paper_trading_hook_failed", error=str(e))
+            logger.error("paper_trading_hook_failed", error=str(e), traceback=True)
 
         return {
             "cycle_id": str(cycle_id),

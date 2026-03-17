@@ -193,20 +193,36 @@ market_data = MarketDataService()
 
 async def get_current_prices() -> dict[str, float]:
     """
-    Fetch current prices for all monitored assets.
+    Fetch current prices for assets with open paper positions.
     Returns: {"EURUSD": 1.0850, "BTCUSD": 67500.0, ...}
     Used by paper trading engine to check SL/TP.
     """
     from bahamut.ingestion.adapters.twelvedata import twelve_data, to_twelve_symbol
 
-    assets = [
-        "EURUSD", "GBPUSD", "USDJPY", "XAUUSD",
-        "BTCUSD", "ETHUSD",
-        "AAPL", "TSLA", "NVDA", "META",
-    ]
+    # Get assets with open positions from DB
+    assets_to_fetch = set()
+    try:
+        from sqlalchemy import text
+        from bahamut.database import sync_engine
+        with sync_engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT DISTINCT asset FROM paper_positions WHERE status = 'OPEN'"
+            ))
+            for row in result:
+                assets_to_fetch.add(row[0])
+    except Exception:
+        pass
+
+    # Fallback: always check the core assets even if no open positions
+    if not assets_to_fetch:
+        assets_to_fetch = {
+            "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD",
+            "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
+            "AAPL", "MSFT", "NVDA", "META", "TSLA", "GOOGL", "AMZN",
+        }
 
     prices = {}
-    for asset in assets:
+    for asset in assets_to_fetch:
         try:
             td_symbol = to_twelve_symbol(asset)
             result = await twelve_data.get_latest_price(td_symbol)
