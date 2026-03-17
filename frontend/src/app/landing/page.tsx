@@ -108,14 +108,14 @@ export default function LandingPage() {
       `}</style>
 
       {/* Nav */}
-      <nav className="flex items-center justify-between px-8 py-4 max-w-7xl mx-auto relative z-20 border-b border-[#1a1a1a]">
-        <img src="/logo.png" alt="Bahamut.AI" className="h-20 -my-5" />
-        <div className="flex items-center gap-8">
-          <a href="#agents" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">AI Agents</a>
-          <a href="#safety" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Safety</a>
-          <a href="#pricing" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Pricing</a>
-          <a href="/login" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Sign In</a>
-          <a href="/login" className="bg-gradient-to-r from-[#C9A94E] to-[#A07C30] hover:from-[#D4B85C] hover:to-[#B08C3A] text-black font-bold px-6 py-2.5 rounded-lg text-sm transition-all gold-glow">
+      <nav className="flex items-center justify-between px-4 sm:px-8 py-4 max-w-7xl mx-auto relative z-20 border-b border-[#1a1a1a]">
+        <img src="/logo.png" alt="Bahamut.AI" className="h-14 sm:h-20 sm:-my-5" />
+        <div className="flex items-center gap-3 sm:gap-8">
+          <a href="#agents" className="hidden sm:inline text-sm text-white/30 hover:text-[#C9A94E] transition-colors">AI Agents</a>
+          <a href="#safety" className="hidden sm:inline text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Safety</a>
+          <a href="#pricing" className="hidden sm:inline text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Pricing</a>
+          <a href="/login" className="hidden sm:inline text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Sign In</a>
+          <a href="/login" className="bg-gradient-to-r from-[#C9A94E] to-[#A07C30] hover:from-[#D4B85C] hover:to-[#B08C3A] text-black font-bold px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg text-sm transition-all gold-glow">
             Start Free Trial
           </a>
         </div>
@@ -124,32 +124,32 @@ export default function LandingPage() {
       <PriceTicker />
 
       {/* Hero */}
-      <section className="relative px-8 pt-28 pb-24 max-w-5xl mx-auto text-center overflow-hidden">
-        <div className="absolute inset-0 opacity-40"><CandlestickBG /></div>
+      <section className="relative px-4 sm:px-8 pt-16 sm:pt-28 pb-16 sm:pb-24 max-w-5xl mx-auto text-center overflow-hidden">
+        <div className="absolute inset-0 opacity-40 hidden sm:block"><CandlestickBG /></div>
         <div className="absolute inset-0 bg-gradient-to-b from-[#050505] via-transparent to-[#050505]" />
 
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#C9A94E]/20 bg-[#C9A94E]/5 mb-8 fade-up">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#C9A94E]/20 bg-[#C9A94E]/5 mb-6 sm:mb-8 fade-up">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-sm text-[#C9A94E]/80">Live — analyzing 10 assets across FX, Crypto & Stocks</span>
+            <span className="text-xs sm:text-sm text-[#C9A94E]/80">Live — analyzing 10 assets across FX, Crypto & Stocks</span>
           </div>
 
-          <h1 className="text-7xl leading-[1.05] mb-7 tracking-tight fade-d1" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>
+          <h1 className="text-4xl sm:text-7xl leading-[1.05] mb-5 sm:mb-7 tracking-tight fade-d1" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>
             Stop Guessing.<br />
             <span className="gold-shimmer">Start Knowing.</span>
           </h1>
 
-          <p className="text-xl text-white/35 max-w-2xl mx-auto mb-10 leading-relaxed fade-d2">
+          <p className="text-base sm:text-xl text-white/35 max-w-2xl mx-auto mb-8 sm:mb-10 leading-relaxed fade-d2">
             6 AI agents read the news, analyze the charts, debate each other, and tell you
             <span className="text-white/80 font-semibold"> exactly</span> when to trade — and when to
             <span className="text-white/80 font-semibold"> stay out</span>.
           </p>
 
           <div className="fade-d3">
-            <a href="/login" className="inline-block bg-gradient-to-r from-[#C9A94E] to-[#A07C30] hover:from-[#D4B85C] hover:to-[#B08C3A] text-black font-black px-14 py-4 rounded-xl text-lg transition-all gold-glow hover:scale-105">
+            <a href="/login" className="inline-block bg-gradient-to-r from-[#C9A94E] to-[#A07C30] hover:from-[#D4B85C] hover:to-[#B08C3A] text-black font-black px-8 sm:px-14 py-3 sm:py-4 rounded-xl text-base sm:text-lg transition-all gold-glow hover:scale-105">
               Start Your 14-Day Free Trial
             </a>
             <p className="text-sm text-white/15 mt-4">No credit card · Cancel anytime</p>
@@ -158,8 +158,8 @@ export default function LandingPage() {
       </section>
 
       {/* Stats */}
-      <section className="px-8 py-8 max-w-5xl mx-auto">
-        <div className="grid grid-cols-4 gap-4">
+      <section className="px-4 sm:px-8 py-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {[
             { v: '10', l: 'Assets Monitored', s: '' },
             { v: '96', l: 'Daily Cycles', s: '+' },
@@ -175,9 +175,9 @@ export default function LandingPage() {
       </section>
 
       {/* Pain Points */}
-      <section className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Sound Familiar?</h2>
-        <p className="text-center text-white/20 mb-12">Every trader faces these. Bahamut fixes all of them.</p>
+      <section className="px-4 sm:px-8 py-12 sm:py-20 max-w-5xl mx-auto">
+        <h2 className="text-2xl sm:text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Sound Familiar?</h2>
+        <p className="text-center text-white/20 mb-8 sm:mb-12">Every trader faces these. Bahamut fixes all of them.</p>
         <div className="space-y-3">
           {[
             { bad: "You trade on gut feeling and hope", good: "6 AI agents analyze with real data — RSI, MACD, EMAs, news, macro" },
@@ -186,13 +186,13 @@ export default function LandingPage() {
             { bad: "You overtrade and blow your account", good: "Risk Agent has VETO power. Circuit breakers halt at your loss limit" },
             { bad: "You second-guess every single decision", good: "Watch 6 AI specialists debate. See exactly why they agree or disagree" },
           ].map((item, i) => (
-            <div key={i} className="grid grid-cols-2 rounded-xl overflow-hidden border border-[#1a1a1a]">
-              <div className="bg-red-500/[0.03] p-4 flex items-center gap-3 border-r border-[#1a1a1a]">
-                <span className="text-red-500/80 font-bold">✕</span>
+            <div key={i} className="grid grid-cols-1 sm:grid-cols-2 rounded-xl overflow-hidden border border-[#1a1a1a]">
+              <div className="bg-red-500/[0.03] p-3 sm:p-4 flex items-center gap-3 border-b sm:border-b-0 sm:border-r border-[#1a1a1a]">
+                <span className="text-red-500/80 font-bold shrink-0">✕</span>
                 <span className="text-white/40 text-sm">{item.bad}</span>
               </div>
-              <div className="bg-emerald-500/[0.03] p-4 flex items-center gap-3">
-                <span className="text-emerald-500/80 font-bold">✓</span>
+              <div className="bg-emerald-500/[0.03] p-3 sm:p-4 flex items-center gap-3">
+                <span className="text-emerald-500/80 font-bold shrink-0">✓</span>
                 <span className="text-white/40 text-sm">{item.good}</span>
               </div>
             </div>
@@ -201,12 +201,12 @@ export default function LandingPage() {
       </section>
 
       {/* Agents */}
-      <section id="agents" className="px-8 py-20 bg-[#080808] border-y border-[#1a1a1a]">
+      <section id="agents" className="px-4 sm:px-8 py-12 sm:py-20 bg-[#080808] border-y border-[#1a1a1a]">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your AI Trading Council</h2>
-          <p className="text-center text-white/20 mb-12">6 specialists. They argue. They challenge. Then they vote.</p>
+          <h2 className="text-2xl sm:text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your AI Trading Council</h2>
+          <p className="text-center text-white/20 mb-8 sm:mb-12">6 specialists. They argue. They challenge. Then they vote.</p>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             {[
               { n: 'Technical', i: 'T', c: '#3B82F6', d: 'Reads charts — RSI, MACD, moving averages, trend strength. Finds the patterns humans miss.' },
               { n: 'Macro', i: 'M', c: '#8B5CF6', d: 'Studies interest rates, inflation, central bank moves. Sees where the economy is heading.' },
@@ -224,7 +224,7 @@ export default function LandingPage() {
             ))}
           </div>
 
-          <div className="flex items-center justify-center gap-2 mt-12 text-sm">
+          <div className="hidden sm:flex items-center justify-center gap-2 mt-12 text-sm">
             {['📊 Data', '→', '🧠 Analyze', '→', '⚔️ Debate', '→', '🗳️ Vote', '→', '✅ You Decide'].map((s, i) => (
               <span key={i} className={s === '→' ? 'text-[#C9A94E]/60' : 'px-3 py-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] text-white/35 text-xs'}>
                 {s}
@@ -235,10 +235,10 @@ export default function LandingPage() {
       </section>
 
       {/* Safety */}
-      <section id="safety" className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your Capital is Protected</h2>
-        <p className="text-center text-white/20 mb-12">Multiple layers of protection. No exceptions.</p>
-        <div className="grid grid-cols-3 gap-4">
+      <section id="safety" className="px-4 sm:px-8 py-12 sm:py-20 max-w-5xl mx-auto">
+        <h2 className="text-2xl sm:text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Your Capital is Protected</h2>
+        <p className="text-center text-white/20 mb-8 sm:mb-12">Multiple layers of protection. No exceptions.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
           {[
             { t: 'Risk Agent VETO', d: 'Too risky? Blocked instantly. No override possible.', i: '🛡️' },
             { t: 'Circuit Breakers', d: 'Hit loss limit? All trading halts automatically.', i: '⚡' },
@@ -257,8 +257,8 @@ export default function LandingPage() {
       </section>
 
       {/* Social Proof */}
-      <section className="px-8 py-16 bg-[#080808] border-y border-[#1a1a1a]">
-        <div className="max-w-5xl mx-auto grid grid-cols-3 gap-6">
+      <section className="px-4 sm:px-8 py-12 sm:py-16 bg-[#080808] border-y border-[#1a1a1a]">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
           {[
             { n: 'Marcus T.', r: 'Forex Trader', t: "I used to stare at charts for hours. Now Bahamut tells me exactly when the odds are in my favor — and when to stay out." },
             { n: 'Elena K.', r: 'Part-time Trader', t: "Watching 6 AI specialists argue about my trade gives me confidence I never had on my own." },
@@ -280,10 +280,10 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="px-8 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>One Bad Trade Costs More<br />Than a Year of Bahamut</h2>
-        <p className="text-center text-white/20 mb-12">Start free. Upgrade when you see results.</p>
-        <div className="grid grid-cols-3 gap-5">
+      <section id="pricing" className="px-4 sm:px-8 py-12 sm:py-20 max-w-5xl mx-auto">
+        <h2 className="text-2xl sm:text-4xl text-center mb-3" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>One Bad Trade Costs More<br />Than a Year of Bahamut</h2>
+        <p className="text-center text-white/20 mb-8 sm:mb-12">Start free. Upgrade when you see results.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
           {[
             { n: 'Starter', p: 49, d: 'Learn with AI guidance', pop: false,
               f: ['4 FX + Gold pairs', '6 AI agents per trade', 'Trade approval cards', 'Risk dashboard', 'Trade journal'] },
@@ -316,21 +316,21 @@ export default function LandingPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="px-8 py-28 text-center relative overflow-hidden">
-        <div className="absolute inset-0 opacity-25"><CandlestickBG /></div>
+      <section className="px-4 sm:px-8 py-16 sm:py-28 text-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-25 hidden sm:block"><CandlestickBG /></div>
         <div className="absolute inset-0 bg-gradient-to-b from-[#050505] via-transparent to-[#050505]" />
         <div className="relative z-10">
-          <h2 className="text-5xl mb-5" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Ready to Trade<br /><span className="gold-shimmer">With Confidence?</span></h2>
-          <p className="text-white/25 mb-8 max-w-lg mx-auto">Join traders who stopped guessing and started letting AI protect and grow their capital.</p>
-          <a href="/login" className="inline-block bg-gradient-to-r from-[#C9A94E] to-[#A07C30] text-black font-black px-14 py-4 rounded-xl text-lg gold-glow hover:scale-105 transition-all">
+          <h2 className="text-3xl sm:text-5xl mb-5" style={{ fontFamily: "DM Serif Display, Georgia, serif" }}>Ready to Trade<br /><span className="gold-shimmer">With Confidence?</span></h2>
+          <p className="text-white/25 mb-8 max-w-lg mx-auto text-sm sm:text-base">Join traders who stopped guessing and started letting AI protect and grow their capital.</p>
+          <a href="/login" className="inline-block bg-gradient-to-r from-[#C9A94E] to-[#A07C30] text-black font-black px-8 sm:px-14 py-3 sm:py-4 rounded-xl text-base sm:text-lg gold-glow hover:scale-105 transition-all">
             Start Free Trial Now
           </a>
         </div>
       </section>
 
-      <footer className="px-8 py-8 border-t border-[#1a1a1a]">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-10 opacity-30" />
+      <footer className="px-4 sm:px-8 py-6 sm:py-8 border-t border-[#1a1a1a]">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <img src="/logo.png" alt="Bahamut.AI" className="h-8 sm:h-10 opacity-30" />
           <p className="text-[10px] text-white/10">© 2026 Bahamut.AI · Trading involves risk · Not financial advice</p>
         </div>
       </footer>

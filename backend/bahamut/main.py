@@ -30,6 +30,13 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     logger.info("Starting Bahamut.AI", environment=settings.environment)
     await redis_manager.connect()
+    # Clear stale cached data from previous deploy
+    if redis_manager.redis:
+        try:
+            await redis_manager.redis.delete("bahamut:daily_brief")
+            logger.info("cleared_stale_brief_cache")
+        except Exception:
+            pass
     yield
     await redis_manager.disconnect()
     logger.info("Bahamut.AI shutdown complete")

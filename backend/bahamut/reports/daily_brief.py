@@ -74,27 +74,33 @@ Respond ONLY with this JSON:
     gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
     if gemini_key:
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with httpx.AsyncClient(timeout=45) as client:
                 resp = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}",
                     json={
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
                             "temperature": 0.4,
-                            "maxOutputTokens": 800,
-                            "responseMimeType": "application/json",
+                            "maxOutputTokens": 1000,
                         },
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
+                # Strip markdown fences if present
+                text = text.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
                 result = json.loads(text)
                 logger.info("daily_brief_generated", model="gemini")
                 return {
                     "date": now.strftime("%Y-%m-%d"),
                     "generated_at": now.isoformat(),
-                    "model": "gemini-2.5-flash",
+                    "model": "gemini-2.0-flash",
                     "regime": result.get("regime_assessment", "MIXED"),
                     **result,
                     "signals_analyzed": len(cycle_summaries),

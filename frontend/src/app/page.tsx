@@ -154,14 +154,14 @@ export default function DashboardPage() {
         )}
 
         {/* Metrics */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <MetricCard label="Active Signals" value={String(signalCount)} sub={strongSignals > 0 ? strongSignals + ' actionable' : 'Monitoring'} variant={strongSignals > 0 ? 'positive' : 'neutral'} />
           <MetricCard label="Agents Online" value="6 / 6" sub="All operational" variant="positive" />
           <MetricCard label="Consensus Cycles" value={String(signalCount)} sub="Last 30 min" />
           <MetricCard label="Risk Status" value={dd.daily > limits.daily * 0.8 ? 'CAUTION' : 'CLEAR'} sub={'Daily DD: ' + (dd.daily * 100).toFixed(1) + '%'} variant={dd.daily > limits.daily * 0.8 ? 'negative' : 'positive'} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           {/* Active Signals - LIVE */}
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">

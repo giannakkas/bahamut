@@ -15,31 +15,33 @@ from bahamut.agents.schemas import (
 logger = structlog.get_logger()
 
 # ── Base weights by asset class ──
+# Only includes agents that actually exist: technical, macro, volatility, sentiment, liquidity
+# risk_agent is handled separately (veto power, not scored)
 BASE_WEIGHTS = {
     "fx": {
-        "macro_agent": 0.18, "flow_agent": 0.15, "volatility_agent": 0.10,
-        "options_agent": 0.05, "liquidity_agent": 0.12, "sentiment_agent": 0.10,
-        "technical_agent": 0.15, "risk_agent": 0.10, "learning_agent": 0.05,
+        "macro_agent": 0.25, "volatility_agent": 0.15,
+        "liquidity_agent": 0.15, "sentiment_agent": 0.15,
+        "technical_agent": 0.30,
     },
     "indices": {
-        "macro_agent": 0.15, "flow_agent": 0.12, "volatility_agent": 0.12,
-        "options_agent": 0.15, "liquidity_agent": 0.10, "sentiment_agent": 0.10,
-        "technical_agent": 0.12, "learning_agent": 0.04,
+        "macro_agent": 0.20, "volatility_agent": 0.20,
+        "liquidity_agent": 0.15, "sentiment_agent": 0.15,
+        "technical_agent": 0.30,
     },
     "commodities": {
-        "macro_agent": 0.15, "flow_agent": 0.10, "volatility_agent": 0.10,
-        "options_agent": 0.05, "liquidity_agent": 0.10, "sentiment_agent": 0.15,
-        "technical_agent": 0.15, "learning_agent": 0.10,
+        "macro_agent": 0.20, "volatility_agent": 0.15,
+        "liquidity_agent": 0.15, "sentiment_agent": 0.25,
+        "technical_agent": 0.25,
     },
     "crypto": {
-        "macro_agent": 0.08, "flow_agent": 0.10, "volatility_agent": 0.12,
-        "options_agent": 0.05, "liquidity_agent": 0.15, "sentiment_agent": 0.20,
-        "technical_agent": 0.15, "learning_agent": 0.05,
+        "macro_agent": 0.10, "volatility_agent": 0.15,
+        "liquidity_agent": 0.20, "sentiment_agent": 0.25,
+        "technical_agent": 0.30,
     },
     "bonds": {
-        "macro_agent": 0.20, "flow_agent": 0.15, "volatility_agent": 0.10,
-        "options_agent": 0.05, "liquidity_agent": 0.08, "sentiment_agent": 0.10,
-        "technical_agent": 0.12, "learning_agent": 0.10,
+        "macro_agent": 0.30, "volatility_agent": 0.15,
+        "liquidity_agent": 0.10, "sentiment_agent": 0.15,
+        "technical_agent": 0.30,
     },
 }
 
@@ -47,33 +49,31 @@ BASE_WEIGHTS = {
 REGIME_RELEVANCE = {
     "RISK_OFF": {
         "macro_agent": 1.0, "volatility_agent": 1.0, "sentiment_agent": 0.9,
-        "technical_agent": 0.5, "flow_agent": 0.7, "options_agent": 0.6,
-        "liquidity_agent": 0.7, "learning_agent": 0.5,
+        "technical_agent": 0.5, "liquidity_agent": 0.7,
     },
     "RISK_ON": {
-        "macro_agent": 0.8, "technical_agent": 1.0, "flow_agent": 1.0,
-        "volatility_agent": 0.6, "sentiment_agent": 0.7, "options_agent": 0.7,
-        "liquidity_agent": 0.8, "learning_agent": 0.7,
+        "macro_agent": 0.8, "technical_agent": 1.0,
+        "volatility_agent": 0.6, "sentiment_agent": 0.7,
+        "liquidity_agent": 0.8,
     },
     "HIGH_VOL": {
-        "volatility_agent": 1.0, "options_agent": 1.0, "macro_agent": 0.7,
-        "technical_agent": 0.5, "flow_agent": 0.6, "sentiment_agent": 0.8,
-        "liquidity_agent": 0.8, "learning_agent": 0.5,
+        "volatility_agent": 1.0, "macro_agent": 0.7,
+        "technical_agent": 0.5, "sentiment_agent": 0.8,
+        "liquidity_agent": 0.8,
     },
     "LOW_VOL": {
-        "technical_agent": 1.0, "liquidity_agent": 1.0, "options_agent": 0.8,
-        "macro_agent": 0.6, "flow_agent": 0.8, "volatility_agent": 0.5,
-        "sentiment_agent": 0.5, "learning_agent": 0.7,
+        "technical_agent": 1.0, "liquidity_agent": 1.0,
+        "macro_agent": 0.6, "volatility_agent": 0.5,
+        "sentiment_agent": 0.5,
     },
     "CRISIS": {
         "macro_agent": 1.0, "volatility_agent": 1.0, "sentiment_agent": 1.0,
-        "technical_agent": 0.3, "flow_agent": 0.5, "options_agent": 0.5,
-        "liquidity_agent": 0.6, "learning_agent": 0.3,
+        "technical_agent": 0.3, "liquidity_agent": 0.6,
     },
     "TREND_CONTINUATION": {
-        "technical_agent": 1.0, "flow_agent": 1.0, "macro_agent": 0.8,
-        "volatility_agent": 0.6, "options_agent": 0.5, "sentiment_agent": 0.6,
-        "liquidity_agent": 0.7, "learning_agent": 0.7,
+        "technical_agent": 1.0, "macro_agent": 0.8,
+        "volatility_agent": 0.6, "sentiment_agent": 0.6,
+        "liquidity_agent": 0.7,
     },
 }
 
@@ -284,10 +284,16 @@ class ConsensusEngine:
             if o.directional_bias not in ("NO_TRADE", "NEUTRAL")
         )
         if not counts:
+            # No directional opinions at all — check if any NEUTRAL agents lean via confidence
+            # Still return NO_TRADE if truly no signal
             return "NO_TRADE"
         top_two = counts.most_common(2)
         if len(top_two) > 1 and top_two[0][1] == top_two[1][1]:
-            return "NO_TRADE"  # tie
+            # Tie — break by average confidence
+            dir_a, dir_b = top_two[0][0], top_two[1][0]
+            conf_a = sum(o.confidence for o in outputs if o.directional_bias == dir_a) / top_two[0][1]
+            conf_b = sum(o.confidence for o in outputs if o.directional_bias == dir_b) / top_two[1][1]
+            return dir_a if conf_a >= conf_b else dir_b
         return top_two[0][0]
 
     def _map_to_decision(self, score: float, profile: str, thresholds: dict) -> str:

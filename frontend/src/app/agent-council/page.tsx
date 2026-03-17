@@ -118,7 +118,7 @@ export default function AgentCouncilPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <select value={selectedAsset} onChange={e => handleAssetChange(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
               {['EURUSD','GBPUSD','USDJPY','XAUUSD','BTCUSD','ETHUSD','AAPL','TSLA','NVDA','META'].map(a => <option key={a} value={a}>{a}</option>)}
@@ -214,7 +214,7 @@ export default function AgentCouncilPage() {
         {agentOutputs.length > 0 && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
             <h3 className="text-sm font-semibold mb-3">Agent Outputs ({agentOutputs.length} agents)</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {agentOutputs.map((output: any) => {
                 const meta = AGENT_META[output.agent_id] || { name: output.agent_id, icon: '?', color: '#888' };
                 const arrow = output.directional_bias === 'LONG' ? '▲' : output.directional_bias === 'SHORT' ? '▼' : '─';
@@ -268,7 +268,7 @@ export default function AgentCouncilPage() {
         {/* Trust Scores */}
         <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
           <h3 className="text-sm font-semibold mb-3">Agent Trust Scores</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {Object.keys(AGENT_META).map(agentId => {
               const meta = AGENT_META[agentId];
               const scores = trustScores?.[agentId] || {};
