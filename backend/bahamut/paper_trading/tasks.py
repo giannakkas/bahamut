@@ -138,9 +138,9 @@ def on_signal_complete(
 ):
     """
     Hook called by orchestrator after every signal cycle completes.
-    This is the bridge between the existing signal system and paper trading.
+    Uses SYNC executor to avoid async event loop issues in Celery.
     """
-    # Ensure tables exist (first run after deploy)
+    # Ensure tables exist
     try:
         from bahamut.agents.persistence import ensure_tables
         ensure_tables()
@@ -153,17 +153,20 @@ def on_signal_complete(
                 price=entry_price, atr=atr)
 
     try:
-        result = run_async(_process_signal_async(
-            asset, direction, consensus_score, signal_label,
-            entry_price, atr, agent_votes, cycle_id
-        ))
+        from bahamut.paper_trading.sync_executor import process_signal_sync
+        result = process_signal_sync(
+            asset=asset,
+            direction=direction,
+            consensus_score=consensus_score,
+            signal_label=signal_label,
+            entry_price=entry_price,
+            atr=atr,
+            agent_votes=agent_votes,
+            cycle_id=cycle_id,
+        )
         logger.info("paper_trading_signal_result",
                     asset=asset, action=result.get("action"),
                     reason=result.get("reason", ""))
-        if result.get("action") == "OPENED":
-            logger.info("paper_trade_auto_opened",
-                        asset=asset, direction=direction,
-                        score=consensus_score)
         return result
     except Exception as e:
         logger.error("on_signal_complete_failed", error=str(e), asset=asset)

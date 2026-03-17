@@ -75,7 +75,7 @@ export default function DashboardPage() {
         if (c.status === 'fulfilled') setCycles(c.value);
       } catch (e) { console.error(e); }
       try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
-      try { const n = await api.getNews('general', 10); setHeadlines(n.articles || []); } catch {}
+      try { const n = await api.getNews('general', 15); setHeadlines(n.articles || []); } catch {}
       setLoading(false);
     };
     load();
@@ -139,7 +139,7 @@ export default function DashboardPage() {
               <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
               <span className="text-sm font-bold text-accent-crimson">Breaking News Alert</span>
             </div>
-            {alerts.slice(0, 3).map((alert: any, i: number) => (
+            {[...new Map(alerts.slice(0, 5).map((a: any) => [a.headline, a])).values()].slice(0, 3).map((alert: any, i: number) => (
               <div key={i} className="flex items-center justify-between py-1.5 border-b border-accent-crimson/10 last:border-0">
                 <div className="flex-1">
                   <span className="text-sm text-text-primary">{alert.headline}</span>
@@ -203,21 +203,24 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Top Headlines */}
+            {/* News Feed — fills remaining space */}
             <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold">Top Headlines</h3>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" style={{ animationDuration: '3s' }} />
+                  News Feed
+                </h3>
                 <a href="/event-radar" className="text-[10px] text-accent-violet hover:underline">View all</a>
               </div>
               {headlines.length > 0 ? (
                 <div className="space-y-0">
-                  {headlines.slice(0, 8).map((article: any, i: number) => (
+                  {headlines.slice(0, 15).map((article: any, i: number) => (
                     <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-start gap-2 py-2 border-b border-border-default last:border-0 hover:bg-bg-tertiary/50 -mx-1 px-1 rounded transition-colors">
-                      <span className="text-text-muted text-[10px] mt-0.5 shrink-0">{
+                      className="flex items-start gap-2.5 py-2.5 border-b border-border-default last:border-0 hover:bg-bg-tertiary/50 -mx-1 px-1 rounded transition-colors">
+                      <span className="text-text-muted text-[10px] mt-1 shrink-0 w-10">{
                         article.published ? new Date(article.published).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
                       }</span>
-                      <span className="text-xs text-text-primary leading-tight line-clamp-2">{article.title}</span>
+                      <span className="text-sm text-text-primary leading-snug">{article.title}</span>
                     </a>
                   ))}
                 </div>
@@ -267,20 +270,26 @@ export default function DashboardPage() {
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">Daily Intelligence Brief</h3>
-              {brief && <span className="text-[10px] text-accent-emerald">LIVE</span>}
+              {brief && brief.model !== 'template' && <span className="text-[10px] text-accent-emerald">LIVE</span>}
             </div>
-            {brief ? (
+            {brief && (brief.overview || brief.signal_summary) ? (
               <>
-                <p className="text-sm text-text-secondary leading-relaxed">{brief.summary}</p>
+                <p className="text-sm text-text-secondary leading-relaxed mb-2">{brief.overview}</p>
+                {brief.signal_summary && (
+                  <p className="text-xs text-text-muted leading-relaxed border-l-2 border-accent-violet pl-3 mb-2">{brief.signal_summary}</p>
+                )}
                 <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
-                  <span>Signals: <span className="font-mono text-text-primary">{brief.signals_generated}</span></span>
-                  <span>Trades: <span className="font-mono text-text-primary">{brief.trades_executed}</span></span>
-                  <span>Risk Events: <span className="font-mono text-text-primary">{brief.risk_events}</span></span>
+                  <span>Signals: <span className="font-mono text-text-primary">{brief.signals_analyzed || 0}</span></span>
+                  <span>News: <span className="font-mono text-text-primary">{brief.news_analyzed || 0}</span></span>
+                  <span>Risk Events: <span className="font-mono text-text-primary">{brief.events_upcoming || 0}</span></span>
                 </div>
                 <a href="/intel-reports" className="block mt-2 text-xs text-accent-violet hover:underline">Full report →</a>
               </>
             ) : (
-              <div className="text-sm text-text-muted p-4 text-center">Loading brief...</div>
+              <div className="text-sm text-text-muted p-4 text-center">
+                Brief generates at 06:00 UTC daily.
+                <a href="/intel-reports" className="block text-accent-violet mt-1 hover:underline">Generate now in Intel Reports →</a>
+              </div>
             )}
           </div>
         </div>
