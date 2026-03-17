@@ -54,6 +54,9 @@ async def _scan_async():
     from bahamut.scanner.scanner import run_full_scan, cache_scan_results
     results = await run_full_scan("4h")
     cache_scan_results(results)
+    # Persist to PostgreSQL so results survive Redis TTL
+    from bahamut.agents.persistence import save_scan_results
+    save_scan_results(results)
     return results
 
 

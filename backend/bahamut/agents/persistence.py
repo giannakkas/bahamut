@@ -550,3 +550,60 @@ def save_cycle_to_db(result: dict):
 
     except Exception as e:
         logger.error("cycle_persist_failed", error=str(e))
+
+
+def save_scan_results(results: dict):
+    """Save scan results to PostgreSQL for history."""
+    import json
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS scan_history (
+                    id SERIAL PRIMARY KEY,
+                    scanned_at TIMESTAMP DEFAULT NOW(),
+                    total_scanned INTEGER DEFAULT 0,
+                    elapsed_sec FLOAT DEFAULT 0,
+                    timeframe VARCHAR(10) DEFAULT '4h',
+                    results JSONB NOT NULL
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO scan_history (scanned_at, total_scanned, elapsed_sec, timeframe, results)
+                VALUES (NOW(), :total, :elapsed, :tf, CAST(:results AS jsonb))
+            """), {
+                "total": results.get("total_scanned", 0),
+                "elapsed": results.get("elapsed_sec", 0),
+                "tf": results.get("timeframe", "4h"),
+                "results": json.dumps(results, default=str),
+            })
+            conn.commit()
+            logger.info("scan_results_saved", total=results.get("total_scanned", 0))
+    except Exception as e:
+        logger.error("save_scan_failed", error=str(e))
+
+
+def get_latest_scan() -> dict | None:
+    """Get the most recent scan from DB (fallback when Redis is empty)."""
+    import json
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS scan_history (
+                    id SERIAL PRIMARY KEY,
+                    scanned_at TIMESTAMP DEFAULT NOW(),
+                    total_scanned INTEGER DEFAULT 0,
+                    elapsed_sec FLOAT DEFAULT 0,
+                    timeframe VARCHAR(10) DEFAULT '4h',
+                    results JSONB NOT NULL
+                )
+            """))
+            conn.commit()
+            result = conn.execute(text(
+                "SELECT results FROM scan_history ORDER BY scanned_at DESC LIMIT 1"
+            ))
+            row = result.first()
+            if row:
+                return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    except Exception as e:
+        logger.error("get_scan_failed", error=str(e))
+    return None

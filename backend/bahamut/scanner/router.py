@@ -13,28 +13,36 @@ router = APIRouter(prefix="/scanner", tags=["Scanner"])
 @router.get("/top-picks")
 async def get_top_picks(user=Depends(get_current_user)):
     """Get the latest market scan results — top opportunities ranked by score."""
+    data = None
+
+    # Try Redis first
     if redis_manager.redis:
         cached = await redis_manager.redis.get("bahamut:market_scan")
         if cached:
             data = json.loads(cached)
-            # Also get deep analysis results
+
+    # Fall back to PostgreSQL
+    if not data:
+        from bahamut.agents.persistence import get_latest_scan
+        data = get_latest_scan()
+
+    if data:
+        # Merge deep analysis results
+        if redis_manager.redis:
             deep = await redis_manager.redis.get("bahamut:deep_analysis")
             deep_results = json.loads(deep) if deep else []
-
-            # Merge deep analysis into top picks
             deep_map = {r["symbol"]: r for r in deep_results}
             for pick in data.get("top_picks", []):
-                deep = deep_map.get(pick["symbol"])
-                if deep:
-                    pick["agent_score"] = deep.get("score", 0)
-                    pick["agent_direction"] = deep.get("direction")
-                    pick["agent_decision"] = deep.get("decision")
-                    pick["agent_agreement"] = deep.get("agreement", 0)
-
-            return data
+                d = deep_map.get(pick["symbol"])
+                if d:
+                    pick["agent_score"] = d.get("score", 0)
+                    pick["agent_direction"] = d.get("direction")
+                    pick["agent_decision"] = d.get("decision")
+                    pick["agent_agreement"] = d.get("agreement", 0)
+        return data
 
     return {"top_picks": [], "all_results": [], "total_scanned": 0,
-            "message": "No scan results yet. Scanner runs every 30 minutes."}
+            "message": "No scan results yet. Click Scan Now or wait for next auto-scan (every 30 min)."}
 
 
 @router.get("/all")
@@ -45,23 +53,26 @@ async def get_all_scanned(
     user=Depends(get_current_user),
 ):
     """Get all scanned assets with optional filters."""
+    data = None
     if redis_manager.redis:
         cached = await redis_manager.redis.get("bahamut:market_scan")
         if cached:
             data = json.loads(cached)
-            results = data.get("all_results", [])
+    if not data:
+        from bahamut.agents.persistence import get_latest_scan
+        data = get_latest_scan()
 
-            if asset_class:
-                results = [r for r in results if r["asset_class"] == asset_class]
-            if min_score > 0:
-                results = [r for r in results if r["score"] >= min_score]
-            if direction:
-                results = [r for r in results if r["direction"] == direction]
-
-            return {"results": results, "count": len(results), "filters": {
-                "asset_class": asset_class, "min_score": min_score, "direction": direction,
-            }}
-
+    if data:
+        results = data.get("all_results", [])
+        if asset_class:
+            results = [r for r in results if r["asset_class"] == asset_class]
+        if min_score > 0:
+            results = [r for r in results if r["score"] >= min_score]
+        if direction:
+            results = [r for r in results if r["direction"] == direction]
+        return {"results": results, "count": len(results), "filters": {
+            "asset_class": asset_class, "min_score": min_score, "direction": direction,
+        }}
     return {"results": [], "count": 0}
 
 
@@ -123,17 +134,36 @@ async def get_whale_data(symbol: str, user=Depends(get_current_user)):
 @router.get("/whales")
 async def get_all_whale_activity(user=Depends(get_current_user)):
     """Get whale activity summary across all scanned assets."""
+    # Try Redis first, fall back to DB
+    data = None
     if redis_manager.redis:
         cached = await redis_manager.redis.get("bahamut:market_scan")
         if cached:
             data = json.loads(cached)
-            results = data.get("all_results", [])
-            # Filter to assets with whale activity
-            whale_active = [r for r in results if r.get("whale_score", 0) != 0]
-            whale_active.sort(key=lambda x: abs(x.get("whale_score", 0)), reverse=True)
-            return {
-                "active": whale_active,
-                "count": len(whale_active),
-                "total_scanned": len(results),
-            }
+    if not data:
+        from bahamut.agents.persistence import get_latest_scan
+        data = get_latest_scan()
+
+    if data:
+        results = data.get("all_results", [])
+        whale_active = [r for r in results if r.get("whale_score", 0) != 0]
+        whale_active.sort(key=lambda x: abs(x.get("whale_score", 0)), reverse=True)
+        return {"active": whale_active, "count": len(whale_active), "total_scanned": len(results)}
     return {"active": [], "count": 0}
+
+
+@router.get("/history")
+async def get_scan_history(limit: int = 10, user=Depends(get_current_user)):
+    """Get past scan summaries (without full results to keep response small)."""
+    from sqlalchemy import text
+    from bahamut.database import sync_engine
+    try:
+        with sync_engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT id, scanned_at, total_scanned, elapsed_sec, timeframe
+                FROM scan_history ORDER BY scanned_at DESC LIMIT :limit
+            """), {"limit": limit})
+            rows = result.mappings().all()
+            return {"scans": [dict(r) for r in rows]}
+    except Exception:
+        return {"scans": []}
