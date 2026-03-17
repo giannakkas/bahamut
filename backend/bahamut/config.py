@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     finnhub_key: str = ""
     fred_api_key: str = ""
 
-    max_agent_timeout_seconds: int = 10
+    max_agent_timeout_seconds: int = 30
     signal_cycle_interval_seconds: int = 900
     max_slippage_bps: int = 50
 

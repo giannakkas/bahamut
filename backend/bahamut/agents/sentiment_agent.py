@@ -1,4 +1,4 @@
-"""Sentiment Agent - analyzes real news headlines via Claude LLM."""
+"""Sentiment Agent - deep news analysis via Claude Opus 4.6 for maximum accuracy."""
 from bahamut.agents.base import BaseAgent
 from bahamut.agents.schemas import (
     AgentOutputSchema, ChallengeRequest, ChallengeResponseSchema,
@@ -16,61 +16,92 @@ settings = get_settings()
 class SentimentAgent(BaseAgent):
     agent_id = "sentiment_agent"
     display_name = "Sentiment / Narrative"
-    timeout_seconds = 15
+    timeout_seconds = 30  # Opus needs more time for deep analysis
 
     async def analyze(self, request: SignalCycleRequest, features: dict) -> AgentOutputSchema:
         asset = request.asset
         indicators = features.get("indicators", {})
 
-        # Step 1: Try to fetch real news for this asset
+        # Fetch real news
         news_headlines = await self._fetch_news(asset)
 
-        # Step 2: Use Claude to analyze the news + price data
+        # Use Claude Opus 4.6 for maximum accuracy
         if settings.anthropic_api_key:
             try:
-                return await self._llm_analysis(request, indicators, news_headlines)
+                return await self._opus_analysis(request, indicators, news_headlines)
             except Exception as e:
-                logger.error("sentiment_llm_failed", error=str(e))
+                logger.error("sentiment_opus_failed", error=str(e))
 
-        # Fallback: regime-based
         return self._regime_based_sentiment(request)
 
-    async def _fetch_news(self, asset: str) -> list[str]:
-        """Fetch real news headlines for the asset."""
+    async def _fetch_news(self, asset: str) -> list[dict]:
         try:
             from bahamut.ingestion.adapters.news import news_adapter
-            articles = await news_adapter.get_asset_news(asset, count=5)
-            return [a["title"] for a in articles if a.get("title")]
+            articles = await news_adapter.get_asset_news(asset, count=8)
+            return [{"title": a["title"], "source": a.get("source", ""),
+                     "description": a.get("description", "")[:200]}
+                    for a in articles if a.get("title")]
         except Exception as e:
             logger.warning("news_fetch_failed", asset=asset, error=str(e))
             return []
 
-    async def _llm_analysis(self, request: SignalCycleRequest,
-                             indicators: dict, headlines: list[str]) -> AgentOutputSchema:
+    async def _opus_analysis(self, request: SignalCycleRequest,
+                              indicators: dict, headlines: list[dict]) -> AgentOutputSchema:
         close = indicators.get("close", 0)
         rsi = indicators.get("rsi_14", 50)
+        macd = indicators.get("macd_histogram", 0)
+        adx = indicators.get("adx_14", 20)
+        atr = indicators.get("atr_14", 0)
+        ema_20 = indicators.get("ema_20", close)
+        ema_50 = indicators.get("ema_50", close)
+        ema_200 = indicators.get("ema_200", close)
 
-        news_section = ""
+        news_block = ""
         if headlines:
-            news_section = f"\n\nRecent news headlines for {request.asset}:\n" + "\n".join(f"- {h}" for h in headlines[:5])
-            news_section += "\n\nAnalyze these headlines for bullish/bearish sentiment."
+            news_block = "\n\nREAL-TIME NEWS HEADLINES (analyze each one carefully):\n"
+            for i, h in enumerate(headlines[:8], 1):
+                news_block += f"{i}. [{h.get('source', 'Unknown')}] {h['title']}\n"
+                if h.get('description'):
+                    news_block += f"   Summary: {h['description']}\n"
         else:
-            news_section = f"\n\nNo recent news available. Analyze based on market conditions and regime."
+            news_block = "\n\nNo real-time news available for this asset. Base analysis on technical and macro context only."
 
-        prompt = f"""You are a financial sentiment analyst for {request.asset}.
+        prompt = f"""You are an elite institutional trading analyst at a $500M macro fund. Your job is to analyze market sentiment for {request.asset} and determine if current conditions favor LONG, SHORT, or NEUTRAL positions. People's real money depends on your accuracy.
 
-Current data:
+CURRENT MARKET DATA for {request.asset}:
 - Price: {close}
-- RSI: {rsi}
-- Regime: {request.current_regime}
-- Asset class: {request.asset_class}{news_section}
+- RSI(14): {rsi:.1f}
+- MACD Histogram: {macd}
+- ADX(14): {adx:.1f} (trend strength)
+- ATR(14): {atr} (volatility)
+- EMA 20/50/200: {ema_20:.5f} / {ema_50:.5f} / {ema_200:.5f}
+- Price vs EMAs: {'Above all (bullish structure)' if close > ema_20 > ema_50 else 'Below all (bearish structure)' if close < ema_20 < ema_50 else 'Mixed/transitioning'}
+- Current regime: {request.current_regime}
+- Asset class: {request.asset_class}
+{news_block}
 
-Provide your analysis as JSON:
-{{"bias": "LONG" or "SHORT" or "NEUTRAL", "confidence": 0.0-1.0, "headline": "one sentence summary", "risk_note": "key risk", "news_impact": "positive" or "negative" or "neutral"}}
+ANALYSIS REQUIREMENTS:
+1. Read EVERY headline carefully. Identify which are bullish, bearish, or neutral for {request.asset}.
+2. Consider the SOURCE credibility (Reuters > random blog).
+3. Weigh news recency — more recent = more weight.
+4. Cross-reference news sentiment with technical indicators — do they confirm or contradict?
+5. Identify any potential black swan risks or narrative shifts.
+6. Consider geopolitical implications if relevant.
+7. BE HONEST — if signals are mixed, say NEUTRAL with low confidence. Do NOT force a direction.
 
-Respond ONLY with JSON."""
+Respond with ONLY this JSON (no other text):
+{{
+  "bias": "LONG" or "SHORT" or "NEUTRAL",
+  "confidence": 0.0-1.0,
+  "headline_summary": "2-3 sentence analysis of what the news collectively says",
+  "bullish_factors": ["factor1", "factor2"],
+  "bearish_factors": ["factor1", "factor2"],
+  "key_risk": "the single biggest risk to this view",
+  "news_impact": "strong_bullish" or "mild_bullish" or "neutral" or "mild_bearish" or "strong_bearish",
+  "conviction_reason": "why you chose this direction and confidence level"
+}}"""
 
-        async with httpx.AsyncClient(timeout=12) as client:
+        async with httpx.AsyncClient(timeout=25) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
@@ -79,8 +110,8 @@ Respond ONLY with JSON."""
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 250,
+                    "model": "claude-opus-4-6",
+                    "max_tokens": 1000,
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
@@ -96,31 +127,46 @@ Respond ONLY with JSON."""
             if start >= 0 and end > start:
                 result = json.loads(text[start:end])
             else:
-                raise ValueError(f"Could not parse: {text[:100]}")
+                raise ValueError(f"Could not parse Opus response: {text[:200]}")
 
         bias = result.get("bias", "NEUTRAL")
         confidence = min(1.0, max(0.0, float(result.get("confidence", 0.5))))
 
-        evidence_list = [Evidence(
-            claim=result.get("headline", "LLM sentiment analysis"),
-            data_point=f"News impact: {result.get('news_impact', 'unknown')}", weight=0.7,
-        )]
+        # Build rich evidence
+        evidence_list = []
+        evidence_list.append(Evidence(
+            claim=result.get("headline_summary", "Opus sentiment analysis"),
+            data_point=f"News impact: {result.get('news_impact', 'unknown')}",
+            weight=0.8,
+        ))
 
         if headlines:
             evidence_list.append(Evidence(
-                claim=f"Based on {len(headlines)} real news headlines",
-                data_point=headlines[0][:80] if headlines else "", weight=0.5,
+                claim=f"Analyzed {len(headlines)} real-time headlines from {', '.join(set(h.get('source','') for h in headlines[:3]))}",
+                data_point=result.get("conviction_reason", ""),
+                weight=0.6,
             ))
+
+        for factor in result.get("bullish_factors", [])[:2]:
+            evidence_list.append(Evidence(claim=f"Bullish: {factor}", data_point="news_analysis", weight=0.4))
+        for factor in result.get("bearish_factors", [])[:2]:
+            evidence_list.append(Evidence(claim=f"Bearish: {factor}", data_point="news_analysis", weight=0.4))
+
+        risk_notes = []
+        if result.get("key_risk"):
+            risk_notes.append(result["key_risk"])
 
         return self._make_output(
             request=request, bias=bias, confidence=confidence,
-            evidence=evidence_list,
-            risk_notes=[result.get("risk_note", "")] if result.get("risk_note") else [],
+            evidence=evidence_list, risk_notes=risk_notes,
             urgency="NEXT_BAR",
             meta={
-                "source": "claude_llm" + ("_with_news" if headlines else "_no_news"),
+                "model": "claude-opus-4-6",
                 "news_count": len(headlines),
                 "news_impact": result.get("news_impact", "unknown"),
+                "bullish_factors": result.get("bullish_factors", []),
+                "bearish_factors": result.get("bearish_factors", []),
+                "conviction": result.get("conviction_reason", ""),
             },
         )
 
@@ -138,8 +184,8 @@ Respond ONLY with JSON."""
         return self._make_output(
             request=request, bias=bias, confidence=conf,
             evidence=[Evidence(claim=claim, data_point=f"Regime={regime}", weight=0.5)],
-            risk_notes=["No live news data - sentiment from regime only"],
-            meta={"source": "regime_fallback", "news_count": 0},
+            risk_notes=["No live news - sentiment from regime only"],
+            meta={"model": "fallback", "news_count": 0},
         )
 
     async def respond_to_challenge(self, challenge: ChallengeRequest,
@@ -150,10 +196,10 @@ Respond ONLY with JSON."""
                 target_agent=self.agent_id, challenge_type=challenge.challenge_type,
                 response="ACCEPT",
                 revised_confidence=max(0.2, original_output.confidence - 0.3),
-                justification="Narrative shock acknowledged",
+                justification="Narrative shock acknowledged - reducing confidence",
             )
         return ChallengeResponseSchema(
             challenge_id=challenge.challenge_id, challenger=challenge.challenger,
             target_agent=self.agent_id, challenge_type=challenge.challenge_type,
-            response="REJECT", justification="Sentiment assessment maintained",
+            response="REJECT", justification="Opus-grade sentiment analysis maintained",
         )
