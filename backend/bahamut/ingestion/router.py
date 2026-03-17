@@ -59,3 +59,34 @@ async def get_asset_news(symbol: str, count: int = 5, user: User = Depends(get_c
     from bahamut.ingestion.adapters.news import news_adapter
     articles = await news_adapter.get_asset_news(symbol, count)
     return {"symbol": symbol, "articles": articles, "count": len(articles)}
+
+
+@router.get("/calendar-debug")
+async def debug_calendar(user: User = Depends(get_current_user)):
+    """Debug: test Finnhub calendar directly."""
+    import httpx, os
+    from datetime import datetime, timezone, timedelta
+    from bahamut.config import get_settings
+    s = get_settings()
+    key = s.finnhub_key
+
+    if not key:
+        return {"error": "FINNHUB_KEY not set", "env_check": bool(os.environ.get("FINNHUB_KEY"))}
+
+    start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://finnhub.io/api/v1/calendar/economic", params={
+                "from": start, "to": end, "token": key,
+            })
+            return {
+                "status": resp.status_code,
+                "key_length": len(key),
+                "url": str(resp.url),
+                "data_keys": list(resp.json().keys()) if resp.status_code == 200 else None,
+                "sample": resp.json() if resp.status_code == 200 else resp.text[:500],
+            }
+    except Exception as e:
+        return {"error": str(e)}
