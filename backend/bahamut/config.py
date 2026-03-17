@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     twelve_data_key: str = ""
     newsapi_key: str = ""
     finnhub_key: str = ""
+    gemini_api_key: str = ""
     fred_api_key: str = ""
 
     max_agent_timeout_seconds: int = 15
@@ -58,6 +59,8 @@ def get_settings() -> Settings:
     # Force read from env if pydantic missed it
     if not s.twelve_data_key and os.environ.get("TWELVE_DATA_KEY"):
         object.__setattr__(s, 'twelve_data_key', os.environ["TWELVE_DATA_KEY"])
+    if not s.gemini_api_key and os.environ.get("GEMINI_API_KEY"):
+        object.__setattr__(s, "gemini_api_key", os.environ["GEMINI_API_KEY"])
     if not s.finnhub_key and os.environ.get("FINNHUB_KEY"):
         object.__setattr__(s, "finnhub_key", os.environ["FINNHUB_KEY"])
     if not s.anthropic_api_key and os.environ.get("ANTHROPIC_API_KEY"):
