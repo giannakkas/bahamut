@@ -42,6 +42,12 @@ class ApiClient {
   async getThresholds() { return this.request<any>('/consensus/thresholds'); }
   async getWeights(assetClass: string) { return this.request<any>(`/consensus/weights/${assetClass}`); }
 
+  // Market Data
+  async getCandles(symbol: string, timeframe: string = '4H', count: number = 200) {
+    return this.request<any>(`/market/candles/${symbol}?timeframe=${timeframe}&count=${count}`);
+  }
+  async getPrice(symbol: string) { return this.request<any>(`/market/price/${symbol}`); }
+
   // Risk
   async getRiskDashboard() { return this.request<any>('/risk/dashboard'); }
 

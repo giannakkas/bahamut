@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import AppShell from '@/components/layout/AppShell';
 import { api } from '@/lib/api';
 import { AGENT_META } from '@/lib/types';
+
+// Dynamic import - Lightweight Charts needs browser APIs
+const CandlestickChart = dynamic(() => import('@/components/charts/CandlestickChart'), { ssr: false });
 
 export default function AgentCouncilPage() {
   const [trustScores, setTrustScores] = useState<any>(null);
@@ -14,34 +18,56 @@ export default function AgentCouncilPage() {
   const [selectedProfile, setSelectedProfile] = useState('BALANCED');
   const [thresholds, setThresholds] = useState<any>(null);
   const [agentHealth, setAgentHealth] = useState<any>(null);
+  const [candles, setCandles] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const loadData = async (asset?: string) => {
+    const a = asset || selectedAsset;
+    const [ts, th, ah, lc] = await Promise.allSettled([
+      api.getTrustScores(), api.getThresholds(), api.getAgentHealth(),
+      api.getLatestCycle(a),
+    ]);
+    if (ts.status === 'fulfilled') setTrustScores(ts.value);
+    if (th.status === 'fulfilled') setThresholds(th.value);
+    if (ah.status === 'fulfilled') setAgentHealth(ah.value);
+    if (lc.status === 'fulfilled' && lc.value?.decision) setCycleResult(lc.value);
+  };
+
+  const loadCandles = async (asset?: string) => {
+    setChartLoading(true);
+    try {
+      const res = await api.getCandles(asset || selectedAsset, selectedTF, 200);
+      if (res?.candles) setCandles(res.candles);
+    } catch (e) { console.error('Chart data error:', e); }
+    setChartLoading(false);
+  };
 
   useEffect(() => {
-    const load = async () => {
-      const [ts, th, ah, lc] = await Promise.allSettled([
-        api.getTrustScores(), api.getThresholds(), api.getAgentHealth(),
-        api.getLatestCycle(selectedAsset),
-      ]);
-      if (ts.status === 'fulfilled') setTrustScores(ts.value);
-      if (th.status === 'fulfilled') setThresholds(th.value);
-      if (ah.status === 'fulfilled') setAgentHealth(ah.value);
-      if (lc.status === 'fulfilled' && lc.value?.decision) setCycleResult(lc.value);
-    };
-    load();
+    loadData();
+    loadCandles();
   }, []);
+
+  const handleAssetChange = (asset: string) => {
+    setSelectedAsset(asset);
+    setCycleResult(null);
+    setCandles([]);
+    loadData(asset);
+    loadCandles(asset);
+  };
 
   const triggerCycle = async () => {
     setCycling(true);
     setCycleResult(null);
     try {
       await api.triggerCycle(selectedAsset, selectedAsset === 'XAUUSD' ? 'commodities' : 'fx', selectedTF, selectedProfile);
-      // Poll for result
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 2000));
         try {
           const result = await api.getLatestCycle(selectedAsset);
           if (result?.decision) { setCycleResult(result); break; }
         } catch {}
       }
+      loadCandles(); // refresh chart
     } catch (e: any) {
       setCycleResult({ error: e.message });
     } finally {
@@ -55,7 +81,8 @@ export default function AgentCouncilPage() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className="space-y-5">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Agent Council</h1>
@@ -75,9 +102,13 @@ export default function AgentCouncilPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <select value={selectedAsset} onChange={e => setSelectedAsset(e.target.value)}
+            <select value={selectedAsset} onChange={e => handleAssetChange(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
               {['EURUSD','GBPUSD','USDJPY','XAUUSD'].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select value={selectedTF} onChange={e => { setSelectedTF(e.target.value); loadCandles(); }}
+              className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
+              {['1H','4H','1D'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <select value={selectedProfile} onChange={e => setSelectedProfile(e.target.value)}
               className="bg-bg-surface border border-border-default rounded-md px-3 py-1.5 text-sm text-text-primary">
@@ -90,11 +121,26 @@ export default function AgentCouncilPage() {
           </div>
         </div>
 
-        {/* Consensus Result Panel */}
+        {/* Price Chart */}
+        <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">{selectedAsset} · {selectedTF}
+              {candles.length > 0 && <span className="text-text-muted font-normal ml-2">({candles.length} candles)</span>}
+            </h3>
+            {chartLoading && <span className="text-xs text-text-muted">Loading...</span>}
+          </div>
+          <CandlestickChart
+            candles={candles}
+            height={350}
+            signalDirection={decision?.direction}
+            signalPrice={cycleResult?.market_price}
+          />
+        </div>
+
+        {/* Consensus Panel */}
         {decision && !cycleResult?.error && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-5">
             <div className="flex items-center gap-6">
-              {/* Score Ring */}
               <div className="flex-shrink-0 w-24 h-24 relative">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   <circle cx="50" cy="50" r="42" stroke="#2A2A4A" strokeWidth="8" fill="none" />
@@ -106,7 +152,6 @@ export default function AgentCouncilPage() {
                   <span className="font-mono text-2xl font-bold">{(decision.final_score * 100).toFixed(0)}</span>
                 </div>
               </div>
-
               <div className="flex-1 grid grid-cols-4 gap-4">
                 <div>
                   <div className="text-xs text-text-muted">Direction</div>
@@ -116,7 +161,7 @@ export default function AgentCouncilPage() {
                 </div>
                 <div>
                   <div className="text-xs text-text-muted">Decision</div>
-                  <div className={`text-lg font-bold ${decision.decision === 'STRONG_SIGNAL' ? 'text-accent-emerald' : decision.decision === 'SIGNAL' ? 'text-accent-violet' : 'text-text-secondary'}`}>{decision.decision}</div>
+                  <div className={`text-lg font-bold ${decision.decision === 'STRONG_SIGNAL' || decision.decision === 'SIGNAL' ? 'text-accent-violet' : 'text-text-secondary'}`}>{decision.decision}</div>
                 </div>
                 <div>
                   <div className="text-xs text-text-muted">Agreement</div>
@@ -128,20 +173,14 @@ export default function AgentCouncilPage() {
                 </div>
               </div>
             </div>
-
-            {/* Data source badge */}
             <div className="mt-3 flex items-center gap-3">
-              {cycleResult.data_source?.includes('live') ? (
-                <span className="flex items-center gap-1.5 text-[11px] text-accent-emerald">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-emerald"></span>
-                  </span>
-                  Live Data
+              <span className="flex items-center gap-1.5 text-[11px] text-accent-emerald">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-emerald"></span>
                 </span>
-              ) : (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-amber/20 text-accent-amber">DEMO DATA</span>
-              )}
+                Live Data
+              </span>
               {cycleResult.market_price && (
                 <span className="text-xs text-text-muted">Price: <span className="font-mono text-text-primary">{cycleResult.market_price}</span></span>
               )}
@@ -154,7 +193,7 @@ export default function AgentCouncilPage() {
           <div className="p-3 bg-accent-crimson/10 border border-accent-crimson/30 rounded-md text-accent-crimson text-sm">{cycleResult.error}</div>
         )}
 
-        {/* Agent Outputs Grid */}
+        {/* Agent Outputs */}
         {agentOutputs.length > 0 && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
             <h3 className="text-sm font-semibold mb-3">Agent Outputs ({agentOutputs.length} agents)</h3>
@@ -190,10 +229,10 @@ export default function AgentCouncilPage() {
           </div>
         )}
 
-        {/* Challenges Log */}
+        {/* Challenges */}
         {challenges.length > 0 && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-3">Challenge Log ({challenges.length} challenges)</h3>
+            <h3 className="text-sm font-semibold mb-3">Challenge Log ({challenges.length})</h3>
             <div className="space-y-2">
               {challenges.map((ch: any, i: number) => (
                 <div key={i} className="flex items-center gap-3 p-2 bg-bg-tertiary rounded-md text-sm">
@@ -202,12 +241,7 @@ export default function AgentCouncilPage() {
                   <span className="text-text-muted">→</span>
                   <span className="text-text-secondary">{ch.target_agent}</span>
                   <span className="text-text-muted">({ch.challenge_type})</span>
-                  <span className={`ml-auto font-semibold text-xs ${ch.response === 'ACCEPT' || ch.response === 'PARTIAL' ? 'text-accent-amber' : ch.response === 'VETO' ? 'text-accent-crimson' : 'text-text-muted'}`}>
-                    {ch.response}
-                  </span>
-                  {ch.revised_confidence && (
-                    <span className="text-xs text-text-muted font-mono">conf→{(ch.revised_confidence * 100).toFixed(0)}%</span>
-                  )}
+                  <span className={`ml-auto font-semibold text-xs ${ch.response === 'PARTIAL' ? 'text-accent-amber' : ch.response === 'VETO' ? 'text-accent-crimson' : 'text-text-muted'}`}>{ch.response}</span>
                 </div>
               ))}
             </div>

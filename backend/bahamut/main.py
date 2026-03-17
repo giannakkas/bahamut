@@ -14,6 +14,7 @@ from bahamut.execution.router import router as execution_router
 from bahamut.risk.router import router as risk_router
 from bahamut.learning.router import router as learning_router
 from bahamut.reports.router import router as reports_router
+from bahamut.ingestion.router import router as market_router
 from bahamut.ws.gateway import router as ws_router
 from bahamut.shared.redis_client import redis_manager
 
@@ -79,6 +80,7 @@ app.include_router(execution_router, prefix="/api/v1/execution", tags=["executio
 app.include_router(risk_router, prefix="/api/v1/risk", tags=["risk"])
 app.include_router(learning_router, prefix="/api/v1/learning", tags=["learning"])
 app.include_router(reports_router, prefix="/api/v1/reports", tags=["reports"])
+app.include_router(market_router, prefix="/api/v1/market", tags=["market"])
 app.include_router(ws_router, tags=["websocket"])
 
 

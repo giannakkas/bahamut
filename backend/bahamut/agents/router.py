@@ -84,3 +84,77 @@ async def health():
         "live": td_health,
         "live": oanda_health,
     }
+
+
+@router.get("/candles/{asset}")
+async def get_candles(asset: str, timeframe: str = "4H", count: int = 100,
+                      user: User = Depends(get_current_user)):
+    """Get OHLCV candles for chart display."""
+    from bahamut.ingestion.adapters.twelvedata import twelve_data, to_twelve_symbol, to_twelve_interval
+    from bahamut.ingestion.adapters.oanda import oanda, to_oanda_instrument, to_oanda_granularity
+
+    candles = []
+    source = "demo"
+
+    if twelve_data.configured:
+        candles = await twelve_data.get_candles(to_twelve_symbol(asset), to_twelve_interval(timeframe), count)
+        source = "live"
+    elif oanda.configured:
+        candles = await oanda.get_candles(to_oanda_instrument(asset), to_oanda_granularity(timeframe), count)
+        source = "live"
+
+    if not candles:
+        # Generate demo candles
+        import random
+        base = {"EURUSD": 1.15, "GBPUSD": 1.27, "USDJPY": 149.8, "XAUUSD": 2645}.get(asset, 1.15)
+        step = base * 0.001
+        candles = []
+        for i in range(count):
+            o = base + random.uniform(-step * 5, step * 5)
+            c = o + random.uniform(-step * 3, step * 3)
+            h = max(o, c) + random.uniform(0, step * 2)
+            l = min(o, c) - random.uniform(0, step * 2)
+            candles.append({"time": f"2026-03-{17 - count + i:02d}T{(i % 24):02d}:00:00",
+                            "open": round(o, 5), "high": round(h, 5),
+                            "low": round(l, 5), "close": round(c, 5),
+                            "volume": random.randint(1000, 50000)})
+            base = c
+        source = "demo"
+
+    return {"candles": candles, "source": source, "asset": asset, "timeframe": timeframe}
+
+
+@router.get("/macro-overview")
+async def macro_overview(user: User = Depends(get_current_user)):
+    """Cross-asset overview with latest prices and indicators."""
+    from bahamut.ingestion.market_data import market_data
+
+    assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]
+    overview = {}
+
+    for asset in assets:
+        try:
+            features = await market_data.get_features_for_asset(asset, "4H")
+            ind = features.get("indicators", {})
+            overview[asset] = {
+                "price": ind.get("close", 0),
+                "rsi": round(ind.get("rsi_14", 50), 1),
+                "macd": round(ind.get("macd_histogram", 0), 6),
+                "adx": round(ind.get("adx_14", 20), 1),
+                "atr": round(ind.get("atr_14", 0), 6),
+                "ema_20": round(ind.get("ema_20", 0), 6),
+                "ema_50": round(ind.get("ema_50", 0), 6),
+                "ema_200": round(ind.get("ema_200", 0), 6),
+                "stoch_k": round(ind.get("stoch_k", 50), 1),
+                "bb_upper": round(ind.get("bollinger_upper", 0), 6),
+                "bb_lower": round(ind.get("bollinger_lower", 0), 6),
+                "vol_20": round(ind.get("realized_vol_20", 0), 4),
+                "trend": "BULLISH" if ind.get("close", 0) > ind.get("ema_50", 0) > ind.get("ema_200", 0) else
+                         "BEARISH" if ind.get("close", 0) < ind.get("ema_50", 0) < ind.get("ema_200", 0) else "MIXED",
+                "momentum": "STRONG" if ind.get("adx_14", 0) > 25 else "WEAK",
+                "source": features.get("source", "demo"),
+            }
+        except Exception as e:
+            overview[asset] = {"error": str(e)}
+
+    return overview
