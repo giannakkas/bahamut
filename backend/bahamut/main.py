@@ -90,3 +90,20 @@ async def health_check():
         "version": "1.0.0",
         "environment": settings.environment,
     }
+
+
+@app.get("/debug/data-source")
+async def debug_data_source():
+    """Public debug endpoint to check data source configuration."""
+    import os
+    from bahamut.config import get_settings
+    s = get_settings()
+    return {
+        "twelve_data_key_set": bool(s.twelve_data_key),
+        "twelve_data_key_length": len(s.twelve_data_key) if s.twelve_data_key else 0,
+        "twelve_data_key_env": bool(os.environ.get("TWELVE_DATA_KEY")),
+        "twelve_data_key_env_length": len(os.environ.get("TWELVE_DATA_KEY", "")),
+        "oanda_key_set": bool(s.oanda_api_key),
+        "anthropic_key_set": bool(s.anthropic_api_key),
+        "environment": s.environment,
+    }
