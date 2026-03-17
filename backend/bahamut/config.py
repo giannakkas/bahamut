@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     newsapi_key: str = ""
     finnhub_key: str = ""
     gemini_api_key: str = ""
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    frontend_url: str = "https://frontend-production-947b.up.railway.app"
     fred_api_key: str = ""
 
     max_agent_timeout_seconds: int = 15

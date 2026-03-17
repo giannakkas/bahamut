@@ -54,6 +54,8 @@ class ApiClient {
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }
   async getBreakingAlerts() { return this.request<any>("/agents/breaking-alerts"); }
+  async getPlans() { return this.request<any>("/billing/plans"); }
+  async getBillingStatus() { return this.request<any>("/billing/status"); }
 
   // News & Calendar
   async getCalendar(days: number = 7) { return this.request<any>(`/market/calendar?days=${days}`); }
