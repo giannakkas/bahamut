@@ -14,7 +14,7 @@ def compute_indicators(candles: list[dict]) -> dict:
     Returns a flat dict of indicator values based on the most recent candles.
     Requires at least 200 candles for EMA-200.
     """
-    if len(candles) < 50:
+    if len(candles) < 20:
         logger.warning("insufficient_candles", count=len(candles))
         return {}
 

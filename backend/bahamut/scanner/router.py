@@ -82,3 +82,21 @@ async def get_deep_results(user=Depends(get_current_user)):
         if cached:
             return {"results": json.loads(cached)}
     return {"results": [], "message": "No deep analysis yet. Runs after each scan."}
+
+
+@router.get("/test")
+async def test_scan(user=Depends(get_current_user)):
+    """Quick test — scan 3 assets synchronously to verify scanner works."""
+    from bahamut.scanner.scanner import scan_single_asset
+    results = []
+    errors = []
+    for symbol in ["BTCUSD", "AAPL", "EURUSD"]:
+        try:
+            r = await scan_single_asset(symbol, "4h")
+            if r:
+                results.append(r)
+            else:
+                errors.append({"symbol": symbol, "error": "returned None"})
+        except Exception as e:
+            errors.append({"symbol": symbol, "error": str(e)})
+    return {"results": results, "errors": errors}

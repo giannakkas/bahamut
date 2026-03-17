@@ -31,14 +31,13 @@ ASSET_UNIVERSE = {
     ],
     "crypto": [
         "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "ADAUSD",
-        "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD", "MATICUSD", "SHIBUSD",
+        "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
     ],
     "indices": [
         "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
         "JPM", "V", "UNH", "MA", "HD", "PG", "JNJ",
         "AMD", "CRM", "NFLX", "ADBE", "INTC", "PYPL",
-        "UBER", "SQ", "SHOP", "SNOW", "PLTR", "COIN",
-        "RBLX", "MARA", "RIOT",
+        "UBER", "SQ", "SHOP", "PLTR", "COIN",
     ],
 }
 
@@ -175,30 +174,31 @@ async def scan_single_asset(symbol: str, timeframe: str = "4h") -> dict | None:
     """Scan a single asset — fetch candles, compute indicators, score it."""
     try:
         td_symbol = to_twelve_symbol(symbol)
-        candles = await twelve_data.get_candles(td_symbol, timeframe, 50)
+        candles = await twelve_data.get_candles(td_symbol, timeframe, 60)
         if not candles or len(candles) < 20:
             return None
 
-        closes = [c["close"] for c in candles]
-        highs = [c["high"] for c in candles]
-        lows = [c["low"] for c in candles]
-        volumes = [c.get("volume", 0) for c in candles]
+        # compute_indicators expects list[dict] with keys: close, high, low, open, volume
+        indicators = compute_indicators(candles)
+        if not indicators:
+            return None
 
-        indicators = compute_indicators(closes, highs, lows, volumes)
         opportunity = score_opportunity(indicators)
+        price = indicators.get("close", 0)
+        prev_close = candles[-2]["close"] if len(candles) >= 2 else price
 
         return {
             "symbol": symbol,
             "asset_class": SYMBOL_CLASS.get(symbol, "unknown"),
-            "price": closes[-1],
-            "change_pct": round((closes[-1] - closes[-2]) / closes[-2] * 100, 2) if len(closes) >= 2 else 0,
+            "price": price,
+            "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
             "score": opportunity["score"],
             "direction": opportunity["direction"],
             "reasons": opportunity["reasons"],
             "rsi": round(indicators.get("rsi_14", 50), 1),
             "adx": round(indicators.get("adx_14", 20), 1),
             "macd_hist": round(indicators.get("macd_histogram", 0), 6),
-            "ema_trend": "UP" if closes[-1] > indicators.get("ema_50", 0) else "DOWN",
+            "ema_trend": "UP" if price > indicators.get("ema_50", 0) else "DOWN",
             "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
@@ -216,22 +216,25 @@ async def run_full_scan(timeframe: str = "4h") -> dict:
     results = []
     errors = 0
 
-    # Batch 10 at a time with 12s pause between batches (= ~50/min)
+    # Batch 10 at a time with 8s pause between batches (= ~50/min, within 55 limit)
     batch_size = 10
     for i in range(0, len(ALL_SYMBOLS), batch_size):
         batch = ALL_SYMBOLS[i:i + batch_size]
         tasks = [scan_single_asset(s, timeframe) for s in batch]
-        batch_results = await asyncio.gather(*tasks)
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for r in batch_results:
-            if r:
+        for j, r in enumerate(batch_results):
+            if isinstance(r, Exception):
+                logger.error("scan_batch_error", symbol=batch[j], error=str(r))
+                errors += 1
+            elif r:
                 results.append(r)
             else:
                 errors += 1
 
         # Rate limit pause (skip on last batch)
         if i + batch_size < len(ALL_SYMBOLS):
-            await asyncio.sleep(12)
+            await asyncio.sleep(8)
 
     # Sort by score descending
     results.sort(key=lambda x: x["score"], reverse=True)
