@@ -59,6 +59,7 @@ export default function DashboardPage() {
   const [brief, setBrief] = useState<any>(null);
   const [cycles, setCycles] = useState<any>({});
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -67,10 +68,14 @@ export default function DashboardPage() {
           api.getRiskDashboard(),
           api.getDailyBrief(),
           api.getAllLatestCycles(),
+          api.getBreakingAlerts(),
         ]);
         if (r.status === 'fulfilled') setRisk(r.value);
         if (b.status === 'fulfilled') setBrief(b.value);
         if (c.status === 'fulfilled') setCycles(c.value);
+        const ba = results[3] || { status: 'rejected' };
+        if (typeof ba === 'object' && 'status' in ba && ba.status === 'fulfilled') setBreakingAlerts((ba as any).value?.alerts || []);
+        try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
       } catch (e) { console.error(e); }
       setLoading(false);
     };
@@ -126,6 +131,29 @@ export default function DashboardPage() {
           </div>
           {brief && <div className="text-xs text-text-muted max-w-lg truncate">{brief.summary?.slice(0, 120)}...</div>}
         </div>
+
+
+        {/* Breaking News Alerts */}
+        {alerts.length > 0 && (
+          <div className="bg-accent-crimson/10 border border-accent-crimson/30 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
+              <span className="text-sm font-bold text-accent-crimson">Breaking News Alert</span>
+            </div>
+            {alerts.slice(0, 3).map((alert: any, i: number) => (
+              <div key={i} className="flex items-center justify-between py-1.5 border-b border-accent-crimson/10 last:border-0">
+                <div className="flex-1">
+                  <span className="text-sm text-text-primary">{alert.headline}</span>
+                  <span className="text-xs text-text-muted ml-2">{alert.source}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-accent-amber">{alert.affected_assets?.join(', ')}</span>
+                  {alert.is_emergency && <span className="text-[10px] px-1.5 py-0.5 bg-accent-crimson/20 text-accent-crimson rounded-full font-semibold">EMERGENCY</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Metrics */}
         <div className="grid grid-cols-4 gap-4">

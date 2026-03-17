@@ -1,19 +1,54 @@
 """Report generation API routes."""
+import json
 from fastapi import APIRouter, Depends
 from bahamut.auth.router import get_current_user
+from bahamut.shared.redis_client import redis_manager
+import structlog
 
+logger = structlog.get_logger()
 router = APIRouter()
+
 
 @router.get("/daily-brief")
 async def daily_brief(user=Depends(get_current_user)):
-    return {
-        "date": "2026-03-16",
-        "regime": "RISK_ON",
-        "summary": "Markets are in a risk-on regime with moderate confidence. EUR showing strength against USD on diverging rate expectations. VIX stable at 18.5. Key event: US CPI release in 4 hours. Agent council consensus leans bullish on EURUSD (0.74 score, 78% agreement). Risk parameters within bounds. Recommend: monitor CPI release before new entries.",
-        "signals_generated": 2,
-        "trades_executed": 3,
-        "risk_events": 0,
-    }
+    """Get the AI-generated daily market brief. Cached for 1 hour."""
+    # Check cache first
+    if redis_manager.redis:
+        cached = await redis_manager.redis.get("bahamut:daily_brief")
+        if cached:
+            return json.loads(cached)
+
+    # Generate fresh brief
+    from bahamut.reports.daily_brief import generate_daily_brief
+    brief = await generate_daily_brief()
+
+    # Cache for 1 hour
+    if redis_manager.redis:
+        try:
+            await redis_manager.redis.set("bahamut:daily_brief", json.dumps(brief, default=str), ex=3600)
+        except Exception:
+            pass
+
+    return brief
+
+
+@router.post("/daily-brief/refresh")
+async def refresh_brief(user=Depends(get_current_user)):
+    """Force regenerate the daily brief."""
+    if redis_manager.redis:
+        await redis_manager.redis.delete("bahamut:daily_brief")
+
+    from bahamut.reports.daily_brief import generate_daily_brief
+    brief = await generate_daily_brief()
+
+    if redis_manager.redis:
+        try:
+            await redis_manager.redis.set("bahamut:daily_brief", json.dumps(brief, default=str), ex=3600)
+        except Exception:
+            pass
+
+    return brief
+
 
 @router.get("/health")
 async def health():

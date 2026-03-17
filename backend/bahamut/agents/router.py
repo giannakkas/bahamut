@@ -210,3 +210,13 @@ async def get_cycle_history(
     except Exception as e:
         logger.error("history_query_failed", error=str(e))
         return []
+
+
+@router.get("/breaking-alerts")
+async def get_breaking_alerts(user=Depends(get_current_user)):
+    """Get recent breaking news alerts that triggered emergency cycles."""
+    if redis_manager.redis:
+        cached = await redis_manager.redis.get("bahamut:breaking_alerts")
+        if cached:
+            return {"alerts": json.loads(cached)}
+    return {"alerts": []}

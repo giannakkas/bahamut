@@ -53,6 +53,10 @@ celery_app.conf.update(
             "task": "bahamut.features.tasks.detect_regime",
             "schedule": 300.0,
         },
+        "monitor-breaking-news": {
+            "task": "bahamut.ingestion.tasks.monitor_breaking_news",
+            "schedule": 120.0,  # Every 2 minutes
+        },
         "run-stock-cycles": {
             "task": "bahamut.agents.tasks.run_stock_cycles",
             "schedule": 1800.0,  # Every 30 minutes
