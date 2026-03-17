@@ -70,9 +70,9 @@ async def health():
 
     data_source = "none"
     if twelve_data.configured:
-        data_source = "twelvedata"
+        data_source = "live"
     elif oanda.configured:
-        data_source = "oanda"
+        data_source = "live"
 
     return {
         "status": "healthy",
@@ -81,6 +81,6 @@ async def health():
                     "volatility_agent", "sentiment_agent", "liquidity_agent"],
         "agent_count": 6,
         "data_source": data_source,
-        "twelvedata": td_health,
-        "oanda": oanda_health,
+        "live": td_health,
+        "live": oanda_health,
     }

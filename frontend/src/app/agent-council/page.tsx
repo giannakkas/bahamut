@@ -59,10 +59,20 @@ export default function AgentCouncilPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Agent Council</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              {agentHealth?.agent_count || 0} agents active
-              {agentHealth?.data_source && agentHealth.data_source !== 'none' ? ' · ' + agentHealth.data_source + ' connected' : ' · Demo data'}
-            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-sm text-text-secondary">{agentHealth?.agent_count || 0} agents active</span>
+              {agentHealth?.data_source && agentHealth.data_source !== 'none' ? (
+                <span className="flex items-center gap-1.5 text-sm text-accent-emerald">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
+                  </span>
+                  Live Data Connected
+                </span>
+              ) : (
+                <span className="text-sm text-accent-amber">· Demo data</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <select value={selectedAsset} onChange={e => setSelectedAsset(e.target.value)}
@@ -121,9 +131,17 @@ export default function AgentCouncilPage() {
 
             {/* Data source badge */}
             <div className="mt-3 flex items-center gap-3">
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${cycleResult.data_source?.includes('live') ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'}`}>
-                {cycleResult.data_source?.includes('live') ? 'LIVE DATA' : 'DEMO DATA'}
-              </span>
+              {cycleResult.data_source?.includes('live') ? (
+                <span className="flex items-center gap-1.5 text-[11px] text-accent-emerald">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-emerald"></span>
+                  </span>
+                  Live Data
+                </span>
+              ) : (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-amber/20 text-accent-amber">DEMO DATA</span>
+              )}
               {cycleResult.market_price && (
                 <span className="text-xs text-text-muted">Price: <span className="font-mono text-text-primary">{cycleResult.market_price}</span></span>
               )}
