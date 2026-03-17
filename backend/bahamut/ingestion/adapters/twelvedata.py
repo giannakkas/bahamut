@@ -28,38 +28,50 @@ class TwelveDataAdapter:
         url = f"{BASE_URL}/time_series"
         params = {"symbol": symbol, "interval": interval, "outputsize": count, "apikey": self.api_key}
 
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
-                data = resp.json()
+        # Retry up to 2 times (free tier can be slow/flaky)
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(url, params=params)
+                    resp.raise_for_status()
+                    data = resp.json()
 
-            if "code" in data and data["code"] != 200:
-                logger.error("twelvedata_error", code=data.get("code"), message=data.get("message", ""))
+                if "code" in data and data["code"] != 200:
+                    logger.error("twelvedata_error", code=data.get("code"), message=data.get("message", ""), attempt=attempt)
+                    if attempt == 0 and data.get("code") == 429:
+                        import asyncio
+                        await asyncio.sleep(2)
+                        continue
+                    return []
+
+                values = data.get("values", [])
+                if not values:
+                    logger.warning("twelvedata_empty", symbol=symbol, interval=interval, keys=list(data.keys()))
+                    return []
+
+                candles = []
+                for v in reversed(values):
+                    candles.append({
+                        "time": v["datetime"],
+                        "open": float(v["open"]),
+                        "high": float(v["high"]),
+                        "low": float(v["low"]),
+                        "close": float(v["close"]),
+                        "volume": int(float(v.get("volume", 0))),
+                        "complete": True,
+                    })
+
+                logger.info("twelvedata_candles", symbol=symbol, interval=interval, count=len(candles))
+                return candles
+
+            except Exception as e:
+                logger.error("twelvedata_fetch_error", symbol=symbol, error=str(e), attempt=attempt)
+                if attempt == 0:
+                    import asyncio
+                    await asyncio.sleep(1)
+                    continue
                 return []
-
-            values = data.get("values", [])
-            if not values:
-                return []
-
-            candles = []
-            for v in reversed(values):
-                candles.append({
-                    "time": v["datetime"],
-                    "open": float(v["open"]),
-                    "high": float(v["high"]),
-                    "low": float(v["low"]),
-                    "close": float(v["close"]),
-                    "volume": int(float(v.get("volume", 0))),
-                    "complete": True,
-                })
-
-            logger.info("twelvedata_candles", symbol=symbol, interval=interval, count=len(candles))
-            return candles
-
-        except Exception as e:
-            logger.error("twelvedata_fetch_error", symbol=symbol, error=str(e))
-            return []
+        return []
 
     async def get_latest_price(self, symbol: str) -> Optional[dict]:
         if not self.configured:

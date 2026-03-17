@@ -43,10 +43,19 @@ export default function AgentCouncilPage() {
 
   const loadCandles = async (asset?: string) => {
     setChartLoading(true);
-    try {
-      const res = await api.getCandles(asset || selectedAsset, selectedTF, 200);
-      if (res?.candles) setCandles(res.candles);
-    } catch (e) { console.error('Chart data error:', e); }
+    const a = asset || selectedAsset;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await api.getCandles(a, selectedTF, 200);
+        if (res?.candles?.length > 0) {
+          setCandles(res.candles);
+          setChartLoading(false);
+          return;
+        }
+      } catch (e) { console.error('Chart data error:', e); }
+      // Wait before retry
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+    }
     setChartLoading(false);
   };
 
