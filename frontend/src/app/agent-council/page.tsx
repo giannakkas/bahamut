@@ -61,7 +61,7 @@ export default function AgentCouncilPage() {
             <h1 className="text-2xl font-bold">Agent Council</h1>
             <p className="text-sm text-text-secondary mt-1">
               {agentHealth?.agent_count || 0} agents active
-              {agentHealth?.data_source !== 'none' ? ` · ${agentHealth.data_source} connected` : ' · Demo data'}
+              {agentHealth?.data_source && agentHealth.data_source !== 'none' ? ' · ' + agentHealth.data_source + ' connected' : ' · Demo data'}
             </p>
           </div>
           <div className="flex items-center gap-3">
