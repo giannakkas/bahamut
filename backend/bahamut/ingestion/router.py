@@ -90,3 +90,33 @@ async def debug_calendar():
             }
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/debug/gemini")
+async def debug_gemini():
+    """Test if Gemini API key works."""
+    import os, httpx
+    from bahamut.config import get_settings
+    s = get_settings()
+    key = s.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+
+    if not key:
+        return {"error": "No GEMINI_API_KEY found", "settings_key": bool(s.gemini_api_key), "env_key": bool(os.environ.get("GEMINI_API_KEY"))}
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}",
+                json={
+                    "contents": [{"parts": [{"text": "Say hello in one word"}]}],
+                    "generationConfig": {"maxOutputTokens": 10},
+                },
+            )
+            return {
+                "status": resp.status_code,
+                "key_length": len(key),
+                "key_prefix": key[:8] + "...",
+                "response": resp.json() if resp.status_code == 200 else resp.text[:300],
+            }
+    except Exception as e:
+        return {"error": str(e), "key_length": len(key)}
