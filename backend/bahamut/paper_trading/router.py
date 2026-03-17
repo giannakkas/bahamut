@@ -20,11 +20,22 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/paper-trading", tags=["Paper Trading"])
 
+_tables_ensured = False
+
+
+def _ensure_tables_once():
+    global _tables_ensured
+    if not _tables_ensured:
+        from bahamut.agents.persistence import ensure_tables
+        ensure_tables()
+        _tables_ensured = True
+
 
 @router.get("/portfolio")
 async def get_portfolio():
     """Get current portfolio summary with open positions."""
     try:
+        _ensure_tables_once()
         return await get_portfolio_summary()
     except Exception as e:
         logger.error("portfolio_fetch_failed", error=str(e))

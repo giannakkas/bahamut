@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuthStore } from "@/stores/auth";
+import AppShell from "@/components/layout/AppShell";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://bahamut-production.up.railway.app";
 
@@ -173,15 +174,18 @@ export default function PaperTradingPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-gray-400 animate-pulse text-lg">Loading Paper Trading Engine...</div>
-      </div>
+      <AppShell>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-gray-400 animate-pulse text-lg">Loading Paper Trading Engine...</div>
+        </div>
+      </AppShell>
     );
   }
 
   const p = portfolio;
 
   return (
+    <AppShell>
     <div className="min-h-screen p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -469,5 +473,6 @@ export default function PaperTradingPage() {
         → the system gets smarter with every trade.
       </div>
     </div>
+    </AppShell>
   );
 }
