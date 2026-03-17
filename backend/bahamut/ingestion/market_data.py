@@ -55,7 +55,7 @@ class MarketDataService:
             td_interval = to_twelve_interval(timeframe)
 
             candles = await twelve_data.get_candles(td_symbol, td_interval, count=200)
-            if not candles or len(candles) < 50:
+            if not candles or len(candles) < 20:
                 return None
 
             indicators = compute_indicators(candles)
@@ -71,6 +71,7 @@ class MarketDataService:
                     "low": candles[-1]["low"], "close": candles[-1]["close"],
                     "volume": candles[-1].get("volume", 0),
                 },
+                "candles": candles[-30:],  # Last 30 candles for whale/volume analysis
                 "price": price or {},
                 "candle_count": len(candles),
                 "source": "twelvedata_live",
@@ -92,7 +93,7 @@ class MarketDataService:
             granularity = to_oanda_granularity(timeframe)
 
             candles = await oanda.get_candles(instrument, granularity, count=200)
-            if not candles or len(candles) < 50:
+            if not candles or len(candles) < 20:
                 return None
 
             indicators = compute_indicators(candles)
@@ -108,6 +109,7 @@ class MarketDataService:
                     "low": candles[-1]["low"], "close": candles[-1]["close"],
                     "volume": candles[-1].get("volume", 0),
                 },
+                "candles": candles[-30:],
                 "price": price or {},
                 "candle_count": len(candles),
                 "source": "oanda_live",

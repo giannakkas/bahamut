@@ -119,7 +119,7 @@ export const AGENT_META: Record<string, { name: string; icon: string; color: str
   flow_agent: { name: 'Flow', icon: 'F', color: '#06B6D4' },
   volatility_agent: { name: 'Volatility', icon: 'V', color: '#F59E0B' },
   options_agent: { name: 'Options', icon: 'O', color: '#E94560' },
-  liquidity_agent: { name: 'Liquidity', icon: 'L', color: '#10B981' },
+  liquidity_agent: { name: 'Liquidity / Whales', icon: 'L', color: '#10B981' },
   sentiment_agent: { name: 'Sentiment', icon: 'S', color: '#F43F5E' },
   technical_agent: { name: 'Technical', icon: 'T', color: '#8B5CF6' },
   risk_agent: { name: 'Risk', icon: 'R', color: '#EF4444' },
