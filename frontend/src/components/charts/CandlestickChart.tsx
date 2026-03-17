@@ -25,20 +25,6 @@ const lwcPromise = typeof window !== 'undefined'
   ? import('lightweight-charts').then(m => { lwcModule = m; return m; })
   : null;
 
-function ChartSkeleton({ height }: { height: number }) {
-  return (
-    <div className="flex items-center justify-center bg-bg-secondary rounded-lg border border-border-default" style={{ height }}>
-      <div className="flex flex-col items-center gap-3">
-        <div className="relative w-10 h-10">
-          <div className="absolute inset-0 rounded-full border-2 border-border-default"></div>
-          <div className="absolute inset-0 rounded-full border-2 border-t-accent-violet animate-spin"></div>
-        </div>
-        <span className="text-xs text-text-muted">Loading chart...</span>
-      </div>
-    </div>
-  );
-}
-
 export default function CandlestickChart({
   candles, height = 400, signalDirection, signalPrice, loading = false
 }: CandlestickChartProps) {
@@ -49,16 +35,15 @@ export default function CandlestickChart({
   const observerRef = useRef<ResizeObserver | null>(null);
   const [libReady, setLibReady] = useState(!!lwcModule);
 
-  // Wait for library to load (usually already cached)
+  // Wait for library to load
   useEffect(() => {
     if (lwcModule) { setLibReady(true); return; }
     lwcPromise?.then(() => setLibReady(true));
   }, []);
 
-  // Create chart once when library + container are ready
-  const createChart = useCallback(() => {
-    if (!containerRef.current || !lwcModule) return;
-    if (chartRef.current) return;
+  // Create chart when lib + container + data are all ready
+  useEffect(() => {
+    if (!libReady || !containerRef.current || chartRef.current) return;
 
     const LWC = lwcModule;
     const chart = LWC.createChart(containerRef.current, {
@@ -106,11 +91,7 @@ export default function CandlestickChart({
       }
     });
     observerRef.current.observe(containerRef.current);
-  }, [height]);
 
-  // Init chart when lib ready
-  useEffect(() => {
-    if (libReady) createChart();
     return () => {
       observerRef.current?.disconnect();
       if (chartRef.current) {
@@ -120,7 +101,7 @@ export default function CandlestickChart({
         volumeSeriesRef.current = null;
       }
     };
-  }, [libReady, createChart]);
+  }, [libReady, candles.length > 0, height]);
 
   // Update data without recreating chart
   useEffect(() => {
@@ -177,8 +158,19 @@ export default function CandlestickChart({
     chartRef.current?.timeScale().fitContent();
   }, [candles, signalDirection, signalPrice]);
 
-  if (!libReady || (loading && candles.length === 0)) {
-    return <ChartSkeleton height={height} />;
+  // Show spinner while lib loads or waiting for first candles
+  if (!libReady || candles.length === 0) {
+    return (
+      <div className="flex items-center justify-center bg-bg-secondary rounded-lg border border-border-default" style={{ height }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative w-10 h-10">
+            <div className="absolute inset-0 rounded-full border-2 border-border-default"></div>
+            <div className="absolute inset-0 rounded-full border-2 border-t-accent-violet animate-spin"></div>
+          </div>
+          <span className="text-xs text-text-muted">{loading ? 'Loading market data...' : 'Waiting for data...'}</span>
+        </div>
+      </div>
+    );
   }
 
   return (
