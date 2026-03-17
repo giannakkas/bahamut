@@ -35,7 +35,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-bg-primary flex items-center justify-center">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-16 mx-auto mb-4" />
+          <div className="bg-black rounded-xl p-4 inline-block mb-4">
+            <img src="/logo.png" alt="Bahamut.AI" className="h-24 w-auto object-contain" style={{ mixBlendMode: 'lighten' }} />
+          </div>
           <p className="text-text-secondary text-sm">Institutional-Grade Trading Intelligence</p>
         </div>
 
