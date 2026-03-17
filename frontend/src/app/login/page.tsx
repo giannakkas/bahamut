@@ -36,7 +36,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-block mb-4">
-            <img src="/logo.png" alt="Bahamut.AI" className="h-24 w-auto object-contain" />
+            <img src="/logo.png" alt="Bahamut.AI" className="h-32 w-auto object-contain" />
           </div>
           <p className="text-text-secondary text-sm">Institutional-Grade Trading Intelligence</p>
         </div>

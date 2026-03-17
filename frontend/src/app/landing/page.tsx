@@ -109,7 +109,7 @@ export default function LandingPage() {
 
       {/* Nav */}
       <nav className="flex items-center justify-between px-8 py-4 max-w-7xl mx-auto relative z-20 border-b border-[#1a1a1a]">
-        <img src="/logo.png" alt="Bahamut.AI" className="h-10" />
+        <img src="/logo.png" alt="Bahamut.AI" className="h-14" />
         <div className="flex items-center gap-8">
           <a href="#agents" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">AI Agents</a>
           <a href="#safety" className="text-sm text-white/30 hover:text-[#C9A94E] transition-colors">Safety</a>
@@ -330,7 +330,7 @@ export default function LandingPage() {
 
       <footer className="px-8 py-8 border-t border-[#1a1a1a]">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-7 opacity-30" />
+          <img src="/logo.png" alt="Bahamut.AI" className="h-10 opacity-30" />
           <p className="text-[10px] text-white/10">© 2026 Bahamut.AI · Trading involves risk · Not financial advice</p>
         </div>
       </footer>
