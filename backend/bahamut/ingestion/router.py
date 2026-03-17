@@ -37,6 +37,10 @@ async def get_candles(
             _candle_cache[cache_key] = result
             _candle_cache_ts[cache_key] = now
             return result
+        else:
+            # Don't cache empty — clear any stale cache entry
+            _candle_cache.pop(cache_key, None)
+            _candle_cache_ts.pop(cache_key, None)
 
     # Fallback to OANDA
     if oanda.configured:
