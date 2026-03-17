@@ -37,8 +37,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="w-[260px] bg-bg-secondary border-r border-border-default flex flex-col shrink-0">
-        <div className="h-20 flex items-center justify-center px-3 border-b border-border-default bg-black">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-16 w-auto object-contain" style={{ mixBlendMode: 'lighten' }} />
+        <div className="h-20 flex items-center justify-center px-3 border-b border-border-default">
+          <img src="/logo.png" alt="Bahamut.AI" className="h-16 w-auto object-contain" />
         </div>
         <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map(item => (
