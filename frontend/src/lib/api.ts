@@ -9,11 +9,14 @@ class ApiClient {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> || {}) };
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(`${API_URL}/api/v1${path}`, { ...options, headers, signal: controller.signal });
       if (!res.ok) { const err = await res.json().catch(() => ({ message: res.statusText })); throw new Error(err.detail || err.message || `API error ${res.status}`); }
       return res.json();
+    } catch (e: any) {
+      if (e.name === 'AbortError') throw new Error('Request timed out — server may be starting up, please try again');
+      throw e;
     } finally { clearTimeout(timeout); }
   }
 
