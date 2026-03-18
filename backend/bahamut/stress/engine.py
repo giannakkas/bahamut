@@ -65,10 +65,15 @@ def replay_with_modified_params(
     threshold_overrides: dict = None,
     regime_override: str = None,
     max_traces: int = 50,
+    mutators: list = None,
 ) -> StressResult:
     """
     Replay recent decision traces through the current pipeline with modified params.
     Read-only: no trades opened, no trust modified.
+
+    mutators: list of callables with signature:
+        fn(trace_idx, total_traces, agent_outputs, disagree_dict, trace) -> None
+    Each mutator modifies agent_outputs list and/or disagree_dict in place.
     """
     start = time.time()
     result = StressResult(scenario_name="replay", mode="replay")
@@ -95,8 +100,10 @@ def replay_with_modified_params(
             if profile in PROFILE_THRESHOLDS:
                 PROFILE_THRESHOLDS[profile].update(overrides)
 
+    mutators = mutators or []
+
     try:
-        for trace in traces:
+        for trace_idx, trace in enumerate(traces):
             result.total_signals += 1
             consensus = trace.get("consensus_output", {})
             agent_data = trace.get("agent_outputs", [])
@@ -124,12 +131,12 @@ def replay_with_modified_params(
             resolved = weight_resolver.resolve_weights(
                 "fx", regime, "4H", trust_scores)
 
-            # Build disagreement metrics from stored
-            dm = DisagreementMetrics(
-                disagreement_index=stored_disagree.get("disagreement_index", 0),
-                execution_gate=stored_disagree.get("execution_gate", "CLEAR"),
-                gate_reasons=stored_disagree.get("gate_reasons", []),
-            )
+            # Build mutable disagreement dict
+            disagree_dict = {
+                "disagreement_index": stored_disagree.get("disagreement_index", 0),
+                "execution_gate": stored_disagree.get("execution_gate", "CLEAR"),
+                "gate_reasons": list(stored_disagree.get("gate_reasons", [])),
+            }
 
             # Reconstruct minimal agent outputs for consensus
             mock_agents = []
@@ -143,13 +150,35 @@ def replay_with_modified_params(
                         directional_bias=ao.get("directional_bias", "NEUTRAL"),
                         confidence=ao.get("confidence", 0.5),
                         evidence=[Evidence(claim="replay", data_point="replay", weight=0.5)],
-                        meta=ao.get("meta", {}),
+                        meta=dict(ao.get("meta", {})),
                     ))
                 except Exception:
                     continue
 
             if not mock_agents:
                 continue
+
+            # ── Apply mutators ──
+            total_traces = len(traces)
+            for mutator in mutators:
+                try:
+                    mutator(trace_idx, total_traces, mock_agents, disagree_dict, trace)
+                except Exception as e:
+                    logger.debug("mutator_failed", error=str(e))
+
+            # Build disagreement metrics after mutation
+            dm = DisagreementMetrics(
+                disagreement_index=disagree_dict["disagreement_index"],
+                execution_gate=disagree_dict["execution_gate"],
+                gate_reasons=disagree_dict["gate_reasons"],
+            )
+
+            # Re-read regime (mutators can change trace["regime"])
+            regime = regime_override or trace.get("regime", regime)
+
+            # Re-resolve weights if mutators changed trust or regime
+            resolved = weight_resolver.resolve_weights(
+                "fx", regime, "4H", trust_scores)
 
             # Run consensus
             try:
@@ -232,7 +261,7 @@ def replay_with_modified_params(
 def run_scenario(scenario_config: dict) -> StressResult:
     """
     Run a predefined stress scenario. Config must contain:
-      name, trust_overrides, profile, regime, threshold_overrides
+      name, trust_overrides, profile, regime, threshold_overrides, mutators
     """
     return replay_with_modified_params(
         trust_overrides=scenario_config.get("trust_overrides"),
@@ -240,6 +269,7 @@ def run_scenario(scenario_config: dict) -> StressResult:
         threshold_overrides=scenario_config.get("threshold_overrides"),
         regime_override=scenario_config.get("regime"),
         max_traces=scenario_config.get("max_traces", 50),
+        mutators=scenario_config.get("mutators"),
     )
 
 

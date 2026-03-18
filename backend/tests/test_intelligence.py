@@ -631,7 +631,7 @@ class TestStressTesting:
             assert len(s["description"]) > 20, f"{s['name']} description too short"
 
     def test_scenario_count(self):
-        assert len(SCENARIOS) == 8
+        assert len(SCENARIOS) == 13, f"Expected 13 scenarios, got {len(SCENARIOS)}"
 
     def test_unique_scenario_names(self):
         names = [s["name"] for s in SCENARIOS]
@@ -647,6 +647,118 @@ class TestStressTesting:
         tc = next(s for s in SCENARIOS if s["name"] == "trust_collapse")
         for a in ["technical_agent", "macro_agent", "sentiment_agent"]:
             assert tc["trust_overrides"][a] == 0.3
+
+    def test_mutator_scenarios_have_functions(self):
+        """All 5 new scenarios must have callable mutators."""
+        mutator_names = ["regime_flip_mid_trade", "stale_agent_inputs",
+                         "disagreement_drift", "correlated_agent_failure",
+                         "false_high_confidence"]
+        for name in mutator_names:
+            s = next((s for s in SCENARIOS if s["name"] == name), None)
+            assert s is not None, f"Missing scenario: {name}"
+            assert s.get("mutators"), f"{name} has no mutators"
+            for m in s["mutators"]:
+                assert callable(m), f"{name} mutator is not callable"
+
+    def test_regime_flip_mutator(self):
+        """Regime flip should change trace regime at midpoint."""
+        from bahamut.stress.scenarios import _mutate_regime_flip
+        trace = {"regime": "RISK_ON"}
+        _mutate_regime_flip(0, 10, [], {}, trace)
+        assert trace["regime"] == "RISK_ON"
+        _mutate_regime_flip(5, 10, [], {}, trace)
+        assert trace["regime"] == "CRISIS"
+
+    def test_stale_agents_mutator(self):
+        """Stale agents should progressively time out."""
+        from bahamut.stress.scenarios import _mutate_stale_agents
+        from bahamut.agents.schemas import AgentOutputSchema, Evidence
+        from uuid import uuid4
+        from datetime import datetime, timezone
+        agents = []
+        for aid in ["technical_agent", "macro_agent", "sentiment_agent",
+                     "volatility_agent", "liquidity_agent"]:
+            agents.append(AgentOutputSchema(
+                agent_id=aid, cycle_id=uuid4(), timestamp=datetime.now(timezone.utc),
+                asset="EURUSD", timeframe="4H", directional_bias="LONG",
+                confidence=0.80, evidence=[Evidence(claim="t", data_point="t", weight=0.5)],
+                meta={}))
+        # At start: nobody stale
+        _mutate_stale_agents(0, 20, agents, {}, {})
+        stale_0 = sum(1 for a in agents if a.meta.get("timed_out"))
+        # At end: 3 stale
+        agents2 = []
+        for aid in ["technical_agent", "macro_agent", "sentiment_agent",
+                     "volatility_agent", "liquidity_agent"]:
+            agents2.append(AgentOutputSchema(
+                agent_id=aid, cycle_id=uuid4(), timestamp=datetime.now(timezone.utc),
+                asset="EURUSD", timeframe="4H", directional_bias="LONG",
+                confidence=0.80, evidence=[Evidence(claim="t", data_point="t", weight=0.5)],
+                meta={}))
+        _mutate_stale_agents(19, 20, agents2, {}, {})
+        stale_end = sum(1 for a in agents2 if a.meta.get("timed_out"))
+        assert stale_0 == 0, f"Start should have 0 stale, got {stale_0}"
+        assert stale_end == 3, f"End should have 3 stale, got {stale_end}"
+
+    def test_disagreement_drift_mutator(self):
+        """Disagreement should rise to BLOCKED by end."""
+        from bahamut.stress.scenarios import _mutate_disagreement_drift
+        from bahamut.agents.schemas import AgentOutputSchema, Evidence
+        from uuid import uuid4
+        from datetime import datetime, timezone
+        agents = [AgentOutputSchema(
+            agent_id="technical_agent", cycle_id=uuid4(),
+            timestamp=datetime.now(timezone.utc), asset="EURUSD", timeframe="4H",
+            directional_bias="LONG", confidence=0.8,
+            evidence=[Evidence(claim="t", data_point="t", weight=0.5)], meta={})]
+        d = {"disagreement_index": 0.1, "execution_gate": "CLEAR", "gate_reasons": []}
+        _mutate_disagreement_drift(19, 20, agents, d, {})
+        assert d["disagreement_index"] > 0.7
+        assert d["execution_gate"] == "BLOCKED"
+
+    def test_correlated_failure_mutator(self):
+        """Technical + Macro should both go NEUTRAL with timed_out."""
+        from bahamut.stress.scenarios import _mutate_correlated_failure
+        from bahamut.agents.schemas import AgentOutputSchema, Evidence
+        from uuid import uuid4
+        from datetime import datetime, timezone
+        agents = []
+        for aid in ["technical_agent", "macro_agent", "sentiment_agent"]:
+            agents.append(AgentOutputSchema(
+                agent_id=aid, cycle_id=uuid4(), timestamp=datetime.now(timezone.utc),
+                asset="EURUSD", timeframe="4H", directional_bias="LONG",
+                confidence=0.80, evidence=[Evidence(claim="t", data_point="t", weight=0.5)],
+                meta={}))
+        d = {"disagreement_index": 0.1, "execution_gate": "CLEAR", "gate_reasons": []}
+        _mutate_correlated_failure(0, 10, agents, d, {})
+        tech = next(a for a in agents if a.agent_id == "technical_agent")
+        macro = next(a for a in agents if a.agent_id == "macro_agent")
+        sent = next(a for a in agents if a.agent_id == "sentiment_agent")
+        assert tech.directional_bias == "NEUTRAL" and tech.meta.get("timed_out")
+        assert macro.directional_bias == "NEUTRAL" and macro.meta.get("timed_out")
+        assert sent.directional_bias == "LONG"  # unaffected
+
+    def test_false_confidence_mutator(self):
+        """One agent should flip to opposing direction with 0.95 confidence."""
+        from bahamut.stress.scenarios import _mutate_false_high_confidence
+        from bahamut.agents.schemas import AgentOutputSchema, Evidence
+        from uuid import uuid4
+        from datetime import datetime, timezone
+        agents = []
+        for aid in ["technical_agent", "macro_agent", "sentiment_agent",
+                     "volatility_agent", "liquidity_agent"]:
+            agents.append(AgentOutputSchema(
+                agent_id=aid, cycle_id=uuid4(), timestamp=datetime.now(timezone.utc),
+                asset="EURUSD", timeframe="4H", directional_bias="LONG",
+                confidence=0.70, evidence=[Evidence(claim="t", data_point="t", weight=0.5)],
+                meta={}))
+        d = {"disagreement_index": 0.1, "execution_gate": "CLEAR", "gate_reasons": []}
+        _mutate_false_high_confidence(0, 10, agents, d, {})
+        # trace_idx=0 → liar is technical_agent (idx 0)
+        tech = next(a for a in agents if a.agent_id == "technical_agent")
+        assert tech.directional_bias == "SHORT"
+        assert tech.confidence == 0.95
+        assert tech.meta.get("injected_false_signal")
 
 
 # ══════════════════════════════════════
