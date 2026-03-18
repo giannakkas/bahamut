@@ -22,6 +22,7 @@ class TrustScoreStore:
     def __init__(self):
         self._scores: dict[str, dict[str, float]] = {}
         self._samples: dict[str, dict[str, int]] = {}
+        self._last_updated: dict[str, dict[str, float]] = {}  # epoch timestamps
         self._loaded = False
         self._init_defaults()
 
@@ -92,11 +93,13 @@ class TrustScoreStore:
                self._samples.get(agent_id, {}).get(dimension, 0)
 
     def set(self, agent_id, dimension, score, increment_sample=True):
+        import time
         score = max(TRUST_MIN, min(TRUST_MAX, score))
         self._scores.setdefault(agent_id, {})[dimension] = round(score, 4)
         if increment_sample:
             self._samples.setdefault(agent_id, {})[dimension] = \
                 self._samples.get(agent_id, {}).get(dimension, 0) + 1
+        self._last_updated.setdefault(agent_id, {})[dimension] = time.time()
         n = self._samples.get(agent_id, {}).get(dimension, 0)
         self._persist(agent_id, dimension, score, n)
 
@@ -136,14 +139,32 @@ class TrustScoreStore:
                      outcome="correct" if outcome_correct else "wrong", alpha=alpha)
 
     def apply_daily_decay(self, stale_threshold_days=14, decay_rate=0.005):
+        """Decay scores toward baseline ONLY for dimensions not updated recently."""
+        import time
+        now = time.time()
+        stale_cutoff = now - (stale_threshold_days * 86400)
+        decayed = 0
+        skipped = 0
+
         for aid in ALL_AGENT_IDS:
             for dim in list(self._scores.get(aid, {}).keys()):
                 s = self._scores[aid][dim]
-                if s != TRUST_BASELINE:
-                    new = s + (TRUST_BASELINE - s) * decay_rate
-                    self._scores[aid][dim] = round(max(TRUST_MIN, min(TRUST_MAX, new)), 4)
-                    n = self._samples.get(aid, {}).get(dim, 0)
-                    self._persist(aid, dim, self._scores[aid][dim], n)
+                if s == TRUST_BASELINE:
+                    continue
+
+                last = self._last_updated.get(aid, {}).get(dim, 0)
+                if last > stale_cutoff:
+                    skipped += 1
+                    continue  # Recently updated — don't decay
+
+                new = s + (TRUST_BASELINE - s) * decay_rate
+                self._scores[aid][dim] = round(max(TRUST_MIN, min(TRUST_MAX, new)), 4)
+                n = self._samples.get(aid, {}).get(dim, 0)
+                self._persist(aid, dim, self._scores[aid][dim], n)
+                decayed += 1
+
+        logger.info("trust_decay_applied", decayed=decayed, skipped=skipped,
+                     stale_days=stale_threshold_days)
 
     def get_all_scores(self):
         if not self._loaded: self.load_from_db()

@@ -259,11 +259,14 @@ class TestConsensusEngine:
         assert r.direction == "LONG" and r.final_score > 0.5
 
     def test_risk_veto_blocks(self):
+        """Risk veto returns immediately with score=0.0 and NO_TRADE — before any scoring."""
         c = uuid4()
         outs = [_out("technical_agent","LONG",0.9,c),
                 _risk(False,["DAILY_DD"],c)]
         r = self.eng.calculate(outs, "fx", "RISK_ON", "BALANCED")
         assert r.blocked and r.decision == "BLOCKED"
+        assert r.final_score == 0.0, f"Risk veto should produce score=0.0, got {r.final_score}"
+        assert r.direction == "NO_TRADE"
 
     def test_disagreement_downgrades(self):
         c = uuid4()
@@ -368,9 +371,20 @@ class TestTrustScoreStore:
     def test_decay(self):
         s = self._fresh()
         s.set("technical_agent", "global", 1.5, increment_sample=False)
+        # Mark as stale (updated 30 days ago) so decay applies
+        s._last_updated["technical_agent"]["global"] = 0  # epoch = very old
         s.apply_daily_decay(decay_rate=0.1)
         sc, _ = s.get("technical_agent", "global")
         assert 1.0 < sc < 1.5
+
+    def test_decay_skips_recent(self):
+        """Recently updated scores should NOT be decayed."""
+        s = self._fresh()
+        s.set("technical_agent", "global", 1.5, increment_sample=False)
+        # _last_updated is set to now by set() — should be skipped
+        s.apply_daily_decay(decay_rate=0.1)
+        sc, _ = s.get("technical_agent", "global")
+        assert sc == 1.5  # unchanged
 
     def test_all_scores_provisional(self):
         s = self._fresh()
@@ -471,6 +485,18 @@ class TestLearningAttribution:
         d_hi = _calculate_trust_delta(False, 0.9, -100.0, 0.0)
         d_lo = _calculate_trust_delta(False, 0.3, -100.0, 0.0)
         assert d_hi < d_lo
+
+    def test_calibration_penalty_amplifies_wrong(self):
+        """Agent with systematic overconfidence gets amplified penalty when wrong."""
+        d_no_cal = _calculate_trust_delta(False, 0.8, -100.0, 0.0, calibration_penalty=0.0)
+        d_cal = _calculate_trust_delta(False, 0.8, -100.0, 0.0, calibration_penalty=0.3)
+        assert d_cal < d_no_cal, f"Calibrated {d_cal} should be more negative than {d_no_cal}"
+
+    def test_calibration_penalty_reduces_correct_reward(self):
+        """Overconfident agent gets reduced reward even when correct."""
+        d_no_cal = _calculate_trust_delta(True, 0.8, 100.0, 1.0, calibration_penalty=0.0)
+        d_cal = _calculate_trust_delta(True, 0.8, 100.0, 1.0, calibration_penalty=0.3)
+        assert d_cal < d_no_cal, f"Calibrated {d_cal} should be less than {d_no_cal}"
 
 
 if __name__ == "__main__":

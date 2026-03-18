@@ -27,6 +27,13 @@ def process_signal_sync(
     if entry_price <= 0:
         return {"action": "SKIP", "reason": "Invalid price"}
 
+    # ── PRIMARY GATE: Disagreement (checked first, unconditionally) ──
+    if execution_gate == "BLOCKED":
+        log.info("primary_gate_blocked", reason="disagreement",
+                 index=disagreement_index)
+        return {"action": "SKIP", "reason": f"Disagreement BLOCKED (index={disagreement_index:.3f})",
+                "gate": "DISAGREEMENT", "disagreement_index": disagreement_index}
+
     if signal_label not in ("STRONG_SIGNAL", "SIGNAL"):
         log.info("skip_sync", reason="weak_signal", label=signal_label)
         return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}"}

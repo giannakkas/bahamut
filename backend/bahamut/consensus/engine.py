@@ -126,7 +126,26 @@ class ConsensusEngine:
         trust_scores = trust_scores or {}
         weight_overrides = weight_overrides or {}
 
-        # Filter out timed-out agents and non-directional agents
+        # ── RISK VETO — hard override, checked FIRST ──
+        risk_output = next((o for o in agent_outputs if o.agent_id == "risk_agent"), None)
+        risk_flags = []
+        if risk_output:
+            risk_flags = risk_output.meta.get("risk_flags", [])
+            if not risk_output.meta.get("can_trade", True):
+                cycle_id = agent_outputs[0].cycle_id if agent_outputs else uuid4()
+                return ConsensusDecisionSchema(
+                    consensus_id=uuid4(), cycle_id=cycle_id,
+                    asset=agent_outputs[0].asset if agent_outputs else "",
+                    direction="NO_TRADE", final_score=0.0,
+                    decision="BLOCKED", agreement_pct=0.0,
+                    agent_contributions=[], disagreement=disagreement_metrics,
+                    regime=regime, regime_confidence=0.5,
+                    risk_flags=risk_flags, blocked=True,
+                    block_reason=f"Risk Agent veto: {', '.join(risk_flags)}",
+                    execution_mode="WATCH", trading_profile=trading_profile,
+                )
+
+        # Filter out timed-out agents and risk_agent (risk has veto, not scoring weight)
         directional_outputs = [
             o for o in agent_outputs
             if o.agent_id != "risk_agent" and not o.meta.get("timed_out", False)
@@ -280,19 +299,7 @@ class ConsensusEngine:
             if o.directional_bias not in (candidate_dir, "NEUTRAL", "NO_TRADE")
         ]
 
-        # Check risk agent
-        risk_output = next((o for o in agent_outputs if o.agent_id == "risk_agent"), None)
-        blocked = False
-        block_reason = None
-        risk_flags = []
-        if risk_output:
-            risk_flags = risk_output.meta.get("risk_flags", [])
-            if not risk_output.meta.get("can_trade", True):
-                blocked = True
-                block_reason = f"Risk Agent veto: {', '.join(risk_flags)}"
-                decision = "BLOCKED"
-                exec_mode = "WATCH"
-
+        # risk_flags already captured at top of function (risk veto returns early)
         cycle_id = directional_outputs[0].cycle_id if directional_outputs else uuid4()
 
         return ConsensusDecisionSchema(
@@ -309,8 +316,8 @@ class ConsensusEngine:
             regime=regime,
             regime_confidence=0.8,
             risk_flags=risk_flags,
-            blocked=blocked,
-            block_reason=block_reason,
+            blocked=False,
+            block_reason=None,
             execution_mode=exec_mode,
             trading_profile=trading_profile,
         )

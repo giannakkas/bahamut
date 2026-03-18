@@ -172,14 +172,28 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                 else:
                     was_correct = (agent_direction != trade_direction)
 
-                # Calculate trust adjustment
-                trust_delta = _calculate_trust_delta(
-                    was_correct, agent_confidence, pnl, timing_quality
-                )
-
-                # Get/create agent performance record
+                # Get/create agent performance record (need it for calibration)
                 perf = await _get_or_create_performance(
                     session, agent_name, asset
+                )
+
+                # Confidence calibration score
+                # overconfidence_gap: how much the agent overestimates its accuracy
+                # If agent's avg confidence when wrong > actual accuracy → overconfident
+                calibration_penalty = 0.0
+                total_directional = perf.correct_signals + perf.wrong_signals
+                if total_directional >= 10:
+                    accuracy = perf.correct_signals / total_directional
+                    avg_conf_wrong = perf.avg_confidence_when_wrong or 0.5
+                    overconfidence_gap = avg_conf_wrong - accuracy
+                    if overconfidence_gap > 0.15:
+                        # Agent says high confidence when wrong, but is actually inaccurate
+                        calibration_penalty = min(0.5, overconfidence_gap)
+
+                # Calculate trust adjustment
+                trust_delta = _calculate_trust_delta(
+                    was_correct, agent_confidence, pnl, timing_quality,
+                    calibration_penalty
                 )
 
                 # Update performance stats
@@ -281,16 +295,18 @@ def _calculate_trust_delta(
     confidence: float,
     pnl: float,
     timing_quality: float = 0.5,
+    calibration_penalty: float = 0.0,
 ) -> float:
     """
     Calculate trust score adjustment for an agent.
 
     Key principles:
-    - Asymmetric: wrong costs more than right rewards (forces agents to be careful)
-    - High-confidence amplifier: confident and right = extra bonus, confident and wrong = extra pain
-    - Timing quality modulates the reward/penalty:
-        TP hit (1.0) = full reward, SL hit (0.0) = full penalty, timeout (0.5) = half
-    - Neutral agents get no adjustment (but also no reward)
+    - Asymmetric: wrong costs more than right rewards
+    - High-confidence amplifier: confident+right = bonus, confident+wrong = extra pain
+    - Timing quality: TP hit = full reward, SL hit = full penalty
+    - Calibration penalty: agents with systematic overconfidence get reduced rewards
+      and amplified penalties
+    - Neutral agents get no adjustment
     """
     if was_correct is None:
         return 0.0
@@ -299,14 +315,18 @@ def _calculate_trust_delta(
         delta = TRUST_REWARD_CORRECT
         if confidence >= HIGH_CONFIDENCE_THRESHOLD:
             delta += TRUST_BONUS_HIGH_CONFIDENCE
-        # Timing bonus: TP hit rewards more than timeout win
         delta *= (0.6 + 0.4 * timing_quality)
+        # Overconfident agents get reduced rewards
+        if calibration_penalty > 0:
+            delta *= max(0.5, 1.0 - calibration_penalty)
     else:
         delta = -TRUST_PENALTY_WRONG
         if confidence >= HIGH_CONFIDENCE_THRESHOLD:
             delta -= TRUST_PENALTY_HIGH_CONFIDENCE
-        # Timing penalty: SL hit punishes more than timeout loss
         delta *= (0.6 + 0.4 * (1.0 - timing_quality))
+        # Overconfident agents get amplified penalties
+        if calibration_penalty > 0:
+            delta *= (1.0 + calibration_penalty)
 
     # Scale by confidence (higher confidence = larger magnitude)
     delta *= (0.7 + 0.6 * confidence)
