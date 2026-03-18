@@ -8,9 +8,13 @@ class ApiClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> || {}) };
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
-    const res = await fetch(`${API_URL}/api/v1${path}`, { ...options, headers });
-    if (!res.ok) { const err = await res.json().catch(() => ({ message: res.statusText })); throw new Error(err.detail || err.message || `API error ${res.status}`); }
-    return res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(`${API_URL}/api/v1${path}`, { ...options, headers, signal: controller.signal });
+      if (!res.ok) { const err = await res.json().catch(() => ({ message: res.statusText })); throw new Error(err.detail || err.message || `API error ${res.status}`); }
+      return res.json();
+    } finally { clearTimeout(timeout); }
   }
 
   // Auth

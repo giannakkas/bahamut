@@ -61,8 +61,8 @@ export default function LearningLabPage() {
       if (rl.status === 'fulfilled') setReallocLog(rl.value || []);
       if (ar.status === 'fulfilled') setAdaptiveRules(ar.value || []);
       if (sc.status === 'fulfilled') setScenarioSim(sc.value || []);
-    } catch (e) { console.error(e); }
-    setLoading(false);
+    } catch (e) { console.error('Learning Lab load error:', e); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
