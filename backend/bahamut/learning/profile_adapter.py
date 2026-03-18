@@ -43,6 +43,7 @@ def resolve_effective_profile(
     meta_risk_level: str = "NORMAL",
     recent_streak: int = 0,
     profile_config: dict = None,
+    stress_score: float = None,
 ) -> ProfileAdjustment:
     """
     Resolve the effective trading profile given current conditions.
@@ -84,6 +85,12 @@ def resolve_effective_profile(
     if allowed and regime not in allowed and regime != "UNKNOWN":
         effective = "CONSERVATIVE"
         reasons.append(f"Regime {regime} not in allowed {allowed} → CONSERVATIVE")
+
+    # Rule 6: Low stress resilience → tighten one level
+    if stress_score is not None and stress_score < 0.35 and idx > 0:
+        idx = max(0, idx - 1)
+        effective = PROFILE_ORDER[idx]
+        reasons.append(f"Stress score {stress_score:.2f} < 0.35 → {effective}")
 
     adjusted = effective != base_profile
     if adjusted:

@@ -64,6 +64,7 @@ def run_readiness_check() -> ReadinessReport:
         _check_drawdown_headroom,
         _check_regime_detection,
         _check_execution_policy,
+        _check_stress_resilience,
     ]
     for fn in checks:
         try:
@@ -373,3 +374,28 @@ def _check_execution_policy() -> CheckResult:
                            f"Test trade blocked: {dec.reason}")
     except Exception as e:
         return CheckResult("execution_policy", "RISK", "FAIL", "error", "", str(e))
+
+
+def _check_stress_resilience() -> CheckResult:
+    """Have stress tests been run recently, and did the system show resilience?"""
+    try:
+        from bahamut.stress.assessment import get_stress_assessment
+        sa = get_stress_assessment()
+        if not sa.has_recent_results:
+            return CheckResult("stress_resilience", "RISK", "WARN",
+                               "no recent tests", "stress score ≥ 0.50",
+                               "Run stress tests to evaluate system resilience")
+        score = sa.overall_stress_score
+        if score >= 0.60:
+            return CheckResult("stress_resilience", "RISK", "PASS",
+                               f"{score:.2f}", "≥ 0.50",
+                               f"Crisis: {sa.crisis_resilience:.2f}, Stability: {sa.decision_stability:.2f}")
+        elif score >= 0.40:
+            return CheckResult("stress_resilience", "RISK", "WARN",
+                               f"{score:.2f}", "≥ 0.50",
+                               f"Fragility: {sa.trust_fragility:.2f}, Adequacy: {sa.threshold_adequacy:.2f}")
+        return CheckResult("stress_resilience", "RISK", "FAIL",
+                           f"{score:.2f}", "≥ 0.50",
+                           f"System fragile under stress: {', '.join(a['reason'] for a in sa.recommended_actions[:2])}")
+    except Exception as e:
+        return CheckResult("stress_resilience", "RISK", "WARN", "error", "", str(e))

@@ -94,12 +94,23 @@ class AgentOrchestrator:
             streak = get_recent_streak()
             profile_cfg = PROFILE_DEFAULTS.get(trading_profile, {})
 
+            # Get stress assessment score
+            s_score = None
+            try:
+                from bahamut.stress.assessment import get_stress_assessment
+                sa = get_stress_assessment()
+                if sa.has_recent_results:
+                    s_score = sa.overall_stress_score
+            except Exception:
+                pass
+
             adjustment = resolve_effective_profile(
                 base_profile=trading_profile,
                 regime=regime,
                 meta_risk_level=meta_risk,
                 recent_streak=streak,
                 profile_config=profile_cfg,
+                stress_score=s_score,
             )
             if adjustment.adjusted:
                 trading_profile = adjustment.effective_profile

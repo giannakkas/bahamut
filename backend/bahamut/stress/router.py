@@ -60,6 +60,13 @@ async def get_history(limit: int = 10, user=Depends(get_current_user)):
     return get_recent_results(limit)
 
 
+@router.get("/assessment")
+async def get_assessment(user=Depends(get_current_user)):
+    """Get structured stress assessment (influences readiness, thresholds, profile)."""
+    from bahamut.stress.assessment import compute_stress_assessment
+    return compute_stress_assessment().to_dict()
+
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "stress-test-svc"}

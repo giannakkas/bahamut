@@ -32,14 +32,35 @@ BASELINE_THRESHOLDS = {
 
 def apply_threshold_tuning(report) -> dict:
     """
-    Apply threshold adjustments based on SystemHealthReport.
+    Apply threshold adjustments based on SystemHealthReport AND stress assessment.
     Returns dict of changes made.
     """
     from bahamut.consensus.engine import PROFILE_THRESHOLDS
 
     changes = {}
 
-    for action in report.recommended_actions:
+    # Collect actions from meta-learning report
+    all_actions = list(report.recommended_actions or [])
+
+    # Also collect actions from stress assessment
+    try:
+        from bahamut.stress.assessment import get_stress_assessment
+        sa = get_stress_assessment()
+        if sa.has_recent_results:
+            for a in sa.recommended_actions:
+                if a.get("target") == "thresholds":
+                    # Map stress actions to threshold tuner format
+                    act = a.get("action", "")
+                    if act == "TIGHTEN":
+                        all_actions.append({"action": "TIGHTEN_THRESHOLDS",
+                                            "reason": f"[stress] {a.get('reason', '')}"})
+                    elif act == "LOOSEN":
+                        all_actions.append({"action": "LOOSEN_CANDIDATE",
+                                            "reason": f"[stress] {a.get('reason', '')}"})
+    except Exception:
+        pass
+
+    for action in all_actions:
         act = action.get("action", "")
 
         if act == "TIGHTEN_THRESHOLDS":

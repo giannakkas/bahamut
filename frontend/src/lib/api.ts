@@ -84,6 +84,7 @@ class ApiClient {
   async runStressScenario(name: string) { return this.request<any>(`/stress/scenario/${name}`, { method: 'POST' }); }
   async runAllStress() { return this.request<any>('/stress/run-all', { method: 'POST' }); }
   async getStressHistory(limit: number = 10) { return this.request<any>(`/stress/history?limit=${limit}`); }
+  async getStressAssessment() { return this.request<any>('/stress/assessment'); }
 
   // Readiness
   async getReadinessCheck() { return this.request<any>('/readiness/check'); }
