@@ -33,7 +33,7 @@ export default function AgentCouncilPage() {
   const loadData = async (asset?: string) => {
     const a = asset || selectedAsset;
     const [ts, th, ah, lc] = await Promise.allSettled([
-      api.getTrustScores(), api.getThresholds(), api.getAgentHealth(),
+      api.getTrustScores(), api.getConsensusThresholds(), api.getAgentHealth(),
       api.getLatestCycle(a),
     ]);
     if (ts.status === 'fulfilled') setTrustScores(ts.value);

@@ -14,7 +14,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       const [th, ah] = await Promise.allSettled([
-        api.getThresholds(), api.getAgentHealth(),
+        api.getConsensusThresholds(), api.getAgentHealth(),
       ]);
       if (th.status === 'fulfilled') setThresholds(th.value);
       if (ah.status === 'fulfilled') setHealth(ah.value);
