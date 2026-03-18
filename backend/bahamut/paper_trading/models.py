@@ -124,6 +124,7 @@ class AgentTradePerformance(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     agent_name = Column(String(50), nullable=False)   # technical, macro, sentiment, etc.
     asset = Column(String(20), nullable=False)
+    regime = Column(String(50), default="all")        # "all" for global, or regime name
 
     total_signals = Column(Integer, default=0)
     correct_signals = Column(Integer, default=0)
@@ -148,7 +149,7 @@ class AgentTradePerformance(Base):
     last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        Index("ix_agent_perf_name_asset", "agent_name", "asset", unique=True),
+        Index("ix_agent_perf_name_asset_regime", "agent_name", "asset", "regime", unique=True),
     )
 
 

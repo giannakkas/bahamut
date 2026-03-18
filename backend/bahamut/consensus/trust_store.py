@@ -119,15 +119,24 @@ class TrustScoreStore:
     def update_after_trade(self, agent_id, outcome_correct, confidence,
                            regime, asset_class, timeframe, trade_id=None):
         outcome = 1.0 if outcome_correct else 0.0
-        if outcome_correct and confidence >= 0.7: alpha, reason = 0.05, "correct_high"
-        elif outcome_correct: alpha, reason = 0.03, "correct_low"
-        elif not outcome_correct and confidence >= 0.7: alpha, reason = 0.10, "wrong_high"
-        elif not outcome_correct and confidence < 0.5: alpha, reason = 0.04, "wrong_low"
-        else: alpha, reason = 0.05, "wrong_med"
+
+        # Base alpha from confidence + correctness (asymmetric)
+        if outcome_correct and confidence >= 0.7: base_alpha, reason = 0.05, "correct_high"
+        elif outcome_correct: base_alpha, reason = 0.03, "correct_low"
+        elif not outcome_correct and confidence >= 0.7: base_alpha, reason = 0.10, "wrong_high"
+        elif not outcome_correct and confidence < 0.5: base_alpha, reason = 0.04, "wrong_low"
+        else: base_alpha, reason = 0.05, "wrong_med"
 
         for dim in ["global", f"regime:{regime.lower()}", f"asset:{asset_class}", f"tf:{timeframe}"]:
-            cur, _ = self.get(agent_id, dim)
+            cur, n_samples = self.get(agent_id, dim)
             old = cur
+
+            # Sample-size weighted alpha: high learning rate for cold start,
+            # tapering as samples grow. Minimum 30% of base_alpha even at 200+ samples.
+            # n=0 → 1.0x, n=5 → 0.67x, n=20 → 0.43x, n=50 → 0.35x, n=200 → 0.31x
+            sample_factor = max(0.3, 1.0 / (1.0 + n_samples * 0.1))
+            alpha = base_alpha * sample_factor
+
             norm = (cur - TRUST_MIN) / (TRUST_MAX - TRUST_MIN)
             new_norm = norm + alpha * (outcome - norm)
             new = round(TRUST_MIN + new_norm * (TRUST_MAX - TRUST_MIN), 4)
@@ -136,7 +145,8 @@ class TrustScoreStore:
             self._persist_history(agent_id, dim, old, new, reason, trade_id, alpha)
 
         logger.info("trust_updated", agent=agent_id,
-                     outcome="correct" if outcome_correct else "wrong", alpha=alpha)
+                     outcome="correct" if outcome_correct else "wrong",
+                     base_alpha=base_alpha)
 
     def apply_daily_decay(self, stale_threshold_days=14, decay_rate=0.005):
         """Decay scores toward baseline ONLY for dimensions not updated recently."""

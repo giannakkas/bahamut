@@ -334,6 +334,22 @@ class TestTrustScoreStore:
         a, _ = s.get("technical_agent", "global")
         assert a > b
 
+    def test_cold_start_learns_faster(self):
+        """With 0 samples, alpha is higher → bigger score change than with 50 samples."""
+        s1 = self._fresh()
+        s2 = self._fresh()
+        # s2 has 50 prior samples on global dimension
+        s2._samples["technical_agent"]["global"] = 50
+        b1, _ = s1.get("technical_agent", "global")
+        b2, _ = s2.get("technical_agent", "global")
+        s1.update_after_trade("technical_agent", True, 0.8, "risk_on", "fx", "4H")
+        s2.update_after_trade("technical_agent", True, 0.8, "risk_on", "fx", "4H")
+        a1, _ = s1.get("technical_agent", "global")
+        a2, _ = s2.get("technical_agent", "global")
+        delta1 = a1 - b1
+        delta2 = a2 - b2
+        assert delta1 > delta2, f"Cold start delta {delta1} should > mature delta {delta2}"
+
     def test_wrong_decreases(self):
         s = self._fresh()
         b, _ = s.get("technical_agent", "global")

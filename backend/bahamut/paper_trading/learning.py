@@ -172,9 +172,15 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                 else:
                     was_correct = (agent_direction != trade_direction)
 
-                # Get/create agent performance record (need it for calibration)
+                # Get/create agent performance records:
+                # - global record (regime='all') for calibration scoring
+                # - regime-specific record for per-regime attribution
                 perf = await _get_or_create_performance(
-                    session, agent_name, asset
+                    session, agent_name, asset, regime="all"
+                )
+                regime_key = trade_context.get("regime", "risk_on").lower()
+                perf_regime = await _get_or_create_performance(
+                    session, agent_name, asset, regime=regime_key
                 )
 
                 # Confidence calibration score
@@ -196,49 +202,44 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                     calibration_penalty
                 )
 
-                # Update performance stats
-                perf.total_signals += 1
-                if was_correct is None:
-                    perf.neutral_signals += 1
-                elif was_correct:
-                    perf.correct_signals += 1
-                    perf.total_pnl_when_agreed += abs(pnl)
-                    # Update confidence tracking
-                    n = perf.correct_signals
-                    perf.avg_confidence_when_correct = (
-                        (perf.avg_confidence_when_correct * (n - 1) + agent_confidence) / n
-                    )
-                    # Streak
-                    if perf.current_streak >= 0:
-                        perf.current_streak += 1
+                # Update performance stats (global + regime-specific)
+                for p in [perf, perf_regime]:
+                    p.total_signals += 1
+                    if was_correct is None:
+                        p.neutral_signals += 1
+                    elif was_correct:
+                        p.correct_signals += 1
+                        p.total_pnl_when_agreed += abs(pnl)
+                        n = p.correct_signals
+                        p.avg_confidence_when_correct = (
+                            (p.avg_confidence_when_correct * (n - 1) + agent_confidence) / n
+                        )
+                        if p.current_streak >= 0:
+                            p.current_streak += 1
+                        else:
+                            p.current_streak = 1
+                        p.best_streak = max(p.best_streak, p.current_streak)
                     else:
-                        perf.current_streak = 1
-                    perf.best_streak = max(perf.best_streak, perf.current_streak)
-                else:
-                    perf.wrong_signals += 1
-                    perf.total_pnl_when_disagreed += abs(pnl)
-                    n = perf.wrong_signals
-                    perf.avg_confidence_when_wrong = (
-                        (perf.avg_confidence_when_wrong * (n - 1) + agent_confidence) / n
-                    )
-                    if perf.current_streak <= 0:
-                        perf.current_streak -= 1
-                    else:
-                        perf.current_streak = -1
-                    perf.worst_streak = min(perf.worst_streak, perf.current_streak)
+                        p.wrong_signals += 1
+                        p.total_pnl_when_disagreed += abs(pnl)
+                        n = p.wrong_signals
+                        p.avg_confidence_when_wrong = (
+                            (p.avg_confidence_when_wrong * (n - 1) + agent_confidence) / n
+                        )
+                        if p.current_streak <= 0:
+                            p.current_streak -= 1
+                        else:
+                            p.current_streak = -1
+                        p.worst_streak = min(p.worst_streak, p.current_streak)
 
-                # Update accuracy
-                total_directional = perf.correct_signals + perf.wrong_signals
-                if total_directional > 0:
-                    perf.accuracy = perf.correct_signals / total_directional
-
-                # Update profit factor
-                if perf.total_pnl_when_disagreed > 0:
-                    perf.profit_factor = (
-                        perf.total_pnl_when_agreed / perf.total_pnl_when_disagreed
-                    )
-
-                perf.last_updated = datetime.now(timezone.utc)
+                    total_directional = p.correct_signals + p.wrong_signals
+                    if total_directional > 0:
+                        p.accuracy = p.correct_signals / total_directional
+                    if p.total_pnl_when_disagreed > 0:
+                        p.profit_factor = (
+                            p.total_pnl_when_agreed / p.total_pnl_when_disagreed
+                        )
+                    p.last_updated = datetime.now(timezone.utc)
 
                 # Create audit log
                 agent_id_full = f"{agent_name}_agent"
@@ -389,14 +390,13 @@ async def apply_trust_adjustments(
     return results
 
 
-async def get_agent_leaderboard() -> list[dict]:
-    """Get all agents ranked by accuracy across all assets."""
+async def get_agent_leaderboard(regime_filter: str = "all") -> list[dict]:
+    """Get all agents ranked by accuracy. Filter by regime ('all' for global)."""
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(AgentTradePerformance).order_by(
-                AgentTradePerformance.accuracy.desc()
-            )
-        )
+        q = select(AgentTradePerformance).where(
+            AgentTradePerformance.regime == regime_filter
+        ).order_by(AgentTradePerformance.accuracy.desc())
+        result = await session.execute(q)
         records = result.scalars().all()
 
         # Aggregate per agent
@@ -405,6 +405,7 @@ async def get_agent_leaderboard() -> list[dict]:
             if r.agent_name not in agents:
                 agents[r.agent_name] = {
                     "agent": r.agent_name,
+                    "regime": regime_filter,
                     "total_signals": 0,
                     "correct": 0,
                     "wrong": 0,
@@ -412,6 +413,8 @@ async def get_agent_leaderboard() -> list[dict]:
                     "accuracy": 0,
                     "best_streak": 0,
                     "worst_streak": 0,
+                    "avg_conf_correct": 0,
+                    "avg_conf_wrong": 0,
                     "assets": {},
                 }
             a = agents[r.agent_name]
@@ -427,7 +430,6 @@ async def get_agent_leaderboard() -> list[dict]:
                 "streak": r.current_streak,
             }
 
-        # Calculate overall accuracy
         for a in agents.values():
             total = a["correct"] + a["wrong"]
             a["accuracy"] = round(a["correct"] / total, 3) if total > 0 else 0
@@ -435,22 +437,54 @@ async def get_agent_leaderboard() -> list[dict]:
         return sorted(agents.values(), key=lambda x: x["accuracy"], reverse=True)
 
 
+async def get_regime_performance_comparison() -> dict:
+    """Compare agent accuracy across all regimes."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(AgentTradePerformance).where(
+                AgentTradePerformance.regime != "all",
+                AgentTradePerformance.total_signals >= 3,
+            )
+        )
+        records = result.scalars().all()
+
+        # Structure: {regime: {agent: {accuracy, trades}}}
+        regimes = {}
+        for r in records:
+            regime = r.regime
+            if regime not in regimes:
+                regimes[regime] = {}
+            if r.agent_name not in regimes[regime]:
+                regimes[regime][r.agent_name] = {"correct": 0, "total": 0, "wrong": 0}
+            regimes[regime][r.agent_name]["correct"] += r.correct_signals
+            regimes[regime][r.agent_name]["wrong"] += r.wrong_signals
+            regimes[regime][r.agent_name]["total"] += r.total_signals
+
+        for regime_data in regimes.values():
+            for agent_data in regime_data.values():
+                d = agent_data["correct"] + agent_data["wrong"]
+                agent_data["accuracy"] = round(agent_data["correct"] / d, 3) if d > 0 else 0
+
+        return regimes
+
+
 async def _get_or_create_performance(
-    session: AsyncSession, agent_name: str, asset: str
+    session: AsyncSession, agent_name: str, asset: str, regime: str = "all"
 ) -> AgentTradePerformance:
-    """Get or create an agent performance record."""
+    """Get or create an agent performance record, optionally per-regime."""
     result = await session.execute(
         select(AgentTradePerformance).where(
             and_(
                 AgentTradePerformance.agent_name == agent_name,
                 AgentTradePerformance.asset == asset,
+                AgentTradePerformance.regime == regime,
             )
         )
     )
     perf = result.scalar_one_or_none()
 
     if not perf:
-        perf = AgentTradePerformance(agent_name=agent_name, asset=asset)
+        perf = AgentTradePerformance(agent_name=agent_name, asset=asset, regime=regime)
         session.add(perf)
         await session.flush()
 

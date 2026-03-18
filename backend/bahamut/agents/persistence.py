@@ -198,6 +198,13 @@ def ensure_tables():
             conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS regime VARCHAR(50)"))
             conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS disagreement_index FLOAT DEFAULT 0"))
             conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(30)"))
+            # Agent performance per regime
+            conn.execute(text("ALTER TABLE agent_trade_performance ADD COLUMN IF NOT EXISTS regime VARCHAR(50) DEFAULT 'all'"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_agent_perf_name_asset"))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_agent_perf_name_asset_regime
+                ON agent_trade_performance (agent_name, asset, regime)
+            """))
             conn.commit()
 
             # Paper trading tables

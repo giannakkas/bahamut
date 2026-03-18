@@ -48,7 +48,11 @@ class ApiClient {
   async getStrategyFitness() { return this.request<any>('/learning/fitness'); }
   async emergencyRecalibrate() { return this.request<any>('/learning/emergency-recalibrate', { method: 'POST' }); }
   async getTrustSummary() { return this.request<any>('/learning/trust-summary'); }
-  async getAgentLeaderboard() { return this.request<any>('/learning/agent-leaderboard'); }
+  async getAgentLeaderboard(regime?: string) {
+    const params = regime ? `?regime=${regime}` : '';
+    return this.request<any>(`/learning/agent-leaderboard${params}`);
+  }
+  async getRegimePerformance() { return this.request<any>('/learning/regime-performance'); }
   async getTrustHistory(agentId?: string, limit: number = 50) {
     const params = new URLSearchParams({ limit: String(limit) });
     if (agentId) params.set('agent_id', agentId);

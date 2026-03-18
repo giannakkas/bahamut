@@ -48,9 +48,15 @@ async def strategy_fitness(user=Depends(get_current_user)):
                 "model_freshness": "cold_start", "note": str(e)}
 
 @router.get("/agent-leaderboard")
-async def agent_leaderboard(user=Depends(get_current_user)):
+async def agent_leaderboard(regime: str = "all", user=Depends(get_current_user)):
     from bahamut.paper_trading.learning import get_agent_leaderboard
-    return await get_agent_leaderboard()
+    return await get_agent_leaderboard(regime_filter=regime)
+
+@router.get("/regime-performance")
+async def regime_performance(user=Depends(get_current_user)):
+    """Compare agent accuracy across all regimes."""
+    from bahamut.paper_trading.learning import get_regime_performance_comparison
+    return await get_regime_performance_comparison()
 
 @router.get("/trust-history")
 async def trust_history(agent_id: str = None, limit: int = 50, user=Depends(get_current_user)):
