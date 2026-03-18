@@ -212,6 +212,7 @@ class AgentOrchestrator:
                     risk_flags=risk_output.meta.get("risk_flags", []),
                     risk_can_trade=risk_output.meta.get("can_trade", True),
                     regime=regime,
+                    trading_profile=trading_profile,
                 )
             else:
                 logger.info("paper_trading_hook_skipped",

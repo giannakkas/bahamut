@@ -79,11 +79,21 @@ async def process_closed_trade(closed_trade: dict) -> dict:
     log.info("learning_processing_trade", profitable=is_profitable)
 
     # ── Resolve context for dimensional trust updates ──
+    # Prefer execution context stored on the position (most reliable)
+    # Fall back to decision trace, then defaults
     asset_class = _infer_asset_class(asset)
     trade_context = {"regime": "risk_on", "asset_class": asset_class, "timeframe": "4H"}
 
-    if cycle_id:
-        # Try to pull regime + timeframe from the decision trace
+    # Position-level context (stored at trade open by sync_executor)
+    pos_regime = closed_trade.get("regime")
+    pos_profile = closed_trade.get("trading_profile")
+    if pos_regime:
+        trade_context["regime"] = pos_regime
+    if pos_profile:
+        trade_context["trading_profile"] = pos_profile
+
+    # Fall back to decision trace if position didn't have it
+    if cycle_id and not pos_regime:
         try:
             from bahamut.database import sync_engine as _sync_eng
             from sqlalchemy import text as _text
@@ -92,12 +102,28 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                     "SELECT regime, timeframe FROM decision_traces WHERE cycle_id = :c LIMIT 1"
                 ), {"c": cycle_id}).mappings().first()
                 if _tr:
-                    trade_context["regime"] = _tr.get("regime") or "risk_on"
+                    trade_context["regime"] = _tr.get("regime") or trade_context["regime"]
                     trade_context["timeframe"] = _tr.get("timeframe") or "4H"
         except Exception as e:
             log.debug("trace_lookup_skipped", error=str(e))
 
-        # Close the decision trace with outcome
+    # Timing quality analysis
+    status = closed_trade.get("status", "")
+    max_fav = closed_trade.get("max_favorable", 0) or 0
+    max_adv = closed_trade.get("max_adverse", 0) or 0
+    if status == "CLOSED_TP":
+        timing_quality = 1.0    # Hit take profit — good entry/timing
+    elif status == "CLOSED_SL":
+        timing_quality = 0.0    # Hit stop loss — bad
+    elif status == "CLOSED_TIMEOUT":
+        timing_quality = 0.5    # Neither — neutral
+    elif status == "CLOSED_SIGNAL":
+        timing_quality = 0.7 if is_profitable else 0.3  # Exited on signal
+    else:
+        timing_quality = 0.5
+
+    # Close the decision trace with enriched outcome
+    if cycle_id:
         try:
             from bahamut.agents.persistence import close_decision_trace
             close_decision_trace(cycle_id, {
@@ -105,6 +131,8 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                 "status": closed_trade.get("status", ""),
                 "exit_price": closed_trade.get("exit_price", 0),
                 "profitable": is_profitable,
+                "timing_quality": timing_quality,
+                "max_favorable": max_fav, "max_adverse": max_adv,
             })
         except Exception as e:
             log.debug("close_trace_skipped", error=str(e))
@@ -146,7 +174,7 @@ async def process_closed_trade(closed_trade: dict) -> dict:
 
                 # Calculate trust adjustment
                 trust_delta = _calculate_trust_delta(
-                    was_correct, agent_confidence, pnl
+                    was_correct, agent_confidence, pnl, timing_quality
                 )
 
                 # Get/create agent performance record
@@ -224,6 +252,7 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                     "confidence": agent_confidence,
                     "was_correct": was_correct,
                     "trust_delta": trust_delta,
+                    "timing_quality": timing_quality,
                     "accuracy": round(perf.accuracy, 3),
                     "total_trades": perf.total_signals,
                     "streak": perf.current_streak,
@@ -233,6 +262,7 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                          agent=agent_name,
                          correct=was_correct,
                          delta=trust_delta,
+                         timing=timing_quality,
                          accuracy=round(perf.accuracy, 3))
 
     return {
@@ -250,6 +280,7 @@ def _calculate_trust_delta(
     was_correct: bool | None,
     confidence: float,
     pnl: float,
+    timing_quality: float = 0.5,
 ) -> float:
     """
     Calculate trust score adjustment for an agent.
@@ -257,6 +288,8 @@ def _calculate_trust_delta(
     Key principles:
     - Asymmetric: wrong costs more than right rewards (forces agents to be careful)
     - High-confidence amplifier: confident and right = extra bonus, confident and wrong = extra pain
+    - Timing quality modulates the reward/penalty:
+        TP hit (1.0) = full reward, SL hit (0.0) = full penalty, timeout (0.5) = half
     - Neutral agents get no adjustment (but also no reward)
     """
     if was_correct is None:
@@ -266,12 +299,16 @@ def _calculate_trust_delta(
         delta = TRUST_REWARD_CORRECT
         if confidence >= HIGH_CONFIDENCE_THRESHOLD:
             delta += TRUST_BONUS_HIGH_CONFIDENCE
+        # Timing bonus: TP hit rewards more than timeout win
+        delta *= (0.6 + 0.4 * timing_quality)
     else:
         delta = -TRUST_PENALTY_WRONG
         if confidence >= HIGH_CONFIDENCE_THRESHOLD:
             delta -= TRUST_PENALTY_HIGH_CONFIDENCE
+        # Timing penalty: SL hit punishes more than timeout loss
+        delta *= (0.6 + 0.4 * (1.0 - timing_quality))
 
-    # Scale slightly by confidence (higher confidence = larger magnitude)
+    # Scale by confidence (higher confidence = larger magnitude)
     delta *= (0.7 + 0.6 * confidence)
 
     return round(delta, 4)

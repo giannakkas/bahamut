@@ -193,6 +193,11 @@ def ensure_tables():
             """))
             # Migration for existing tables
             conn.execute(text("ALTER TABLE consensus_decisions ADD COLUMN IF NOT EXISTS disagreement_metrics JSONB"))
+            # Execution context on paper_positions for learning attribution
+            conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS trading_profile VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS regime VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS disagreement_index FLOAT DEFAULT 0"))
+            conn.execute(text("ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(30)"))
             conn.commit()
 
             # Paper trading tables

@@ -436,5 +436,42 @@ class TestRegimeDetection:
             assert k in d
 
 
+# ══════════════════════════════════════
+# 7. LEARNING ATTRIBUTION (6 tests)
+# ══════════════════════════════════════
+from bahamut.paper_trading.learning import _calculate_trust_delta
+
+class TestLearningAttribution:
+
+    def test_correct_positive_delta(self):
+        d = _calculate_trust_delta(True, 0.7, 100.0, 1.0)
+        assert d > 0
+
+    def test_wrong_negative_delta(self):
+        d = _calculate_trust_delta(False, 0.7, -100.0, 0.0)
+        assert d < 0
+
+    def test_neutral_zero(self):
+        assert _calculate_trust_delta(None, 0.5, 0, 0.5) == 0.0
+
+    def test_tp_hit_rewards_more_than_timeout(self):
+        """TP hit (timing=1.0) should give larger reward than timeout (timing=0.5)."""
+        d_tp = _calculate_trust_delta(True, 0.7, 100.0, 1.0)
+        d_to = _calculate_trust_delta(True, 0.7, 100.0, 0.5)
+        assert d_tp > d_to, f"TP {d_tp} should > timeout {d_to}"
+
+    def test_sl_hit_punishes_more_than_timeout(self):
+        """SL hit (timing=0.0) should give larger penalty than timeout (timing=0.5)."""
+        d_sl = _calculate_trust_delta(False, 0.7, -100.0, 0.0)
+        d_to = _calculate_trust_delta(False, 0.7, -100.0, 0.5)
+        assert d_sl < d_to, f"SL {d_sl} should be more negative than timeout {d_to}"
+
+    def test_high_conf_wrong_punished_harder(self):
+        """High confidence wrong → bigger penalty than low confidence wrong."""
+        d_hi = _calculate_trust_delta(False, 0.9, -100.0, 0.0)
+        d_lo = _calculate_trust_delta(False, 0.3, -100.0, 0.0)
+        assert d_hi < d_lo
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

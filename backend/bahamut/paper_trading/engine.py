@@ -446,6 +446,15 @@ async def close_position(
         "agent_votes": position.agent_votes,
         "consensus_score": position.consensus_score,
         "cycle_id": position.cycle_id,
+        # Execution context for learning attribution
+        "trading_profile": getattr(position, "trading_profile", None),
+        "regime": getattr(position, "regime", None),
+        "disagreement_index": getattr(position, "disagreement_index", 0),
+        "execution_mode": getattr(position, "execution_mode", None),
+        "entry_signal_label": position.entry_signal_label,
+        "entry_signal_score": position.entry_signal_score,
+        "max_favorable": position.max_favorable,
+        "max_adverse": position.max_adverse,
     }
 
 

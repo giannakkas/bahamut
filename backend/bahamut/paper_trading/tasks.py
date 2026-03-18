@@ -151,6 +151,7 @@ def on_signal_complete(
     risk_flags: list = None,
     risk_can_trade: bool = True,
     regime: str = "RISK_ON",
+    trading_profile: str = "BALANCED",
 ):
     """
     Hook called by orchestrator after every signal cycle completes.
@@ -189,6 +190,7 @@ def on_signal_complete(
             risk_flags=risk_flags,
             risk_can_trade=risk_can_trade,
             regime=regime,
+            trading_profile=trading_profile,
         )
         logger.info("paper_trading_signal_result",
                     asset=asset, action=result.get("action"),

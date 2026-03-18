@@ -16,7 +16,7 @@ def process_signal_sync(
     agent_votes: dict, cycle_id: str = None,
     execution_gate: str = "CLEAR", disagreement_index: float = 0.0,
     risk_flags: list = None, risk_can_trade: bool = True,
-    regime: str = "RISK_ON",
+    regime: str = "RISK_ON", trading_profile: str = "BALANCED",
 ) -> dict:
     """Sync version of process_signal for Celery workers."""
     import json
@@ -92,7 +92,7 @@ def process_signal_sync(
                 disagreement_gate=execution_gate, disagreement_index=disagreement_index,
                 risk_flags=risk_flags,
                 risk_can_trade=risk_can_trade,
-                trading_profile="BALANCED",
+                trading_profile=trading_profile,
                 open_position_count=open_count, has_position_in_asset=has_dup,
                 portfolio_balance=balance,
                 mean_agent_trust=mean_trust,
@@ -126,18 +126,20 @@ def process_signal_sync(
                 pos_val *= size_mult
                 risk_amt *= size_mult
 
-            # Insert position
+            # Insert position with execution context
             conn.execute(text("""
                 INSERT INTO paper_positions (
                     portfolio_id, asset, direction, entry_price, quantity, position_value,
                     entry_signal_score, entry_signal_label, stop_loss, take_profit,
                     risk_amount, atr_at_entry, current_price, agent_votes, consensus_score,
-                    cycle_id, status, opened_at
+                    cycle_id, status, opened_at,
+                    trading_profile, regime, disagreement_index, execution_mode
                 ) VALUES (
                     :pid, :asset, :dir, :price, :qty, :val,
                     :score, :label, :sl, :tp,
                     :risk, :atr, :price, CAST(:votes AS jsonb), :cscore,
-                    :cid, 'OPEN', NOW()
+                    :cid, 'OPEN', NOW(),
+                    :profile, :regime, :disagree, :exec_mode
                 )
             """), {
                 "pid": pid, "asset": asset, "dir": direction,
@@ -147,6 +149,8 @@ def process_signal_sync(
                 "risk": round(risk_amt, 2), "atr": atr,
                 "votes": json.dumps(agent_votes), "cscore": consensus_score,
                 "cid": cycle_id,
+                "profile": trading_profile, "regime": regime,
+                "disagree": disagreement_index, "exec_mode": decision.mode,
             })
             conn.commit()
 
