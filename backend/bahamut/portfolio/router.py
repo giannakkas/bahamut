@@ -136,6 +136,26 @@ async def evaluate_scenario(
     return result.to_dict()
 
 
+@router.get("/marginal-risk")
+async def get_marginal_risk(
+    asset: str, direction: str = "LONG", value: float = 5000,
+    user=Depends(get_current_user),
+):
+    """Compute marginal risk contribution of a proposed trade."""
+    from bahamut.portfolio.registry import load_portfolio_snapshot
+    from bahamut.portfolio.marginal_risk import compute_marginal_risk
+    snap = load_portfolio_snapshot()
+    bal = snap.balance if snap.balance > 0 else 100000.0
+    return compute_marginal_risk(snap.positions, asset, direction, value, bal).to_dict()
+
+
+@router.get("/kill-switch")
+async def get_kill_switch_state(user=Depends(get_current_user)):
+    """Get current portfolio kill switch / safe mode state."""
+    from bahamut.portfolio.kill_switch import get_current_state
+    return get_current_state()
+
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "portfolio-intel-svc"}

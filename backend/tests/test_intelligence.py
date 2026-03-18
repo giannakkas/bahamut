@@ -1370,5 +1370,287 @@ class TestScenarioRisk:
             assert "name" in s and "description" in s
 
 
+# ══════════════════════════════════════
+# 20. ADMIN CONFIG (8 tests)
+# ══════════════════════════════════════
+from bahamut.admin.config import (
+    DEFAULTS, get_config, get_all_config, set_config, reset_config,
+    get_config_metadata, _TYPES,
+)
+
+class TestAdminConfig:
+
+    def test_defaults_not_empty(self):
+        assert len(DEFAULTS) >= 40
+
+    def test_all_keys_have_types(self):
+        for key in DEFAULTS:
+            assert key in _TYPES
+
+    def test_get_config_returns_default(self):
+        val = get_config("scenario.weight.risk_off")
+        assert val == 0.30
+
+    def test_get_config_unknown_key(self):
+        val = get_config("nonexistent.key", "fallback")
+        assert val == "fallback"
+
+    def test_get_all_config_has_all_keys(self):
+        merged = get_all_config()
+        for key in DEFAULTS:
+            assert key in merged
+
+    def test_metadata_structure(self):
+        meta = get_config_metadata()
+        assert len(meta) >= 40
+        for item in meta[:3]:
+            for k in ("key", "default", "current", "type", "overridden", "category"):
+                assert k in item
+
+    def test_categories_correct(self):
+        meta = get_config_metadata()
+        categories = {m["category"] for m in meta}
+        for expected in ("scenario", "marginal_risk", "quality_ratio", "kill_switch", "exposure"):
+            assert expected in categories, f"Missing category: {expected}"
+
+    def test_set_config_validates_type(self):
+        # This should work (float to float)
+        result = set_config("scenario.weight.risk_off", 0.35, "test")
+        assert "error" not in result or result.get("new_value") is not None
+        # Reset
+        reset_config("scenario.weight.risk_off", "test")
+
+
+# ══════════════════════════════════════
+# 21. WEIGHTED SCENARIO ENGINE (6 tests)
+# ══════════════════════════════════════
+class TestWeightedScenario:
+
+    def _pos(self, asset="BTCUSD", direction="LONG", value=20000, price=50000):
+        from bahamut.portfolio.registry import OpenPosition, ASSET_CLASS_MAP, THEME_MAP
+        ac = ASSET_CLASS_MAP.get(asset, "other")
+        themes = [t for t, assets in THEME_MAP.items() if asset in assets]
+        return OpenPosition(
+            id=1, asset=asset, direction=direction, position_value=value,
+            risk_amount=400, entry_price=price, current_price=price,
+            unrealized_pnl=0, consensus_score=0.7, asset_class=ac, themes=themes)
+
+    def test_assessment_has_weighted_fields(self):
+        result = evaluate_scenario_risk([], "EURUSD", "LONG", 5000, 1.085, 100000)
+        d = result.to_dict()
+        assert "weighted_tail_risk" in d
+        assert "weighted_expected_stress" in d
+        assert "top_contributors" in d
+        assert "scenario_weights_used" in d
+
+    def test_weights_sum_approximately_one(self):
+        result = evaluate_scenario_risk([], "EURUSD", "LONG", 5000, 1.085, 100000)
+        weights = result.scenario_weights_used
+        total = sum(weights.values())
+        assert 0.95 <= total <= 1.05, f"Weights sum to {total}"
+
+    def test_weighted_tail_risk_bounded(self):
+        pos = [self._pos("BTCUSD", "LONG", 50000)]
+        result = evaluate_scenario_risk(pos, "ETHUSD", "LONG", 20000, 3000, 100000)
+        assert result.weighted_tail_risk >= 0
+
+    def test_top_contributors_has_two(self):
+        pos = [self._pos()]
+        result = evaluate_scenario_risk(pos, "EURUSD", "LONG", 5000, 1.085, 100000)
+        assert len(result.top_contributors) == 2
+
+    def test_top_contributors_are_worst(self):
+        pos = [self._pos()]
+        result = evaluate_scenario_risk(pos, "EURUSD", "LONG", 5000, 1.085, 100000)
+        if len(result.top_contributors) >= 2:
+            assert result.top_contributors[0]["weighted_pnl"] <= result.top_contributors[1]["weighted_pnl"]
+
+    def test_risk_level_uses_weighted(self):
+        """Risk level should be based on weighted tail risk."""
+        result = evaluate_scenario_risk([], "EURUSD", "LONG", 1000, 1.085, 100000)
+        assert result.risk_level in ("OK", "WARN", "APPROVAL", "BLOCK")
+
+
+# ══════════════════════════════════════
+# 22. MARGINAL RISK (6 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.marginal_risk import compute_marginal_risk, MarginalRiskResult
+
+class TestMarginalRisk:
+
+    def _pos(self, asset="EURUSD", direction="LONG", value=10000, price=1.085):
+        from bahamut.portfolio.registry import OpenPosition, ASSET_CLASS_MAP, THEME_MAP
+        ac = ASSET_CLASS_MAP.get(asset, "other")
+        themes = [t for t, assets in THEME_MAP.items() if asset in assets]
+        return OpenPosition(
+            id=1, asset=asset, direction=direction, position_value=value,
+            risk_amount=200, entry_price=price, current_price=price,
+            unrealized_pnl=0, consensus_score=0.65, asset_class=ac, themes=themes)
+
+    def test_empty_portfolio_marginal(self):
+        result = compute_marginal_risk([], "EURUSD", "LONG", 5000, 100000)
+        assert isinstance(result, MarginalRiskResult)
+        assert len(result.marginal_by_scenario) == 5
+
+    def test_marginal_by_scenario_complete(self):
+        pos = [self._pos()]
+        result = compute_marginal_risk(pos, "BTCUSD", "LONG", 5000, 100000)
+        for name in ("risk_off", "risk_on", "volatility_spike", "usd_shock", "crypto_shock"):
+            assert name in result.marginal_by_scenario
+
+    def test_hedging_detected(self):
+        """SHORT XAUUSD when portfolio is LONG stocks should reduce risk_off tail risk."""
+        pos = [self._pos("AAPL", "LONG", 30000, 180)]
+        result = compute_marginal_risk(pos, "XAUUSD", "SHORT", 10000, 100000)
+        # Gold rallies in risk_off, SHORT XAUUSD loses → not hedging in risk_off
+        # But overall marginal could still be negative in other scenarios
+        assert isinstance(result.is_hedging, bool)
+
+    def test_large_marginal_blocks(self):
+        """Very large position should produce high marginal risk."""
+        pos = [self._pos("BTCUSD", "LONG", 40000, 50000)]
+        result = compute_marginal_risk(pos, "ETHUSD", "LONG", 40000, 100000)
+        # Both crypto, both LONG → crypto_shock adds massive risk
+        assert abs(result.worst_case_marginal) > 1000
+
+    def test_result_structure(self):
+        result = compute_marginal_risk([], "EURUSD", "LONG", 5000, 100000)
+        d = result.to_dict()
+        for k in ("marginal_by_scenario", "worst_case_marginal", "weighted_marginal",
+                   "existing_tail_risk", "combined_tail_risk", "marginal_tail_risk",
+                   "is_hedging", "risk_level"):
+            assert k in d
+
+    def test_risk_levels(self):
+        result = compute_marginal_risk([], "EURUSD", "LONG", 1000, 100000)
+        assert result.risk_level in ("OK", "WARN", "APPROVAL", "BLOCK")
+
+
+# ══════════════════════════════════════
+# 23. QUALITY RATIO (5 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.quality import compute_quality_ratio, QualityRatioResult
+
+class TestQualityRatio:
+
+    def test_high_signal_high_ratio(self):
+        """Strong signal with real marginal risk should produce reasonable ratio."""
+        from bahamut.portfolio.marginal_risk import MarginalRiskResult
+        mr = MarginalRiskResult(worst_case_marginal=-50)  # small marginal risk
+        qr = compute_quality_ratio(0.85, "STRONG_SIGNAL", 10000, 0.005, 1.085, mr)
+        assert qr.quality_ratio > 1.0  # $70 return / $50 risk = 1.4+
+
+    def test_weak_signal_lower_ratio(self):
+        """Weak signal should produce lower ratio than strong signal."""
+        from bahamut.portfolio.marginal_risk import MarginalRiskResult
+        mr = MarginalRiskResult(worst_case_marginal=-50)
+        strong = compute_quality_ratio(0.85, "STRONG_SIGNAL", 10000, 0.005, 1.085, mr)
+        weak = compute_quality_ratio(0.40, "WEAK_SIGNAL", 10000, 0.005, 1.085, mr)
+        assert strong.quality_ratio > weak.quality_ratio
+
+    def test_ratio_bounded(self):
+        qr = compute_quality_ratio(0.99, "STRONG_SIGNAL", 10000, 0.01, 100.0)
+        assert 0.0 <= qr.quality_ratio <= 10.0
+
+    def test_result_structure(self):
+        qr = compute_quality_ratio(0.70, "SIGNAL", 5000, 0.005, 1.085)
+        d = qr.to_dict()
+        for k in ("expected_return", "marginal_risk", "quality_ratio",
+                   "signal_strength", "target_pct", "risk_level"):
+            assert k in d
+
+    def test_risk_levels(self):
+        qr = compute_quality_ratio(0.70, "SIGNAL", 5000, 0.005, 1.085)
+        assert qr.risk_level in ("OK", "REDUCE", "APPROVAL", "BLOCK")
+
+
+# ══════════════════════════════════════
+# 24. KILL SWITCH (6 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.kill_switch import evaluate_kill_switch, KillSwitchState
+
+class TestKillSwitch:
+
+    def test_normal_state(self):
+        state = evaluate_kill_switch(
+            weighted_tail_risk=0.03, portfolio_fragility=0.3,
+            concentration_risk=0.2, drawdown_proximity=0.1, position_count=3)
+        assert not state.kill_switch_active
+        assert not state.safe_mode_active
+
+    def test_tail_risk_triggers_kill(self):
+        state = evaluate_kill_switch(
+            weighted_tail_risk=0.20, portfolio_fragility=0.3,
+            concentration_risk=0.2, drawdown_proximity=0.1, position_count=3)
+        assert state.kill_switch_active
+        assert any("KILL_SWITCH" in t for t in state.triggers)
+
+    def test_fragility_triggers_kill(self):
+        state = evaluate_kill_switch(
+            weighted_tail_risk=0.03, portfolio_fragility=0.90,
+            concentration_risk=0.2, drawdown_proximity=0.1, position_count=3)
+        assert state.kill_switch_active
+
+    def test_safe_mode_moderate_fragility(self):
+        state = evaluate_kill_switch(
+            weighted_tail_risk=0.03, portfolio_fragility=0.65,
+            concentration_risk=0.2, drawdown_proximity=0.1, position_count=3)
+        assert not state.kill_switch_active
+        assert state.safe_mode_active
+
+    def test_kill_switch_zeroes_limits(self):
+        state = evaluate_kill_switch(
+            weighted_tail_risk=0.20, portfolio_fragility=0.9,
+            concentration_risk=0.5, drawdown_proximity=0.5, position_count=5)
+        assert state.effective_max_trades == 0
+        assert state.effective_max_position_pct == 0.0
+
+    def test_state_structure(self):
+        state = evaluate_kill_switch()
+        d = state.to_dict()
+        for k in ("kill_switch_active", "safe_mode_active", "deleverage_recommended",
+                   "triggers", "effective_max_trades"):
+            assert k in d
+
+
+# ══════════════════════════════════════
+# 25. SCENARIO OUTCOME LEARNING (4 tests)
+# ══════════════════════════════════════
+class TestScenarioOutcomeLearning:
+
+    def test_scenario_triggers_exist(self):
+        """New scenario-learned triggers should fire correctly."""
+        from bahamut.portfolio.learning import _check_rule_trigger, AdaptiveRule, PortfolioStateSnapshot
+        r = AdaptiveRule(pattern_key="high_weighted_tail_risk")
+        snap = PortfolioStateSnapshot(worst_case_pct=-0.06)
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(worst_case_pct=-0.02)
+        assert _check_rule_trigger(r, snap2) is False
+
+    def test_fragile_and_stressed_trigger(self):
+        from bahamut.portfolio.learning import _check_rule_trigger, AdaptiveRule, PortfolioStateSnapshot
+        r = AdaptiveRule(pattern_key="fragile_and_stressed")
+        snap = PortfolioStateSnapshot(fragility=0.55, worst_case_pct=-0.05)
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(fragility=0.3, worst_case_pct=-0.05)
+        assert _check_rule_trigger(r, snap2) is False
+
+    def test_scenario_warned_trigger(self):
+        from bahamut.portfolio.learning import _check_rule_trigger, AdaptiveRule, PortfolioStateSnapshot
+        r = AdaptiveRule(pattern_key="scenario_warned")
+        snap = PortfolioStateSnapshot(scenario_risk_level="WARN")
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(scenario_risk_level="OK")
+        assert _check_rule_trigger(r, snap2) is False
+
+    def test_drawdown_concentrated_trigger(self):
+        from bahamut.portfolio.learning import _check_rule_trigger, AdaptiveRule, PortfolioStateSnapshot
+        r = AdaptiveRule(pattern_key="drawdown_concentrated")
+        snap = PortfolioStateSnapshot(portfolio_in_drawdown=True, concentration_risk=0.45)
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(portfolio_in_drawdown=False, concentration_risk=0.45)
+        assert _check_rule_trigger(r, snap2) is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

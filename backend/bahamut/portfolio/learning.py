@@ -246,6 +246,48 @@ def analyze_patterns(lookback_days: int = 30) -> list[AdaptiveRule]:
             key_fn=lambda p: _get_state(p["entry"]).get("dominant_class_pct", 0) > 0.35,
         ))
 
+        # ── Scenario outcome learning patterns ──
+
+        # Pattern 8: High weighted tail risk at entry → outcome
+        rules.append(_analyze_bucket(
+            paired, "high_weighted_tail_risk",
+            key_fn=lambda p: _get_state(p["entry"]).get("worst_case_pct", 0) < -0.04,
+        ))
+
+        # Pattern 9: Scenario risk level was WARN+ at entry → outcome
+        rules.append(_analyze_bucket(
+            paired, "scenario_warned",
+            key_fn=lambda p: _get_state(p["entry"]).get("scenario_risk_level", "") in ("WARN", "APPROVAL"),
+        ))
+
+        # Pattern 10: High fragility + high tail risk combined
+        rules.append(_analyze_bucket(
+            paired, "fragile_and_stressed",
+            key_fn=lambda p: (
+                _get_state(p["entry"]).get("fragility", 0) > 0.4
+                and _get_state(p["entry"]).get("worst_case_pct", 0) < -0.03
+            ),
+        ))
+
+        # Pattern 11: Theme concentration + scenario risk combined
+        rules.append(_analyze_bucket(
+            paired, "theme_stressed",
+            key_fn=lambda p: (
+                _get_state(p["entry"]).get("dominant_theme_pct", 0) > 0.20
+                and _get_state(p["entry"]).get("scenario_risk_level", "") != ""
+                and _get_state(p["entry"]).get("scenario_risk_level", "") != "OK"
+            ),
+        ))
+
+        # Pattern 12: Portfolio in drawdown + high concentration
+        rules.append(_analyze_bucket(
+            paired, "drawdown_concentrated",
+            key_fn=lambda p: (
+                _get_state(p["entry"]).get("portfolio_in_drawdown", False)
+                and _get_state(p["entry"]).get("concentration_risk", 0) > 0.35
+            ),
+        ))
+
         # Filter out rules with insufficient data
         rules = [r for r in rules if r.sample_count >= 3]
 
@@ -353,6 +395,14 @@ def _check_rule_trigger(rule: AdaptiveRule, state: PortfolioStateSnapshot) -> bo
         "directional_imbalance": state.directional_risk > 0.6,
         "theme_concentrated": state.dominant_theme_pct > 0.25,
         "class_crowded": state.dominant_class_pct > 0.35,
+        # Scenario outcome learned patterns
+        "high_weighted_tail_risk": state.worst_case_pct < -0.04,
+        "scenario_warned": state.scenario_risk_level in ("WARN", "APPROVAL"),
+        "fragile_and_stressed": state.fragility > 0.4 and state.worst_case_pct < -0.03,
+        "theme_stressed": (state.dominant_theme_pct > 0.20
+                            and state.scenario_risk_level not in ("", "OK")),
+        "drawdown_concentrated": (state.portfolio_in_drawdown
+                                    and state.concentration_risk > 0.35),
     }
     return triggers.get(rule.pattern_key, False)
 

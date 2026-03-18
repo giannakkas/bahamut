@@ -102,6 +102,9 @@ class ApiClient {
   async getPortfolioDecisionLog(limit: number = 10) { return this.request<any>(`/portfolio/decision-log?limit=${limit}`); }
   async getScenarioList() { return this.request<any>('/portfolio/scenarios'); }
   async getScenarioSim() { return this.request<any>('/portfolio/scenario-sim'); }
+  async getKillSwitchState() { return this.request<any>('/portfolio/kill-switch'); }
+  async getAdminConfig() { return this.request<any>('/admin/config'); }
+  async getAdminSummary() { return this.request<any>('/admin/summary'); }
 
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }

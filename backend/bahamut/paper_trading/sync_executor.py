@@ -97,6 +97,9 @@ def process_signal_sync(
                     proposed_value=val_est,
                     proposed_risk=risk_est,
                     consensus_score=consensus_score,
+                    signal_label=signal_label,
+                    atr=atr,
+                    entry_price=entry_price,
                 )
 
                 if not portfolio_verdict.allowed:
@@ -131,6 +134,9 @@ def process_signal_sync(
                         augmented_flags.append("HIGH_EXPOSURE")
                 if portfolio_verdict.requires_approval:
                     augmented_flags.append("PORTFOLIO_FRAGILE")
+                ks = portfolio_verdict.kill_switch_state
+                if ks.get("safe_mode_active"):
+                    augmented_flags.append("SAFE_MODE")
 
             from bahamut.execution.policy import execution_policy, ExecutionRequest
             exec_req = ExecutionRequest(

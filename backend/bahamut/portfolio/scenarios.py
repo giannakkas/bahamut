@@ -164,9 +164,13 @@ class ScenarioRiskAssessment:
     worst_case_pct: float = 0.0         # as % of balance
     worst_scenario: str = ""            # which scenario is worst
     portfolio_tail_risk: float = 0.0    # avg of 2 worst scenarios as % of balance
+    weighted_tail_risk: float = 0.0     # probability-weighted tail risk
+    weighted_expected_stress: float = 0.0  # weighted avg PnL across all scenarios
     scenario_var: float = 0.0           # variance of PnL across scenarios
     all_scenarios: list = field(default_factory=list)
     proposed_worst_contribution: float = 0.0  # how much does proposed trade add to worst case
+    top_contributors: list = field(default_factory=list)  # [{scenario, weighted_pnl}]
+    scenario_weights_used: dict = field(default_factory=dict)
     risk_level: str = "OK"              # OK, WARN, APPROVAL, BLOCK
 
     def to_dict(self):
@@ -175,8 +179,12 @@ class ScenarioRiskAssessment:
             "worst_case_pct": round(self.worst_case_pct, 4),
             "worst_scenario": self.worst_scenario,
             "portfolio_tail_risk": round(self.portfolio_tail_risk, 4),
+            "weighted_tail_risk": round(self.weighted_tail_risk, 4),
+            "weighted_expected_stress": round(self.weighted_expected_stress, 2),
             "scenario_var": round(self.scenario_var, 4),
             "proposed_worst_contribution": round(self.proposed_worst_contribution, 2),
+            "top_contributors": self.top_contributors,
+            "scenario_weights_used": {k: round(v, 2) for k, v in self.scenario_weights_used.items()},
             "risk_level": self.risk_level,
             "scenarios": [s.to_dict() for s in self.all_scenarios],
         }
@@ -235,6 +243,17 @@ def evaluate_scenario_risk(
 
     # Derive aggregate metrics
     if scenario_pnls:
+        # Load scenario weights from central config
+        from bahamut.admin.config import get_config
+        scenario_weights = {
+            "risk_off": get_config("scenario.weight.risk_off", 0.30),
+            "risk_on": get_config("scenario.weight.risk_on", 0.10),
+            "volatility_spike": get_config("scenario.weight.volatility_spike", 0.25),
+            "usd_shock": get_config("scenario.weight.usd_shock", 0.15),
+            "crypto_shock": get_config("scenario.weight.crypto_shock", 0.20),
+        }
+        assessment.scenario_weights_used = scenario_weights
+
         # Sort by PnL ascending (worst first)
         scenario_pnls.sort(key=lambda x: x[1])
 
@@ -244,29 +263,60 @@ def evaluate_scenario_risk(
         assessment.worst_scenario = worst[0]
         assessment.proposed_worst_contribution = worst[2]
 
-        # Tail risk: average of 2 worst scenarios
+        # Unweighted tail risk: average of 2 worst scenarios
         tail_pnls = [s[1] for s in scenario_pnls[:2]]
         assessment.portfolio_tail_risk = abs(sum(tail_pnls) / len(tail_pnls) / balance)
+
+        # Weighted tail risk: probability-weighted average of LOSS scenarios
+        weighted_loss_sum = 0.0
+        weight_total = 0.0
+        weighted_all_sum = 0.0
+        weighted_all_total = 0.0
+        for name, pnl, _ in scenario_pnls:
+            w = scenario_weights.get(name, 0.1)
+            weighted_all_sum += pnl * w
+            weighted_all_total += w
+            if pnl < 0:
+                weighted_loss_sum += abs(pnl) * w
+                weight_total += w
+        if weight_total > 0:
+            assessment.weighted_tail_risk = (weighted_loss_sum / weight_total) / balance
+        assessment.weighted_expected_stress = weighted_all_sum / weighted_all_total if weighted_all_total > 0 else 0
+
+        # Top 2 scenario contributors (by weighted loss)
+        weighted_contributions = []
+        for name, pnl, _ in scenario_pnls:
+            w = scenario_weights.get(name, 0.1)
+            weighted_contributions.append({"scenario": name, "pnl": round(pnl, 2),
+                                            "weight": round(w, 2),
+                                            "weighted_pnl": round(pnl * w, 2)})
+        weighted_contributions.sort(key=lambda x: x["weighted_pnl"])
+        assessment.top_contributors = weighted_contributions[:2]
 
         # Variance
         mean_pnl = sum(s[1] for s in scenario_pnls) / len(scenario_pnls)
         assessment.scenario_var = sum((s[1] - mean_pnl) ** 2
                                        for s in scenario_pnls) / len(scenario_pnls)
 
-    # Risk level
-    tr = assessment.portfolio_tail_risk
-    if tr >= TAIL_RISK_BLOCK:
+    # Risk level — use weighted tail risk and central config thresholds
+    tr = assessment.weighted_tail_risk if assessment.weighted_tail_risk > 0 else assessment.portfolio_tail_risk
+    tail_risk_block = get_config("scenario.tail_risk.block", TAIL_RISK_BLOCK)
+    tail_risk_approval = get_config("scenario.tail_risk.approval", TAIL_RISK_APPROVAL)
+    tail_risk_warn = get_config("scenario.tail_risk.warn", TAIL_RISK_WARN)
+
+    if tr >= tail_risk_block:
         assessment.risk_level = "BLOCK"
-    elif tr >= TAIL_RISK_APPROVAL:
+    elif tr >= tail_risk_approval:
         assessment.risk_level = "APPROVAL"
-    elif tr >= TAIL_RISK_WARN:
+    elif tr >= tail_risk_warn:
         assessment.risk_level = "WARN"
     else:
         assessment.risk_level = "OK"
 
     logger.info("scenario_risk_assessed",
                  worst=assessment.worst_scenario,
-                 tail_risk=round(tr, 4),
+                 unweighted_tail=round(assessment.portfolio_tail_risk, 4),
+                 weighted_tail=round(assessment.weighted_tail_risk, 4),
                  risk_level=assessment.risk_level,
                  proposed=proposed_asset)
 

@@ -108,6 +108,9 @@ class PortfolioVerdict:
     fragility: FragilityMetrics = field(default_factory=FragilityMetrics)
     impact_score: float = 0.0  # -1 (worsens) to +1 (improves)
     scenario_risk: dict = field(default_factory=dict)  # scenario risk assessment
+    marginal_risk: dict = field(default_factory=dict)
+    quality_ratio: dict = field(default_factory=dict)
+    kill_switch_state: dict = field(default_factory=dict)
 
     def to_dict(self):
         return {
@@ -120,6 +123,9 @@ class PortfolioVerdict:
             "correlation": self.correlation.to_dict(),
             "fragility": self.fragility.to_dict(),
             "scenario_risk": self.scenario_risk,
+            "marginal_risk": self.marginal_risk,
+            "quality_ratio": self.quality_ratio,
+            "kill_switch_state": self.kill_switch_state,
         }
 
 
@@ -130,6 +136,9 @@ def evaluate_trade_for_portfolio(
     proposed_value: float,
     proposed_risk: float,
     consensus_score: float = 0.5,
+    signal_label: str = "SIGNAL",
+    atr: float = 0.0,
+    entry_price: float = 0.0,
 ) -> PortfolioVerdict:
     """
     Main entry point. Evaluates a proposed trade against current portfolio state.
@@ -139,6 +148,35 @@ def evaluate_trade_for_portfolio(
     bal = snapshot.balance if snapshot.balance > 0 else 100000.0
     proposed_class = ASSET_CLASS_MAP.get(proposed_asset, "other")
     proposed_themes = [t for t, assets in THEME_MAP.items() if proposed_asset in assets]
+
+    # ═══════════════════════════════════
+    # 0. KILL SWITCH CHECK (before everything else)
+    # ═══════════════════════════════════
+    try:
+        from bahamut.portfolio.kill_switch import evaluate_kill_switch
+        from bahamut.portfolio.scenarios import evaluate_scenario_risk as _qs_eval
+        qs = _qs_eval(snapshot.positions, proposed_asset, proposed_direction,
+                       0, 1.0, bal)  # quick assessment for tail risk
+        frag = _compute_fragility(snapshot, bal)
+        ks_state = evaluate_kill_switch(
+            weighted_tail_risk=qs.weighted_tail_risk,
+            portfolio_fragility=frag.portfolio_fragility,
+            concentration_risk=frag.concentration_risk,
+            drawdown_proximity=frag.drawdown_proximity,
+            position_count=snapshot.position_count,
+        )
+        verdict.kill_switch_state = ks_state.to_dict()
+        if ks_state.kill_switch_active:
+            verdict.blockers.append(
+                f"KILL_SWITCH: {'; '.join(ks_state.triggers[:2])}")
+            verdict.allowed = False
+            verdict.size_multiplier = 0.0
+            return verdict
+        if ks_state.safe_mode_active:
+            verdict.warnings.append(f"SAFE_MODE: {'; '.join(ks_state.triggers[:1])}")
+            verdict.requires_approval = True
+    except Exception:
+        pass
 
     # ═══════════════════════════════════
     # 1. EXPOSURE ENGINE
@@ -275,6 +313,69 @@ def evaluate_trade_for_portfolio(
 
     if scenario_assessment:
         verdict.scenario_risk = scenario_assessment.to_dict()
+
+    # ═══════════════════════════════════
+    # 7. MARGINAL RISK CONTRIBUTION
+    # ═══════════════════════════════════
+    marginal_result = None
+    try:
+        from bahamut.portfolio.marginal_risk import compute_marginal_risk
+        marginal_result = compute_marginal_risk(
+            positions=snapshot.positions,
+            proposed_asset=proposed_asset,
+            proposed_direction=proposed_direction,
+            proposed_value=proposed_value,
+            balance=bal,
+        )
+        verdict.marginal_risk = marginal_result.to_dict()
+
+        if marginal_result.risk_level == "BLOCK":
+            verdict.blockers.append(
+                f"MARGINAL_RISK: worst={marginal_result.worst_case_marginal:.0f} "
+                f"in {marginal_result.worst_marginal_scenario}")
+        elif marginal_result.risk_level == "APPROVAL":
+            verdict.requires_approval = True
+            verdict.warnings.append(
+                f"MARGINAL_RISK: approval required (worst={marginal_result.worst_case_marginal:.0f})")
+        elif marginal_result.risk_level == "WARN":
+            verdict.size_multiplier *= 0.8
+            verdict.warnings.append(
+                f"MARGINAL_RISK: size ×0.80 (worst={marginal_result.worst_case_marginal:.0f})")
+
+        if marginal_result.is_hedging:
+            verdict.reasons.append(
+                f"HEDGING: trade reduces tail risk by {abs(marginal_result.marginal_tail_risk):.1%}")
+    except Exception:
+        pass
+
+    # ═══════════════════════════════════
+    # 8. QUALITY RATIO (expected return / marginal risk)
+    # ═══════════════════════════════════
+    try:
+        from bahamut.portfolio.quality import compute_quality_ratio
+        qr = compute_quality_ratio(
+            consensus_score=consensus_score,
+            signal_label=signal_label,
+            proposed_value=proposed_value,
+            atr=atr if atr > 0 else (entry_price * 0.01 if entry_price > 0 else 0),
+            entry_price=entry_price if entry_price > 0 else 1.0,
+            marginal_risk_result=marginal_result,
+        )
+        verdict.quality_ratio = qr.to_dict()
+
+        if qr.risk_level == "BLOCK":
+            verdict.blockers.append(
+                f"QUALITY_RATIO: {qr.quality_ratio:.2f} — return/risk too low")
+        elif qr.risk_level == "APPROVAL":
+            verdict.requires_approval = True
+            verdict.warnings.append(
+                f"QUALITY_RATIO: {qr.quality_ratio:.2f} — approval required")
+        elif qr.risk_level == "REDUCE":
+            verdict.size_multiplier *= 0.7
+            verdict.warnings.append(
+                f"QUALITY_RATIO: {qr.quality_ratio:.2f} — size ×0.70")
+    except Exception:
+        pass
 
     # ═══════════════════════════════════
     # FINAL VERDICT

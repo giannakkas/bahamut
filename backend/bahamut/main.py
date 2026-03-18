@@ -24,6 +24,7 @@ from bahamut.scanner.router import router as scanner_router
 from bahamut.stress.router import router as stress_router
 from bahamut.readiness.router import router as readiness_router
 from bahamut.portfolio.router import router as portfolio_router
+from bahamut.admin.router import router as admin_router
 from bahamut.shared.redis_client import redis_manager
 
 settings = get_settings()
@@ -118,6 +119,7 @@ app.include_router(scanner_router, prefix="/api/v1", tags=["scanner"])
 app.include_router(stress_router, prefix="/api/v1/stress", tags=["stress-testing"])
 app.include_router(readiness_router, prefix="/api/v1/readiness", tags=["readiness"])
 app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["portfolio-intel"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
 
 @app.get("/health")
