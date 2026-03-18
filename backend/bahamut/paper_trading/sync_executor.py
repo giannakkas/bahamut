@@ -67,6 +67,20 @@ def process_signal_sync(
             ), {"p": pid, "a": asset}).first() is not None
 
             # ── EXECUTION POLICY — authoritative gate ──
+            # Compute mean agent trust for execution policy
+            mean_trust = 1.0
+            try:
+                from bahamut.consensus.trust_store import trust_store
+                trust_vals = []
+                for aid in ["technical_agent", "macro_agent", "sentiment_agent",
+                             "volatility_agent", "liquidity_agent"]:
+                    sc, _ = trust_store.get(aid, "global")
+                    trust_vals.append(sc)
+                if trust_vals:
+                    mean_trust = sum(trust_vals) / len(trust_vals)
+            except Exception:
+                pass
+
             from bahamut.execution.policy import execution_policy, ExecutionRequest
             exec_req = ExecutionRequest(
                 asset=asset, direction=direction, consensus_score=consensus_score,
@@ -77,6 +91,7 @@ def process_signal_sync(
                 trading_profile="BALANCED",
                 open_position_count=open_count, has_position_in_asset=has_dup,
                 portfolio_balance=balance,
+                mean_agent_trust=mean_trust,
             )
             decision = execution_policy.evaluate(exec_req)
 

@@ -28,6 +28,7 @@ class ExecutionRequest:
     has_position_in_asset: bool = False
     portfolio_balance: float = 100000.0
     regime: str = "RISK_ON"
+    mean_agent_trust: float = 1.0       # avg trust of contributing agents
 
 
 @dataclass
@@ -111,6 +112,16 @@ class ExecutionPolicy:
             size_mult *= 0.7
             warnings.append("EXPOSURE: size -30%")
 
+        # Trust-based constraints — agents collectively unreliable
+        if req.mean_agent_trust < 0.5:
+            blockers.append(f"LOW_TRUST: mean trust {req.mean_agent_trust:.2f} < 0.50")
+        elif req.mean_agent_trust < 0.7:
+            warnings.append(f"LOW_TRUST: approval required (mean={req.mean_agent_trust:.2f})")
+        elif req.mean_agent_trust < 0.85:
+            trust_size_factor = 0.5 + 0.5 * req.mean_agent_trust  # 0.85→0.925, 0.7→0.85
+            size_mult *= trust_size_factor
+            warnings.append(f"TRUST: size x{trust_size_factor:.2f} (mean={req.mean_agent_trust:.2f})")
+
         if blockers:
             return ExecutionDecision(allowed=False, mode="BLOCKED", reason=blockers[0],
                                      blockers=blockers, warnings=warnings, position_size_multiplier=0.0)
@@ -121,7 +132,8 @@ class ExecutionPolicy:
 
         approval = (not limits["auto_trade_allowed"]
                      or req.disagreement_gate == "APPROVAL_ONLY"
-                     or req.execution_mode_from_consensus == "APPROVAL")
+                     or req.execution_mode_from_consensus == "APPROVAL"
+                     or req.mean_agent_trust < 0.7)
         mode = "PAPER_APPROVAL" if approval else "PAPER_AUTO"
         size_mult = max(0.1, min(1.0, size_mult))
 

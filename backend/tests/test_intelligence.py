@@ -107,7 +107,7 @@ class TestExecutionPolicy:
                  risk_can_trade=True, trading_profile="BALANCED",
                  current_drawdown_daily=0.01, current_drawdown_weekly=0.02,
                  open_position_count=1, has_position_in_asset=False,
-                 portfolio_balance=100000)
+                 portfolio_balance=100000, mean_agent_trust=1.0)
         d.update(kw)
         return ExecutionRequest(**d)
 
@@ -158,6 +158,22 @@ class TestExecutionPolicy:
     def test_watch_blocks(self):
         d = self.pol.evaluate(self._req(execution_mode_from_consensus="WATCH"))
         assert not d.allowed
+
+    def test_low_trust_blocks(self):
+        """Mean trust < 0.5 → hard block."""
+        d = self.pol.evaluate(self._req(mean_agent_trust=0.4))
+        assert not d.allowed
+        assert any("LOW_TRUST" in b for b in d.blockers)
+
+    def test_moderate_trust_requires_approval(self):
+        """Mean trust 0.5-0.7 → requires approval even for STRONG_SIGNAL."""
+        d = self.pol.evaluate(self._req(mean_agent_trust=0.6))
+        assert d.allowed and d.requires_approval
+
+    def test_slightly_low_trust_reduces_size(self):
+        """Mean trust 0.7-0.85 → position size reduced."""
+        d = self.pol.evaluate(self._req(mean_agent_trust=0.75))
+        assert d.allowed and d.position_size_multiplier < 1.0
 
 
 # ══════════════════════════════════════
@@ -264,6 +280,19 @@ class TestConsensusEngine:
         r = self.eng.calculate(outs, "fx", "RISK_ON", "BALANCED")
         for ct in r.agent_contributions:
             assert "effective_weight" in ct
+
+    def test_uniform_low_trust_dampens_score(self):
+        """When ALL agents have low trust, score should be lower than cold start."""
+        c = uuid4()
+        outs = [_out("technical_agent","LONG",0.85,c), _out("macro_agent","LONG",0.75,c),
+                _out("sentiment_agent","LONG",0.70,c), _risk(cid=c)]
+        trust_1 = {a: 1.0 for a in ["technical_agent","macro_agent","sentiment_agent",
+                                      "volatility_agent","liquidity_agent","risk_agent"]}
+        trust_low = {a: 0.3 for a in trust_1}
+        r1 = self.eng.calculate(outs, "fx", "RISK_ON", "BALANCED", trust_scores=trust_1)
+        rl = self.eng.calculate(outs, "fx", "RISK_ON", "BALANCED", trust_scores=trust_low)
+        assert rl.final_score < r1.final_score, \
+            f"Low trust {rl.final_score} should be < cold start {r1.final_score}"
 
 
 # ══════════════════════════════════════

@@ -197,6 +197,16 @@ class ConsensusEngine:
 
         raw_score = max(0.0, min(1.0, (aligned_sum - opposed_penalty) / total_weight))
 
+        # ── Step 3b: Aggregate trust dampening ──
+        # When ALL agents have low trust, the normalization above cancels it out
+        # (0.3*X / 0.3*Y = X/Y). We need a separate penalty for low system confidence.
+        agent_trusts = [trust_scores.get(o.agent_id, 1.0) for o in directional_outputs]
+        mean_trust = sum(agent_trusts) / len(agent_trusts) if agent_trusts else 1.0
+        if mean_trust < 1.0:
+            # Maps: trust 0.1 → factor 0.55, trust 0.5 → 0.75, trust 1.0 → 1.0
+            trust_dampening = 0.5 + 0.5 * mean_trust
+            raw_score *= trust_dampening
+
         # ── Step 4: Agreement penalty ──
         # Agreement: only count agents with a directional opinion (not NEUTRAL)
         dir_counts = Counter(
