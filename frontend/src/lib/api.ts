@@ -96,6 +96,8 @@ class ApiClient {
   async getPortfolioImpact(asset: string, direction: string = 'LONG') {
     return this.request<any>(`/portfolio/evaluate-impact?asset=${asset}&direction=${direction}`);
   }
+  async getPortfolioRankings() { return this.request<any>('/portfolio/rankings'); }
+  async getReallocationLog(limit: number = 10) { return this.request<any>(`/portfolio/reallocation-log?limit=${limit}`); }
 
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }

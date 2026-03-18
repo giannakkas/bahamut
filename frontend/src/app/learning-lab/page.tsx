@@ -19,11 +19,13 @@ export default function LearningLabPage() {
   const [stressRunning, setStressRunning] = useState<string | null>(null);
   const [portfolioExp, setPortfolioExp] = useState<any>(null);
   const [portfolioFrag, setPortfolioFrag] = useState<any>(null);
+  const [rankings, setRankings] = useState<any[]>([]);
+  const [reallocLog, setReallocLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf] = await Promise.allSettled([
+      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf, pr, rl] = await Promise.allSettled([
         api.getStrategyFitness(),
         api.getMetaEvaluation(),
         api.getTrustSummary(),
@@ -36,6 +38,8 @@ export default function LearningLabPage() {
         api.getStressHistory(5),
         api.getPortfolioExposure(),
         api.getPortfolioFragility(),
+        api.getPortfolioRankings(),
+        api.getReallocationLog(5),
       ]);
       if (f.status === 'fulfilled') setFitness(f.value);
       if (m.status === 'fulfilled') setMeta(m.value);
@@ -49,6 +53,8 @@ export default function LearningLabPage() {
       if (sh.status === 'fulfilled') setStressResults(sh.value);
       if (pe.status === 'fulfilled') setPortfolioExp(pe.value);
       if (pf.status === 'fulfilled') setPortfolioFrag(pf.value);
+      if (pr.status === 'fulfilled') setRankings(pr.value || []);
+      if (rl.status === 'fulfilled') setReallocLog(rl.value || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -357,6 +363,64 @@ export default function LearningLabPage() {
             </div>
           </div>
         )}
+
+        {/* Position Rankings + Reallocation Log */}
+        <div className="grid grid-cols-2 gap-5">
+          {rankings.length > 0 && (
+            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Position Quality Rankings</h2>
+              <div className="space-y-1.5">
+                {rankings.map((r: any, i: number) => {
+                  const qColor = r.quality_score >= 0.6 ? 'text-accent-emerald' : r.quality_score >= 0.35 ? 'text-accent-amber' : 'text-accent-crimson';
+                  const bgColor = r.quality_score < 0.35 ? 'bg-accent-crimson/5' : '';
+                  return (
+                    <div key={i} className={`flex items-center gap-2 text-xs py-1 px-1.5 rounded ${bgColor}`}>
+                      <span className="w-4 text-text-muted font-mono">#{i + 1}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${r.direction === 'LONG' ? 'bg-accent-emerald' : 'bg-accent-crimson'}`} />
+                      <span className="w-16 font-mono font-semibold">{r.asset}</span>
+                      <span className={`w-12 text-right font-mono font-semibold ${qColor}`}>{(r.quality_score * 100).toFixed(0)}</span>
+                      <div className="flex-1 flex gap-1">
+                        {[
+                          { label: 'Sig', val: r.signal_quality },
+                          { label: 'PnL', val: r.pnl_trajectory },
+                          { label: 'R/R', val: r.risk_reward },
+                          { label: 'Age', val: r.time_decay },
+                        ].map((c, j) => (
+                          <span key={j} className="text-[9px] text-text-muted">{c.label}:{(c.val * 100).toFixed(0)}</span>
+                        ))}
+                      </div>
+                      <span className={`text-[10px] font-mono ${r.unrealized_pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>
+                        {r.unrealized_pnl >= 0 ? '+' : ''}{r.unrealized_pnl.toFixed(0)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {rankings.length > 0 && rankings[rankings.length - 1].quality_score < 0.35 && (
+                <div className="mt-2 text-[10px] text-accent-crimson">⚠ Bottom position eligible for reallocation</div>
+              )}
+            </div>
+          )}
+
+          {reallocLog.length > 0 && (
+            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Reallocation Log</h2>
+              <div className="space-y-1.5">
+                {reallocLog.map((r: any, i: number) => (
+                  <div key={i} className="text-xs border-b border-border-default pb-1.5">
+                    <div className="flex justify-between">
+                      <span className="font-mono font-semibold">{r.asset} {r.direction}</span>
+                      <span className={`font-mono ${r.pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>
+                        {r.pnl >= 0 ? '+' : ''}{r.pnl?.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-text-muted mt-0.5 truncate">{r.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-5">
           {/* Readiness Checklist */}

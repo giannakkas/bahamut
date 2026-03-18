@@ -1115,5 +1115,94 @@ class TestPortfolioIntelligence:
             assert len(assets) >= 2, f"Theme '{theme}' has only {len(assets)} assets"
 
 
+# ══════════════════════════════════════
+# 17. DYNAMIC CAPITAL ALLOCATOR (10 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.allocator import (
+    score_position, score_proposed_trade, evaluate_reallocation,
+    PositionQuality, ReallocationDecision,
+    QUALITY_WEIGHTS, MIN_QUALITY_TO_KEEP, MIN_UPGRADE_MARGIN,
+)
+
+class TestDynamicAllocator:
+
+    def _mock_position(self, score=0.65, pnl_pct=0.5, age_hours=6,
+                        max_fav=100, max_adv=50, asset="EURUSD", direction="LONG"):
+        from datetime import datetime, timezone, timedelta
+        opened = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+        return {
+            "id": 1, "asset": asset, "direction": direction,
+            "entry_price": 1.085, "current_price": 1.09,
+            "position_value": 5000, "quantity": 200000,
+            "consensus_score": score, "unrealized_pnl": 25.0,
+            "unrealized_pnl_pct": pnl_pct,
+            "stop_loss": 1.075, "take_profit": 1.10,
+            "max_favorable": max_fav, "max_adverse": max_adv,
+            "opened_at": opened, "entry_signal_score": score,
+            "entry_signal_label": "SIGNAL",
+        }
+
+    def test_quality_weights_sum_to_one(self):
+        total = sum(QUALITY_WEIGHTS.values())
+        assert abs(total - 1.0) < 0.001
+
+    def test_score_good_position(self):
+        """Profitable, high-quality, fresh position scores high."""
+        row = self._mock_position(score=0.80, pnl_pct=1.5, age_hours=2,
+                                    max_fav=200, max_adv=30)
+        pq = score_position(row)
+        assert pq.quality_score >= 0.65, f"Good position scored {pq.quality_score}"
+
+    def test_score_bad_position(self):
+        """Losing, old, low-quality position scores low."""
+        row = self._mock_position(score=0.45, pnl_pct=-2.5, age_hours=60,
+                                    max_fav=10, max_adv=200)
+        pq = score_position(row)
+        assert pq.quality_score < 0.35, f"Bad position scored {pq.quality_score}"
+
+    def test_score_components_bounded(self):
+        row = self._mock_position()
+        pq = score_position(row)
+        for attr in ("signal_quality", "pnl_trajectory", "risk_reward", "time_decay", "momentum"):
+            val = getattr(pq, attr)
+            assert 0 <= val <= 1.0, f"{attr} = {val} out of bounds"
+
+    def test_proposed_trade_scoring(self):
+        """STRONG_SIGNAL at 0.80 should score higher than SIGNAL at 0.55."""
+        strong = score_proposed_trade(0.80, "STRONG_SIGNAL")
+        weak = score_proposed_trade(0.55, "SIGNAL")
+        assert strong > weak, f"Strong {strong} should > weak {weak}"
+
+    def test_realloc_rejects_weak_signal(self):
+        """WEAK_SIGNAL should never trigger reallocation."""
+        d = evaluate_reallocation("BTCUSD", "LONG", 0.50, "WEAK_SIGNAL")
+        assert not d.should_reallocate
+        assert "SIGNAL+" in d.reason
+
+    def test_realloc_decision_structure(self):
+        d = ReallocationDecision(should_reallocate=True, close_position_id=5,
+                                  close_asset="EURUSD", proposed_quality=0.8,
+                                  close_quality=0.2, quality_margin=0.6)
+        dd = d.to_dict()
+        for k in ("should_reallocate", "close_position_id", "close_asset",
+                   "proposed_quality", "close_quality", "quality_margin", "reason"):
+            assert k in dd
+
+    def test_position_quality_to_dict(self):
+        pq = PositionQuality(position_id=1, asset="EURUSD", quality_score=0.7)
+        d = pq.to_dict()
+        assert d["quality_score"] == 0.7
+        assert "signal_quality" in d
+
+    def test_min_quality_threshold(self):
+        """Positions above MIN_QUALITY_TO_KEEP should not be closed."""
+        assert MIN_QUALITY_TO_KEEP > 0
+        assert MIN_QUALITY_TO_KEEP < 0.5  # should only close truly bad ones
+
+    def test_upgrade_margin_meaningful(self):
+        """MIN_UPGRADE_MARGIN should require a material improvement."""
+        assert MIN_UPGRADE_MARGIN >= 0.15  # at least 15% better
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

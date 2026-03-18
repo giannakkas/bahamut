@@ -60,6 +60,31 @@ async def evaluate_impact(
     return verdict.to_dict()
 
 
+@router.get("/rankings")
+async def get_rankings(user=Depends(get_current_user)):
+    """Get all open positions ranked by quality score."""
+    from bahamut.portfolio.allocator import get_position_rankings
+    return get_position_rankings()
+
+
+@router.get("/simulate-realloc")
+async def simulate_realloc(
+    asset: str, direction: str = "LONG",
+    score: float = 0.70, label: str = "SIGNAL",
+    user=Depends(get_current_user),
+):
+    """Simulate a reallocation decision without executing."""
+    from bahamut.portfolio.allocator import evaluate_reallocation
+    return evaluate_reallocation(asset, direction, score, label).to_dict()
+
+
+@router.get("/reallocation-log")
+async def get_realloc_log(limit: int = 20, user=Depends(get_current_user)):
+    """Get recent reallocation history."""
+    from bahamut.portfolio.allocator import get_reallocation_log
+    return get_reallocation_log(limit)
+
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "portfolio-intel-svc"}

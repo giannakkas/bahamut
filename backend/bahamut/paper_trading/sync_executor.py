@@ -150,9 +150,53 @@ def process_signal_sync(
             decision = execution_policy.evaluate(exec_req)
 
             if not decision.allowed:
-                log.info("blocked_by_policy", reason=decision.reason, blockers=decision.blockers)
-                return {"action": "SKIP", "reason": decision.reason,
-                        "blockers": decision.blockers, "policy_mode": decision.mode}
+                # ── DYNAMIC REALLOCATION: if blocked by MAX_POSITIONS, try upgrading ──
+                is_max_pos_block = any("MAX_POSITIONS" in b for b in decision.blockers)
+                if is_max_pos_block and signal_label in ("STRONG_SIGNAL", "SIGNAL"):
+                    try:
+                        from bahamut.portfolio.allocator import evaluate_reallocation, execute_reallocation
+                        realloc = evaluate_reallocation(
+                            proposed_asset=asset,
+                            proposed_direction=direction,
+                            consensus_score=consensus_score,
+                            signal_label=signal_label,
+                            portfolio_id=pid,
+                        )
+                        if realloc.should_reallocate:
+                            # Close weakest position
+                            close_result = execute_reallocation(
+                                realloc.close_position_id, realloc.reason)
+                            if "error" not in close_result:
+                                log.info("reallocation_complete",
+                                         closed=realloc.close_asset,
+                                         closed_pnl=close_result.get("pnl"),
+                                         proposed=asset,
+                                         margin=realloc.quality_margin)
+                                # Update counts — one position closed, so retry
+                                open_count -= 1
+                                balance = float(conn.execute(text(
+                                    "SELECT current_balance FROM paper_portfolios WHERE id = :p"
+                                ), {"p": pid}).scalar() or balance)
+                                # Re-evaluate policy with updated count
+                                exec_req.open_position_count = open_count
+                                exec_req.portfolio_balance = balance
+                                decision = execution_policy.evaluate(exec_req)
+                                if not decision.allowed:
+                                    log.info("still_blocked_after_realloc", reason=decision.reason)
+                                    return {"action": "SKIP", "reason": decision.reason,
+                                            "blockers": decision.blockers,
+                                            "reallocation": close_result}
+                            else:
+                                log.warning("realloc_close_failed", error=close_result.get("error"))
+                        else:
+                            log.info("realloc_rejected", reason=realloc.reason)
+                    except Exception as e:
+                        log.debug("realloc_attempt_failed", error=str(e))
+
+                if not decision.allowed:
+                    log.info("blocked_by_policy", reason=decision.reason, blockers=decision.blockers)
+                    return {"action": "SKIP", "reason": decision.reason,
+                            "blockers": decision.blockers, "policy_mode": decision.mode}
 
             size_mult = decision.position_size_multiplier
 

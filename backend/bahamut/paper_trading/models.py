@@ -20,6 +20,7 @@ class PositionStatus(str, enum.Enum):
     CLOSED_MANUAL = "CLOSED_MANUAL"
     CLOSED_TIMEOUT = "CLOSED_TIMEOUT"  # Max hold time exceeded
     CLOSED_SIGNAL = "CLOSED_SIGNAL"    # Opposite signal fired
+    CLOSED_REALLOC = "CLOSED_REALLOC"  # Closed to reallocate capital to better trade
 
 
 class TradeDirection(str, enum.Enum):
