@@ -22,11 +22,12 @@ export default function LearningLabPage() {
   const [rankings, setRankings] = useState<any[]>([]);
   const [reallocLog, setReallocLog] = useState<any[]>([]);
   const [adaptiveRules, setAdaptiveRules] = useState<any[]>([]);
+  const [scenarioSim, setScenarioSim] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf, pr, rl, ar] = await Promise.allSettled([
+      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf, pr, rl, ar, sc] = await Promise.allSettled([
         api.getStrategyFitness(),
         api.getMetaEvaluation(),
         api.getTrustSummary(),
@@ -42,6 +43,7 @@ export default function LearningLabPage() {
         api.getPortfolioRankings(),
         api.getReallocationLog(5),
         api.getAdaptiveRules(),
+        api.getScenarioSim(),
       ]);
       if (f.status === 'fulfilled') setFitness(f.value);
       if (m.status === 'fulfilled') setMeta(m.value);
@@ -58,6 +60,7 @@ export default function LearningLabPage() {
       if (pr.status === 'fulfilled') setRankings(pr.value || []);
       if (rl.status === 'fulfilled') setReallocLog(rl.value || []);
       if (ar.status === 'fulfilled') setAdaptiveRules(ar.value || []);
+      if (sc.status === 'fulfilled') setScenarioSim(sc.value || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -363,6 +366,29 @@ export default function LearningLabPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Scenario Risk Simulation */}
+        {scenarioSim.length > 0 && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Scenario Risk Simulation</h2>
+            <div className="grid grid-cols-5 gap-2">
+              {scenarioSim.map((s: any, i: number) => {
+                const pnl = s.portfolio_pnl || 0;
+                const pct = s.portfolio_pnl_pct || 0;
+                const color = pnl >= 0 ? 'text-accent-emerald' : pct < -0.05 ? 'text-accent-crimson' : 'text-accent-amber';
+                const bg = pnl >= 0 ? 'bg-accent-emerald/5 border-accent-emerald/20' : pct < -0.05 ? 'bg-accent-crimson/5 border-accent-crimson/20' : 'bg-accent-amber/5 border-accent-amber/20';
+                return (
+                  <div key={i} className={`rounded border p-2 text-center ${bg}`}>
+                    <div className="text-[10px] text-text-muted">{s.scenario?.replace(/_/g, ' ')}</div>
+                    <div className={`text-sm font-mono font-semibold ${color}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(0)}</div>
+                    <div className={`text-[10px] font-mono ${color}`}>{(pct * 100).toFixed(1)}%</div>
+                    <div className="text-[9px] text-text-muted mt-0.5">{s.impacts?.length || 0} positions</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

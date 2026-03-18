@@ -107,6 +107,35 @@ async def trigger_analysis(user=Depends(get_current_user)):
     return [r.to_dict() for r in rules]
 
 
+@router.get("/scenarios")
+async def list_scenarios(user=Depends(get_current_user)):
+    """List available macro scenarios."""
+    from bahamut.portfolio.scenarios import get_scenario_list
+    return get_scenario_list()
+
+
+@router.get("/scenario-sim")
+async def simulate_scenarios(scenario: str = None, user=Depends(get_current_user)):
+    """Simulate current portfolio under macro scenarios."""
+    from bahamut.portfolio.scenarios import simulate_portfolio_standalone
+    return simulate_portfolio_standalone(scenario)
+
+
+@router.get("/scenario-risk")
+async def evaluate_scenario(
+    asset: str, direction: str = "LONG", value: float = 5000,
+    user=Depends(get_current_user),
+):
+    """Evaluate scenario risk for a proposed trade."""
+    from bahamut.portfolio.registry import load_portfolio_snapshot
+    from bahamut.portfolio.scenarios import evaluate_scenario_risk
+    snap = load_portfolio_snapshot()
+    bal = snap.balance if snap.balance > 0 else 100000.0
+    result = evaluate_scenario_risk(
+        snap.positions, asset, direction, value, 1.0, bal)
+    return result.to_dict()
+
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "portfolio-intel-svc"}

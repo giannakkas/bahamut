@@ -1288,5 +1288,87 @@ class TestPortfolioLearning:
         assert rule.sample_count == 0
 
 
+# ══════════════════════════════════════
+# 19. SCENARIO RISK ENGINE (10 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.scenarios import (
+    evaluate_scenario_risk, _simulate_position_pnl, get_scenario_list,
+    SCENARIO_SHOCKS, TAIL_RISK_WARN, TAIL_RISK_APPROVAL, TAIL_RISK_BLOCK,
+    ScenarioResult, ScenarioRiskAssessment,
+)
+
+class TestScenarioRisk:
+
+    def _pos(self, asset="EURUSD", direction="LONG", value=10000, price=1.085):
+        from bahamut.portfolio.registry import OpenPosition, ASSET_CLASS_MAP, THEME_MAP
+        ac = ASSET_CLASS_MAP.get(asset, "other")
+        themes = [t for t, assets in THEME_MAP.items() if asset in assets]
+        return OpenPosition(
+            id=1, asset=asset, direction=direction, position_value=value,
+            risk_amount=200, entry_price=price, current_price=price,
+            unrealized_pnl=0, consensus_score=0.65, asset_class=ac, themes=themes)
+
+    def test_5_scenarios_defined(self):
+        assert len(SCENARIO_SHOCKS) == 5
+        for name in ("risk_off", "risk_on", "volatility_spike", "usd_shock", "crypto_shock"):
+            assert name in SCENARIO_SHOCKS
+
+    def test_shock_maps_have_description(self):
+        for name, shocks in SCENARIO_SHOCKS.items():
+            assert "description" in shocks, f"{name} missing description"
+
+    def test_simulate_long_positive_shock(self):
+        """LONG position + positive shock = profit."""
+        pnl = _simulate_position_pnl("LONG", 10000, 100.0, 0.05)
+        assert pnl > 0, f"LONG + up shock should profit, got {pnl}"
+        assert abs(pnl - 500) < 1  # 10000 * 0.05 = 500
+
+    def test_simulate_long_negative_shock(self):
+        """LONG position + negative shock = loss."""
+        pnl = _simulate_position_pnl("LONG", 10000, 100.0, -0.05)
+        assert pnl < 0
+        assert abs(pnl - (-500)) < 1
+
+    def test_simulate_short_negative_shock(self):
+        """SHORT position + negative shock = profit."""
+        pnl = _simulate_position_pnl("SHORT", 10000, 100.0, -0.05)
+        assert pnl > 0, f"SHORT + down shock should profit, got {pnl}"
+
+    def test_empty_portfolio_assessment(self):
+        """Empty portfolio + proposed trade should still run."""
+        result = evaluate_scenario_risk([], "BTCUSD", "LONG", 5000, 50000, 100000)
+        assert isinstance(result, ScenarioRiskAssessment)
+        assert len(result.all_scenarios) == 5
+        assert result.worst_scenario != ""
+
+    def test_crypto_shock_hits_btc_hard(self):
+        """LONG BTCUSD should lose heavily under crypto_shock."""
+        pos = [self._pos("BTCUSD", "LONG", 50000, 60000)]
+        result = evaluate_scenario_risk(pos, "ETHUSD", "LONG", 10000, 3000, 100000)
+        crypto_scenario = next(s for s in result.all_scenarios if s.name == "crypto_shock")
+        assert crypto_scenario.portfolio_pnl < -5000  # BTC -20% on 50k + ETH -25% on 10k
+
+    def test_hedged_portfolio_lower_tail_risk(self):
+        """LONG + SHORT in same class should partially offset."""
+        long_only = [self._pos("EURUSD", "LONG", 30000)]
+        hedged = [self._pos("EURUSD", "LONG", 30000),
+                  self._pos("GBPUSD", "SHORT", 20000)]
+        r1 = evaluate_scenario_risk(long_only, "BTCUSD", "LONG", 5000, 50000, 100000)
+        r2 = evaluate_scenario_risk(hedged, "BTCUSD", "LONG", 5000, 50000, 100000)
+        # Hedged should have less extreme worst case in risk_off (both FX drop, but SHORT profits)
+        risk_off_1 = next(s for s in r1.all_scenarios if s.name == "risk_off")
+        risk_off_2 = next(s for s in r2.all_scenarios if s.name == "risk_off")
+        assert risk_off_2.portfolio_pnl > risk_off_1.portfolio_pnl
+
+    def test_risk_level_thresholds(self):
+        assert TAIL_RISK_WARN < TAIL_RISK_APPROVAL < TAIL_RISK_BLOCK
+
+    def test_scenario_list_complete(self):
+        slist = get_scenario_list()
+        assert len(slist) == 5
+        for s in slist:
+            assert "name" in s and "description" in s
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

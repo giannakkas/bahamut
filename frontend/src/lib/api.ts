@@ -100,6 +100,8 @@ class ApiClient {
   async getReallocationLog(limit: number = 10) { return this.request<any>(`/portfolio/reallocation-log?limit=${limit}`); }
   async getAdaptiveRules() { return this.request<any>('/portfolio/adaptive-rules'); }
   async getPortfolioDecisionLog(limit: number = 10) { return this.request<any>(`/portfolio/decision-log?limit=${limit}`); }
+  async getScenarioList() { return this.request<any>('/portfolio/scenarios'); }
+  async getScenarioSim() { return this.request<any>('/portfolio/scenario-sim'); }
 
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }

@@ -45,6 +45,8 @@ class PortfolioStateSnapshot:
     dominant_theme_pct: float = 0.0
     total_unrealized_pnl: float = 0.0
     portfolio_in_drawdown: bool = False
+    scenario_risk_level: str = ""
+    worst_case_pct: float = 0.0
 
     def to_dict(self):
         return {k: round(v, 4) if isinstance(v, float) else v

@@ -274,6 +274,10 @@ def process_signal_sync(
             try:
                 from bahamut.portfolio.learning import capture_portfolio_state, log_portfolio_decision
                 entry_state = capture_portfolio_state()
+                # Attach scenario risk to state for learning
+                if portfolio_verdict and portfolio_verdict.scenario_risk:
+                    entry_state.scenario_risk_level = portfolio_verdict.scenario_risk.get("risk_level", "")
+                    entry_state.worst_case_pct = portfolio_verdict.scenario_risk.get("worst_case_pct", 0)
                 pos_row = conn.execute(text(
                     "SELECT id FROM paper_positions WHERE cycle_id = :c ORDER BY opened_at DESC LIMIT 1"
                 ), {"c": cycle_id}).first()

@@ -107,6 +107,7 @@ class PortfolioVerdict:
     correlation: CorrelationMetrics = field(default_factory=CorrelationMetrics)
     fragility: FragilityMetrics = field(default_factory=FragilityMetrics)
     impact_score: float = 0.0  # -1 (worsens) to +1 (improves)
+    scenario_risk: dict = field(default_factory=dict)  # scenario risk assessment
 
     def to_dict(self):
         return {
@@ -118,6 +119,7 @@ class PortfolioVerdict:
             "exposure": self.exposure.to_dict(),
             "correlation": self.correlation.to_dict(),
             "fragility": self.fragility.to_dict(),
+            "scenario_risk": self.scenario_risk,
         }
 
 
@@ -235,6 +237,44 @@ def evaluate_trade_for_portfolio(
             verdict.warnings.append("ADAPTIVE: approval required by learned pattern")
     except Exception:
         pass
+
+    # ═══════════════════════════════════
+    # 6. SCENARIO RISK (macro shock simulation)
+    # ═══════════════════════════════════
+    scenario_assessment = None
+    try:
+        from bahamut.portfolio.scenarios import evaluate_scenario_risk
+        scenario_assessment = evaluate_scenario_risk(
+            positions=snapshot.positions,
+            proposed_asset=proposed_asset,
+            proposed_direction=proposed_direction,
+            proposed_value=proposed_value,
+            proposed_entry_price=1.0,  # cancels out in linear PnL: value*shock_pct
+            balance=bal,
+        )
+        if scenario_assessment.risk_level == "BLOCK":
+            verdict.blockers.append(
+                f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
+                f"in {scenario_assessment.worst_scenario}")
+        elif scenario_assessment.risk_level == "APPROVAL":
+            verdict.requires_approval = True
+            verdict.warnings.append(
+                f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
+                f"— approval required ({scenario_assessment.worst_scenario})")
+        elif scenario_assessment.risk_level == "WARN":
+            # Size reduction: scale linearly between 0.6 and 1.0
+            from bahamut.portfolio.scenarios import TAIL_RISK_WARN, TAIL_RISK_APPROVAL
+            tr = scenario_assessment.portfolio_tail_risk
+            scale = 1.0 - 0.4 * ((tr - TAIL_RISK_WARN) / (TAIL_RISK_APPROVAL - TAIL_RISK_WARN))
+            scale = max(0.6, min(1.0, scale))
+            verdict.size_multiplier *= scale
+            verdict.warnings.append(
+                f"SCENARIO_RISK: size ×{scale:.2f} (tail_risk={tr:.1%}, worst={scenario_assessment.worst_scenario})")
+    except Exception:
+        pass
+
+    if scenario_assessment:
+        verdict.scenario_risk = scenario_assessment.to_dict()
 
     # ═══════════════════════════════════
     # FINAL VERDICT
