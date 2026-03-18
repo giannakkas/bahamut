@@ -1,0 +1,57 @@
+"""Seed data for initial database population."""
+
+SEED_CONFIG = {
+    "scenario.count": {"value": 5, "type": "int", "category": "scenario", "description": "Number of scenarios to simulate", "default": 5, "min": 1, "max": 20},
+    "scenario.weight_bull": {"value": 0.25, "type": "float", "category": "scenario", "description": "Bull scenario weight", "default": 0.2, "min": 0, "max": 1},
+    "scenario.weight_bear": {"value": 0.25, "type": "float", "category": "scenario", "description": "Bear scenario weight", "default": 0.2, "min": 0, "max": 1},
+    "scenario.weight_base": {"value": 0.3, "type": "float", "category": "scenario", "description": "Base scenario weight", "default": 0.4, "min": 0, "max": 1},
+    "scenario.weight_stress": {"value": 0.1, "type": "float", "category": "scenario", "description": "Stress scenario weight", "default": 0.1, "min": 0, "max": 1},
+    "scenario.weight_black_swan": {"value": 0.1, "type": "float", "category": "scenario", "description": "Black swan scenario weight", "default": 0.1, "min": 0, "max": 1},
+    "marginal_risk.threshold": {"value": 0.15, "type": "float", "category": "marginal_risk", "description": "Max acceptable marginal risk", "default": 0.2, "min": 0, "max": 1},
+    "marginal_risk.lookback_days": {"value": 30, "type": "int", "category": "marginal_risk", "description": "Lookback period for risk calc", "default": 30, "min": 5, "max": 90},
+    "marginal_risk.decay_factor": {"value": 0.94, "type": "float", "category": "marginal_risk", "description": "Exponential decay for weighting", "default": 0.95, "min": 0.8, "max": 1},
+    "quality_ratio.min_threshold": {"value": 0.6, "type": "float", "category": "quality_ratio", "description": "Minimum quality ratio to trade", "default": 0.5, "min": 0, "max": 1},
+    "quality_ratio.weight_sharpe": {"value": 0.4, "type": "float", "category": "quality_ratio", "description": "Sharpe ratio weight in quality", "default": 0.4, "min": 0, "max": 1},
+    "quality_ratio.weight_sortino": {"value": 0.3, "type": "float", "category": "quality_ratio", "description": "Sortino ratio weight", "default": 0.3, "min": 0, "max": 1},
+    "quality_ratio.weight_calmar": {"value": 0.3, "type": "float", "category": "quality_ratio", "description": "Calmar ratio weight", "default": 0.3, "min": 0, "max": 1},
+    "exposure.max_single": {"value": 0.15, "type": "float", "category": "exposure", "description": "Max single asset exposure", "default": 0.2, "min": 0.01, "max": 0.5},
+    "exposure.max_sector": {"value": 0.4, "type": "float", "category": "exposure", "description": "Max sector exposure", "default": 0.4, "min": 0.1, "max": 0.8},
+    "exposure.max_total": {"value": 0.95, "type": "float", "category": "exposure", "description": "Max total portfolio exposure", "default": 1.0, "min": 0.5, "max": 1},
+    "kill_switch.enabled": {"value": True, "type": "bool", "category": "kill_switch", "description": "Enable kill switch engine", "default": True},
+    "kill_switch.drawdown_threshold": {"value": 0.05, "type": "float", "category": "kill_switch", "description": "Max drawdown before kill", "default": 0.05, "min": 0.01, "max": 0.2},
+    "kill_switch.cooldown_minutes": {"value": 60, "type": "int", "category": "kill_switch", "description": "Cooldown after kill trigger", "default": 60, "min": 5, "max": 1440},
+    "kill_switch.auto_resume": {"value": True, "type": "bool", "category": "kill_switch", "description": "Auto resume after cooldown", "default": True},
+    "safe_mode.enabled": {"value": False, "type": "bool", "category": "safe_mode", "description": "Enable safe mode", "default": True},
+    "safe_mode.reduce_exposure_pct": {"value": 0.5, "type": "float", "category": "safe_mode", "description": "Reduce exposure by % in safe mode", "default": 0.5, "min": 0.1, "max": 0.9},
+    "deleverage.enabled": {"value": True, "type": "bool", "category": "deleverage", "description": "Enable auto deleverage", "default": True},
+    "deleverage.trigger_threshold": {"value": 0.12, "type": "float", "category": "deleverage", "description": "Risk threshold to trigger deleverage", "default": 0.15, "min": 0.05, "max": 0.3},
+    "deleverage.speed": {"value": 0.3, "type": "float", "category": "deleverage", "description": "Deleverage speed (0=slow, 1=instant)", "default": 0.3, "min": 0.1, "max": 1},
+    "allocator.method": {"value": "risk_parity", "type": "string", "category": "allocator", "description": "Allocation method", "default": "risk_parity", "options": ["equal_weight", "risk_parity", "mean_variance", "kelly"]},
+    "allocator.rebalance_frequency": {"value": "4h", "type": "string", "category": "allocator", "description": "Rebalance frequency", "default": "4h", "options": ["15m", "1h", "4h", "1d"]},
+    "confidence.min_trade": {"value": 0.65, "type": "float", "category": "confidence", "description": "Min confidence to execute trade", "default": 0.6, "min": 0, "max": 1},
+    "confidence.agent_weight_trend": {"value": 0.2, "type": "float", "category": "confidence", "description": "Trend agent weight", "default": 0.167, "min": 0, "max": 1},
+    "confidence.agent_weight_momentum": {"value": 0.2, "type": "float", "category": "confidence", "description": "Momentum agent weight", "default": 0.167, "min": 0, "max": 1},
+    "confidence.agent_weight_sentiment": {"value": 0.15, "type": "float", "category": "confidence", "description": "Sentiment agent weight", "default": 0.167, "min": 0, "max": 1},
+    "confidence.agent_weight_fundamentals": {"value": 0.15, "type": "float", "category": "confidence", "description": "Fundamentals agent weight", "default": 0.167, "min": 0, "max": 1},
+    "confidence.agent_weight_volatility": {"value": 0.15, "type": "float", "category": "confidence", "description": "Volatility agent weight", "default": 0.167, "min": 0, "max": 1},
+    "confidence.agent_weight_correlation": {"value": 0.15, "type": "float", "category": "confidence", "description": "Correlation agent weight", "default": 0.167, "min": 0, "max": 1},
+    "profile.risk_tolerance": {"value": "moderate", "type": "string", "category": "profile", "description": "Risk tolerance profile", "default": "moderate", "options": ["conservative", "moderate", "aggressive"]},
+    "readiness.min_score": {"value": 0.7, "type": "float", "category": "readiness", "description": "Min readiness to trade", "default": 0.7, "min": 0, "max": 1},
+    "readiness.data_weight": {"value": 0.4, "type": "float", "category": "readiness", "description": "Data readiness weight", "default": 0.33, "min": 0, "max": 1},
+    "readiness.model_weight": {"value": 0.3, "type": "float", "category": "readiness", "description": "Model readiness weight", "default": 0.33, "min": 0, "max": 1},
+    "readiness.market_weight": {"value": 0.3, "type": "float", "category": "readiness", "description": "Market readiness weight", "default": 0.34, "min": 0, "max": 1},
+}
+
+SEED_AUDIT = [
+    {"id": 1, "timestamp": "2026-03-18T09:30:00Z", "key": "kill_switch.drawdown_threshold", "old_value": "0.07", "new_value": "0.05", "source": "user", "user": "chris"},
+    {"id": 2, "timestamp": "2026-03-18T08:15:00Z", "key": "confidence.min_trade", "old_value": "0.6", "new_value": "0.65", "source": "user", "user": "chris"},
+    {"id": 3, "timestamp": "2026-03-17T22:00:00Z", "key": "safe_mode.enabled", "old_value": "false", "new_value": "true", "source": "system", "user": "auto"},
+    {"id": 4, "timestamp": "2026-03-17T21:58:00Z", "key": "kill_switch.enabled", "old_value": "true", "new_value": "true", "source": "system", "user": "auto"},
+    {"id": 5, "timestamp": "2026-03-17T14:32:00Z", "key": "exposure.max_single", "old_value": "0.2", "new_value": "0.15", "source": "user", "user": "chris"},
+]
+
+SEED_ALERTS = [
+    {"id": 1, "type": "warning", "message": "Confidence dropped below 0.8 threshold", "timestamp": "2026-03-18T09:42:00Z", "dismissed": False},
+    {"id": 2, "type": "info", "message": "Rebalance cycle completed successfully", "timestamp": "2026-03-18T09:45:12Z", "dismissed": False},
+    {"id": 3, "type": "warning", "message": "Active override: exposure.max_single (expires 10:00)", "timestamp": "2026-03-18T09:00:00Z", "dismissed": True},
+]

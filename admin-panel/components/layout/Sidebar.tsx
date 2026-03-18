@@ -1,0 +1,94 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { EnvIndicator } from "@/components/ui";
+import { useAuthStore } from "@/store/auth";
+import { useAlerts } from "@/lib/hooks";
+import { useOverrides } from "@/lib/hooks";
+
+const NAV_ITEMS = [
+  { href: "/dashboard", label: "Dashboard", icon: "◉" },
+  { href: "/config", label: "Configuration", icon: "⚙" },
+  { href: "/risk", label: "Risk & Kill Switch", icon: "⚡" },
+  { href: "/audit", label: "Audit Log", icon: "📜" },
+  { href: "/learning", label: "Learning", icon: "🧬" },
+  { href: "/overrides", label: "Overrides", icon: "🎛" },
+  { href: "/alerts", label: "Alerts", icon: "🔔" },
+  { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const logout = useAuthStore((s) => s.logout);
+  const { data: alerts } = useAlerts();
+  const { data: overrides } = useOverrides();
+
+  const activeAlerts = alerts?.filter((a) => !a.dismissed).length ?? 0;
+  const activeOverrides = overrides?.length ?? 0;
+
+  return (
+    <nav className="flex flex-col w-[220px] shrink-0 sticky top-0 h-screen overflow-y-auto border-r border-bah-border bg-gradient-to-b from-bah-surface to-bah-bg">
+      {/* Logo */}
+      <div className="px-4 pt-5 pb-4 border-b border-bah-border/60">
+        <div className="text-lg font-extrabold tracking-widest bg-gradient-to-r from-bah-cyan to-bah-purple bg-clip-text text-transparent">
+          BAHAMUT
+        </div>
+        <div className="text-[9px] text-bah-muted tracking-[0.15em] uppercase mt-0.5">
+          Trading Intelligence Control
+        </div>
+      </div>
+
+      {/* Nav Items */}
+      <div className="py-2 flex-1">
+        {NAV_ITEMS.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-2.5 px-4 py-2.5 text-xs border-l-2 transition-all duration-200",
+                active
+                  ? "border-bah-cyan bg-bah-cyan/[0.08] text-bah-cyan font-semibold"
+                  : "border-transparent text-bah-subtle hover:bg-white/[0.02] hover:text-bah-text"
+              )}
+            >
+              <span className="text-sm w-5 text-center">{item.icon}</span>
+              <span>{item.label}</span>
+
+              {/* Alert count badge */}
+              {item.href === "/alerts" && activeAlerts > 0 && (
+                <span className="ml-auto bg-bah-red text-white text-[9px] font-bold px-1.5 py-px rounded-full">
+                  {activeAlerts}
+                </span>
+              )}
+
+              {/* Override count badge */}
+              {item.href === "/overrides" && activeOverrides > 0 && (
+                <span className="ml-auto bg-bah-amber text-black text-[9px] font-bold px-1.5 py-px rounded-full">
+                  {activeOverrides}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-bah-border/60 text-[10px] text-bah-muted">
+        <EnvIndicator />
+        <div className="flex justify-between mt-2">
+          <span>v1.0.0</span>
+          <button
+            onClick={logout}
+            className="text-bah-cyan hover:text-bah-cyan/80 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
