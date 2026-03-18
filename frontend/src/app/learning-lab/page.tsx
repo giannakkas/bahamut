@@ -13,11 +13,15 @@ export default function LearningLabPage() {
   const [thresholds, setThresholds] = useState<any>(null);
   const [trustHistory, setTrustHistory] = useState<any[]>([]);
   const [recalResult, setRecalResult] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<any>(null);
+  const [stressScenarios, setStressScenarios] = useState<any[]>([]);
+  const [stressResults, setStressResults] = useState<any[]>([]);
+  const [stressRunning, setStressRunning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [f, m, t, l, c, th, h] = await Promise.allSettled([
+      const [f, m, t, l, c, th, h, rd, ss, sh] = await Promise.allSettled([
         api.getStrategyFitness(),
         api.getMetaEvaluation(),
         api.getTrustSummary(),
@@ -25,6 +29,9 @@ export default function LearningLabPage() {
         api.getCalibrationHistory(5),
         api.getThresholds(),
         api.getTrustHistory(undefined, 20),
+        api.getReadinessCheck(),
+        api.getStressScenarios(),
+        api.getStressHistory(5),
       ]);
       if (f.status === 'fulfilled') setFitness(f.value);
       if (m.status === 'fulfilled') setMeta(m.value);
@@ -33,6 +40,9 @@ export default function LearningLabPage() {
       if (c.status === 'fulfilled') setCalibrations(c.value);
       if (th.status === 'fulfilled') setThresholds(th.value);
       if (h.status === 'fulfilled') setTrustHistory(h.value);
+      if (rd.status === 'fulfilled') setReadiness(rd.value);
+      if (ss.status === 'fulfilled') setStressScenarios(ss.value);
+      if (sh.status === 'fulfilled') setStressResults(sh.value);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -45,6 +55,15 @@ export default function LearningLabPage() {
       setRecalResult(`Emergency recalibration applied: ${res.notes?.join(', ') || 'done'}`);
       load();
     } catch (e: any) { setRecalResult(`Error: ${e.message}`); }
+  };
+
+  const handleRunStress = async (name: string) => {
+    setStressRunning(name);
+    try {
+      const res = await api.runStressScenario(name);
+      setStressResults(prev => [res, ...prev.slice(0, 4)]);
+    } catch (e: any) { console.error(e); }
+    setStressRunning(null);
   };
 
   const riskColor = (level: string) => {
@@ -64,9 +83,18 @@ export default function LearningLabPage() {
       <div className="space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Learning Lab</h1>
-            <p className="text-sm text-text-secondary mt-1">Self-learning intelligence • {fitness?.total_closed_trades || 0} trades analyzed</p>
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-2xl font-bold">Learning Lab</h1>
+              <p className="text-sm text-text-secondary mt-1">Self-learning intelligence • {fitness?.total_closed_trades || 0} trades analyzed</p>
+            </div>
+            {readiness && (
+              <span className={`text-xs font-mono font-semibold px-2.5 py-1 rounded-full ${
+                readiness.overall === 'READY' ? 'bg-accent-emerald/20 text-accent-emerald' :
+                readiness.overall === 'CAUTION' ? 'bg-accent-amber/20 text-accent-amber' :
+                'bg-accent-crimson/20 text-accent-crimson'
+              }`}>{readiness.overall} ({readiness.pass_count}/{readiness.pass_count + readiness.warn_count + readiness.fail_count})</span>
+            )}
           </div>
           <button onClick={handleRecalibrate}
             className="bg-accent-amber hover:bg-accent-amber/90 text-black font-semibold px-4 py-1.5 rounded-md text-sm">
@@ -258,6 +286,73 @@ export default function LearningLabPage() {
             </div>
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-5">
+          {/* Readiness Checklist */}
+          {readiness && (
+            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Trading Readiness</h2>
+              <div className="space-y-1">
+                {readiness.checks?.map((c: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      c.status === 'PASS' ? 'bg-accent-emerald' : c.status === 'WARN' ? 'bg-accent-amber' : 'bg-accent-crimson'
+                    }`} />
+                    <span className="w-36 truncate text-text-muted">{c.name}</span>
+                    <span className="font-mono flex-1 truncate">{c.value}</span>
+                    <span className={`w-10 text-right font-semibold ${
+                      c.status === 'PASS' ? 'text-accent-emerald' : c.status === 'WARN' ? 'text-accent-amber' : 'text-accent-crimson'
+                    }`}>{c.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stress Testing */}
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Stress Testing</h2>
+            {stressScenarios.length === 0 ? (
+              <div className="text-xs text-text-muted">Loading scenarios...</div>
+            ) : (
+              <div className="space-y-1.5">
+                {stressScenarios.map((s: any) => (
+                  <div key={s.name} className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleRunStress(s.name)}
+                      disabled={stressRunning !== null}
+                      className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                        stressRunning === s.name
+                          ? 'border-accent-violet text-accent-violet animate-pulse'
+                          : 'border-border-default text-text-secondary hover:border-accent-violet hover:text-accent-violet'
+                      }`}>
+                      {stressRunning === s.name ? 'Running...' : 'Run'}
+                    </button>
+                    <span className="text-xs truncate" title={s.description}>{s.name.replace(/_/g, ' ')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {stressResults.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border-default">
+                <div className="text-xs text-text-muted mb-1">Recent Results</div>
+                {stressResults.slice(0, 3).map((r: any, i: number) => (
+                  <div key={i} className="text-xs flex justify-between py-0.5">
+                    <span className="font-mono">{r.scenario_name?.replace(/_/g, ' ')}</span>
+                    <span>
+                      <span className="text-accent-emerald">{r.would_open || 0} open</span>
+                      {' / '}
+                      <span className="text-accent-crimson">{r.would_block || 0} block</span>
+                      {r.changed_decisions > 0 && (
+                        <span className="text-accent-amber ml-1">({r.changed_decisions} changed)</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </AppShell>
   );

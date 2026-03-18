@@ -78,6 +78,15 @@ class ApiClient {
   // Regime
   async getRegime() { return this.request<any>('/agents/regime'); }
 
+  // Stress Testing
+  async getStressScenarios() { return this.request<any>('/stress/scenarios'); }
+  async runStressScenario(name: string) { return this.request<any>(`/stress/scenario/${name}`, { method: 'POST' }); }
+  async runAllStress() { return this.request<any>('/stress/run-all', { method: 'POST' }); }
+  async getStressHistory(limit: number = 10) { return this.request<any>(`/stress/history?limit=${limit}`); }
+
+  // Readiness
+  async getReadinessCheck() { return this.request<any>('/readiness/check'); }
+
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }
   async getBreakingAlerts() { return this.request<any>("/agents/breaking-alerts"); }

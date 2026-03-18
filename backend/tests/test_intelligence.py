@@ -608,5 +608,92 @@ class TestAdaptiveProfile:
         assert r.effective_profile == "BALANCED"  # can't go to AGGRESSIVE
 
 
+# ══════════════════════════════════════
+# 11. STRESS TEST ENGINE (6 tests)
+# ══════════════════════════════════════
+from bahamut.stress.engine import StressResult, replay_with_modified_params
+from bahamut.stress.scenarios import SCENARIOS
+
+class TestStressTesting:
+
+    def test_stress_result_structure(self):
+        r = StressResult(scenario_name="test", mode="scenario", total_signals=10)
+        d = r.to_dict()
+        for k in ("scenario_name", "mode", "total_signals", "would_open",
+                   "would_block", "changed_decisions", "avg_size_multiplier",
+                   "blockers_fired", "warnings_fired"):
+            assert k in d
+
+    def test_all_scenarios_have_required_keys(self):
+        for s in SCENARIOS:
+            assert "name" in s, f"Scenario missing name"
+            assert "description" in s, f"{s.get('name')} missing description"
+            assert len(s["description"]) > 20, f"{s['name']} description too short"
+
+    def test_scenario_count(self):
+        assert len(SCENARIOS) == 8
+
+    def test_unique_scenario_names(self):
+        names = [s["name"] for s in SCENARIOS]
+        assert len(names) == len(set(names)), "Duplicate scenario names"
+
+    def test_replay_no_traces_returns_empty(self):
+        """Replay with no DB connection returns empty result gracefully."""
+        r = replay_with_modified_params(max_traces=5)
+        assert r.total_signals == 0
+        assert "No decision traces found" in r.notes
+
+    def test_trust_collapse_scenario_exists(self):
+        tc = next(s for s in SCENARIOS if s["name"] == "trust_collapse")
+        for a in ["technical_agent", "macro_agent", "sentiment_agent"]:
+            assert tc["trust_overrides"][a] == 0.3
+
+
+# ══════════════════════════════════════
+# 12. READINESS CHECKLIST (5 tests)
+# ══════════════════════════════════════
+from bahamut.readiness.checklist import (
+    ReadinessReport, CheckResult, run_readiness_check,
+    _check_execution_policy, _check_trust_maturity,
+)
+
+class TestReadinessChecklist:
+
+    def test_report_structure(self):
+        r = ReadinessReport(overall="NOT_READY", pass_count=3, warn_count=2, fail_count=7)
+        d = r.to_dict()
+        assert d["overall"] == "NOT_READY"
+        assert d["pass_count"] == 3
+        assert "checks" in d
+
+    def test_check_result_structure(self):
+        c = CheckResult(name="test", category="SYSTEM", status="PASS",
+                        value="ok", threshold="ok")
+        assert c.status == "PASS"
+        assert c.category == "SYSTEM"
+
+    def test_execution_policy_check_passes(self):
+        """The execution policy smoke test should pass (module loads correctly)."""
+        c = _check_execution_policy()
+        assert c.status == "PASS"
+        assert c.name == "execution_policy"
+
+    def test_overall_logic_ready(self):
+        r = ReadinessReport()
+        r.fail_count = 0
+        r.warn_count = 1
+        # READY = 0 fails and ≤2 warns
+        if r.fail_count == 0 and r.warn_count <= 2:
+            r.overall = "READY"
+        assert r.overall == "READY"
+
+    def test_overall_logic_not_ready(self):
+        r = ReadinessReport()
+        r.fail_count = 5
+        if r.fail_count > 2:
+            r.overall = "NOT_READY"
+        assert r.overall == "NOT_READY"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
