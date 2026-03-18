@@ -79,9 +79,16 @@ def process_learning_for_trade(self, closed_trade: dict):
                      pnl=closed_trade.get("pnl"),
                      adjustments=len(result.get("adjustments", {})))
 
-        # Apply trust score updates
+        # Apply trust score updates with real trade context
         if result.get("adjustments"):
-            run_async(_apply_trust_async(result["adjustments"]))
+            ctx = result.get("context", {})
+            run_async(_apply_trust_async(
+                result["adjustments"],
+                regime=ctx.get("regime", "risk_on"),
+                asset_class=ctx.get("asset_class", "fx"),
+                timeframe=ctx.get("timeframe", "4H"),
+                trade_id=str(closed_trade.get("position_id", "")),
+            ))
 
         return result
     except Exception as e:
@@ -95,9 +102,13 @@ async def _process_learning_async(closed_trade: dict):
     return await process_closed_trade(closed_trade)
 
 
-async def _apply_trust_async(adjustments: dict):
+async def _apply_trust_async(adjustments: dict, regime="risk_on",
+                              asset_class="fx", timeframe="4H", trade_id=None):
     from bahamut.paper_trading.learning import apply_trust_adjustments
-    return await apply_trust_adjustments(adjustments)
+    return await apply_trust_adjustments(
+        adjustments, regime=regime, asset_class=asset_class,
+        timeframe=timeframe, trade_id=trade_id,
+    )
 
 
 @celery_app.task(name="paper_trading.daily_report")

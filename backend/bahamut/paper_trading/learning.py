@@ -68,6 +68,7 @@ async def process_closed_trade(closed_trade: dict) -> dict:
     trade_direction = closed_trade["direction"]
     pnl = closed_trade["pnl"]
     agent_votes = closed_trade.get("agent_votes", {})
+    cycle_id = closed_trade.get("cycle_id")
 
     is_profitable = pnl > 0
     actual_outcome = trade_direction if is_profitable else (
@@ -76,6 +77,37 @@ async def process_closed_trade(closed_trade: dict) -> dict:
 
     log = logger.bind(position_id=position_id, asset=asset, pnl=pnl)
     log.info("learning_processing_trade", profitable=is_profitable)
+
+    # ── Resolve context for dimensional trust updates ──
+    asset_class = _infer_asset_class(asset)
+    trade_context = {"regime": "risk_on", "asset_class": asset_class, "timeframe": "4H"}
+
+    if cycle_id:
+        # Try to pull regime + timeframe from the decision trace
+        try:
+            from bahamut.database import sync_engine as _sync_eng
+            from sqlalchemy import text as _text
+            with _sync_eng.connect() as _conn:
+                _tr = _conn.execute(_text(
+                    "SELECT regime, timeframe FROM decision_traces WHERE cycle_id = :c LIMIT 1"
+                ), {"c": cycle_id}).mappings().first()
+                if _tr:
+                    trade_context["regime"] = _tr.get("regime") or "risk_on"
+                    trade_context["timeframe"] = _tr.get("timeframe") or "4H"
+        except Exception as e:
+            log.debug("trace_lookup_skipped", error=str(e))
+
+        # Close the decision trace with outcome
+        try:
+            from bahamut.agents.persistence import close_decision_trace
+            close_decision_trace(cycle_id, {
+                "pnl": pnl, "pnl_pct": closed_trade.get("pnl_pct", 0),
+                "status": closed_trade.get("status", ""),
+                "exit_price": closed_trade.get("exit_price", 0),
+                "profitable": is_profitable,
+            })
+        except Exception as e:
+            log.debug("close_trace_skipped", error=str(e))
 
     adjustments = {}
 
@@ -167,6 +199,10 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                 perf.last_updated = datetime.now(timezone.utc)
 
                 # Create audit log
+                agent_id_full = f"{agent_name}_agent"
+                from bahamut.consensus.trust_store import trust_store as _ts
+                _tb, _ = _ts.get(agent_id_full, "global")
+
                 learning_event = LearningEvent(
                     position_id=position_id,
                     agent_name=agent_name,
@@ -175,8 +211,8 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                     actual_outcome=actual_outcome,
                     agent_confidence=agent_confidence,
                     was_correct=was_correct,
-                    trust_before=0,  # Will be filled by trust_store integration
-                    trust_after=0,
+                    trust_before=round(_tb, 4),
+                    trust_after=0,   # filled after apply_trust_adjustments
                     trust_delta=trust_delta,
                     position_pnl=pnl,
                     position_pnl_pct=closed_trade.get("pnl_pct", 0),
@@ -205,6 +241,8 @@ async def process_closed_trade(closed_trade: dict) -> dict:
         "pnl": pnl,
         "profitable": is_profitable,
         "adjustments": adjustments,
+        "context": trade_context,
+        "cycle_id": cycle_id,
     }
 
 
@@ -239,10 +277,16 @@ def _calculate_trust_delta(
     return round(delta, 4)
 
 
-async def apply_trust_adjustments(adjustments: dict[str, dict]) -> dict:
+async def apply_trust_adjustments(
+    adjustments: dict[str, dict],
+    regime: str = "risk_on",
+    asset_class: str = "fx",
+    timeframe: str = "4H",
+    trade_id: str = None,
+) -> dict:
     """
     Push trust deltas into the consensus trust store.
-    Uses the existing trust_store.update_after_trade() method.
+    Uses real trade context for multi-dimensional updates.
     """
     from bahamut.consensus.trust_store import trust_store
 
@@ -259,14 +303,15 @@ async def apply_trust_adjustments(adjustments: dict[str, dict]) -> dict:
             # Get score before update
             before, _ = trust_store.get(agent_id, "global")
 
-            # Use the existing multi-dimensional update
+            # Use real context for multi-dimensional update
             trust_store.update_after_trade(
                 agent_id=agent_id,
                 outcome_correct=was_correct,
                 confidence=confidence,
-                regime="risk_on",  # Default context
-                asset_class="fx",
-                timeframe="4H",
+                regime=regime,
+                asset_class=asset_class,
+                timeframe=timeframe,
+                trade_id=trade_id,
             )
 
             after, _ = trust_store.get(agent_id, "global")
@@ -278,7 +323,8 @@ async def apply_trust_adjustments(adjustments: dict[str, dict]) -> dict:
             logger.info("trust_score_updated",
                         agent=agent_name,
                         before=round(before, 4),
-                        after=round(after, 4))
+                        after=round(after, 4),
+                        regime=regime, asset_class=asset_class)
         except Exception as e:
             logger.error("trust_update_failed", agent=agent_name, error=str(e))
             results[agent_name] = {"error": str(e)}
@@ -352,3 +398,20 @@ async def _get_or_create_performance(
         await session.flush()
 
     return perf
+
+
+_CRYPTO = {"BTCUSD","ETHUSD","SOLUSD","BNBUSD","XRPUSD","ADAUSD","DOGEUSD",
+           "AVAXUSD","DOTUSD","LINKUSD","MATICUSD","SHIBUSD"}
+_COMMODITY = {"XAUUSD","XAGUSD","WTIUSD","BCOUSD"}
+_STOCKS = {"AAPL","MSFT","GOOGL","AMZN","NVDA","META","TSLA","JPM","V","UNH",
+           "MA","HD","PG","JNJ","AMD","CRM","NFLX","ADBE","INTC","PYPL","UBER",
+           "SQ","SHOP","SNOW","PLTR","COIN","RBLX","MARA","RIOT"}
+
+def _infer_asset_class(asset: str) -> str:
+    """Infer asset class from symbol for dimensional trust updates."""
+    if asset in _CRYPTO: return "crypto"
+    if asset in _COMMODITY: return "commodities"
+    if asset in _STOCKS: return "indices"
+    if len(asset) == 6 and asset.endswith("USD"): return "fx"
+    if len(asset) == 6 and "EUR" in asset or "GBP" in asset or "JPY" in asset: return "fx"
+    return "fx"

@@ -445,6 +445,7 @@ async def close_position(
         "status": status.value,
         "agent_votes": position.agent_votes,
         "consensus_score": position.consensus_score,
+        "cycle_id": position.cycle_id,
     }
 
 
