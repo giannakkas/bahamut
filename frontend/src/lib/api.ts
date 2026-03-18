@@ -32,7 +32,7 @@ class ApiClient {
   }
 
   // Consensus
-  async getThresholds() { return this.request<any>('/consensus/thresholds'); }
+  async getConsensusThresholds() { return this.request<any>('/consensus/thresholds'); }
   async getWeights(ac: string) { return this.request<any>(`/consensus/weights/${ac}`); }
 
   // Market
