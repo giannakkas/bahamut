@@ -98,6 +98,27 @@ async def emergency_recalibrate(user=Depends(get_current_user)):
     result = run_emergency_calibration(reason="manual_api")
     return {"status": "applied", "notes": result.notes}
 
+@router.get("/meta-evaluation")
+async def meta_evaluation(user=Depends(get_current_user)):
+    """Get latest system-level health report."""
+    from bahamut.learning.meta import get_last_report, run_meta_evaluation
+    report = get_last_report()
+    if not report:
+        report = run_meta_evaluation()
+    return report.to_dict()
+
+@router.get("/thresholds")
+async def get_thresholds(user=Depends(get_current_user)):
+    """Get current runtime consensus thresholds (may differ from defaults)."""
+    from bahamut.learning.thresholds import get_current_thresholds, BASELINE_THRESHOLDS
+    return {"current": get_current_thresholds(), "baseline": BASELINE_THRESHOLDS}
+
+@router.post("/reset-thresholds")
+async def reset_thresholds(user=Depends(get_current_user)):
+    from bahamut.learning.thresholds import reset_to_defaults
+    reset_to_defaults()
+    return {"status": "reset_to_defaults"}
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "learning-svc"}

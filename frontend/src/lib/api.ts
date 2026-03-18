@@ -59,6 +59,9 @@ class ApiClient {
     return this.request<any>(`/learning/trust-history?${params}`);
   }
   async getCalibrationHistory(limit: number = 10) { return this.request<any>(`/learning/calibration-history?limit=${limit}`); }
+  async getMetaEvaluation() { return this.request<any>('/learning/meta-evaluation'); }
+  async getThresholds() { return this.request<any>('/learning/thresholds'); }
+  async resetThresholds() { return this.request<any>('/learning/reset-thresholds', { method: 'POST' }); }
 
   // Consensus
   async getDisagreementConfig() { return this.request<any>('/consensus/disagreement-config'); }

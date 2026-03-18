@@ -81,6 +81,33 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning("regime_detect_failed", error=str(e))
 
+        # ═════════════════════════════════════
+        # ADAPTIVE PROFILE
+        # ═════════════════════════════════════
+        try:
+            from bahamut.learning.profile_adapter import resolve_effective_profile, get_recent_streak
+            from bahamut.learning.meta import get_last_report
+            from bahamut.auth.router import PROFILE_DEFAULTS
+
+            meta_report = get_last_report()
+            meta_risk = meta_report.risk_level if meta_report else "NORMAL"
+            streak = get_recent_streak()
+            profile_cfg = PROFILE_DEFAULTS.get(trading_profile, {})
+
+            adjustment = resolve_effective_profile(
+                base_profile=trading_profile,
+                regime=regime,
+                meta_risk_level=meta_risk,
+                recent_streak=streak,
+                profile_config=profile_cfg,
+            )
+            if adjustment.adjusted:
+                trading_profile = adjustment.effective_profile
+                logger.info("profile_adapted", base=adjustment.base_profile,
+                             effective=trading_profile, reasons=adjustment.reasons)
+        except Exception as e:
+            logger.debug("profile_adapt_skipped", error=str(e))
+
         request = SignalCycleRequest(
             cycle_id=cycle_id, asset=asset, asset_class=asset_class,
             timeframe=timeframe, triggered_by=triggered_by,

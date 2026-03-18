@@ -35,19 +35,39 @@ def run_daily_calibration() -> CalibrationResult:
     result.precision_scores = accuracy
     total = accuracy.get("total_trades", 0)
 
+    # Run meta-learning evaluation
+    try:
+        from bahamut.learning.meta import run_meta_evaluation
+        report = run_meta_evaluation()
+        notes.append(f"Meta: trend={report.trend} score={report.trend_score:+.3f} risk={report.risk_level}")
+
+        # Apply threshold tuning based on meta-learning
+        if report.recommended_actions:
+            from bahamut.learning.thresholds import apply_threshold_tuning
+            changes = apply_threshold_tuning(report)
+            if changes:
+                result.threshold_changes = changes
+                notes.append(f"Thresholds adjusted: {list(changes.keys())}")
+            else:
+                notes.append("Thresholds: no changes needed")
+
+        # Emergency calibration trigger
+        if report.risk_level == "CRITICAL":
+            for action in report.recommended_actions:
+                if action.get("action") == "EMERGENCY_CALIBRATE":
+                    trust_store.apply_daily_decay(decay_rate=0.03)
+                    notes.append(f"Emergency decay applied: {action.get('reason')}")
+    except Exception as e:
+        notes.append(f"Meta-learning skipped: {str(e)}")
+
     if total >= 5:
         wr = accuracy.get("win_rate", 0)
         if wr < 0.35:
-            notes.append(f"ALERT: Win rate {wr:.1%} — tighten thresholds")
-            result.threshold_changes["recommendation"] = "tighten"
+            notes.append(f"ALERT: Win rate {wr:.1%}")
         elif wr > 0.70:
-            notes.append(f"Win rate {wr:.1%} — may be too conservative")
-            result.threshold_changes["recommendation"] = "loosen_candidate"
-        else:
-            notes.append(f"Win rate {wr:.1%} — no change needed")
-            result.threshold_changes["recommendation"] = "hold"
+            notes.append(f"Win rate {wr:.1%} — strong")
     else:
-        notes.append(f"Only {total} trades — insufficient for analysis")
+        notes.append(f"Only {total} trades — insufficient")
 
     result.trades_analyzed = total
     result.notes = notes
@@ -85,6 +105,13 @@ def run_emergency_calibration(reason: str = "manual") -> CalibrationResult:
     result = CalibrationResult(cadence="emergency", notes=[f"Emergency: {reason}"])
     trust_store.apply_daily_decay(decay_rate=0.05)
     result.notes.append("Applied aggressive decay (0.05)")
+    # Reset thresholds to safe defaults
+    try:
+        from bahamut.learning.thresholds import reset_to_defaults
+        reset_to_defaults()
+        result.notes.append("Thresholds reset to defaults")
+    except Exception as e:
+        result.notes.append(f"Threshold reset failed: {e}")
     _save_calibration_run(result)
     logger.warning("emergency_calibration", reason=reason)
     return result

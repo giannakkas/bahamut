@@ -31,6 +31,12 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     logger.info("Starting Bahamut.AI", environment=settings.environment)
     await redis_manager.connect()
+    # Load persisted threshold overrides
+    try:
+        from bahamut.learning.thresholds import load_persisted_thresholds
+        load_persisted_thresholds()
+    except Exception as e:
+        logger.debug("threshold_load_skipped", error=str(e))
     # Clear stale cached data from previous deploy
     if redis_manager.redis:
         try:

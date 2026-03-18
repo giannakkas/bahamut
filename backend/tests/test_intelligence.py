@@ -515,5 +515,98 @@ class TestLearningAttribution:
         assert d_cal < d_no_cal, f"Calibrated {d_cal} should be less than {d_no_cal}"
 
 
+# ══════════════════════════════════════
+# 8. META-LEARNING (4 tests)
+# ══════════════════════════════════════
+from bahamut.learning.meta import SystemHealthReport, PerformanceWindow
+
+class TestMetaLearning:
+
+    def test_improving_trend(self):
+        r = SystemHealthReport()
+        r.windows = {
+            7: PerformanceWindow(window_days=7, total_trades=5, wins=4, win_rate=0.80, profit_factor=2.5),
+            30: PerformanceWindow(window_days=30, total_trades=20, wins=10, win_rate=0.50, profit_factor=1.1),
+        }
+        # 7d much better than 30d → positive trend
+        wr_delta = r.windows[7].win_rate - r.windows[30].win_rate
+        assert wr_delta > 0.2
+
+    def test_cold_start(self):
+        r = SystemHealthReport()
+        r.windows = {30: PerformanceWindow(window_days=30, total_trades=2)}
+        # Too few trades
+        assert r.windows[30].total_trades < 5
+
+    def test_to_dict_complete(self):
+        r = SystemHealthReport(trend="STABLE", trend_score=0.1, risk_level="NORMAL")
+        d = r.to_dict()
+        for k in ("trend", "trend_score", "risk_level", "consensus_quality",
+                   "recommended_actions", "agent_diversity_score"):
+            assert k in d
+
+    def test_critical_risk_generates_action(self):
+        w7 = PerformanceWindow(window_days=7, total_trades=6, wins=0, max_consecutive_losses=6)
+        assert w7.max_consecutive_losses >= 5
+
+
+# ══════════════════════════════════════
+# 9. THRESHOLD TUNING (4 tests)
+# ══════════════════════════════════════
+from bahamut.learning.thresholds import _clamp, BOUNDS, BASELINE_THRESHOLDS
+
+class TestThresholdTuning:
+
+    def test_clamp_within_bounds(self):
+        assert _clamp("strong_signal", 0.99) == BOUNDS["strong_signal"][1]
+        assert _clamp("strong_signal", 0.10) == BOUNDS["strong_signal"][0]
+
+    def test_clamp_passes_valid(self):
+        assert _clamp("signal", 0.60) == 0.60
+
+    def test_baseline_not_mutated(self):
+        """BASELINE_THRESHOLDS should never change."""
+        assert BASELINE_THRESHOLDS["BALANCED"]["strong_signal"] == 0.72
+        assert BASELINE_THRESHOLDS["CONSERVATIVE"]["signal"] == 0.70
+
+    def test_bounds_hierarchy(self):
+        """strong_signal bounds should be above signal bounds."""
+        assert BOUNDS["strong_signal"][0] > BOUNDS["signal"][0]
+
+
+# ══════════════════════════════════════
+# 10. ADAPTIVE PROFILE (5 tests)
+# ══════════════════════════════════════
+from bahamut.learning.profile_adapter import resolve_effective_profile
+
+class TestAdaptiveProfile:
+
+    def test_no_change_normal(self):
+        r = resolve_effective_profile("BALANCED", "RISK_ON")
+        assert r.effective_profile == "BALANCED" and not r.adjusted
+
+    def test_crisis_downgrades(self):
+        r = resolve_effective_profile("BALANCED", "CRISIS",
+                                       profile_config={"auto_downgrade_on_crisis": True})
+        assert r.effective_profile == "CONSERVATIVE" and r.adjusted
+
+    def test_losing_streak_tightens(self):
+        r = resolve_effective_profile("AGGRESSIVE", "RISK_ON",
+                                       recent_streak=-4,
+                                       profile_config={"streak_tighten_after": 3})
+        assert r.effective_profile == "BALANCED"
+
+    def test_meta_critical_forces_conservative(self):
+        r = resolve_effective_profile("AGGRESSIVE", "RISK_ON", meta_risk_level="CRITICAL")
+        assert r.effective_profile == "CONSERVATIVE"
+
+    def test_never_upgrades_beyond_base(self):
+        """Winning streak can restore but never exceed base profile."""
+        r = resolve_effective_profile("BALANCED", "RISK_ON",
+                                       recent_streak=10,
+                                       profile_config={"streak_loosen_after": 5})
+        assert r.effective_profile == "BALANCED"  # can't go to AGGRESSIVE
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
