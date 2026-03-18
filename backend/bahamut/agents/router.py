@@ -86,6 +86,13 @@ async def health():
     }
 
 
+@router.get("/regime")
+async def get_regime(user=Depends(get_current_user)):
+    """Get current detected market regime."""
+    from bahamut.features.regime import get_current_regime
+    return get_current_regime().to_dict()
+
+
 @router.get("/candles/{asset}")
 async def get_candles(asset: str, timeframe: str = "4H", count: int = 100,
                       user: User = Depends(get_current_user)):

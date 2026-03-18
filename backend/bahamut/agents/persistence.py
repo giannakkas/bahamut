@@ -39,6 +39,7 @@ def ensure_tables():
                     agent_contributions JSONB,
                     dissenting_agents JSONB,
                     risk_flags JSONB,
+                    disagreement_metrics JSONB,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """))
@@ -156,6 +157,43 @@ def ensure_tables():
             """))
             conn.commit()
             logger.info("persistence_tables_ensured")
+
+            # ── Self-learning upgrade tables ──
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS decision_traces (
+                    id SERIAL PRIMARY KEY, cycle_id VARCHAR(100) NOT NULL,
+                    position_id INTEGER, asset VARCHAR(20) NOT NULL,
+                    timeframe VARCHAR(10) DEFAULT '4H', trading_profile VARCHAR(30),
+                    execution_mode VARCHAR(20), regime VARCHAR(50),
+                    regime_confidence FLOAT, agent_outputs JSONB NOT NULL,
+                    consensus_output JSONB NOT NULL, disagreement_metrics JSONB,
+                    trust_scores_at_decision JSONB, outcome JSONB,
+                    learning_applied BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT NOW(), closed_at TIMESTAMP)
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS trust_scores_live (
+                    id SERIAL PRIMARY KEY, agent_id VARCHAR(50) NOT NULL,
+                    dimension VARCHAR(100) NOT NULL, score FLOAT DEFAULT 1.0,
+                    sample_count INTEGER DEFAULT 0, updated_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(agent_id, dimension))
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS trust_score_history_live (
+                    id SERIAL PRIMARY KEY, agent_id VARCHAR(50), dimension VARCHAR(100),
+                    old_score FLOAT, new_score FLOAT, change_reason VARCHAR(50),
+                    trade_id VARCHAR(100), alpha_used FLOAT, created_at TIMESTAMP DEFAULT NOW())
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS calibration_runs (
+                    id SERIAL PRIMARY KEY, cadence VARCHAR(20), started_at TIMESTAMP DEFAULT NOW(),
+                    completed_at TIMESTAMP DEFAULT NOW(), status VARCHAR(20) DEFAULT 'completed',
+                    trades_analyzed INTEGER DEFAULT 0, threshold_changes JSONB,
+                    precision_scores JSONB, notes TEXT, created_at TIMESTAMP DEFAULT NOW())
+            """))
+            # Migration for existing tables
+            conn.execute(text("ALTER TABLE consensus_decisions ADD COLUMN IF NOT EXISTS disagreement_metrics JSONB"))
+            conn.commit()
 
             # Paper trading tables
             conn.execute(text("""
@@ -501,10 +539,10 @@ def save_cycle_to_db(result: dict):
                 INSERT INTO consensus_decisions
                 (id, cycle_id, asset, direction, final_score, decision, agreement_pct,
                  regime, trading_profile, execution_mode, blocked, explanation,
-                 agent_contributions, dissenting_agents, risk_flags)
+                 agent_contributions, dissenting_agents, risk_flags, disagreement_metrics)
                 VALUES (:id, :cycle_id, :asset, :dir, :score, :decision, :agreement,
                         :regime, :profile, :mode, :blocked, :explanation,
-                        :contributions, :dissenters, :flags)
+                        :contributions, :dissenters, :flags, :disagreement)
                 ON CONFLICT DO NOTHING
             """), {
                 "id": decision.get("consensus_id", cycle_id),
@@ -522,6 +560,7 @@ def save_cycle_to_db(result: dict):
                 "contributions": json.dumps(decision.get("agent_contributions", [])),
                 "dissenters": json.dumps(decision.get("dissenting_agents", [])),
                 "flags": json.dumps(decision.get("risk_flags", [])),
+                "disagreement": json.dumps(decision.get("disagreement")),
             })
 
             # Save each agent output
@@ -550,6 +589,61 @@ def save_cycle_to_db(result: dict):
 
     except Exception as e:
         logger.error("cycle_persist_failed", error=str(e))
+
+
+def save_decision_trace(result: dict):
+    """Save full decision context for learning replay."""
+    import json
+    try:
+        decision = result.get("decision", {})
+        cycle_id = result.get("cycle_id", "")
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO decision_traces
+                (cycle_id, asset, timeframe, trading_profile, execution_mode,
+                 regime, regime_confidence, agent_outputs, consensus_output,
+                 disagreement_metrics, trust_scores_at_decision)
+                VALUES (:cid, :asset, :tf, :profile, :mode,
+                        :regime, :rc, :agents, :consensus, :disagree, :trust)
+            """), {
+                "cid": cycle_id, "asset": decision.get("asset", ""),
+                "tf": "4H", "profile": decision.get("trading_profile", "BALANCED"),
+                "mode": decision.get("execution_mode", "WATCH"),
+                "regime": decision.get("regime", "UNKNOWN"),
+                "rc": decision.get("regime_confidence", 0),
+                "agents": json.dumps(result.get("agent_outputs", []), default=str),
+                "consensus": json.dumps(decision, default=str),
+                "disagree": json.dumps(result.get("disagreement"), default=str),
+                "trust": json.dumps(
+                    {c["agent_id"]: c.get("trust_score", 1.0)
+                     for c in decision.get("agent_contributions", [])}, default=str),
+            })
+            conn.commit()
+    except Exception as e:
+        logger.error("decision_trace_failed", error=str(e))
+
+
+def link_trace_to_position(cycle_id: str, position_id: int):
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text(
+                "UPDATE decision_traces SET position_id = :pid WHERE cycle_id = :cid AND position_id IS NULL"
+            ), {"pid": position_id, "cid": cycle_id})
+            conn.commit()
+    except Exception as e:
+        logger.error("link_trace_failed", error=str(e))
+
+
+def close_decision_trace(cycle_id: str, outcome: dict):
+    import json
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text(
+                "UPDATE decision_traces SET outcome = :o, closed_at = NOW() WHERE cycle_id = :cid"
+            ), {"o": json.dumps(outcome, default=str), "cid": cycle_id})
+            conn.commit()
+    except Exception as e:
+        logger.error("close_trace_failed", error=str(e))
 
 
 def save_scan_results(results: dict):

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from bahamut.celery_app import celery_app
 from bahamut.agents.orchestrator import orchestrator
-from bahamut.agents.persistence import save_cycle_to_db
+from bahamut.agents.persistence import save_cycle_to_db, save_decision_trace
 import structlog
 
 logger = structlog.get_logger()
@@ -65,6 +65,7 @@ def _run_assets(assets: list, timeframe: str = "4H"):
 
             _cache_to_redis(asset_info["symbol"], result)
             save_cycle_to_db(result)
+            save_decision_trace(result)
 
         except Exception as e:
             logger.exception("cycle_failed", asset=asset_info["symbol"], error=str(e))
@@ -106,6 +107,7 @@ def run_single_cycle(asset: str, asset_class: str = "fx",
         )
         _cache_to_redis(asset, result)
         save_cycle_to_db(result)
+        save_decision_trace(result)
         return result
     except Exception as e:
         logger.exception("single_cycle_failed", error=str(e))

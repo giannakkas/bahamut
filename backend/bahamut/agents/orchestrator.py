@@ -23,6 +23,8 @@ from bahamut.agents.sentiment_agent import SentimentAgent
 from bahamut.agents.liquidity_agent import LiquidityAgent
 from bahamut.consensus.engine import consensus_engine
 from bahamut.consensus.trust_store import trust_store
+from bahamut.consensus.disagreement import disagreement_engine
+from bahamut.consensus.weights import weight_resolver
 from bahamut.ingestion.market_data import market_data
 
 logger = structlog.get_logger()
@@ -56,16 +58,6 @@ class AgentOrchestrator:
         cycle_id = uuid4()
         start_time = time.time()
 
-        request = SignalCycleRequest(
-            cycle_id=cycle_id, asset=asset, asset_class=asset_class,
-            timeframe=timeframe, triggered_by=triggered_by,
-            current_regime=regime, regime_confidence=regime_confidence,
-            trading_profile=trading_profile,
-        )
-
-        logger.info("signal_cycle_started", cycle_id=str(cycle_id),
-                     asset=asset, timeframe=timeframe, regime=regime)
-
         # ═════════════════════════════════════
         # FETCH REAL MARKET DATA
         # ═════════════════════════════════════
@@ -76,8 +68,28 @@ class AgentOrchestrator:
             portfolio_state = await market_data.get_account_state()
 
         data_source = features.get("source", "unknown")
-        logger.info("market_data_loaded", source=data_source, symbol=asset,
-                     close=features.get("indicators", {}).get("close"))
+
+        # ═════════════════════════════════════
+        # AUTO-DETECT REGIME
+        # ═════════════════════════════════════
+        if regime == "RISK_ON" and features.get("indicators"):
+            try:
+                from bahamut.features.regime import detect_regime_from_features
+                detected = detect_regime_from_features(features)
+                regime = detected.primary_regime
+                regime_confidence = detected.confidence
+            except Exception as e:
+                logger.warning("regime_detect_failed", error=str(e))
+
+        request = SignalCycleRequest(
+            cycle_id=cycle_id, asset=asset, asset_class=asset_class,
+            timeframe=timeframe, triggered_by=triggered_by,
+            current_regime=regime, regime_confidence=regime_confidence,
+            trading_profile=trading_profile,
+        )
+
+        logger.info("signal_cycle_started", cycle_id=str(cycle_id),
+                     asset=asset, timeframe=timeframe, regime=regime)
 
         # ═════════════════════════════════════
         # ROUND 1: Independent Analysis
@@ -126,16 +138,32 @@ class AgentOrchestrator:
         # ═════════════════════════════════════
         # ROUNDS 4-7: Consensus
         # ═════════════════════════════════════
+
+        # Compute disagreement BEFORE consensus
+        disagreement_metrics = disagreement_engine.calculate(
+            directional_outputs=valid_outputs,
+            risk_output=risk_output,
+            challenges=challenges,
+            trading_profile=trading_profile,
+        )
+
         trust_scores = trust_store.get_scores_for_context(regime, asset_class, timeframe)
 
         from bahamut.auth.router import PROFILE_DEFAULTS
         profile_config = PROFILE_DEFAULTS.get(trading_profile, {})
-        weight_overrides = profile_config.get("weight_overrides", {})
+        profile_overrides = profile_config.get("weight_overrides", {})
+
+        # Dynamic weight resolution
+        resolved_weights = weight_resolver.resolve_weights(
+            asset_class=asset_class, regime=regime, timeframe=timeframe,
+            trust_scores=trust_scores, profile_weight_overrides=profile_overrides,
+        )
 
         decision = consensus_engine.calculate(
             agent_outputs=all_outputs, asset_class=asset_class,
             regime=regime, trading_profile=trading_profile,
-            trust_scores=trust_scores, weight_overrides=weight_overrides,
+            trust_scores=trust_scores, resolved_weights=resolved_weights,
+            disagreement_metrics=disagreement_metrics,
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
@@ -144,7 +172,9 @@ class AgentOrchestrator:
                      asset=asset, direction=decision.direction,
                      score=decision.final_score, decision=decision.decision,
                      agreement=decision.agreement_pct, elapsed_ms=elapsed_ms,
-                     data_source=data_source, agents_responded=len(valid_outputs))
+                     data_source=data_source, agents_responded=len(valid_outputs),
+                     disagreement=disagreement_metrics.disagreement_index,
+                     exec_gate=disagreement_metrics.execution_gate)
 
         # ═════════════════════════════════════
         # PAPER TRADING HOOK — auto-execute demo trades
@@ -177,6 +207,8 @@ class AgentOrchestrator:
                     atr=atr,
                     agent_votes=agent_votes,
                     cycle_id=str(cycle_id),
+                    execution_gate=disagreement_metrics.execution_gate,
+                    disagreement_index=disagreement_metrics.disagreement_index,
                 )
             else:
                 logger.info("paper_trading_hook_skipped",
@@ -191,6 +223,7 @@ class AgentOrchestrator:
             "agent_outputs": [o.model_dump() for o in all_outputs],
             "challenges": [c.model_dump() for c in challenges],
             "conflict_map": conflict_map.model_dump(),
+            "disagreement": disagreement_metrics.model_dump(),
             "elapsed_ms": elapsed_ms,
             "data_source": data_source,
             "market_price": features.get("indicators", {}).get("close"),

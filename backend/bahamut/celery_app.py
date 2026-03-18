@@ -99,7 +99,11 @@ celery_app.conf.update(
         },
         "market-scanner": {
             "task": "scanner.run_market_scan",
-            "schedule": 1800.0,  # Every 30 min — scans all 57 assets + deep analyzes top 10
+            "schedule": 1800.0,
+        },
+        "trade-triggered-calibration": {
+            "task": "bahamut.learning.tasks.trade_triggered_calibration",
+            "schedule": 900.0,
         },
     },
 )

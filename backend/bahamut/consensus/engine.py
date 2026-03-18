@@ -10,6 +10,7 @@ import structlog
 
 from bahamut.agents.schemas import (
     AgentOutputSchema, ConsensusDecisionSchema, TradePlanSchema,
+    DisagreementMetrics,
 )
 
 logger = structlog.get_logger()
@@ -107,6 +108,8 @@ class ConsensusEngine:
         trading_profile: str,
         trust_scores: dict[str, float] = None,
         weight_overrides: dict[str, float] = None,
+        resolved_weights: dict[str, float] = None,
+        disagreement_metrics: DisagreementMetrics = None,
     ) -> ConsensusDecisionSchema:
         """
         Full consensus calculation. Returns a ConsensusDecisionSchema.
@@ -138,8 +141,10 @@ class ConsensusEngine:
             return self._no_trade_decision(agent_outputs, regime, trading_profile)
 
         # ── Step 2: Load parameters ──
-        base_weights = BASE_WEIGHTS.get(asset_class, BASE_WEIGHTS["fx"])
-        regime_rel = REGIME_RELEVANCE.get(regime, {k: 0.7 for k in base_weights})
+        use_resolved = resolved_weights is not None
+        if not use_resolved:
+            base_weights = BASE_WEIGHTS.get(asset_class, BASE_WEIGHTS["fx"])
+            regime_rel = REGIME_RELEVANCE.get(regime, {k: 0.7 for k in base_weights})
 
         # ── Step 3: Calculate weighted score ──
         aligned_sum = 0.0
@@ -149,12 +154,18 @@ class ConsensusEngine:
 
         for output in directional_outputs:
             aid = output.agent_id
-            W = base_weights.get(aid, 0.1) * weight_overrides.get(aid, 1.0)
-            T = trust_scores.get(aid, 1.0)
-            R = regime_rel.get(aid, 0.7)
             C = float(output.confidence)
 
-            effective_weight = W * T * R
+            if use_resolved:
+                effective_weight = resolved_weights.get(aid, 0.1)
+                T = trust_scores.get(aid, 1.0)
+                W = effective_weight
+                R = 1.0
+            else:
+                W = base_weights.get(aid, 0.1) * weight_overrides.get(aid, 1.0)
+                T = trust_scores.get(aid, 1.0)
+                R = regime_rel.get(aid, 0.7)
+                effective_weight = W * T * R
 
             if output.directional_bias == candidate_dir:
                 contrib = effective_weight * C
@@ -175,8 +186,9 @@ class ConsensusEngine:
                 "bias": output.directional_bias,
                 "confidence": C,
                 "trust_score": T,
-                "base_weight": W,
+                "base_weight": round(W, 4),
                 "regime_relevance": R,
+                "effective_weight": round(effective_weight, 4),
                 "effective_contribution": round(contrib, 4),
             })
 
@@ -236,6 +248,20 @@ class ConsensusEngine:
         else:
             exec_mode = "WATCH"
 
+        # Apply disagreement gate (can only downgrade, never upgrade)
+        if disagreement_metrics is not None:
+            dg = disagreement_metrics.execution_gate
+            if dg == "BLOCKED":
+                exec_mode = "WATCH"
+                if decision not in ("NO_TRADE", "WEAK_SIGNAL"):
+                    decision = "WEAK_SIGNAL"
+            elif dg == "APPROVAL_ONLY" and exec_mode == "AUTO":
+                exec_mode = "APPROVAL"
+            # Score penalty for high disagreement
+            if disagreement_metrics.disagreement_index > 0.5:
+                penalty = (disagreement_metrics.disagreement_index - 0.5) * 0.3
+                final_score = round(max(0.0, final_score - penalty), 4)
+
         # Dissenters
         dissenting = [
             {"agent_id": o.agent_id, "bias": o.directional_bias,
@@ -269,6 +295,7 @@ class ConsensusEngine:
             agreement_pct=round(agreement_pct, 3),
             agent_contributions=contributions,
             dissenting_agents=dissenting,
+            disagreement=disagreement_metrics,
             regime=regime,
             regime_confidence=0.8,
             risk_flags=risk_flags,

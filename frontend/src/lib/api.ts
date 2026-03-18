@@ -44,12 +44,32 @@ class ApiClient {
   // Risk
   async getRiskDashboard() { return this.request<any>('/risk/dashboard'); }
 
-  // Execution
-  async killSwitch() { return this.request<any>('/execution/kill-switch', { method: 'POST' }); }
-
   // Learning
   async getStrategyFitness() { return this.request<any>('/learning/fitness'); }
   async emergencyRecalibrate() { return this.request<any>('/learning/emergency-recalibrate', { method: 'POST' }); }
+  async getTrustSummary() { return this.request<any>('/learning/trust-summary'); }
+  async getAgentLeaderboard() { return this.request<any>('/learning/agent-leaderboard'); }
+  async getTrustHistory(agentId?: string, limit: number = 50) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (agentId) params.set('agent_id', agentId);
+    return this.request<any>(`/learning/trust-history?${params}`);
+  }
+  async getCalibrationHistory(limit: number = 10) { return this.request<any>(`/learning/calibration-history?limit=${limit}`); }
+
+  // Consensus
+  async getDisagreementConfig() { return this.request<any>('/consensus/disagreement-config'); }
+  async getDynamicWeights(ac: string, regime?: string) {
+    const r = regime || 'RISK_ON';
+    return this.request<any>(`/consensus/weights-dynamic/${ac}?regime=${r}`);
+  }
+
+  // Execution
+  async killSwitch() { return this.request<any>('/execution/kill-switch', { method: 'POST' }); }
+  async getExecutionStatus() { return this.request<any>('/execution/status'); }
+  async getExecutionPolicyConfig() { return this.request<any>('/execution/policy-config'); }
+
+  // Regime
+  async getRegime() { return this.request<any>('/agents/regime'); }
 
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }

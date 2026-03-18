@@ -1,6 +1,7 @@
-"""Execution service API routes."""
+"""Execution service — real kill switch + policy config."""
 from fastapi import APIRouter, Depends, HTTPException
 from bahamut.auth.router import get_current_user
+from bahamut.execution.policy import PROFILE_LIMITS
 
 router = APIRouter()
 
@@ -8,12 +9,42 @@ router = APIRouter()
 async def kill_switch(user=Depends(get_current_user)):
     if user.role not in ("trader", "admin"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    # In production: close all positions, cancel orders, disable auto-trade
-    return {"status": "kill_switch_activated", "positions_closed": 0, "orders_cancelled": 0}
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            r = conn.execute(text("""
+                UPDATE paper_positions SET status='CLOSED_MANUAL', closed_at=NOW(),
+                exit_price=current_price,
+                realized_pnl=CASE WHEN direction='LONG' THEN (current_price-entry_price)*quantity
+                ELSE (entry_price-current_price)*quantity END
+                WHERE status='OPEN' RETURNING id
+            """))
+            closed = r.rowcount
+            conn.commit()
+        return {"status": "kill_switch_activated", "positions_closed": closed}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "positions_closed": 0}
 
 @router.get("/status")
 async def execution_status(user=Depends(get_current_user)):
-    return {"open_orders": 0, "pending_fills": 0, "broker_status": "healthy"}
+    from bahamut.database import sync_engine
+    from sqlalchemy import text
+    try:
+        with sync_engine.connect() as conn:
+            r = conn.execute(text("""
+                SELECT COUNT(*) FILTER (WHERE status='OPEN') as open,
+                       COUNT(*) FILTER (WHERE status='OPEN' AND opened_at > NOW()-INTERVAL '1 hour') as recent
+                FROM paper_positions
+            """)).mappings().first()
+            return {"open_positions": r["open"] if r else 0, "recent_opens_1h": r["recent"] if r else 0,
+                    "execution_mode": "PAPER", "policy_active": True}
+    except Exception:
+        return {"open_positions": 0, "execution_mode": "PAPER", "policy_active": True}
+
+@router.get("/policy-config")
+async def get_policy_config(user=Depends(get_current_user)):
+    return PROFILE_LIMITS
 
 @router.get("/health")
 async def health():

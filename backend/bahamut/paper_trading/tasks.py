@@ -135,6 +135,8 @@ def on_signal_complete(
     atr: float,
     agent_votes: dict,
     cycle_id: str = None,
+    execution_gate: str = "CLEAR",
+    disagreement_index: float = 0.0,
 ):
     """
     Hook called by orchestrator after every signal cycle completes.
@@ -150,7 +152,8 @@ def on_signal_complete(
     logger.info("paper_trading_signal_received",
                 asset=asset, direction=direction,
                 score=consensus_score, label=signal_label,
-                price=entry_price, atr=atr)
+                price=entry_price, atr=atr,
+                gate=execution_gate, disagree=disagreement_index)
 
     try:
         from bahamut.paper_trading.sync_executor import process_signal_sync
@@ -163,6 +166,8 @@ def on_signal_complete(
             atr=atr,
             agent_votes=agent_votes,
             cycle_id=cycle_id,
+            execution_gate=execution_gate,
+            disagreement_index=disagreement_index,
         )
         logger.info("paper_trading_signal_result",
                     asset=asset, action=result.get("action"),

@@ -58,6 +58,18 @@ class ConflictMap(BaseModel):
     unanimous: bool = False
 
 
+class DisagreementMetrics(BaseModel):
+    """Quantified disagreement among agents. Drives execution gating."""
+    disagreement_index: float = 0.0
+    contradiction_count: int = 0
+    challenge_severity: float = 0.0
+    directional_dispersion: float = 0.0
+    confidence_variance: float = 0.0
+    risk_rejection_penalty: float = 0.0
+    execution_gate: Literal["CLEAR", "APPROVAL_ONLY", "BLOCKED"] = "CLEAR"
+    gate_reasons: list[str] = []
+
+
 class TradePlanSchema(BaseModel):
     entry_price: Optional[float] = None
     entry_type: Literal["MARKET", "LIMIT", "STOP"] = "MARKET"
@@ -80,6 +92,7 @@ class ConsensusDecisionSchema(BaseModel):
     agent_contributions: list[dict]
     dissenting_agents: list[dict] = []
     challenges: list[dict] = []
+    disagreement: Optional[DisagreementMetrics] = None
     regime: str
     regime_confidence: float
     risk_flags: list[str] = []
