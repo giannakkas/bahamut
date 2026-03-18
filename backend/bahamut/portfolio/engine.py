@@ -220,6 +220,23 @@ def evaluate_trade_for_portfolio(
         verdict.size_multiplier *= 0.7
 
     # ═══════════════════════════════════
+    # 5. ADAPTIVE RULES (learned from history)
+    # ═══════════════════════════════════
+    try:
+        from bahamut.portfolio.learning import capture_portfolio_state, get_adaptive_adjustments
+        state = capture_portfolio_state()
+        adaptive = get_adaptive_adjustments(state)
+        if adaptive["size_mult"] != 1.0:
+            verdict.size_multiplier *= adaptive["size_mult"]
+            verdict.warnings.append(
+                f"ADAPTIVE: size ×{adaptive['size_mult']:.2f} ({len(adaptive['active_rules'])} rules)")
+        if adaptive["force_approval"]:
+            verdict.requires_approval = True
+            verdict.warnings.append("ADAPTIVE: approval required by learned pattern")
+    except Exception:
+        pass
+
+    # ═══════════════════════════════════
     # FINAL VERDICT
     # ═══════════════════════════════════
     verdict.size_multiplier = round(max(0.1, min(1.0, verdict.size_multiplier)), 3)

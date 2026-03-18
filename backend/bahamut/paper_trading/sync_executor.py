@@ -270,6 +270,23 @@ def process_signal_sync(
                      qty=round(qty, 6), risk=round(risk_amt, 2),
                      policy=decision.mode, size_mult=size_mult)
 
+            # Log portfolio state at entry for learning
+            try:
+                from bahamut.portfolio.learning import capture_portfolio_state, log_portfolio_decision
+                entry_state = capture_portfolio_state()
+                pos_row = conn.execute(text(
+                    "SELECT id FROM paper_positions WHERE cycle_id = :c ORDER BY opened_at DESC LIMIT 1"
+                ), {"c": cycle_id}).first()
+                if pos_row:
+                    log_portfolio_decision(
+                        position_id=pos_row[0], asset=asset, direction=direction,
+                        event_type="ENTRY", state=entry_state,
+                        consensus_score=consensus_score,
+                        portfolio_verdict_impact=portfolio_verdict.impact_score if portfolio_verdict else 0,
+                    )
+            except Exception:
+                pass
+
             return {
                 "action": "OPENED", "asset": asset, "direction": direction,
                 "entry_price": entry_price, "stop_loss": round(sl, 6),

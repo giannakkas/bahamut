@@ -85,6 +85,28 @@ async def get_realloc_log(limit: int = 20, user=Depends(get_current_user)):
     return get_reallocation_log(limit)
 
 
+@router.get("/adaptive-rules")
+async def get_adaptive_rules(user=Depends(get_current_user)):
+    """Get learned adaptive rules from portfolio patterns."""
+    from bahamut.portfolio.learning import get_all_rules
+    return get_all_rules()
+
+
+@router.get("/decision-log")
+async def get_decision_log_endpoint(limit: int = 20, user=Depends(get_current_user)):
+    """Get portfolio decision log (entry/exit events with state snapshots)."""
+    from bahamut.portfolio.learning import get_decision_log
+    return get_decision_log(limit)
+
+
+@router.post("/analyze-patterns")
+async def trigger_analysis(user=Depends(get_current_user)):
+    """Manually trigger portfolio pattern analysis."""
+    from bahamut.portfolio.learning import analyze_patterns
+    rules = analyze_patterns(lookback_days=30)
+    return [r.to_dict() for r in rules]
+
+
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "portfolio-intel-svc"}

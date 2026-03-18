@@ -280,6 +280,19 @@ async def process_closed_trade(closed_trade: dict) -> dict:
                          timing=timing_quality,
                          accuracy=round(perf.accuracy, 3))
 
+    # Log portfolio state at exit for portfolio learning
+    try:
+        from bahamut.portfolio.learning import capture_portfolio_state, log_portfolio_decision
+        exit_state = capture_portfolio_state()
+        log_portfolio_decision(
+            position_id=position_id, asset=asset, direction=direction,
+            event_type="EXIT", state=exit_state,
+            pnl=pnl, exit_status=closed_trade.get("status", ""),
+            consensus_score=closed_trade.get("consensus_score", 0),
+        )
+    except Exception:
+        pass
+
     return {
         "position_id": position_id,
         "asset": asset,

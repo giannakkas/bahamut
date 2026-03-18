@@ -21,11 +21,12 @@ export default function LearningLabPage() {
   const [portfolioFrag, setPortfolioFrag] = useState<any>(null);
   const [rankings, setRankings] = useState<any[]>([]);
   const [reallocLog, setReallocLog] = useState<any[]>([]);
+  const [adaptiveRules, setAdaptiveRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf, pr, rl] = await Promise.allSettled([
+      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf, pr, rl, ar] = await Promise.allSettled([
         api.getStrategyFitness(),
         api.getMetaEvaluation(),
         api.getTrustSummary(),
@@ -40,6 +41,7 @@ export default function LearningLabPage() {
         api.getPortfolioFragility(),
         api.getPortfolioRankings(),
         api.getReallocationLog(5),
+        api.getAdaptiveRules(),
       ]);
       if (f.status === 'fulfilled') setFitness(f.value);
       if (m.status === 'fulfilled') setMeta(m.value);
@@ -55,6 +57,7 @@ export default function LearningLabPage() {
       if (pf.status === 'fulfilled') setPortfolioFrag(pf.value);
       if (pr.status === 'fulfilled') setRankings(pr.value || []);
       if (rl.status === 'fulfilled') setReallocLog(rl.value || []);
+      if (ar.status === 'fulfilled') setAdaptiveRules(ar.value || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -421,6 +424,37 @@ export default function LearningLabPage() {
             </div>
           )}
         </div>
+
+        {/* Adaptive Portfolio Rules */}
+        {adaptiveRules.length > 0 && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Learned Portfolio Rules</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {adaptiveRules.map((r: any, i: number) => {
+                const isReductive = r.adjustment_type === 'size_mult' && r.adjustment_value < 1.0;
+                const isBoost = r.adjustment_type === 'size_mult' && r.adjustment_value > 1.0;
+                const border = isReductive ? 'border-accent-amber/30 bg-accent-amber/5' :
+                               isBoost ? 'border-accent-emerald/30 bg-accent-emerald/5' :
+                               r.adjustment_type === 'approval' ? 'border-accent-crimson/30 bg-accent-crimson/5' :
+                               'border-border-default';
+                return (
+                  <div key={i} className={`rounded border p-2 ${border}`}>
+                    <div className="text-[10px] text-text-muted">{r.pattern_key.replace(/_/g, ' ')}</div>
+                    <div className="flex items-baseline gap-1 mt-0.5">
+                      <span className={`text-sm font-mono font-semibold ${
+                        isReductive ? 'text-accent-amber' : isBoost ? 'text-accent-emerald' : 'text-accent-crimson'
+                      }`}>
+                        {r.adjustment_type === 'approval' ? 'APPROVAL' : `×${r.adjustment_value.toFixed(2)}`}
+                      </span>
+                      <span className="text-[9px] text-text-muted">WR:{(r.win_rate * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="text-[9px] text-text-muted mt-0.5">{r.sample_count} trades • conf {(r.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-5">
           {/* Readiness Checklist */}

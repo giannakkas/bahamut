@@ -1204,5 +1204,89 @@ class TestDynamicAllocator:
         assert MIN_UPGRADE_MARGIN >= 0.15  # at least 15% better
 
 
+# ══════════════════════════════════════
+# 18. PORTFOLIO LEARNING (10 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.learning import (
+    PortfolioStateSnapshot, AdaptiveRule, capture_portfolio_state,
+    get_adaptive_adjustments, _analyze_bucket, _check_rule_trigger,
+)
+
+class TestPortfolioLearning:
+
+    def test_snapshot_structure(self):
+        snap = PortfolioStateSnapshot(
+            position_count=3, gross_exposure=0.45, fragility=0.35)
+        d = snap.to_dict()
+        for k in ("position_count", "gross_exposure", "fragility",
+                   "concentration_risk", "directional_risk", "dominant_class"):
+            assert k in d
+
+    def test_adaptive_rule_structure(self):
+        r = AdaptiveRule(pattern_key="high_fragility", adjustment_type="size_mult",
+                          adjustment_value=0.7, sample_count=12, win_rate=0.30,
+                          confidence=0.6, active=True)
+        d = r.to_dict()
+        assert d["pattern_key"] == "high_fragility"
+        assert d["adjustment_value"] == 0.7
+
+    def test_capture_returns_snapshot(self):
+        snap = capture_portfolio_state()
+        assert isinstance(snap, PortfolioStateSnapshot)
+        assert snap.gross_exposure >= 0
+
+    def test_no_rules_returns_neutral(self):
+        snap = PortfolioStateSnapshot()
+        adj = get_adaptive_adjustments(snap)
+        assert adj["size_mult"] == 1.0
+        assert adj["force_approval"] is False
+
+    def test_rule_trigger_high_fragility(self):
+        r = AdaptiveRule(pattern_key="high_fragility")
+        snap = PortfolioStateSnapshot(fragility=0.7)
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(fragility=0.3)
+        assert _check_rule_trigger(r, snap2) is False
+
+    def test_rule_trigger_in_drawdown(self):
+        r = AdaptiveRule(pattern_key="in_drawdown")
+        snap = PortfolioStateSnapshot(portfolio_in_drawdown=True)
+        assert _check_rule_trigger(r, snap) is True
+
+    def test_rule_trigger_class_crowded(self):
+        r = AdaptiveRule(pattern_key="class_crowded")
+        snap = PortfolioStateSnapshot(dominant_class_pct=0.5)
+        assert _check_rule_trigger(r, snap) is True
+        snap2 = PortfolioStateSnapshot(dominant_class_pct=0.2)
+        assert _check_rule_trigger(r, snap2) is False
+
+    def test_analyze_bucket_losing(self):
+        """Bucket with low win rate should produce size reduction rule."""
+        paired = [{"entry": {"state": {}}, "exit": {}, "pnl": -50, "win": False}
+                  for _ in range(8)]
+        paired += [{"entry": {"state": {}}, "exit": {}, "pnl": 30, "win": True}
+                   for _ in range(2)]
+        rule = _analyze_bucket(paired, "test_pattern", key_fn=lambda p: True)
+        assert rule.sample_count == 10
+        assert rule.win_rate == 0.2
+        assert rule.adjustment_type == "size_mult"  # WR < 0.35 with 5+ samples → size reduction
+        assert rule.adjustment_value < 1.0
+
+    def test_analyze_bucket_winning(self):
+        """Bucket with high win rate should produce size boost rule."""
+        paired = [{"entry": {"state": {}}, "exit": {}, "pnl": 80, "win": True}
+                  for _ in range(7)]
+        paired += [{"entry": {"state": {}}, "exit": {}, "pnl": -30, "win": False}
+                   for _ in range(3)]
+        rule = _analyze_bucket(paired, "test_win", key_fn=lambda p: True)
+        assert rule.win_rate == 0.7
+        assert rule.adjustment_value > 1.0
+
+    def test_analyze_bucket_empty(self):
+        """Empty bucket should return rule with no samples."""
+        rule = _analyze_bucket([], "test_empty", key_fn=lambda p: True)
+        assert rule.sample_count == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -72,6 +72,17 @@ def run_daily_calibration() -> CalibrationResult:
     result.trades_analyzed = total
     result.notes = notes
     _save_calibration_run(result)
+
+    # Portfolio pattern analysis
+    try:
+        from bahamut.portfolio.learning import analyze_patterns
+        rules = analyze_patterns(lookback_days=30)
+        active_rules = [r for r in rules if r.active]
+        if active_rules:
+            notes.append(f"Portfolio learning: {len(active_rules)} adaptive rules active")
+    except Exception:
+        pass
+
     logger.info("daily_calibration", trades=total, notes=notes)
     return result
 

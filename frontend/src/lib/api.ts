@@ -98,6 +98,8 @@ class ApiClient {
   }
   async getPortfolioRankings() { return this.request<any>('/portfolio/rankings'); }
   async getReallocationLog(limit: number = 10) { return this.request<any>(`/portfolio/reallocation-log?limit=${limit}`); }
+  async getAdaptiveRules() { return this.request<any>('/portfolio/adaptive-rules'); }
+  async getPortfolioDecisionLog(limit: number = 10) { return this.request<any>(`/portfolio/decision-log?limit=${limit}`); }
 
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }
