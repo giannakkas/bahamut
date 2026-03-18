@@ -268,9 +268,32 @@ class AgentOrchestrator:
         except Exception as e:
             logger.error("paper_trading_hook_failed", error=str(e), traceback=True)
 
+        # Build full structured explanation
+        mean_trust = sum(trust_scores.get(a, 1.0) for a in
+                         ["technical_agent", "macro_agent", "sentiment_agent",
+                          "volatility_agent", "liquidity_agent"]) / 5
+        explanation_obj = None
+        try:
+            from bahamut.consensus.explainer import explain_decision
+            explanation_obj = explain_decision(
+                direction=decision.direction, label=decision.decision,
+                final_score=decision.final_score, mean_trust=mean_trust,
+                disagreement_index=disagreement_metrics.disagreement_index,
+                disagreement_gate=disagreement_metrics.execution_gate,
+                regime=regime, risk_flags=risk_output.meta.get("risk_flags", []),
+                risk_can_trade=risk_output.meta.get("can_trade", True),
+                system_confidence=sys_conf_value, agreement_pct=decision.agreement_pct,
+                trading_profile=trading_profile,
+                contributions=decision.agent_contributions,
+                blocked=decision.blocked, block_reason=decision.block_reason,
+            ).to_dict()
+        except Exception:
+            pass
+
         return {
             "cycle_id": str(cycle_id),
             "decision": decision.model_dump(),
+            "explanation": explanation_obj,
             "agent_outputs": [o.model_dump() for o in all_outputs],
             "challenges": [c.model_dump() for c in challenges],
             "conflict_map": conflict_map.model_dump(),

@@ -929,5 +929,83 @@ class TestStressAssessment:
         # Real compute deduplicates, but manual doesn't — that's OK, it's a data holder
 
 
+# ══════════════════════════════════════
+# 15. DECISION EXPLAINER (7 tests)
+# ══════════════════════════════════════
+from bahamut.consensus.explainer import explain_decision, DecisionExplanation
+
+class TestDecisionExplainer:
+
+    def test_positive_factors(self):
+        ex = explain_decision(
+            direction="LONG", label="SIGNAL", final_score=0.68,
+            mean_trust=1.32, disagreement_index=0.15, disagreement_gate="CLEAR",
+            regime="TREND_CONTINUATION", risk_flags=[], risk_can_trade=True,
+            agreement_pct=0.80)
+        positive = [f for f in ex.factors if f.impact == "positive"]
+        assert len(positive) >= 3, f"Expected ≥3 positive factors, got {len(positive)}"
+        assert ex.direction == "LONG"
+        assert "LONG" in ex.narrative
+
+    def test_blocked_explanation(self):
+        ex = explain_decision(
+            direction="NO_TRADE", label="BLOCKED", final_score=0.0,
+            mean_trust=0.3, disagreement_index=0.72, disagreement_gate="BLOCKED",
+            regime="CRISIS", risk_flags=[], risk_can_trade=True)
+        assert len(ex.blocked_flags) >= 1
+        assert "BLOCKED" in ex.narrative
+
+    def test_risk_veto_in_factors(self):
+        ex = explain_decision(
+            direction="NO_TRADE", label="BLOCKED", final_score=0.0,
+            mean_trust=1.0, disagreement_index=0.1, disagreement_gate="CLEAR",
+            regime="RISK_ON", risk_flags=["DAILY_DD"], risk_can_trade=False)
+        risk_factor = next(f for f in ex.factors if f.name == "risk")
+        assert risk_factor.impact == "blocking"
+
+    def test_system_confidence_factor(self):
+        ex = explain_decision(
+            direction="LONG", label="SIGNAL", final_score=0.6,
+            mean_trust=1.0, disagreement_index=0.2, disagreement_gate="CLEAR",
+            regime="RISK_ON", risk_flags=[], risk_can_trade=True,
+            system_confidence=0.30)
+        conf_factor = next(f for f in ex.factors if f.name == "system_confidence")
+        assert conf_factor.status == "low"
+        assert conf_factor.impact == "negative"
+
+    def test_calibration_overconfident_dissenters(self):
+        ex = explain_decision(
+            direction="LONG", label="SIGNAL", final_score=0.6,
+            mean_trust=1.0, disagreement_index=0.3, disagreement_gate="CLEAR",
+            regime="RISK_ON", risk_flags=[], risk_can_trade=True,
+            contributions=[
+                {"agent_id": "macro_agent", "confidence": 0.90, "effective_contribution": -0.05},
+            ])
+        cal_factor = next(f for f in ex.factors if f.name == "calibration")
+        assert cal_factor.status == "warning"
+
+    def test_to_dict_complete(self):
+        ex = explain_decision(
+            direction="LONG", label="SIGNAL", final_score=0.7,
+            mean_trust=1.0, disagreement_index=0.1, disagreement_gate="CLEAR",
+            regime="RISK_ON", risk_flags=[], risk_can_trade=True)
+        d = ex.to_dict()
+        for k in ("direction", "label", "factors", "blocked_flags", "narrative", "score_breakdown"):
+            assert k in d
+        assert isinstance(d["factors"], list)
+        assert len(d["factors"]) >= 4
+
+    def test_all_factor_names(self):
+        ex = explain_decision(
+            direction="LONG", label="SIGNAL", final_score=0.7,
+            mean_trust=1.1, disagreement_index=0.2, disagreement_gate="CLEAR",
+            regime="RISK_ON", risk_flags=[], risk_can_trade=True,
+            system_confidence=0.65, agreement_pct=0.75, contributions=[])
+        names = {f.name for f in ex.factors}
+        for expected in ("trust", "disagreement", "regime", "risk", "system_confidence",
+                          "calibration", "agreement"):
+            assert expected in names, f"Missing factor: {expected}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

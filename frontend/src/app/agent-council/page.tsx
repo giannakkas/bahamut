@@ -221,6 +221,42 @@ export default function AgentCouncilPage() {
           <div className="p-3 bg-accent-crimson/10 border border-accent-crimson/30 rounded-md text-accent-crimson text-sm">{cycleResult.error}</div>
         )}
 
+        {/* Decision Explanation */}
+        {cycleResult?.explanation && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-2">Decision Reasoning</h3>
+            <p className="text-xs text-text-secondary mb-3">{cycleResult.explanation.narrative}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {cycleResult.explanation.factors?.map((f: any, i: number) => {
+                const color = f.impact === 'positive' ? 'text-accent-emerald' :
+                              f.impact === 'negative' ? 'text-accent-amber' :
+                              f.impact === 'blocking' ? 'text-accent-crimson' : 'text-text-secondary';
+                const bg = f.impact === 'positive' ? 'bg-accent-emerald/5 border-accent-emerald/20' :
+                           f.impact === 'negative' ? 'bg-accent-amber/5 border-accent-amber/20' :
+                           f.impact === 'blocking' ? 'bg-accent-crimson/5 border-accent-crimson/20' :
+                           'bg-bg-primary border-border-default';
+                return (
+                  <div key={i} className={`rounded border p-2 ${bg}`}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] text-text-muted uppercase">{f.name}</span>
+                      <span className={`text-[10px] font-semibold ${color}`}>{f.status}</span>
+                    </div>
+                    {f.value !== 0 && <div className={`text-sm font-mono font-semibold ${color}`}>{f.value.toFixed(2)}</div>}
+                    <div className="text-[10px] text-text-muted mt-0.5 leading-tight">{f.detail}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {cycleResult.explanation.blocked_flags?.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-border-default">
+                {cycleResult.explanation.blocked_flags.map((f: string, i: number) => (
+                  <span key={i} className="text-[10px] font-mono text-accent-crimson mr-2">{f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Agent Outputs */}
         {agentOutputs.length > 0 && (
           <div className="bg-bg-secondary border border-border-default rounded-lg p-4">

@@ -143,6 +143,7 @@ class ConsensusEngine:
                     regime=regime, regime_confidence=0.5,
                     risk_flags=risk_flags, blocked=True,
                     block_reason=f"Risk Agent veto: {', '.join(risk_flags)}",
+                    explanation=f"Decision: NO_TRADE. BLOCKED — Risk Agent veto: {', '.join(risk_flags)}.",
                     execution_mode="WATCH", trading_profile=trading_profile,
                 )
 
@@ -311,6 +312,22 @@ class ConsensusEngine:
         # risk_flags already captured at top of function (risk veto returns early)
         cycle_id = directional_outputs[0].cycle_id if directional_outputs else uuid4()
 
+        # Build structured explanation
+        explanation_text = ""
+        try:
+            from bahamut.consensus.explainer import explain_decision
+            expl = explain_decision(
+                direction=candidate_dir, label=decision, final_score=final_score,
+                mean_trust=mean_trust, disagreement_index=disagreement_metrics.disagreement_index if disagreement_metrics else 0,
+                disagreement_gate=disagreement_metrics.execution_gate if disagreement_metrics else "CLEAR",
+                regime=regime, risk_flags=risk_flags, risk_can_trade=True,
+                system_confidence=system_confidence, agreement_pct=agreement_pct,
+                trading_profile=trading_profile, contributions=contributions,
+            )
+            explanation_text = expl.narrative
+        except Exception:
+            pass
+
         return ConsensusDecisionSchema(
             consensus_id=uuid4(),
             cycle_id=cycle_id,
@@ -327,6 +344,7 @@ class ConsensusEngine:
             risk_flags=risk_flags,
             blocked=False,
             block_reason=None,
+            explanation=explanation_text,
             execution_mode=exec_mode,
             trading_profile=trading_profile,
         )
