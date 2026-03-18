@@ -89,6 +89,14 @@ class ApiClient {
   // Readiness
   async getReadinessCheck() { return this.request<any>('/readiness/check'); }
 
+  // Portfolio Intelligence
+  async getPortfolioSnapshot() { return this.request<any>('/portfolio/snapshot'); }
+  async getPortfolioExposure() { return this.request<any>('/portfolio/exposure'); }
+  async getPortfolioFragility() { return this.request<any>('/portfolio/fragility'); }
+  async getPortfolioImpact(asset: string, direction: string = 'LONG') {
+    return this.request<any>(`/portfolio/evaluate-impact?asset=${asset}&direction=${direction}`);
+  }
+
   // Reports
   async getDailyBrief() { return this.request<any>('/reports/daily-brief'); }
   async getBreakingAlerts() { return this.request<any>("/agents/breaking-alerts"); }

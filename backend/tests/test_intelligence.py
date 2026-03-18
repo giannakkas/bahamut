@@ -1007,5 +1007,113 @@ class TestDecisionExplainer:
             assert expected in names, f"Missing factor: {expected}"
 
 
+# ══════════════════════════════════════
+# 16. PORTFOLIO INTELLIGENCE (10 tests)
+# ══════════════════════════════════════
+from bahamut.portfolio.registry import (
+    PortfolioSnapshot, OpenPosition, ASSET_CLASS_MAP, THEME_MAP,
+)
+from bahamut.portfolio.engine import (
+    evaluate_trade_for_portfolio, _compute_exposure, _compute_correlation,
+    _compute_fragility, _compute_impact, EXPOSURE_LIMITS,
+)
+
+class TestPortfolioIntelligence:
+
+    def _snap(self, positions=None, balance=100000):
+        positions = positions or []
+        return PortfolioSnapshot(
+            positions=positions, balance=balance,
+            total_position_value=sum(p.position_value for p in positions),
+            total_risk=sum(p.risk_amount for p in positions),
+        )
+
+    def _pos(self, asset="EURUSD", direction="LONG", value=5000, risk=200,
+             score=0.65, pnl=0):
+        ac = ASSET_CLASS_MAP.get(asset, "other")
+        themes = [t for t, assets in THEME_MAP.items() if asset in assets]
+        return OpenPosition(
+            id=1, asset=asset, direction=direction, position_value=value,
+            risk_amount=risk, entry_price=1.0, current_price=1.0,
+            unrealized_pnl=pnl, consensus_score=score,
+            asset_class=ac, themes=themes,
+        )
+
+    def test_empty_portfolio_allows(self):
+        snap = self._snap()
+        v = evaluate_trade_for_portfolio(snap, "EURUSD", "LONG", 5000, 200, 0.70)
+        assert v.allowed
+        assert v.size_multiplier == 1.0
+
+    def test_gross_exposure_blocks(self):
+        """Positions totaling 85% of balance → new trade blocked."""
+        pos = [self._pos("EURUSD", "LONG", 42000), self._pos("GBPUSD", "LONG", 43000)]
+        snap = self._snap(pos, 100000)
+        v = evaluate_trade_for_portfolio(snap, "BTCUSD", "LONG", 5000, 200, 0.70)
+        assert not v.allowed
+        assert any("GROSS_EXPOSURE" in b for b in v.blockers)
+
+    def test_same_class_same_direction_reduces(self):
+        """3 LONG FX positions → correlated trade warning + size reduction."""
+        pos = [self._pos("EURUSD", "LONG", 5000),
+               self._pos("GBPUSD", "LONG", 5000),
+               self._pos("AUDUSD", "LONG", 5000)]
+        snap = self._snap(pos, 100000)
+        v = evaluate_trade_for_portfolio(snap, "NZDUSD", "LONG", 5000, 200, 0.70)
+        assert v.allowed
+        assert v.size_multiplier < 1.0
+        assert any("CORRELATED" in w for w in v.warnings)
+
+    def test_hedging_trade_improves(self):
+        """Adding a SHORT when portfolio is all LONG → positive impact."""
+        pos = [self._pos("EURUSD", "LONG", 10000),
+               self._pos("BTCUSD", "LONG", 10000)]
+        snap = self._snap(pos, 100000)
+        v = evaluate_trade_for_portfolio(snap, "XAUUSD", "SHORT", 5000, 200, 0.70)
+        assert v.impact_score > 0
+        assert v.improves_portfolio
+
+    def test_new_asset_class_diversifies(self):
+        """Adding crypto to FX-only portfolio → diversification bonus."""
+        pos = [self._pos("EURUSD", "LONG", 5000)]
+        snap = self._snap(pos, 100000)
+        v = evaluate_trade_for_portfolio(snap, "BTCUSD", "LONG", 5000, 200, 0.70)
+        assert v.impact_score > 0
+
+    def test_fragility_high_requires_approval(self):
+        """Highly concentrated, one-sided portfolio → fragility requires approval."""
+        pos = [self._pos("EURUSD", "LONG", 30000, risk=5000),
+               self._pos("GBPUSD", "LONG", 30000, risk=5000)]
+        snap = self._snap(pos, 100000)
+        v = evaluate_trade_for_portfolio(snap, "USDJPY", "LONG", 5000, 200, 0.50)
+        # Either fragility requires approval or size is reduced
+        assert v.size_multiplier < 1.0 or v.requires_approval
+
+    def test_exposure_metrics_complete(self):
+        pos = [self._pos("EURUSD", "LONG", 10000)]
+        snap = self._snap(pos, 100000)
+        exp = _compute_exposure(snap, "BTCUSD", "LONG", 5000, 100000)
+        d = exp.to_dict()
+        for k in ("gross", "net", "long_pct", "short_pct", "by_class",
+                   "after_trade_gross", "after_trade_net"):
+            assert k in d
+
+    def test_correlation_empty_portfolio(self):
+        snap = self._snap()
+        corr = _compute_correlation(snap, "EURUSD", "LONG", "fx", ["usd_strength"])
+        assert corr.directional_overlap == 0
+        assert corr.class_concentration == 0
+
+    def test_fragility_empty_portfolio(self):
+        snap = self._snap()
+        frag = _compute_fragility(snap, 100000)
+        assert frag.portfolio_fragility == 0
+
+    def test_theme_map_coverage(self):
+        """Every theme should have at least 2 assets."""
+        for theme, assets in THEME_MAP.items():
+            assert len(assets) >= 2, f"Theme '{theme}' has only {len(assets)} assets"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -139,7 +139,8 @@ class ExecutionPolicy:
         approval = (not limits["auto_trade_allowed"]
                      or req.disagreement_gate == "APPROVAL_ONLY"
                      or req.execution_mode_from_consensus == "APPROVAL"
-                     or req.system_confidence < 0.40)
+                     or req.system_confidence < 0.40
+                     or "PORTFOLIO_FRAGILE" in req.risk_flags)
         mode = "PAPER_APPROVAL" if approval else "PAPER_AUTO"
         size_mult = max(0.1, min(1.0, size_mult))
 

@@ -76,6 +76,38 @@ def process_signal_sync(
                 "SELECT id FROM paper_positions WHERE portfolio_id = :p AND asset = :a AND status = 'OPEN'"
             ), {"p": pid, "a": asset}).first() is not None
 
+            # ── PORTFOLIO INTELLIGENCE — evaluates trade in portfolio context ──
+            portfolio_verdict = None
+            portfolio_size_mult = 1.0
+            try:
+                from bahamut.portfolio.registry import load_portfolio_snapshot
+                from bahamut.portfolio.engine import evaluate_trade_for_portfolio
+
+                snap = load_portfolio_snapshot()
+                # Estimate proposed position value
+                sl_est = (atr * 2.0) if atr > 0 else (entry_price * 0.01)
+                risk_est = balance * (risk_pct / 100.0)
+                qty_est = risk_est / sl_est if sl_est > 0 else 1
+                val_est = qty_est * entry_price
+
+                portfolio_verdict = evaluate_trade_for_portfolio(
+                    snapshot=snap,
+                    proposed_asset=asset,
+                    proposed_direction=direction,
+                    proposed_value=val_est,
+                    proposed_risk=risk_est,
+                    consensus_score=consensus_score,
+                )
+
+                if not portfolio_verdict.allowed:
+                    log.info("blocked_by_portfolio", blockers=portfolio_verdict.blockers)
+                    return {"action": "SKIP", "reason": portfolio_verdict.blockers[0],
+                            "blockers": portfolio_verdict.blockers, "gate": "PORTFOLIO"}
+
+                portfolio_size_mult = portfolio_verdict.size_multiplier
+            except Exception as e:
+                log.debug("portfolio_intel_skipped", error=str(e))
+
             # ── EXECUTION POLICY — authoritative gate ──
             # Compute system confidence (composite of trust stability,
             # disagreement trend, recent performance, calibration health)
@@ -89,13 +121,24 @@ def process_signal_sync(
             except Exception:
                 pass
 
+            # Feed portfolio intelligence into execution policy
+            augmented_flags = list(risk_flags)
+            if portfolio_verdict:
+                for w in portfolio_verdict.warnings:
+                    if "CORRELATED" in w or "CLASS_CONCENTRATION" in w:
+                        augmented_flags.append("HIGH_CORRELATION")
+                    if "THEME_CONCENTRATION" in w or "THEME_OVERLAP" in w:
+                        augmented_flags.append("HIGH_EXPOSURE")
+                if portfolio_verdict.requires_approval:
+                    augmented_flags.append("PORTFOLIO_FRAGILE")
+
             from bahamut.execution.policy import execution_policy, ExecutionRequest
             exec_req = ExecutionRequest(
                 asset=asset, direction=direction, consensus_score=consensus_score,
                 signal_label=signal_label,
                 execution_mode_from_consensus="AUTO" if signal_label == "STRONG_SIGNAL" else "APPROVAL",
                 disagreement_gate=execution_gate, disagreement_index=disagreement_index,
-                risk_flags=risk_flags,
+                risk_flags=augmented_flags,
                 risk_can_trade=risk_can_trade,
                 trading_profile=trading_profile,
                 open_position_count=open_count, has_position_in_asset=has_dup,
@@ -112,6 +155,12 @@ def process_signal_sync(
                         "blockers": decision.blockers, "policy_mode": decision.mode}
 
             size_mult = decision.position_size_multiplier
+
+            # Combine with portfolio intelligence sizing
+            if portfolio_size_mult < 1.0:
+                size_mult *= portfolio_size_mult
+                log.info("portfolio_sizing", policy_mult=decision.position_size_multiplier,
+                         portfolio_mult=portfolio_size_mult, combined=size_mult)
 
             # Calculate SL/TP
             if atr <= 0:

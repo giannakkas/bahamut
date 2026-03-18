@@ -17,11 +17,13 @@ export default function LearningLabPage() {
   const [stressScenarios, setStressScenarios] = useState<any[]>([]);
   const [stressResults, setStressResults] = useState<any[]>([]);
   const [stressRunning, setStressRunning] = useState<string | null>(null);
+  const [portfolioExp, setPortfolioExp] = useState<any>(null);
+  const [portfolioFrag, setPortfolioFrag] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [f, m, t, l, c, th, h, rd, ss, sh] = await Promise.allSettled([
+      const [f, m, t, l, c, th, h, rd, ss, sh, pe, pf] = await Promise.allSettled([
         api.getStrategyFitness(),
         api.getMetaEvaluation(),
         api.getTrustSummary(),
@@ -32,6 +34,8 @@ export default function LearningLabPage() {
         api.getReadinessCheck(),
         api.getStressScenarios(),
         api.getStressHistory(5),
+        api.getPortfolioExposure(),
+        api.getPortfolioFragility(),
       ]);
       if (f.status === 'fulfilled') setFitness(f.value);
       if (m.status === 'fulfilled') setMeta(m.value);
@@ -43,6 +47,8 @@ export default function LearningLabPage() {
       if (rd.status === 'fulfilled') setReadiness(rd.value);
       if (ss.status === 'fulfilled') setStressScenarios(ss.value);
       if (sh.status === 'fulfilled') setStressResults(sh.value);
+      if (pe.status === 'fulfilled') setPortfolioExp(pe.value);
+      if (pf.status === 'fulfilled') setPortfolioFrag(pf.value);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -283,6 +289,71 @@ export default function LearningLabPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Portfolio Intelligence */}
+        {(portfolioExp || portfolioFrag) && (
+          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Portfolio Intelligence</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {portfolioExp && (
+                <div>
+                  <div className="text-xs text-text-muted mb-2">Exposure</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Gross', val: portfolioExp.gross, limit: 0.80, color: portfolioExp.gross > 0.6 ? 'text-accent-amber' : 'text-accent-emerald' },
+                      { label: 'Net', val: Math.abs(portfolioExp.net), limit: 0.50, color: Math.abs(portfolioExp.net) > 0.3 ? 'text-accent-amber' : 'text-accent-emerald' },
+                      { label: 'Long', val: portfolioExp.long_pct, color: 'text-text-primary' },
+                      { label: 'Short', val: portfolioExp.short_pct, color: 'text-text-primary' },
+                    ].map((m, i) => (
+                      <div key={i} className="text-center">
+                        <div className="text-[10px] text-text-muted">{m.label}</div>
+                        <div className={`text-sm font-mono font-semibold ${m.color}`}>{(m.val * 100).toFixed(1)}%</div>
+                      </div>
+                    ))}
+                  </div>
+                  {Object.keys(portfolioExp.by_class || {}).length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-[10px] text-text-muted mb-1">By Class</div>
+                      {Object.entries(portfolioExp.by_class as Record<string, number>).map(([cls, val]) => (
+                        <div key={cls} className="flex justify-between text-xs py-0.5">
+                          <span className="text-text-muted">{cls}</span>
+                          <span className="font-mono">{(val * 100).toFixed(1)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {portfolioFrag && (
+                <div>
+                  <div className="text-xs text-text-muted mb-2">Fragility</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Overall', val: portfolioFrag.portfolio_fragility },
+                      { label: 'Concentration', val: portfolioFrag.concentration_risk },
+                      { label: 'Directional', val: portfolioFrag.directional_risk },
+                      { label: 'DD Proximity', val: portfolioFrag.drawdown_proximity },
+                    ].map((m, i) => {
+                      const color = m.val > 0.6 ? 'text-accent-crimson' : m.val > 0.4 ? 'text-accent-amber' : 'text-accent-emerald';
+                      return (
+                        <div key={i} className="text-center">
+                          <div className="text-[10px] text-text-muted">{m.label}</div>
+                          <div className={`text-sm font-mono font-semibold ${color}`}>{(m.val * 100).toFixed(0)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 text-center">
+                    <div className="text-[10px] text-text-muted">Avg Position Quality</div>
+                    <div className={`text-sm font-mono ${portfolioFrag.avg_position_quality > 0.6 ? 'text-accent-emerald' : 'text-accent-amber'}`}>
+                      {(portfolioFrag.avg_position_quality * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
