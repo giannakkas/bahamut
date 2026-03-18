@@ -15,9 +15,12 @@ def process_signal_sync(
     signal_label: str, entry_price: float, atr: float,
     agent_votes: dict, cycle_id: str = None,
     execution_gate: str = "CLEAR", disagreement_index: float = 0.0,
+    risk_flags: list = None, risk_can_trade: bool = True,
+    regime: str = "RISK_ON",
 ) -> dict:
     """Sync version of process_signal for Celery workers."""
     import json
+    risk_flags = risk_flags or []
 
     log = logger.bind(asset=asset, direction=direction, score=consensus_score)
 
@@ -87,11 +90,13 @@ def process_signal_sync(
                 signal_label=signal_label,
                 execution_mode_from_consensus="AUTO" if signal_label == "STRONG_SIGNAL" else "APPROVAL",
                 disagreement_gate=execution_gate, disagreement_index=disagreement_index,
-                risk_can_trade=execution_gate != "BLOCKED",
+                risk_flags=risk_flags,
+                risk_can_trade=risk_can_trade,
                 trading_profile="BALANCED",
                 open_position_count=open_count, has_position_in_asset=has_dup,
                 portfolio_balance=balance,
                 mean_agent_trust=mean_trust,
+                regime=regime,
             )
             decision = execution_policy.evaluate(exec_req)
 

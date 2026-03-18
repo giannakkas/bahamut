@@ -209,6 +209,9 @@ class AgentOrchestrator:
                     cycle_id=str(cycle_id),
                     execution_gate=disagreement_metrics.execution_gate,
                     disagreement_index=disagreement_metrics.disagreement_index,
+                    risk_flags=risk_output.meta.get("risk_flags", []),
+                    risk_can_trade=risk_output.meta.get("can_trade", True),
+                    regime=regime,
                 )
             else:
                 logger.info("paper_trading_hook_skipped",

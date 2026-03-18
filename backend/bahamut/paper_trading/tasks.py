@@ -148,11 +148,16 @@ def on_signal_complete(
     cycle_id: str = None,
     execution_gate: str = "CLEAR",
     disagreement_index: float = 0.0,
+    risk_flags: list = None,
+    risk_can_trade: bool = True,
+    regime: str = "RISK_ON",
 ):
     """
     Hook called by orchestrator after every signal cycle completes.
     Uses SYNC executor to avoid async event loop issues in Celery.
     """
+    risk_flags = risk_flags or []
+
     # Ensure tables exist
     try:
         from bahamut.agents.persistence import ensure_tables
@@ -164,7 +169,9 @@ def on_signal_complete(
                 asset=asset, direction=direction,
                 score=consensus_score, label=signal_label,
                 price=entry_price, atr=atr,
-                gate=execution_gate, disagree=disagreement_index)
+                gate=execution_gate, disagree=disagreement_index,
+                risk_flags=risk_flags, risk_can_trade=risk_can_trade,
+                regime=regime)
 
     try:
         from bahamut.paper_trading.sync_executor import process_signal_sync
@@ -179,6 +186,9 @@ def on_signal_complete(
             cycle_id=cycle_id,
             execution_gate=execution_gate,
             disagreement_index=disagreement_index,
+            risk_flags=risk_flags,
+            risk_can_trade=risk_can_trade,
+            regime=regime,
         )
         logger.info("paper_trading_signal_result",
                     asset=asset, action=result.get("action"),

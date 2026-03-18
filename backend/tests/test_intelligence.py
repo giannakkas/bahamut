@@ -175,6 +175,18 @@ class TestExecutionPolicy:
         d = self.pol.evaluate(self._req(mean_agent_trust=0.75))
         assert d.allowed and d.position_size_multiplier < 1.0
 
+    def test_risk_flags_reduce_size(self):
+        """HIGH_CORRELATION flag → position size reduced."""
+        d = self.pol.evaluate(self._req(risk_flags=["HIGH_CORRELATION"]))
+        assert d.allowed and d.position_size_multiplier < 1.0
+        assert any("CORR" in w for w in d.warnings)
+
+    def test_stale_data_blocks(self):
+        """STALE_DATA hard flag → blocked."""
+        d = self.pol.evaluate(self._req(risk_flags=["STALE_DATA"]))
+        assert not d.allowed
+        assert any("RISK_FLAGS" in b for b in d.blockers)
+
 
 # ══════════════════════════════════════
 # 3. DYNAMIC WEIGHTS (7 tests)
