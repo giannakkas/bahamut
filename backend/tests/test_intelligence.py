@@ -107,7 +107,8 @@ class TestExecutionPolicy:
                  risk_can_trade=True, trading_profile="BALANCED",
                  current_drawdown_daily=0.01, current_drawdown_weekly=0.02,
                  open_position_count=1, has_position_in_asset=False,
-                 portfolio_balance=100000, mean_agent_trust=1.0)
+                 portfolio_balance=100000, mean_agent_trust=1.0,
+                 system_confidence=0.7)
         d.update(kw)
         return ExecutionRequest(**d)
 
@@ -160,20 +161,26 @@ class TestExecutionPolicy:
         assert not d.allowed
 
     def test_low_trust_blocks(self):
-        """Mean trust < 0.5 → hard block."""
-        d = self.pol.evaluate(self._req(mean_agent_trust=0.4))
+        """System confidence < 0.25 → hard block."""
+        d = self.pol.evaluate(self._req(system_confidence=0.20))
         assert not d.allowed
-        assert any("LOW_TRUST" in b for b in d.blockers)
+        assert any("LOW_CONFIDENCE" in b for b in d.blockers)
 
     def test_moderate_trust_requires_approval(self):
-        """Mean trust 0.5-0.7 → requires approval even for STRONG_SIGNAL."""
-        d = self.pol.evaluate(self._req(mean_agent_trust=0.6))
+        """System confidence 0.25-0.40 → requires approval."""
+        d = self.pol.evaluate(self._req(system_confidence=0.35))
         assert d.allowed and d.requires_approval
 
     def test_slightly_low_trust_reduces_size(self):
-        """Mean trust 0.7-0.85 → position size reduced."""
-        d = self.pol.evaluate(self._req(mean_agent_trust=0.75))
+        """System confidence 0.40-0.60 → position size reduced."""
+        d = self.pol.evaluate(self._req(system_confidence=0.45))
         assert d.allowed and d.position_size_multiplier < 1.0
+
+    def test_trust_floor_still_blocks(self):
+        """Even with OK system_confidence, collapsed mean_trust blocks."""
+        d = self.pol.evaluate(self._req(system_confidence=0.70, mean_agent_trust=0.4))
+        assert not d.allowed
+        assert any("TRUST_FLOOR" in b for b in d.blockers)
 
     def test_risk_flags_reduce_size(self):
         """HIGH_CORRELATION flag → position size reduced."""
@@ -805,6 +812,61 @@ class TestReadinessChecklist:
         if r.fail_count > 2:
             r.overall = "NOT_READY"
         assert r.overall == "NOT_READY"
+
+
+# ══════════════════════════════════════
+# 13. SYSTEM CONFIDENCE (6 tests)
+# ══════════════════════════════════════
+from bahamut.consensus.system_confidence import (
+    ConfidenceBreakdown, compute_system_confidence, WEIGHTS,
+)
+
+class TestSystemConfidence:
+
+    def test_weights_sum_to_one(self):
+        total = sum(WEIGHTS.values())
+        assert abs(total - 1.0) < 0.001, f"Weights sum to {total}, not 1.0"
+
+    def test_breakdown_structure(self):
+        bd = ConfidenceBreakdown(system_confidence=0.65, trust_stability=0.8,
+                                  disagreement_trend=0.6, recent_performance=0.5,
+                                  calibration_health=0.7)
+        d = bd.to_dict()
+        for k in ("system_confidence", "trust_stability", "disagreement_trend",
+                   "recent_performance", "calibration_health", "mean_agent_trust"):
+            assert k in d
+
+    def test_confidence_bounded(self):
+        bd = ConfidenceBreakdown()
+        bd.system_confidence = (
+            WEIGHTS["trust_stability"] * 1.0
+            + WEIGHTS["disagreement_trend"] * 1.0
+            + WEIGHTS["recent_performance"] * 1.0
+            + WEIGHTS["calibration_health"] * 1.0
+        )
+        assert 0.99 <= bd.system_confidence <= 1.01
+
+    def test_all_bad_produces_low(self):
+        bd = ConfidenceBreakdown()
+        bd.system_confidence = (
+            WEIGHTS["trust_stability"] * 0.1
+            + WEIGHTS["disagreement_trend"] * 0.1
+            + WEIGHTS["recent_performance"] * 0.1
+            + WEIGHTS["calibration_health"] * 0.1
+        )
+        assert bd.system_confidence < 0.15
+
+    def test_compute_returns_breakdown(self):
+        """compute_system_confidence should return a ConfidenceBreakdown with all fields."""
+        bd = compute_system_confidence()
+        assert isinstance(bd, ConfidenceBreakdown)
+        assert 0.0 <= bd.system_confidence <= 1.0
+        assert bd.computed_at > 0
+
+    def test_mean_trust_backward_compat(self):
+        """mean_agent_trust should always be present for backward compat."""
+        bd = compute_system_confidence()
+        assert bd.mean_agent_trust > 0
 
 
 if __name__ == "__main__":

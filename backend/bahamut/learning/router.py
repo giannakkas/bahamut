@@ -107,6 +107,12 @@ async def meta_evaluation(user=Depends(get_current_user)):
         report = run_meta_evaluation()
     return report.to_dict()
 
+@router.get("/system-confidence")
+async def system_confidence(user=Depends(get_current_user)):
+    """Get composite system confidence breakdown."""
+    from bahamut.consensus.system_confidence import compute_system_confidence
+    return compute_system_confidence().to_dict()
+
 @router.get("/thresholds")
 async def get_thresholds(user=Depends(get_current_user)):
     """Get current runtime consensus thresholds (may differ from defaults)."""

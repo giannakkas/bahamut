@@ -186,11 +186,20 @@ class AgentOrchestrator:
             trust_scores=trust_scores, profile_weight_overrides=profile_overrides,
         )
 
+        # System confidence (composite metric)
+        sys_conf_value = None
+        try:
+            from bahamut.consensus.system_confidence import get_system_confidence
+            sys_conf_value = get_system_confidence().system_confidence
+        except Exception:
+            pass
+
         decision = consensus_engine.calculate(
             agent_outputs=all_outputs, asset_class=asset_class,
             regime=regime, trading_profile=trading_profile,
             trust_scores=trust_scores, resolved_weights=resolved_weights,
             disagreement_metrics=disagreement_metrics,
+            system_confidence=sys_conf_value,
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)

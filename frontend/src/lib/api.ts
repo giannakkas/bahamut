@@ -60,6 +60,7 @@ class ApiClient {
   }
   async getCalibrationHistory(limit: number = 10) { return this.request<any>(`/learning/calibration-history?limit=${limit}`); }
   async getMetaEvaluation() { return this.request<any>('/learning/meta-evaluation'); }
+  async getSystemConfidence() { return this.request<any>('/learning/system-confidence'); }
   async getThresholds() { return this.request<any>('/learning/thresholds'); }
   async resetThresholds() { return this.request<any>('/learning/reset-thresholds', { method: 'POST' }); }
 

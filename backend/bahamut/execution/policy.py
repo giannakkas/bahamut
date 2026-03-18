@@ -29,6 +29,7 @@ class ExecutionRequest:
     portfolio_balance: float = 100000.0
     regime: str = "RISK_ON"
     mean_agent_trust: float = 1.0       # avg trust of contributing agents
+    system_confidence: float = 0.5      # composite: trust stability + disagreement + perf + calib
 
 
 @dataclass
@@ -112,15 +113,20 @@ class ExecutionPolicy:
             size_mult *= 0.7
             warnings.append("EXPOSURE: size -30%")
 
-        # Trust-based constraints — agents collectively unreliable
+        # System confidence constraints (composite: trust + disagreement + perf + calib)
+        sc = req.system_confidence
+        if sc < 0.25:
+            blockers.append(f"LOW_CONFIDENCE: system={sc:.3f} < 0.25")
+        elif sc < 0.40:
+            warnings.append(f"LOW_CONFIDENCE: approval required (system={sc:.3f})")
+        elif sc < 0.60:
+            conf_size = 0.4 + sc  # 0.40→0.80, 0.50→0.90, 0.59→0.99
+            size_mult *= conf_size
+            warnings.append(f"CONFIDENCE: size x{conf_size:.2f} (system={sc:.3f})")
+
+        # Raw trust floor — even if system_confidence is OK, collapsed trust is dangerous
         if req.mean_agent_trust < 0.5:
-            blockers.append(f"LOW_TRUST: mean trust {req.mean_agent_trust:.2f} < 0.50")
-        elif req.mean_agent_trust < 0.7:
-            warnings.append(f"LOW_TRUST: approval required (mean={req.mean_agent_trust:.2f})")
-        elif req.mean_agent_trust < 0.85:
-            trust_size_factor = 0.5 + 0.5 * req.mean_agent_trust  # 0.85→0.925, 0.7→0.85
-            size_mult *= trust_size_factor
-            warnings.append(f"TRUST: size x{trust_size_factor:.2f} (mean={req.mean_agent_trust:.2f})")
+            blockers.append(f"TRUST_FLOOR: mean trust {req.mean_agent_trust:.2f} < 0.50")
 
         if blockers:
             return ExecutionDecision(allowed=False, mode="BLOCKED", reason=blockers[0],
@@ -133,7 +139,7 @@ class ExecutionPolicy:
         approval = (not limits["auto_trade_allowed"]
                      or req.disagreement_gate == "APPROVAL_ONLY"
                      or req.execution_mode_from_consensus == "APPROVAL"
-                     or req.mean_agent_trust < 0.7)
+                     or req.system_confidence < 0.40)
         mode = "PAPER_APPROVAL" if approval else "PAPER_AUTO"
         size_mult = max(0.1, min(1.0, size_mult))
 

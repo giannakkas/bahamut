@@ -110,6 +110,7 @@ class ConsensusEngine:
         weight_overrides: dict[str, float] = None,
         resolved_weights: dict[str, float] = None,
         disagreement_metrics: DisagreementMetrics = None,
+        system_confidence: float = None,
     ) -> ConsensusDecisionSchema:
         """
         Full consensus calculation. Returns a ConsensusDecisionSchema.
@@ -225,6 +226,14 @@ class ConsensusEngine:
             # Maps: trust 0.1 → factor 0.55, trust 0.5 → 0.75, trust 1.0 → 1.0
             trust_dampening = 0.5 + 0.5 * mean_trust
             raw_score *= trust_dampening
+
+        # ── Step 3c: System confidence dampening ──
+        # System confidence captures trust stability + disagreement trend +
+        # recent performance + calibration health. Low confidence = less aggressive signals.
+        if system_confidence is not None and system_confidence < 0.5:
+            # Maps: 0.0→0.60, 0.25→0.75, 0.50→1.0 (no dampening above 0.5)
+            conf_dampening = 0.6 + 0.8 * system_confidence
+            raw_score *= conf_dampening
 
         # ── Step 4: Agreement penalty ──
         # Agreement: only count agents with a directional opinion (not NEUTRAL)
