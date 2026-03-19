@@ -32,7 +32,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (!mounted) return <div className="min-h-screen bg-bg-primary" />;
 
   if (!isAuthenticated) {
-    if (typeof window !== 'undefined') window.location.href = '/login';
+    if (typeof window !== 'undefined') window.location.href = '/landing';
     return null;
   }
 
