@@ -9,16 +9,25 @@ import { useAlerts } from "@/lib/hooks";
 import { useOverrides } from "@/lib/hooks";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: "◉" },
-  { href: "/risk", label: "Risk & Kill Switch", icon: "⚡" },
-  { href: "/alerts", label: "Alerts", icon: "🔔" },
-  { href: "/audit", label: "Audit Log", icon: "📜" },
-  { href: "/learning", label: "Learning", icon: "🧬" },
-  { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
-  { href: "/users", label: "Users", icon: "👥" },
-  { href: "/config", label: "Configuration", icon: "⚙" },
-  { href: "/overrides", label: "Overrides", icon: "🎛" },
+  // Admin + Super Admin
+  { href: "/dashboard", label: "Dashboard", icon: "◉", minRole: "admin" },
+  { href: "/risk", label: "Risk & Kill Switch", icon: "⚡", minRole: "admin" },
+  { href: "/alerts", label: "Alerts", icon: "🔔", minRole: "admin" },
+  { href: "/audit", label: "Audit Log", icon: "📜", minRole: "admin" },
+  { href: "/learning", label: "Learning", icon: "🧬", minRole: "admin" },
+  { href: "/ai-opt", label: "AI Optimizer", icon: "🤖", minRole: "admin" },
+  { href: "/users", label: "Users", icon: "👥", minRole: "admin" },
+  // Super Admin only
+  { href: "/config", label: "Configuration", icon: "⚙", minRole: "super_admin" },
+  { href: "/overrides", label: "Overrides", icon: "🎛", minRole: "super_admin" },
+  { href: "/trust", label: "Trust & Intelligence", icon: "🧠", minRole: "super_admin" },
+  { href: "/adaptive-risk", label: "Adaptive Risk", icon: "📊", minRole: "super_admin" },
+  { href: "/agent-ranking", label: "Agent Ranking", icon: "🏆", minRole: "super_admin" },
 ];
+
+const ROLE_LEVELS: Record<string, number> = {
+  user: 0, viewer: 0, trader: 1, admin: 2, super_admin: 3,
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -28,6 +37,11 @@ export function Sidebar() {
 
   const activeAlerts = alerts?.filter((a) => !a.dismissed).length ?? 0;
   const activeOverrides = overrides?.length ?? 0;
+
+  // Get role from sessionStorage
+  const userRole = typeof window !== "undefined" ? sessionStorage.getItem("bah_user_role") || "admin" : "admin";
+  const userLevel = ROLE_LEVELS[userRole] ?? 0;
+  const visibleNav = NAV_ITEMS.filter((item) => userLevel >= (ROLE_LEVELS[item.minRole] ?? 0));
 
   return (
     <nav className="flex flex-col w-[220px] shrink-0 sticky top-0 h-screen overflow-y-auto border-r border-bah-border bg-gradient-to-b from-bah-surface to-bah-bg">
@@ -41,7 +55,7 @@ export function Sidebar() {
 
       {/* Nav Items */}
       <div className="py-2 flex-1">
-        {NAV_ITEMS.map((item) => {
+        {visibleNav.map((item) => {
           const active = pathname === item.href;
           return (
             <Link
@@ -78,6 +92,9 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-4 py-3 border-t border-bah-border/60 text-[10px] text-bah-muted">
         <EnvIndicator />
+        {userRole === "super_admin" && (
+          <div className="text-[9px] text-purple-400 font-semibold tracking-wider uppercase mt-1">⚡ Super Admin</div>
+        )}
         <div className="flex justify-between mt-2">
           <span>v1.0.0</span>
           <button

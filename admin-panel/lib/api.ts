@@ -234,13 +234,18 @@ export async function login(
     return { token, user: username };
   }
 
-  const data = await apiFetch<{ access_token: string; refresh_token: string; user: string }>(
+  const data = await apiFetch<{ access_token: string; refresh_token: string; user: any }>(
     "/auth/login",
     { method: "POST", body: JSON.stringify({ email: username, password }), skipAuth: true }
   );
   setToken(data.access_token);
   setRefreshToken(data.refresh_token);
-  return { token: data.access_token, user: data.user };
+  // Store role in sessionStorage for sidebar filtering
+  if (data.user && typeof data.user === 'object') {
+    sessionStorage.setItem("bah_user_role", data.user.role || "admin");
+    sessionStorage.setItem("bah_user_email", data.user.email || "");
+  }
+  return { token: data.access_token, user: typeof data.user === 'object' ? (data.user.full_name || data.user.email) : data.user };
 }
 
 export function logout(): void {
