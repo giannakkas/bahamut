@@ -138,14 +138,29 @@ async def evaluate_scenario(
 
 @router.get("/marginal-risk")
 async def get_marginal_risk(
-    asset: str, direction: str = "LONG", value: float = 5000,
+    asset: str = None, direction: str = "LONG", value: float = 5000,
     user=Depends(get_current_user),
 ):
-    """Compute marginal risk contribution of a proposed trade."""
+    """Compute marginal risk contribution of a proposed trade, or portfolio risk overview."""
     from bahamut.portfolio.registry import load_portfolio_snapshot
-    from bahamut.portfolio.marginal_risk import compute_marginal_risk
     snap = load_portfolio_snapshot()
     bal = snap.balance if snap.balance > 0 else 100000.0
+
+    if not asset:
+        # Return portfolio risk overview (no specific trade proposed)
+        from bahamut.portfolio.engine import _compute_fragility
+        frag = _compute_fragility(snap, bal)
+        return {
+            "portfolio_risk_overview": True,
+            "balance": bal,
+            "position_count": snap.position_count,
+            "total_risk": snap.total_risk,
+            "fragility": frag.to_dict(),
+            "risk_level": "HIGH" if frag.portfolio_fragility > 0.7 else
+                          "MEDIUM" if frag.portfolio_fragility > 0.4 else "LOW",
+        }
+
+    from bahamut.portfolio.marginal_risk import compute_marginal_risk
     return compute_marginal_risk(snap.positions, asset, direction, value, bal).to_dict()
 
 
