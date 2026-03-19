@@ -22,6 +22,23 @@ async def get_all_config(user=Depends(get_current_user)):
     return get_config_metadata()
 
 
+@router.get("/config/overrides")
+async def get_config_overrides(user=Depends(get_current_user)):
+    """Get only keys that differ from defaults — as array for frontend."""
+    from bahamut.admin.config import get_overrides
+    overrides_dict = get_overrides()
+    return [
+        {
+            "key": k,
+            "value": v,
+            "ttl": 0,
+            "created": "",
+            "expires": "",
+        }
+        for k, v in overrides_dict.items()
+    ]
+
+
 @router.get("/config/{key}")
 async def get_single_config(key: str, user=Depends(get_current_user)):
     """Get a single config value."""
@@ -43,24 +60,6 @@ async def reset_config_value(key: str, user=Depends(get_current_user)):
     """Reset a config key to its default."""
     from bahamut.admin.config import reset_config
     return reset_config(key, changed_by="admin")
-
-
-@router.get("/config/overrides")
-async def get_config_overrides(user=Depends(get_current_user)):
-    """Get only keys that differ from defaults — as array for frontend."""
-    from bahamut.admin.config import get_overrides
-    overrides_dict = get_overrides()
-    # Frontend expects ConfigOverride[] with {key, value, ttl, created, expires}
-    return [
-        {
-            "key": k,
-            "value": v,
-            "ttl": 0,
-            "created": "",
-            "expires": "",
-        }
-        for k, v in overrides_dict.items()
-    ]
 
 
 @router.get("/audit-log")
