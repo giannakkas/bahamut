@@ -63,13 +63,24 @@ export default function OverridesPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {overrides.map((o, i) => {
-            const expires = new Date(o.expires);
-            const now = new Date();
-            const remaining = Math.max(
-              0,
-              Math.floor((expires.getTime() - now.getTime()) / 60000)
-            );
+          {overrides.map((o: any, i: number) => {
+            const isPermanent = !o.expires || o.permanent;
+            let expiryText = "Permanent";
+            let expiryColor = "text-bah-muted";
+            if (!isPermanent) {
+              const expires = new Date(o.expires);
+              const now = new Date();
+              const remaining = Math.max(0, Math.floor((expires.getTime() - now.getTime()) / 60000));
+              if (isNaN(remaining)) {
+                expiryText = "Permanent";
+              } else if (remaining <= 0) {
+                expiryText = "Expired";
+                expiryColor = "text-bah-red";
+              } else {
+                expiryText = `${remaining}min remaining`;
+                expiryColor = remaining < 30 ? "text-bah-red" : "text-bah-amber";
+              }
+            }
 
             return (
               <Card
@@ -88,19 +99,17 @@ export default function OverridesPage() {
                         {String(o.value)}
                       </span>
                     </div>
-                    <div className="text-[10px] text-bah-muted mt-0.5">
-                      Reason: {o.reason}
-                    </div>
+                    {o.reason && (
+                      <div className="text-[10px] text-bah-muted mt-0.5">
+                        Reason: {o.reason}
+                      </div>
+                    )}
                     <div className="flex gap-3 mt-2">
                       <span className="text-[10px] text-bah-muted">
-                        Created: {fmtTime(o.created)}
+                        Created: {fmtTime(o.created) || "—"}
                       </span>
-                      <span
-                        className={`text-[10px] ${
-                          remaining < 30 ? "text-bah-red" : "text-bah-amber"
-                        }`}
-                      >
-                        Expires: {remaining}min remaining
+                      <span className={`text-[10px] ${expiryColor}`}>
+                        {expiryText}
                       </span>
                     </div>
                   </div>

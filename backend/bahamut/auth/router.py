@@ -227,12 +227,15 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me")
 async def get_me(user: User = Depends(get_current_user)):
+    from bahamut.auth.permissions import get_user_capabilities
+    caps = get_user_capabilities(user)
     return {
         "id": str(user.id),
         "email": user.email,
         "full_name": user.full_name,
         "role": user.role,
         "workspace_id": str(user.workspace_id),
+        "capabilities": caps,
     }
 
 

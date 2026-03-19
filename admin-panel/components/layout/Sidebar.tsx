@@ -10,14 +10,14 @@ import { useOverrides } from "@/lib/hooks";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "◉" },
-  { href: "/config", label: "Configuration", icon: "⚙" },
   { href: "/risk", label: "Risk & Kill Switch", icon: "⚡" },
+  { href: "/alerts", label: "Alerts", icon: "🔔" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
   { href: "/learning", label: "Learning", icon: "🧬" },
-  { href: "/overrides", label: "Overrides", icon: "🎛" },
-  { href: "/alerts", label: "Alerts", icon: "🔔" },
   { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
   { href: "/users", label: "Users", icon: "👥" },
+  { href: "/config", label: "Configuration", icon: "⚙" },
+  { href: "/overrides", label: "Overrides", icon: "🎛" },
 ];
 
 export function Sidebar() {

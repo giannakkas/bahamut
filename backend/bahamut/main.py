@@ -41,6 +41,18 @@ async def lifespan(app: FastAPI):
         init_schema()
     except Exception as e:
         logger.error("schema_init_failed", error=str(e))
+    # Ensure super admin role for allowed emails
+    try:
+        from bahamut.db.query import run_transaction
+        from bahamut.auth.permissions import SUPER_ADMIN_EMAILS
+        for email in SUPER_ADMIN_EMAILS:
+            run_transaction(
+                "UPDATE users SET role = 'super_admin' WHERE email = :e AND role != 'super_admin'",
+                {"e": email}
+            )
+        logger.info("super_admin_check_complete")
+    except Exception as e:
+        logger.debug("super_admin_promotion_skipped", error=str(e))
     # Load persisted threshold overrides
     try:
         from bahamut.learning.thresholds import load_persisted_thresholds

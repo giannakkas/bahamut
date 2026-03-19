@@ -4,6 +4,7 @@ logger = structlog.get_logger()
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from bahamut.auth.router import get_current_user
+from bahamut.auth.permissions import require_admin, require_super_admin, is_super_admin, is_admin_or_above
 from bahamut.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,13 +28,26 @@ async def get_config_overrides(user=Depends(get_current_user)):
     """Get only keys that differ from defaults — as array for frontend."""
     from bahamut.admin.config import get_overrides
     overrides_dict = get_overrides()
+
+    # Get timestamps from DB
+    timestamps = {}
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("SELECT key, updated_at FROM admin_config")
+        for r in rows:
+            timestamps[r["key"]] = str(r.get("updated_at", ""))
+    except Exception:
+        pass
+
     return [
         {
             "key": k,
             "value": v,
             "ttl": 0,
-            "created": "",
-            "expires": "",
+            "reason": "Manual override",
+            "created": timestamps.get(k, ""),
+            "expires": "",  # permanent — no expiry
+            "permanent": True,
         }
         for k, v in overrides_dict.items()
     ]
@@ -50,13 +64,16 @@ async def get_single_config(key: str, user=Depends(get_current_user)):
 
 @router.post("/config")
 async def set_config_value(body: ConfigUpdate, user=Depends(get_current_user)):
-    """Set a config value (persisted, audited)."""
+    """Set a config value (super_admin only — persisted, audited)."""
+    require_super_admin(user)
     from bahamut.admin.config import set_config
-    return set_config(body.key, body.value, changed_by="admin")
+    return set_config(body.key, body.value, changed_by=user.email)
 
 
 @router.post("/config/reset/{key}")
 async def reset_config_value(key: str, user=Depends(get_current_user)):
+    """Reset a config key to default (super_admin only)."""
+    require_super_admin(user)
     """Reset a config key to its default."""
     from bahamut.admin.config import reset_config
     return reset_config(key, changed_by="admin")
@@ -192,6 +209,13 @@ async def admin_summary(user=Depends(get_current_user)):
     except Exception as e:
         logger.warning("admin_summary_overrides_error", error=str(e))
 
+    # Warmup status
+    try:
+        from bahamut.warmup import get_warmup_status
+        summary["warmup"] = get_warmup_status()
+    except Exception:
+        summary["warmup"] = {"mode": "unknown"}
+
     return summary
 
 
@@ -315,26 +339,49 @@ async def get_learning_patterns(user=Depends(get_current_user)):
 
 @router.get("/alerts")
 async def get_alerts(user=Depends(get_current_user)):
-    """Get system alerts from degraded subsystems and recent events."""
+    """Get system alerts with human-readable messages and deduplication."""
     alerts = []
     alert_id = 0
+    seen_keys = set()
+
+    # Human-readable message templates
+    ALERT_MESSAGES = {
+        "portfolio.kill_switch": "Kill switch active: portfolio risk exceeded safety threshold",
+        "portfolio.scenario_risk": "Scenario risk engine unavailable — trades require manual approval",
+        "portfolio.marginal_risk": "Marginal risk engine unavailable — conservative sizing enforced",
+        "auth.revocation": "Token revocation system degraded — authentication may be affected",
+        "schema.version": "Database schema version mismatch — deployment issue detected",
+        "portfolio.adaptive_rules": "Adaptive trading rules unavailable — using default parameters",
+        "portfolio.quality_ratio": "Quality ratio engine unavailable — reduced position sizing",
+    }
+
     try:
         from bahamut.shared.degraded import get_degraded_flags
+        import time
         flags = get_degraded_flags()
         for subsystem, info in flags.items():
+            if subsystem in seen_keys:
+                continue
+            seen_keys.add(subsystem)
             alert_id += 1
             critical = subsystem in {"portfolio.kill_switch", "portfolio.scenario_risk",
                                       "auth.revocation", "schema.version"}
+            since = info.get("since", 0)
+            age_min = round((time.time() - since) / 60) if since else 0
             alerts.append({
                 "id": alert_id,
                 "type": "critical" if critical else "warning",
-                "message": f"{subsystem}: {info.get('reason', 'degraded')}",
+                "message": ALERT_MESSAGES.get(subsystem,
+                    f"{subsystem.replace('.', ' ').title()}: {info.get('reason', 'degraded')[:80]}"),
                 "timestamp": str(info.get("since", "")),
+                "subsystem": subsystem,
+                "age_minutes": age_min,
+                "severity": "critical" if critical else "warning",
             })
     except Exception:
         pass
 
-    # Add recent kill switch events
+    # Recent kill switch events (deduplicated by event_type)
     try:
         from bahamut.db.query import run_query
         events = run_query("""
@@ -342,11 +389,26 @@ async def get_alerts(user=Depends(get_current_user)):
             FROM kill_switch_events ORDER BY created_at DESC LIMIT 5
         """)
         for ev in events:
+            event_key = ev.get("event_type", "")
+            if event_key in seen_keys:
+                continue
+            seen_keys.add(event_key)
+            detail = ev.get("detail", "")
+            # Parse tail_risk value for human-readable message
+            msg = f"Kill switch triggered: {event_key}"
+            if "tail_risk" in detail:
+                try:
+                    val = float(detail.split("=")[1][:6])
+                    msg = f"Kill switch triggered: tail risk {val:.1%} exceeded threshold"
+                except Exception:
+                    pass
             alerts.append({
                 "id": 1000 + ev.get("id", 0),
-                "type": "critical" if "kill" in ev.get("event_type", "") else "warning",
-                "message": f"{ev.get('event_type', '')}: {ev.get('detail', '')[:100]}",
+                "type": "critical",
+                "message": msg,
                 "timestamp": str(ev.get("created_at", "")),
+                "subsystem": "kill_switch",
+                "severity": "critical",
             })
     except Exception:
         pass
@@ -402,3 +464,90 @@ async def get_ai_suggestions(user=Depends(get_current_user)):
         logger.warning("ai_optimize_error", error=str(e))
 
     return suggestions
+
+
+# ─── Simplified User Controls ───
+
+class UserControlUpdate(BaseModel):
+    control: str  # risk_mode, trading_mode, safety_mode
+    value: str    # conservative, balanced, aggressive, manual, approval, auto, on, off
+
+
+@router.post("/user-controls")
+async def set_user_control(body: UserControlUpdate, user=Depends(get_current_user)):
+    """Set a simplified user control — maps to backend config safely."""
+    from bahamut.config_defaults import USER_CONTROL_MAPPINGS
+    from bahamut.admin.config import set_config
+
+    if body.control not in USER_CONTROL_MAPPINGS:
+        raise HTTPException(status_code=400, detail=f"Unknown control: {body.control}")
+
+    mapping = USER_CONTROL_MAPPINGS[body.control]
+    if body.value not in mapping:
+        raise HTTPException(status_code=400, detail=f"Invalid value '{body.value}' for {body.control}")
+
+    config_changes = mapping[body.value]
+    results = {}
+    for key, value in config_changes.items():
+        result = set_config(key, value, changed_by=user.email)
+        results[key] = result
+
+    return {"status": "ok", "control": body.control, "value": body.value,
+            "config_applied": list(config_changes.keys())}
+
+
+@router.get("/user-controls")
+async def get_user_controls(user=Depends(get_current_user)):
+    """Get current simplified control states."""
+    from bahamut.admin.config import get_config
+    return {
+        "risk_mode": _detect_risk_mode(get_config),
+        "trading_mode": _detect_trading_mode(get_config),
+        "safety_mode": "on" if get_config("safe_mode.enabled", False) else "off",
+    }
+
+
+def _detect_risk_mode(get_config):
+    threshold = get_config("confidence.min_trade", 0.58)
+    if threshold >= 0.70:
+        return "conservative"
+    elif threshold <= 0.50:
+        return "aggressive"
+    return "balanced"
+
+
+def _detect_trading_mode(get_config):
+    auto = get_config("execution.auto_trade", True)
+    approval = get_config("execution.require_approval", False)
+    if not auto:
+        return "manual"
+    if approval:
+        return "approval"
+    return "auto"
+
+
+# ─── Super Admin: Upgrade user to super_admin ───
+
+@router.post("/users/{user_id}/role")
+async def set_user_role(user_id: str, body: dict, user=Depends(get_current_user), db=Depends(get_db)):
+    """Change a user's role (super_admin only for super_admin role assignment)."""
+    new_role = body.get("role", "")
+    if new_role not in ("user", "viewer", "trader", "admin", "super_admin"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    # Only super_admin can assign super_admin or admin roles
+    if new_role in ("super_admin", "admin"):
+        require_super_admin(user)
+    else:
+        require_admin(user)
+
+    from sqlalchemy import select
+    from bahamut.models import User
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target.role = new_role
+    await db.commit()
+    return {"status": "role_updated", "email": target.email, "role": new_role}

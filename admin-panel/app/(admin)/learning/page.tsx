@@ -33,13 +33,29 @@ export default function LearningPage() {
   if (patterns.length === 0) {
     return (
       <div>
-        <TopBar title="Learning Insights" />
-        <Card>
-          <EmptyState
-            icon="🧬"
-            title="No learned patterns yet"
-            description="The system will detect patterns as it processes more market data"
-          />
+        <TopBar title="Learning Insights">
+          <Badge color="#f59e0b">Warming Up</Badge>
+        </TopBar>
+        <Card glowColor="#8b5cf6">
+          <div className="text-center py-8">
+            <div className="text-4xl mb-3">🧬</div>
+            <div className="text-lg font-semibold text-bah-heading mb-2">
+              System is Learning
+            </div>
+            <div className="text-sm text-bah-muted max-w-md mx-auto mb-6">
+              Bahamut is analyzing market data and building trading patterns.
+              This process requires real trading history to calibrate properly.
+            </div>
+            <div className="max-w-sm mx-auto space-y-3">
+              <WarmupBar label="Closed Trades" current={0} required={20} />
+              <WarmupBar label="Learning Samples" current={0} required={50} />
+              <WarmupBar label="Calibration Age" current={0} required={3} unit="days" />
+            </div>
+            <div className="text-xs text-bah-muted mt-6">
+              Patterns will appear here automatically as the system gathers enough data.
+              <br />No action needed — the engine is working in the background.
+            </div>
+          </div>
         </Card>
       </div>
     );
@@ -184,6 +200,30 @@ export default function LearningPage() {
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function WarmupBar({ label, current, required, unit = "" }: { 
+  label: string; current: number; required: number; unit?: string 
+}) {
+  const pctVal = Math.min(100, Math.round((current / required) * 100));
+  const met = current >= required;
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-bah-muted">{label}</span>
+        <span className={met ? "text-green-400" : "text-bah-subtle"}>
+          {current}{unit ? ` ${unit}` : ""} / {required}{unit ? ` ${unit}` : ""}
+          {met && " ✓"}
+        </span>
+      </div>
+      <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${met ? "bg-green-400" : "bg-bah-purple"}`}
+          style={{ width: `${pctVal}%` }}
+        />
+      </div>
     </div>
   );
 }

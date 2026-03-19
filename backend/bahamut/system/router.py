@@ -103,6 +103,13 @@ async def system_health():
     except Exception:
         checks["celery_queue"] = {"backlog": "unavailable"}
 
+    # ── Warmup status ──
+    try:
+        from bahamut.warmup import get_warmup_status
+        checks["warmup"] = get_warmup_status()
+    except Exception as e:
+        checks["warmup"] = {"mode": "unknown", "error": str(e)[:80]}
+
     # ── Overall ──
     db_ok = checks.get("db", {}).get("status") == "ok"
     redis_ok = checks.get("redis", {}).get("status") == "ok"
