@@ -243,7 +243,7 @@ class CreateUserRequest(BaseModel):
 @router.get("/users")
 async def list_users(user=Depends(get_current_user), db=Depends(get_db)):
     """List all users (admin only)."""
-    if user.role != "admin":
+    if not is_admin_or_above(user):
         raise HTTPException(status_code=403, detail="Admin only")
     from sqlalchemy import select
     from bahamut.models import User
@@ -263,7 +263,7 @@ async def list_users(user=Depends(get_current_user), db=Depends(get_db)):
 @router.post("/users")
 async def create_user(req: CreateUserRequest, user=Depends(get_current_user), db=Depends(get_db)):
     """Create a new user (admin only). No invite code needed."""
-    if user.role != "admin":
+    if not is_admin_or_above(user):
         raise HTTPException(status_code=403, detail="Admin only")
     from sqlalchemy import select
     from bahamut.models import User
@@ -295,7 +295,7 @@ async def create_user(req: CreateUserRequest, user=Depends(get_current_user), db
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, user=Depends(get_current_user), db=Depends(get_db)):
     """Deactivate a user (admin only). Cannot delete yourself."""
-    if user.role != "admin":
+    if not is_admin_or_above(user):
         raise HTTPException(status_code=403, detail="Admin only")
     if str(user.id) == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
