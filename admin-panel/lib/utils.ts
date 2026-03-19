@@ -7,13 +7,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** Format number to fixed decimals */
-export function fmt(n: number | string | boolean, d = 2): string {
-  if (typeof n === "number") return n.toFixed(d);
+export function fmt(n: number | string | boolean | null | undefined, d = 2): string {
+  if (n == null) return "0";
+  if (typeof n === "number") return isNaN(n) ? "0" : n.toFixed(d);
   return String(n);
 }
 
 /** Format as percentage string */
 export function pct(n: number): string {
+  if (n == null || isNaN(n)) return "0.0%";
   return `${(n * 100).toFixed(1)}%`;
 }
 
@@ -31,6 +33,7 @@ export function fmtTime(iso: string | null | undefined): string {
 
 /** Format money with $ and commas */
 export function fmtMoney(n: number): string {
+  if (n == null || isNaN(n)) return "$0.00";
   return `$${n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

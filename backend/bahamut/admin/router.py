@@ -63,12 +63,12 @@ async def get_audit(limit: int = 50, user=Depends(get_current_user)):
 async def admin_summary(user=Depends(get_current_user)):
     """Read-only system summary for admin dashboard."""
     summary = {
-        "kill_switch": {"active": False, "triggers": [], "last_triggered": None},
-        "safe_mode": {"active": False},
+        "kill_switch": {"active": False, "reason": None, "triggers": [], "last_triggered": None},
+        "safe_mode": {"active": False, "level": 0},
         "risk_level": "LOW",
         "last_cycle": None,
         "readiness": {"score": 0.5, "grade": "C", "overall": "WARN",
-                      "components": {}, "pass": 0, "warn": 0, "fail": 0},
+                      "components": {"data": 0.5, "model": 0.5, "market": 0.5}, "pass": 0, "warn": 0, "fail": 0},
         "system_confidence": {},
         "confidence": {"score": 0.5, "trend": "stable", "history": []},
         "config_overrides_count": 0,
@@ -86,11 +86,13 @@ async def admin_summary(user=Depends(get_current_user)):
         ks = get_current_state()
         summary["kill_switch"] = {
             "active": ks.get("kill_switch_active", False),
+            "reason": ks.get("triggers", [None])[0] if ks.get("triggers") else None,
             "triggers": ks.get("triggers", []),
             "last_triggered": None,
         }
         summary["safe_mode"] = {
             "active": ks.get("safe_mode_active", False),
+            "level": 1 if ks.get("safe_mode_active") else 0,
         }
     except Exception as e:
         logger.warning("admin_summary_kill_switch_error", error=str(e))
@@ -102,9 +104,8 @@ async def admin_summary(user=Depends(get_current_user)):
         total = r.pass_count + r.warn_count + r.fail_count
         score = r.pass_count / total if total > 0 else 0
         grade = "A" if score >= 0.9 else "B" if score >= 0.7 else "C" if score >= 0.5 else "D"
-        components = {}
-        for c in getattr(r, 'checks', []):
-            components[c.get("name", "unknown")] = c.get("status", "unknown")
+        # Dashboard expects {data: number, model: number, market: number}
+        components = {"data": round(score, 2), "model": round(score, 2), "market": round(score, 2)}
         summary["readiness"] = {
             "overall": r.overall, "score": round(score, 2), "grade": grade,
             "pass": r.pass_count, "warn": r.warn_count, "fail": r.fail_count,
