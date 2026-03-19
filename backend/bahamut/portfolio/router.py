@@ -154,10 +154,14 @@ async def get_marginal_risk(
             "portfolio_risk_overview": True,
             "balance": bal,
             "position_count": snap.position_count,
-            "total_risk": snap.total_risk,
+            "total_risk": round(snap.total_risk / bal, 4) if bal > 0 else 0,
+            "expected_return": 0,
+            "quality_ratio": round(1.0 - frag.portfolio_fragility, 2),
             "fragility": frag.to_dict(),
             "risk_level": "HIGH" if frag.portfolio_fragility > 0.7 else
                           "MEDIUM" if frag.portfolio_fragility > 0.4 else "LOW",
+            "contributors": [],
+            "scenarios": [],
         }
 
     from bahamut.portfolio.marginal_risk import compute_marginal_risk

@@ -63,28 +63,39 @@ async def get_audit(limit: int = 50, user=Depends(get_current_user)):
 async def admin_summary(user=Depends(get_current_user)):
     """Read-only system summary for admin dashboard."""
     summary = {
-        "kill_switch": {"active": False},
+        "kill_switch": {"active": False, "triggers": [], "last_triggered": None},
         "safe_mode": {"active": False},
         "risk_level": "LOW",
         "last_cycle": None,
-        "readiness": {"score": 0.5, "grade": "C", "components": {},
-                      "pass": 0, "warn": 0, "fail": 0},
+        "readiness": {"score": 0.5, "grade": "C", "overall": "WARN",
+                      "components": {}, "pass": 0, "warn": 0, "fail": 0},
         "system_confidence": {},
+        "confidence": {"score": 0.5, "trend": "stable", "history": []},
         "config_overrides_count": 0,
+        "portfolio_value": 100000.0,
+        "daily_pnl": 0.0,
+        "daily_pnl_pct": 0.0,
+        "open_positions": 0,
+        "agents_active": 6,
+        "active_constraints": 0,
     }
+
+    # Kill switch + safe mode
     try:
         from bahamut.portfolio.kill_switch import get_current_state
         ks = get_current_state()
         summary["kill_switch"] = {
             "active": ks.get("kill_switch_active", False),
             "triggers": ks.get("triggers", []),
+            "last_triggered": None,
         }
         summary["safe_mode"] = {
             "active": ks.get("safe_mode_active", False),
         }
     except Exception as e:
-        logger.warning("admin_silent_error", error=str(e))
+        logger.warning("admin_summary_kill_switch_error", error=str(e))
 
+    # Readiness
     try:
         from bahamut.readiness.checklist import run_readiness_check
         r = run_readiness_check()
@@ -100,8 +111,9 @@ async def admin_summary(user=Depends(get_current_user)):
             "components": components,
         }
     except Exception as e:
-        logger.warning("admin_silent_error", error=str(e))
+        logger.warning("admin_summary_readiness_error", error=str(e))
 
+    # Last cycle
     try:
         from bahamut.db.query import run_query_one
         row = run_query_one("SELECT completed_at FROM signal_cycles ORDER BY completed_at DESC LIMIT 1")
@@ -110,27 +122,52 @@ async def admin_summary(user=Depends(get_current_user)):
     except Exception:
         pass
 
+    # Portfolio stats
+    try:
+        from bahamut.db.query import run_query_one, run_query
+        pf = run_query_one("SELECT current_balance, total_pnl FROM paper_portfolios WHERE name = 'SYSTEM_DEMO'")
+        if pf:
+            summary["portfolio_value"] = float(pf.get("current_balance", 100000))
+            summary["daily_pnl"] = float(pf.get("total_pnl", 0))
+            summary["daily_pnl_pct"] = round(summary["daily_pnl"] / max(summary["portfolio_value"], 1) * 100, 2)
+        pos = run_query_one("SELECT COUNT(*) as cnt FROM paper_positions WHERE status = 'OPEN'")
+        if pos:
+            summary["open_positions"] = int(pos.get("cnt", 0))
+    except Exception as e:
+        logger.warning("admin_summary_portfolio_error", error=str(e))
+
+    # Risk level from degraded flags
     try:
         from bahamut.shared.degraded import get_degraded_flags
         flags = get_degraded_flags()
         critical = {"portfolio.kill_switch", "portfolio.scenario_risk", "auth.revocation"}
         has_critical = any(k in critical for k in flags)
         summary["risk_level"] = "HIGH" if has_critical else "MEDIUM" if flags else "LOW"
+        summary["active_constraints"] = len(flags)
     except Exception:
         pass
 
+    # System confidence
     try:
         from bahamut.consensus.system_confidence import get_system_confidence
         bd = get_system_confidence()
-        summary["system_confidence"] = bd.to_dict()
+        sc = bd.to_dict()
+        summary["system_confidence"] = sc
+        summary["confidence"] = {
+            "score": sc.get("composite_score", 0.5),
+            "trend": sc.get("trend", "stable"),
+            "history": sc.get("history", []),
+        }
     except Exception as e:
-        logger.warning("admin_silent_error", error=str(e))
-        summary["system_confidence"] = {"error": "unavailable"}
+        logger.warning("admin_summary_confidence_error", error=str(e))
+
+    # Config overrides
     try:
         from bahamut.admin.config import get_overrides
         summary["config_overrides_count"] = len(get_overrides())
     except Exception as e:
-        logger.warning("admin_silent_error", error=str(e))
+        logger.warning("admin_summary_overrides_error", error=str(e))
+
     return summary
 
 
