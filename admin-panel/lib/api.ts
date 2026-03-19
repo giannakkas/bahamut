@@ -87,7 +87,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 // Logout callback — set by auth store init to avoid circular import
 let _onAuthExpired: (() => void) | null = null;
-let _refreshInFlight: Promise<string> | null = null;
+let _refreshInFlight: Promise<string | null> | null = null;
 
 export function setAuthExpiredCallback(cb: () => void): void {
   _onAuthExpired = cb;
