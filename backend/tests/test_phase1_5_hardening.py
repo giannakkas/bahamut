@@ -456,14 +456,14 @@ class TestTableOwnership:
             assert table in creates, f"Critical table {table} not found in codebase"
 
     def test_paper_trading_tables_in_persistence(self):
-        """Paper trading tables must be defined in persistence.py (canonical)."""
+        """Paper trading tables must be defined in centralized schema (db/schema/tables.py)."""
         path = os.path.join(os.path.dirname(__file__), "..",
-                            "bahamut", "agents", "persistence.py")
+                            "bahamut", "db", "schema", "tables.py")
         with open(path) as f:
             content = f.read()
         for table in ["paper_portfolios", "paper_positions"]:
             assert f"CREATE TABLE IF NOT EXISTS {table}" in content, \
-                f"Canonical table {table} missing from persistence.py"
+                f"Canonical table {table} missing from db/schema/tables.py"
 
 
 # ═══════════════════════════════════════

@@ -96,6 +96,9 @@ class TokenResponse(BaseModel):
 def create_token(data: dict, secret: str, expires_delta: timedelta) -> str:
     to_encode = data.copy()
     to_encode["exp"] = datetime.now(timezone.utc) + expires_delta
+    # Add unique token ID for revocation support
+    from bahamut.auth.revocation import generate_jti
+    to_encode["jti"] = generate_jti()
     return jwt.encode(to_encode, secret, algorithm="HS256")
 
 
@@ -125,6 +128,12 @@ async def get_current_user(
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Check token revocation
+        jti = payload.get("jti")
+        if jti:
+            from bahamut.auth.revocation import is_token_revoked
+            if await is_token_revoked(jti):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -223,6 +232,27 @@ async def get_me(user: User = Depends(get_current_user)):
 @router.get("/health")
 async def health():
     return {"status": "healthy", "service": "auth"}
+
+
+@router.post("/logout")
+async def logout(token: str = Depends(oauth2_scheme)):
+    """Revoke the current access token. Client should also discard refresh token."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        user_id = payload.get("sub")
+        if jti and exp:
+            from bahamut.auth.revocation import revoke_token
+            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+            await revoke_token(jti, expires_at, user_id=user_id)
+        return {"status": "logged_out"}
+    except JWTError:
+        # Token already invalid — still consider logout successful
+        return {"status": "logged_out"}
+    except Exception as e:
+        logger.warning("logout_revoke_failed", error=str(e))
+        return {"status": "logged_out", "warning": "Token revocation may have failed"}
 
 
 class RefreshRequest(BaseModel):

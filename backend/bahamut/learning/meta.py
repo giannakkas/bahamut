@@ -251,13 +251,7 @@ def _persist_report(report: SystemHealthReport):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS meta_evaluations (
-                    id SERIAL PRIMARY KEY, generated_at TIMESTAMP DEFAULT NOW(),
-                    trend VARCHAR(20), trend_score FLOAT, risk_level VARCHAR(20),
-                    consensus_quality FLOAT, agent_diversity FLOAT,
-                    windows JSONB, recommended_actions JSONB, created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             conn.execute(text("""
                 INSERT INTO meta_evaluations
                 (trend, trend_score, risk_level, consensus_quality, agent_diversity, windows, recommended_actions)

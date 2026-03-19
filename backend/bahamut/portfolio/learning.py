@@ -142,20 +142,7 @@ def log_portfolio_decision(
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS portfolio_decision_log (
-                    id SERIAL PRIMARY KEY,
-                    position_id INTEGER,
-                    asset VARCHAR(20),
-                    direction VARCHAR(10),
-                    event_type VARCHAR(10),
-                    state JSONB,
-                    pnl FLOAT DEFAULT 0,
-                    exit_status VARCHAR(30),
-                    consensus_score FLOAT DEFAULT 0,
-                    portfolio_impact FLOAT DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             conn.execute(text("""
                 INSERT INTO portfolio_decision_log
                 (position_id, asset, direction, event_type, state, pnl,
@@ -482,19 +469,7 @@ def _persist_rules(rules: list[AdaptiveRule]):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS portfolio_adaptive_rules (
-                    id SERIAL PRIMARY KEY,
-                    pattern_key VARCHAR(50) UNIQUE NOT NULL,
-                    adjustment_type VARCHAR(20),
-                    adjustment_value FLOAT DEFAULT 1.0,
-                    sample_count INTEGER DEFAULT 0,
-                    win_rate FLOAT DEFAULT 0.5,
-                    avg_pnl FLOAT DEFAULT 0,
-                    confidence FLOAT DEFAULT 0,
-                    active BOOLEAN DEFAULT TRUE,
-                    updated_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             for r in rules:
                 conn.execute(text("""
                     INSERT INTO portfolio_adaptive_rules
@@ -521,19 +496,7 @@ def _load_rules() -> list[AdaptiveRule]:
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS portfolio_adaptive_rules (
-                    id SERIAL PRIMARY KEY,
-                    pattern_key VARCHAR(50) UNIQUE NOT NULL,
-                    adjustment_type VARCHAR(20),
-                    adjustment_value FLOAT DEFAULT 1.0,
-                    sample_count INTEGER DEFAULT 0,
-                    win_rate FLOAT DEFAULT 0.5,
-                    avg_pnl FLOAT DEFAULT 0,
-                    confidence FLOAT DEFAULT 0,
-                    active BOOLEAN DEFAULT TRUE,
-                    updated_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             rows = conn.execute(text(
                 "SELECT * FROM portfolio_adaptive_rules WHERE active = TRUE ORDER BY confidence DESC"
             )).mappings().all()

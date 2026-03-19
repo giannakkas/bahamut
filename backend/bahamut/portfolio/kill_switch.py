@@ -173,11 +173,7 @@ def _log_event(event_type: str, detail: str):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS kill_switch_events (
-                    id SERIAL PRIMARY KEY, event_type VARCHAR(50),
-                    detail TEXT, created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             conn.execute(text("""
                 INSERT INTO kill_switch_events (event_type, detail) VALUES (:e, :d)
             """), {"e": event_type, "d": detail})

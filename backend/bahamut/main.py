@@ -35,6 +35,12 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     logger.info("Starting Bahamut.AI", environment=settings.environment)
     await redis_manager.connect()
+    # Initialize all database tables (centralized schema management)
+    try:
+        from bahamut.db.schema.tables import init_schema
+        init_schema()
+    except Exception as e:
+        logger.error("schema_init_failed", error=str(e))
     # Load persisted threshold overrides
     try:
         from bahamut.learning.thresholds import load_persisted_thresholds

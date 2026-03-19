@@ -196,13 +196,7 @@ def _save_calibration_run(result: CalibrationResult):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS calibration_runs (
-                    id SERIAL PRIMARY KEY, cadence VARCHAR(20), started_at TIMESTAMP DEFAULT NOW(),
-                    completed_at TIMESTAMP DEFAULT NOW(), status VARCHAR(20) DEFAULT 'completed',
-                    trades_analyzed INTEGER DEFAULT 0, threshold_changes JSONB,
-                    precision_scores JSONB, notes TEXT, created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             conn.execute(text("""
                 INSERT INTO calibration_runs (cadence, status, trades_analyzed, threshold_changes, precision_scores, notes)
                 VALUES (:c, :s, :t, :th, :p, :n)
@@ -241,16 +235,7 @@ def _save_regime_snapshot(agent_acc: dict, accuracy: dict):
         }
 
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS regime_snapshots (
-                    id VARCHAR PRIMARY KEY, regime_id VARCHAR(100) UNIQUE,
-                    regime_type VARCHAR(50), start_date TIMESTAMP DEFAULT NOW(),
-                    end_date TIMESTAMP, feature_vector FLOAT[],
-                    agent_performance JSONB, optimal_weights JSONB,
-                    optimal_thresholds JSONB, total_trades INTEGER,
-                    win_rate FLOAT, avg_pnl_pct FLOAT, notes TEXT,
-                    created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             rid = f"{regime_type}_{int(time.time())}"
             conn.execute(text("""
                 INSERT INTO regime_snapshots

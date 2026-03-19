@@ -39,12 +39,8 @@ class TrustScoreStore:
             from bahamut.database import sync_engine
             from sqlalchemy import text
             with sync_engine.connect() as conn:
-                conn.execute(text("""CREATE TABLE IF NOT EXISTS trust_scores_live (
-                    id SERIAL PRIMARY KEY, agent_id VARCHAR(50) NOT NULL,
-                    dimension VARCHAR(100) NOT NULL, score FLOAT DEFAULT 1.0,
-                    sample_count INTEGER DEFAULT 0, updated_at TIMESTAMP DEFAULT NOW(),
-                    UNIQUE(agent_id, dimension))"""))
-                conn.commit()
+                # Schema managed by bahamut.db.schema.tables.init_schema()
+                pass
                 for row in conn.execute(text("SELECT agent_id, dimension, score, sample_count FROM trust_scores_live")).fetchall():
                     aid, dim, sc, n = row
                     self._scores.setdefault(aid, {})[dim] = float(sc)
@@ -74,10 +70,6 @@ class TrustScoreStore:
             from bahamut.database import sync_engine
             from sqlalchemy import text
             with sync_engine.connect() as conn:
-                conn.execute(text("""CREATE TABLE IF NOT EXISTS trust_score_history_live (
-                    id SERIAL PRIMARY KEY, agent_id VARCHAR(50), dimension VARCHAR(100),
-                    old_score FLOAT, new_score FLOAT, change_reason VARCHAR(50),
-                    trade_id VARCHAR(100), alpha_used FLOAT, created_at TIMESTAMP DEFAULT NOW())"""))
                 conn.execute(text("""INSERT INTO trust_score_history_live
                     (agent_id, dimension, old_score, new_score, change_reason, trade_id, alpha_used)
                     VALUES (:a, :d, :o, :n, :r, :t, :al)"""),

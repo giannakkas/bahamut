@@ -216,21 +216,8 @@ def _ensure_tables():
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS admin_config (
-                    key VARCHAR(100) PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TIMESTAMP DEFAULT NOW())
-            """))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS admin_audit_log (
-                    id SERIAL PRIMARY KEY,
-                    config_key VARCHAR(100),
-                    old_value TEXT, new_value TEXT,
-                    changed_by VARCHAR(50) DEFAULT 'system',
-                    action VARCHAR(20) DEFAULT 'set',
-                    created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
+            pass  # Schema managed by db.schema.tables
             conn.commit()
     except Exception as e:
 

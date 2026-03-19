@@ -331,16 +331,7 @@ def _persist_result(result: StressResult):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS stress_test_runs (
-                    id SERIAL PRIMARY KEY, scenario_name VARCHAR(100),
-                    mode VARCHAR(20), total_signals INTEGER,
-                    would_open INTEGER, would_block INTEGER,
-                    changed_decisions INTEGER, avg_size_mult FLOAT,
-                    blockers JSONB, warnings JSONB,
-                    elapsed_ms INTEGER, notes TEXT,
-                    created_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             conn.execute(text("""
                 INSERT INTO stress_test_runs
                 (scenario_name, mode, total_signals, would_open, would_block,

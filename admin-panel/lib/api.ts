@@ -240,6 +240,19 @@ export async function login(
 }
 
 export function logout(): void {
+  // Fire-and-forget: revoke token on server
+  try {
+    const token = getToken();
+    if (token) {
+      fetch(`${apiBase()}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {}); // best-effort, don't block logout
+    }
+  } catch {
+    // ignore
+  }
   clearToken();
 }
 

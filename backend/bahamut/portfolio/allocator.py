@@ -420,13 +420,7 @@ def _count_recent_reallocs() -> int:
 def _log_reallocation(conn, position_id, asset, direction, pnl, reason):
     from sqlalchemy import text
     try:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS reallocation_log (
-                id SERIAL PRIMARY KEY, position_id INTEGER,
-                asset VARCHAR(20), direction VARCHAR(10),
-                pnl FLOAT, reason TEXT,
-                created_at TIMESTAMP DEFAULT NOW())
-        """))
+        pass  # Schema managed by db.schema.tables
         conn.execute(text("""
             INSERT INTO reallocation_log (position_id, asset, direction, pnl, reason)
             VALUES (:pid, :a, :d, :pnl, :r)

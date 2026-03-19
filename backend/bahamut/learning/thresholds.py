@@ -149,11 +149,7 @@ def _persist_thresholds(thresholds: dict):
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS threshold_overrides (
-                    id SERIAL PRIMARY KEY, profile VARCHAR(30) UNIQUE,
-                    thresholds JSONB, updated_at TIMESTAMP DEFAULT NOW())
-            """))
+            pass  # Schema managed by db.schema.tables
             for profile, t in thresholds.items():
                 conn.execute(text("""
                     INSERT INTO threshold_overrides (profile, thresholds, updated_at)
