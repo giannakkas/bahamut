@@ -44,6 +44,7 @@ interface Portfolio {
   max_drawdown: number;
   peak_balance: number;
   open_positions: Position[];
+  max_open_positions: number;
 }
 
 interface AgentLeaderboard {
