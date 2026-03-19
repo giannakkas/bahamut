@@ -95,7 +95,7 @@ def _get_allowed_origins() -> list[str]:
     origins = [o for o in origins if o != "*"]
     if not origins:
         # Fail-safe: at least allow the known frontend
-        origins = ["https://frontend-production-947b.up.railway.app"]
+        origins = ["https://frontend-production-947b.up.railway.app", "https://bahamut.ai"]
     return origins
 
 

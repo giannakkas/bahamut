@@ -16,7 +16,8 @@ export default function IntelReportsPage() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch('https://bahamut-production.up.railway.app/api/v1/reports/daily-brief/refresh', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://bahamut-production.up.railway.app';
+      const res = await fetch(`${apiUrl}/api/v1/reports/daily-brief/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

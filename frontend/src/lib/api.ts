@@ -1,4 +1,4 @@
-const API_URL = 'https://bahamut-production.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bahamut-production.up.railway.app';
 
 class ApiClient {
   private token: string | null = null;
