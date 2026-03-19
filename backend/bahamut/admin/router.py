@@ -46,17 +46,41 @@ async def reset_config_value(key: str, user=Depends(get_current_user)):
 
 
 @router.get("/config/overrides")
-async def get_overrides(user=Depends(get_current_user)):
-    """Get only keys that differ from defaults."""
+async def get_config_overrides(user=Depends(get_current_user)):
+    """Get only keys that differ from defaults — as array for frontend."""
     from bahamut.admin.config import get_overrides
-    return get_overrides()
+    overrides_dict = get_overrides()
+    # Frontend expects ConfigOverride[] with {key, value, ttl, created, expires}
+    return [
+        {
+            "key": k,
+            "value": v,
+            "ttl": 0,
+            "created": "",
+            "expires": "",
+        }
+        for k, v in overrides_dict.items()
+    ]
 
 
 @router.get("/audit-log")
 async def get_audit(limit: int = 50, user=Depends(get_current_user)):
     """Get config change audit log."""
     from bahamut.admin.config import get_audit_log
-    return get_audit_log(limit)
+    rows = get_audit_log(limit)
+    # Map to frontend AuditLogEntry format
+    return [
+        {
+            "id": i + 1,
+            "timestamp": str(r.get("created_at", "")),
+            "key": r.get("config_key", ""),
+            "old_value": str(r.get("old_value", "")),
+            "new_value": str(r.get("new_value", "")),
+            "source": "system" if r.get("changed_by") == "system" else "user",
+            "user": r.get("changed_by", "system"),
+        }
+        for i, r in enumerate(rows)
+    ]
 
 
 @router.get("/summary")
