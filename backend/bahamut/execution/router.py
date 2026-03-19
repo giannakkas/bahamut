@@ -12,18 +12,8 @@ async def kill_switch(user=Depends(get_current_user)):
     if user.role not in ("trader", "admin"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
-        from bahamut.database import sync_engine
-        from sqlalchemy import text
-        with sync_engine.connect() as conn:
-            r = conn.execute(text("""
-                UPDATE paper_positions SET status='CLOSED_MANUAL', closed_at=NOW(),
-                exit_price=current_price,
-                realized_pnl=CASE WHEN direction='LONG' THEN (current_price-entry_price)*quantity
-                ELSE (entry_price-current_price)*quantity END
-                WHERE status='OPEN' RETURNING id
-            """))
-            closed = r.rowcount
-            conn.commit()
+        from bahamut.paper_trading.store import close_all_positions
+        closed = close_all_positions()
         return {"status": "kill_switch_activated", "positions_closed": closed}
     except Exception as e:
         return {"status": "error", "error": str(e), "positions_closed": 0}

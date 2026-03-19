@@ -37,7 +37,7 @@ import structlog
 logger = structlog.get_logger()
 
 # Schema version — bump when adding new tables or altering schemas
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # ─── All CREATE TABLE statements in dependency order ───
 
@@ -364,14 +364,17 @@ TABLES = [
 
 
 def init_schema() -> None:
-    """Initialize all tables. Called once at startup.
+    """Initialize all tables and verify schema version. Called once at startup.
 
-    Safe to call multiple times (CREATE IF NOT EXISTS).
+    - Creates all tables (idempotent via CREATE IF NOT EXISTS)
+    - Checks DB schema version vs code version
+    - Logs CRITICAL on version mismatch
+    - Records new version on successful init
     """
     from bahamut.db.query import get_connection
     from sqlalchemy import text
 
-    logger.info("schema_init_start", table_count=len(TABLES))
+    logger.info("schema_init_start", table_count=len(TABLES), code_version=SCHEMA_VERSION)
     errors = []
     with get_connection() as conn:
         for sql in TABLES:
@@ -381,17 +384,64 @@ def init_schema() -> None:
                 table_name = sql.split("(")[0].strip().split()[-1]
                 errors.append(f"{table_name}: {str(e)[:80]}")
                 logger.error("schema_init_table_failed", table=table_name, error=str(e))
-        # Record schema version
-        try:
-            conn.execute(text("""
-                INSERT INTO schema_version (version) VALUES (:v)
-                ON CONFLICT DO NOTHING
-            """), {"v": SCHEMA_VERSION})
-        except Exception:
-            pass  # schema_version table itself might not support ON CONFLICT
         conn.commit()
+
+        # ── Schema version check ──
+        try:
+            row = conn.execute(text(
+                "SELECT MAX(version) FROM schema_version"
+            )).fetchone()
+            db_version = row[0] if row and row[0] else 0
+        except Exception:
+            db_version = 0
+
+        if db_version > SCHEMA_VERSION:
+            logger.critical("schema_version_mismatch",
+                            msg="DB schema is NEWER than code — possible rollback or deployment error",
+                            db_version=db_version, code_version=SCHEMA_VERSION)
+            try:
+                from bahamut.shared.degraded import mark_degraded
+                mark_degraded("schema.version",
+                              f"DB v{db_version} > code v{SCHEMA_VERSION}", ttl=600)
+            except Exception:
+                pass
+        elif db_version < SCHEMA_VERSION:
+            logger.info("schema_version_upgrade",
+                        db_version=db_version, code_version=SCHEMA_VERSION)
+            try:
+                conn.execute(text(
+                    "INSERT INTO schema_version (version) VALUES (:v)"
+                ), {"v": SCHEMA_VERSION})
+                conn.commit()
+            except Exception as e:
+                logger.warning("schema_version_record_failed", error=str(e))
+        else:
+            logger.info("schema_version_ok", version=SCHEMA_VERSION)
 
     if errors:
         logger.error("schema_init_partial_failure", errors=errors)
     else:
         logger.info("schema_init_complete", version=SCHEMA_VERSION)
+
+
+def get_schema_status() -> dict:
+    """Get schema version status for health endpoint."""
+    try:
+        from bahamut.db.query import get_connection
+        from sqlalchemy import text
+        with get_connection() as conn:
+            row = conn.execute(text(
+                "SELECT MAX(version) FROM schema_version"
+            )).fetchone()
+            db_version = row[0] if row and row[0] else 0
+
+        if db_version == SCHEMA_VERSION:
+            return {"status": "ok", "code_version": SCHEMA_VERSION, "db_version": db_version}
+        elif db_version > SCHEMA_VERSION:
+            return {"status": "mismatch", "code_version": SCHEMA_VERSION,
+                    "db_version": db_version, "warning": "DB newer than code"}
+        else:
+            return {"status": "upgrading", "code_version": SCHEMA_VERSION,
+                    "db_version": db_version}
+    except Exception as e:
+        return {"status": "error", "error": str(e)[:100]}

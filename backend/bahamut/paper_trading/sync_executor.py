@@ -40,26 +40,11 @@ def process_signal_sync(
 
     try:
         with sync_engine.connect() as conn:
-            # Get or create portfolio
-            result = conn.execute(text(
-                "SELECT id, current_balance, is_active, max_open_positions, risk_per_trade_pct "
-                "FROM paper_portfolios WHERE name = 'SYSTEM_DEMO'"
-            ))
-            portfolio = result.mappings().first()
+            # Get or create portfolio via canonical store
+            from bahamut.paper_trading.store import get_or_create_portfolio, get_open_position_count, has_open_position
+            portfolio = get_or_create_portfolio("SYSTEM_DEMO")
 
-            if not portfolio:
-                conn.execute(text(
-                    "INSERT INTO paper_portfolios (name, initial_balance, current_balance, peak_balance) "
-                    "VALUES ('SYSTEM_DEMO', 100000, 100000, 100000)"
-                ))
-                conn.commit()
-                result = conn.execute(text(
-                    "SELECT id, current_balance, is_active, max_open_positions, risk_per_trade_pct "
-                    "FROM paper_portfolios WHERE name = 'SYSTEM_DEMO'"
-                ))
-                portfolio = result.mappings().first()
-
-            if not portfolio or not portfolio["is_active"]:
+            if not portfolio or not portfolio.get("is_active", True):
                 return {"action": "SKIP", "reason": "Portfolio inactive"}
 
             pid = portfolio["id"]
@@ -67,14 +52,10 @@ def process_signal_sync(
             risk_pct = portfolio["risk_per_trade_pct"] or 2.0
 
             # Count open positions
-            open_count = conn.execute(text(
-                "SELECT COUNT(*) FROM paper_positions WHERE portfolio_id = :p AND status = 'OPEN'"
-            ), {"p": pid}).scalar()
+            open_count = get_open_position_count(pid)
 
             # Check duplicate
-            has_dup = conn.execute(text(
-                "SELECT id FROM paper_positions WHERE portfolio_id = :p AND asset = :a AND status = 'OPEN'"
-            ), {"p": pid, "a": asset}).first() is not None
+            has_dup = has_open_position(pid, asset)
 
             # ── PORTFOLIO INTELLIGENCE — evaluates trade in portfolio context ──
             portfolio_verdict = None
@@ -231,44 +212,26 @@ def process_signal_sync(
                 pos_val *= size_mult
                 risk_amt *= size_mult
 
-            # Insert position with execution context
-            conn.execute(text("""
-                INSERT INTO paper_positions (
-                    portfolio_id, asset, direction, entry_price, quantity, position_value,
-                    entry_signal_score, entry_signal_label, stop_loss, take_profit,
-                    risk_amount, atr_at_entry, current_price, agent_votes, consensus_score,
-                    cycle_id, status, opened_at,
-                    trading_profile, regime, disagreement_index, execution_mode
-                ) VALUES (
-                    :pid, :asset, :dir, :price, :qty, :val,
-                    :score, :label, :sl, :tp,
-                    :risk, :atr, :price, CAST(:votes AS jsonb), :cscore,
-                    :cid, 'OPEN', NOW(),
-                    :profile, :regime, :disagree, :exec_mode
-                )
-            """), {
-                "pid": pid, "asset": asset, "dir": direction,
-                "price": entry_price, "qty": round(qty, 6), "val": round(pos_val, 2),
-                "score": consensus_score, "label": signal_label,
-                "sl": round(sl, 6), "tp": round(tp, 6),
-                "risk": round(risk_amt, 2), "atr": atr,
-                "votes": json.dumps(agent_votes), "cscore": consensus_score,
-                "cid": cycle_id,
-                "profile": trading_profile, "regime": regime,
-                "disagree": disagreement_index, "exec_mode": decision.mode,
-            })
-            conn.commit()
+            # Insert position via canonical store
+            from bahamut.paper_trading.store import open_position as store_open_position, get_position_id_by_cycle
+            pos_id = store_open_position(
+                portfolio_id=pid, asset=asset, direction=direction,
+                entry_price=entry_price, quantity=round(qty, 6),
+                position_value=round(pos_val, 2),
+                entry_signal_score=consensus_score, entry_signal_label=signal_label,
+                stop_loss=round(sl, 6), take_profit=round(tp, 6),
+                risk_amount=round(risk_amt, 2), atr_at_entry=atr,
+                consensus_score=consensus_score, agent_votes=agent_votes,
+                cycle_id=cycle_id, trading_profile=trading_profile,
+                regime=regime, disagreement_index=disagreement_index,
+                execution_mode=decision.mode,
+            )
 
             # Link decision trace
-            if cycle_id:
+            if cycle_id and pos_id:
                 try:
                     from bahamut.agents.persistence import link_trace_to_position
-                    pr = conn.execute(text(
-                        "SELECT id FROM paper_positions WHERE cycle_id = :c ORDER BY opened_at DESC LIMIT 1"
-                    ), {"c": cycle_id})
-                    row = pr.first()
-                    if row:
-                        link_trace_to_position(cycle_id, row[0])
+                    link_trace_to_position(cycle_id, pos_id)
                 except Exception as e:
                     logger.warning("trace_link_failed", cycle_id=cycle_id, error=str(e))
 
@@ -280,16 +243,12 @@ def process_signal_sync(
             try:
                 from bahamut.portfolio.learning import capture_portfolio_state, log_portfolio_decision
                 entry_state = capture_portfolio_state()
-                # Attach scenario risk to state for learning
                 if portfolio_verdict and portfolio_verdict.scenario_risk:
                     entry_state.scenario_risk_level = portfolio_verdict.scenario_risk.get("risk_level", "")
                     entry_state.worst_case_pct = portfolio_verdict.scenario_risk.get("worst_case_pct", 0)
-                pos_row = conn.execute(text(
-                    "SELECT id FROM paper_positions WHERE cycle_id = :c ORDER BY opened_at DESC LIMIT 1"
-                ), {"c": cycle_id}).first()
-                if pos_row:
+                if pos_id:
                     log_portfolio_decision(
-                        position_id=pos_row[0], asset=asset, direction=direction,
+                        position_id=pos_id, asset=asset, direction=direction,
                         event_type="ENTRY", state=entry_state,
                         consensus_score=consensus_score,
                         portfolio_verdict_impact=portfolio_verdict.impact_score if portfolio_verdict else 0,

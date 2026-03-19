@@ -129,9 +129,9 @@ class TestCORSConfig:
 
 class TestTableDeduplication:
     def test_single_canonical_definition(self):
-        """Each table must have exactly ONE CREATE TABLE statement."""
+        """Each table must have exactly ONE CREATE TABLE statement in centralized schema."""
         import os
-        path = os.path.join(os.path.dirname(__file__), "..", "bahamut", "agents", "persistence.py")
+        path = os.path.join(os.path.dirname(__file__), "..", "bahamut", "db", "schema", "tables.py")
         with open(path) as f:
             content = f.read()
         

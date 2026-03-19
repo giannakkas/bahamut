@@ -289,66 +289,28 @@ def execute_reallocation(position_id: int, reason: str) -> dict:
     Returns the closed trade data.
     """
     try:
+        from bahamut.paper_trading.store import close_position_for_reallocation
+        result = close_position_for_reallocation(position_id)
+        if not result:
+            return {"error": "Position not found or already closed"}
+
+        # Log reallocation
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT id, asset, direction, entry_price, current_price, quantity,
-                       position_value, portfolio_id
-                FROM paper_positions WHERE id = :pid AND status = 'OPEN'
-            """), {"pid": position_id}).mappings().first()
-
-            if not row:
-                return {"error": "Position not found or already closed"}
-
-            current = float(row["current_price"] or row["entry_price"])
-            entry = float(row["entry_price"])
-            qty = float(row["quantity"])
-            direction = row["direction"]
-
-            if direction == "LONG":
-                pnl = (current - entry) * qty
-            else:
-                pnl = (entry - current) * qty
-
-            pnl_pct = (pnl / float(row["position_value"])) * 100 if row["position_value"] else 0
-
-            # Close position
-            conn.execute(text("""
-                UPDATE paper_positions
-                SET status = 'CLOSED_REALLOC', exit_price = :price, realized_pnl = :pnl,
-                    realized_pnl_pct = :pnl_pct, closed_at = NOW()
-                WHERE id = :pid
-            """), {"price": current, "pnl": round(pnl, 2),
-                   "pnl_pct": round(pnl_pct, 2), "pid": position_id})
-
-            # Update portfolio stats
-            conn.execute(text("""
-                UPDATE paper_portfolios
-                SET current_balance = current_balance + :pnl,
-                    total_pnl = total_pnl + :pnl,
-                    total_trades = total_trades + 1,
-                    winning_trades = winning_trades + CASE WHEN :pnl > 0 THEN 1 ELSE 0 END,
-                    losing_trades = losing_trades + CASE WHEN :pnl <= 0 THEN 1 ELSE 0 END
-                WHERE id = :portfolio_id
-            """), {"pnl": round(pnl, 2), "portfolio_id": row["portfolio_id"]})
-
+            _log_reallocation(conn, position_id, result["asset"],
+                              result["direction"], result["pnl"], reason)
             conn.commit()
 
-            # Log reallocation
-            _log_reallocation(conn, position_id, row["asset"], direction,
-                              pnl, reason)
-            conn.commit()
+        logger.info("reallocation_executed", position_id=position_id,
+                     asset=result["asset"], pnl=result["pnl"], reason=reason)
 
-            logger.info("reallocation_executed", position_id=position_id,
-                         asset=row["asset"], pnl=round(pnl, 2), reason=reason)
-
-            return {
-                "closed_position_id": position_id,
-                "asset": row["asset"], "direction": direction,
-                "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2),
-                "status": "CLOSED_REALLOC",
-            }
+        return {
+            "closed_position_id": position_id,
+            "asset": result["asset"], "direction": result["direction"],
+            "pnl": result["pnl"], "pnl_pct": result["pnl_pct"],
+            "status": "CLOSED_REALLOC",
+        }
     except Exception as e:
         logger.error("reallocation_failed", position_id=position_id, error=str(e))
         return {"error": str(e)}
