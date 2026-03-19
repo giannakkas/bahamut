@@ -144,7 +144,9 @@ def get_current_state() -> dict:
         )
         return state.to_dict()
     except Exception as e:
-        return {"error": str(e), "kill_switch_active": False, "safe_mode_active": False}
+        logger.error("kill_switch_state_unavailable", error=str(e))
+        return {"error": str(e), "kill_switch_active": True, "safe_mode_active": True,
+                "note": "Kill switch state unavailable — defaulting to ACTIVE for safety"}
 
 
 def _get_weakest_positions(max_count: int) -> list[dict]:
@@ -159,7 +161,9 @@ def _get_weakest_positions(max_count: int) -> list[dict]:
         return [{"position_id": r.get("position_id"), "asset": r.get("asset"),
                  "quality": r.get("quality_score")} for r in weakest
                 if r.get("quality_score", 1.0) < 0.40]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("kill_switch_silent_error", error=str(e))
         return []
 
 

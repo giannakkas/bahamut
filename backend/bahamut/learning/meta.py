@@ -185,7 +185,9 @@ def _max_consecutive_losses(conn, days: int) -> int:
             else:
                 cur = 0
         return max_streak
-    except Exception:
+    except Exception as e:
+
+        logger.warning("learning_meta_silent_error", error=str(e))
         return 0
 
 
@@ -208,7 +210,9 @@ def _compute_consensus_quality() -> float:
             high_wr = sum(1 for r in rows[mid:] if float(r[1]) > 0) / (len(rows) - mid)
             # Quality = how much better high-score trades are
             return round(max(0.0, min(1.0, 0.5 + (high_wr - low_wr))), 3)
-    except Exception:
+    except Exception as e:
+
+        logger.warning("learning_meta_silent_error", error=str(e))
         return 0.5
 
 
@@ -236,7 +240,9 @@ def _compute_agent_diversity() -> float:
                 return round(0.8, 3)
             else:
                 return round(1.0, 3)
-    except Exception:
+    except Exception as e:
+
+        logger.warning("learning_meta_silent_error", error=str(e))
         return 0.5
 
 

@@ -1,3 +1,5 @@
+import structlog
+logger = structlog.get_logger()
 """Learning service — real fitness metrics, trust data, calibration history."""
 from fastapi import APIRouter, Depends
 from bahamut.auth.router import get_current_user
@@ -75,7 +77,9 @@ async def trust_history(agent_id: str = None, limit: int = 50, user=Depends(get_
                     "FROM trust_score_history_live ORDER BY created_at DESC LIMIT :l"
                 ), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("learning_silent_error", error=str(e))
         return []
 
 @router.get("/calibration-history")
@@ -89,7 +93,9 @@ async def calibration_history(limit: int = 10, user=Depends(get_current_user)):
                 "FROM calibration_runs ORDER BY started_at DESC LIMIT :l"
             ), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("learning_silent_error", error=str(e))
         return []
 
 @router.post("/emergency-recalibrate")

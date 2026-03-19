@@ -1,3 +1,5 @@
+import structlog
+logger = structlog.get_logger()
 """Admin configuration and control API routes."""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -62,25 +64,33 @@ async def admin_summary(user=Depends(get_current_user)):
     try:
         from bahamut.portfolio.kill_switch import get_current_state
         summary["kill_switch"] = get_current_state()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_silent_error", error=str(e))
         summary["kill_switch"] = {"error": "unavailable"}
     try:
         from bahamut.readiness.checklist import run_readiness_check
         r = run_readiness_check()
         summary["readiness"] = {"overall": r.overall, "pass": r.pass_count,
                                  "warn": r.warn_count, "fail": r.fail_count}
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_silent_error", error=str(e))
         summary["readiness"] = {"error": "unavailable"}
     try:
         from bahamut.consensus.system_confidence import get_system_confidence
         bd = get_system_confidence()
         summary["system_confidence"] = bd.to_dict()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_silent_error", error=str(e))
         summary["system_confidence"] = {"error": "unavailable"}
     try:
         from bahamut.admin.config import get_overrides
         summary["config_overrides_count"] = len(get_overrides())
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_silent_error", error=str(e))
         summary["config_overrides_count"] = 0
     return summary
 

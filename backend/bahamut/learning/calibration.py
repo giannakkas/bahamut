@@ -185,7 +185,9 @@ def _compute_per_agent_accuracy(days: int) -> dict:
             return {row["agent_name"]: {"total": row["total"], "correct": row["correct"],
                     "accuracy": row["correct"] / row["total"] if row["total"] > 0 else 0}
                     for row in r.mappings().all()}
-    except Exception:
+    except Exception as e:
+
+        logger.warning("calibration_silent_error", error=str(e))
         return {}
 
 

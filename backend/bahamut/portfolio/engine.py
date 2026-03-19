@@ -364,6 +364,7 @@ def evaluate_trade_for_portfolio(
         from bahamut.shared.degraded import mark_degraded
         mark_degraded("portfolio.marginal_risk", str(e))
         verdict.warnings.append(f"MARGINAL_RISK_UNAVAILABLE: {str(e)[:80]}")
+        verdict.requires_approval = True  # conservative: require approval when marginal risk can't evaluate
 
     # ═══════════════════════════════════
     # 8. QUALITY RATIO (expected return / marginal risk)
@@ -395,6 +396,27 @@ def evaluate_trade_for_portfolio(
         logger.warning("quality_ratio_failed", error=str(e), asset=proposed_asset)
         from bahamut.shared.degraded import mark_degraded
         mark_degraded("portfolio.quality_ratio", str(e))
+
+    # ═══════════════════════════════════
+    # 9. DEGRADED MODE ENFORCEMENT
+    # ═══════════════════════════════════
+    # If critical safety subsystems are degraded, enforce conservative behavior
+    from bahamut.shared.degraded import is_degraded
+    _critical_degraded = []
+    if is_degraded("portfolio.scenario_risk"):
+        _critical_degraded.append("scenario_risk")
+    if is_degraded("portfolio.marginal_risk"):
+        _critical_degraded.append("marginal_risk")
+    if is_degraded("portfolio.kill_switch"):
+        _critical_degraded.append("kill_switch")
+
+    if _critical_degraded:
+        verdict.requires_approval = True
+        verdict.size_multiplier *= 0.5
+        verdict.warnings.append(
+            f"DEGRADED_MODE: {', '.join(_critical_degraded)} — conservative sizing enforced")
+        logger.warning("degraded_mode_enforcement", subsystems=_critical_degraded,
+                        asset=proposed_asset, size_mult=verdict.size_multiplier)
 
     # ═══════════════════════════════════
     # FINAL VERDICT

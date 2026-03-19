@@ -131,7 +131,8 @@ def _compute_trust_stability() -> float:
                 return 0.4
             else:
                 return 0.2
-    except Exception:
+    except Exception as e:
+        logger.warning("confidence_component_failed", error=str(e))
         return 0.5
 
 
@@ -180,7 +181,8 @@ def _compute_disagreement_trend() -> float:
                 trend_bonus = 0.0
 
             return max(0.0, min(1.0, round(level_score + trend_bonus, 4)))
-    except Exception:
+    except Exception as e:
+        logger.warning("confidence_component_failed", error=str(e))
         return 0.5
 
 
@@ -226,7 +228,8 @@ def _compute_recent_performance() -> float:
             pf_score = max(0.0, min(1.0, (pf - 0.5) / 1.5))
 
             return round(wr_score * 0.6 + pf_score * 0.4, 4)
-    except Exception:
+    except Exception as e:
+        logger.warning("confidence_component_failed", error=str(e))
         return 0.5
 
 
@@ -276,7 +279,8 @@ def _compute_calibration_health() -> float:
             stability = max(0.3, 1.0 - alert_ratio * 2)
 
             return round(recency * 0.7 + stability * 0.3, 4)
-    except Exception:
+    except Exception as e:
+        logger.warning("confidence_component_failed", error=str(e))
         return 0.5
 
 
@@ -290,5 +294,6 @@ def _compute_mean_trust() -> float:
             sc, _ = trust_store.get(aid, "global")
             scores.append(sc)
         return sum(scores) / len(scores) if scores else 1.0
-    except Exception:
+    except Exception as e:
+        logger.warning("confidence_component_failed", error=str(e))
         return 1.0

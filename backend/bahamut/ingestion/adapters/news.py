@@ -261,7 +261,8 @@ class NewsAdapter:
                 "source": a.get("source", {}).get("name", ""), "url": a.get("url", ""),
                 "published": a.get("publishedAt", ""), "delayed": True,
             } for a in data.get("articles", [])]
-        except:
+        except Exception as e:
+            logger.warning("newsapi_category_failed", category=category, error=str(e))
             return []
 
     async def _newsapi_asset(self, symbol: str, count: int) -> list[dict]:

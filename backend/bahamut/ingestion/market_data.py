@@ -228,7 +228,9 @@ async def get_current_prices() -> dict[str, float]:
             result = await twelve_data.get_latest_price(td_symbol)
             if result and result.get("mid"):
                 prices[asset] = result["mid"]
-        except Exception:
+        except Exception as e:
+
+            logger.warning("market_data_silent_error", error=str(e))
             continue
 
     return prices

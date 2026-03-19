@@ -152,7 +152,9 @@ def replay_with_modified_params(
                         evidence=[Evidence(claim="replay", data_point="replay", weight=0.5)],
                         meta=dict(ao.get("meta", {})),
                     ))
-                except Exception:
+                except Exception as e:
+
+                    logger.warning("stress_engine_silent_error", error=str(e))
                     continue
 
             if not mock_agents:
@@ -186,7 +188,9 @@ def replay_with_modified_params(
                     mock_agents, "fx", regime, profile,
                     trust_scores=trust_scores, resolved_weights=resolved,
                     disagreement_metrics=dm)
-            except Exception:
+            except Exception as e:
+
+                logger.warning("stress_engine_silent_error", error=str(e))
                 continue
 
             # Run execution policy
@@ -298,7 +302,9 @@ def get_recent_results(limit: int = 10) -> list[dict]:
                 FROM stress_test_runs ORDER BY created_at DESC LIMIT :l
             """), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("stress_engine_silent_error", error=str(e))
         return []
 
 

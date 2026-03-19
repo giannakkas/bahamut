@@ -95,7 +95,7 @@ export function setAuthExpiredCallback(cb: () => void): void {
 
 /**
  * Attempt to refresh the access token using the refresh token.
- * Deduplicates concurrent refresh attempts.
+ * Deduplicates concurrent refresh attempts via a shared promise.
  */
 async function tryRefreshToken(): Promise<string | null> {
   const refresh = getRefreshToken();
@@ -110,7 +110,7 @@ async function tryRefreshToken(): Promise<string | null> {
     }
   }
 
-  _refreshInFlight = (async () => {
+  _refreshInFlight = (async (): Promise<string | null> => {
     try {
       const res = await fetch(`${apiBase()}/auth/refresh`, {
         method: "POST",
@@ -118,13 +118,17 @@ async function tryRefreshToken(): Promise<string | null> {
         body: JSON.stringify({ refresh_token: refresh }),
         signal: AbortSignal.timeout(5000),
       });
-      if (!res.ok) return null as unknown as string;
+      if (!res.ok) {
+        clearToken();
+        return null;
+      }
       const data = await res.json();
       const newToken = data.access_token as string;
+      if (!newToken) return null;
       setToken(newToken);
       return newToken;
     } catch {
-      return null as unknown as string;
+      return null;
     } finally {
       _refreshInFlight = null;
     }
@@ -133,7 +137,7 @@ async function tryRefreshToken(): Promise<string | null> {
   return _refreshInFlight;
 }
 
-async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+async function apiFetch<T>(path: string, options: FetchOptions = {}, _isRetry = false): Promise<T> {
   const { skipAuth, ...fetchOptions } = options;
   const url = `${apiBase()}${path}`;
 
@@ -178,6 +182,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 
   if (!res.ok) {
     const body = await res.text().catch(() => "Unknown error");
+    if (res.status === 401 && !_isRetry && !skipAuth) {
+      // Try refresh once before giving up
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        return apiFetch<T>(path, options, true);
+      }
+      clearToken();
+      _onAuthExpired?.();
+      throw new ApiError("Session expired — please log in again", 401);
+    }
     if (res.status === 401) {
       clearToken();
       _onAuthExpired?.();
@@ -218,7 +232,7 @@ export async function login(
 
   const data = await apiFetch<{ access_token: string; refresh_token: string; user: string }>(
     "/auth/login",
-    { method: "POST", body: JSON.stringify({ username, password }), skipAuth: true }
+    { method: "POST", body: JSON.stringify({ email: username, password }), skipAuth: true }
   );
   setToken(data.access_token);
   setRefreshToken(data.refresh_token);

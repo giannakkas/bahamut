@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,6 +24,7 @@ from bahamut.stress.router import router as stress_router
 from bahamut.readiness.router import router as readiness_router
 from bahamut.portfolio.router import router as portfolio_router
 from bahamut.admin.router import router as admin_router
+from bahamut.system.router import router as system_router
 from bahamut.shared.redis_client import redis_manager
 
 settings = get_settings()
@@ -158,6 +158,7 @@ app.include_router(stress_router, prefix="/api/v1/stress", tags=["stress-testing
 app.include_router(readiness_router, prefix="/api/v1/readiness", tags=["readiness"])
 app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["portfolio-intel"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 
 
 @app.get("/health")

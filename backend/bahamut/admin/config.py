@@ -184,7 +184,9 @@ def get_audit_log(limit: int = 50) -> list[dict]:
                 FROM admin_audit_log ORDER BY created_at DESC LIMIT :l
             """), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_config_silent_error", error=str(e))
         return []
 
 
@@ -230,7 +232,9 @@ def _ensure_tables():
                     created_at TIMESTAMP DEFAULT NOW())
             """))
             conn.commit()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_config_silent_error", error=str(e))
         pass
 
 
@@ -266,7 +270,9 @@ def _load_overrides():
                         pass
             _cache["overrides"] = overrides
             _cache["loaded_at"] = time.time()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_config_silent_error", error=str(e))
         _cache["overrides"] = {}
         _cache["loaded_at"] = time.time()
 
@@ -293,7 +299,9 @@ def _delete_override(key):
         with sync_engine.connect() as conn:
             conn.execute(text("DELETE FROM admin_config WHERE key = :k"), {"k": key})
             conn.commit()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_config_silent_error", error=str(e))
         pass
 
 
@@ -309,5 +317,7 @@ def _log_audit(key, old_value, new_value, changed_by, action="set"):
             """), {"k": key, "o": str(old_value), "n": str(new_value),
                    "b": changed_by, "a": action})
             conn.commit()
-    except Exception:
+    except Exception as e:
+
+        logger.warning("admin_config_silent_error", error=str(e))
         pass

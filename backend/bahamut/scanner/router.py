@@ -165,5 +165,7 @@ async def get_scan_history(limit: int = 10, user=Depends(get_current_user)):
             """), {"limit": limit})
             rows = result.mappings().all()
             return {"scans": [dict(r) for r in rows]}
-    except Exception:
+    except Exception as e:
+
+        logger.warning("scanner_silent_error", error=str(e))
         return {"scans": []}

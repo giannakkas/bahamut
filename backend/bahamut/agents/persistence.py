@@ -91,6 +91,8 @@ def ensure_tables():
                     old_score FLOAT, new_score FLOAT, change_reason VARCHAR(50),
                     trade_id VARCHAR(100), alpha_used FLOAT, created_at TIMESTAMP DEFAULT NOW())
             """))
+            # NOTE: calibration_runs canonical owner is learning/calibration.py
+            # Table created there; this init only ensures it exists for reads.
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS calibration_runs (
                     id SERIAL PRIMARY KEY, cadence VARCHAR(20), started_at TIMESTAMP DEFAULT NOW(),

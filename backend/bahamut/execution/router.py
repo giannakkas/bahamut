@@ -1,3 +1,5 @@
+import structlog
+logger = structlog.get_logger()
 """Execution service — real kill switch + policy config."""
 from fastapi import APIRouter, Depends, HTTPException
 from bahamut.auth.router import get_current_user
@@ -39,7 +41,9 @@ async def execution_status(user=Depends(get_current_user)):
             """)).mappings().first()
             return {"open_positions": r["open"] if r else 0, "recent_opens_1h": r["recent"] if r else 0,
                     "execution_mode": "PAPER", "policy_active": True}
-    except Exception:
+    except Exception as e:
+
+        logger.warning("execution_silent_error", error=str(e))
         return {"open_positions": 0, "execution_mode": "PAPER", "policy_active": True}
 
 @router.get("/policy-config")

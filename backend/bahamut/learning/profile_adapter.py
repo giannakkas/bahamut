@@ -125,5 +125,7 @@ def get_recent_streak() -> int:
                 else:
                     break
             return streak
-    except Exception:
+    except Exception as e:
+
+        logger.warning("profile_adapter_silent_error", error=str(e))
         return 0

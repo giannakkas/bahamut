@@ -435,7 +435,9 @@ def get_decision_log(limit: int = 20) -> list[dict]:
                 FROM portfolio_decision_log ORDER BY created_at DESC LIMIT :l
             """), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("portfolio_learning_silent_error", error=str(e))
         return []
 
 
@@ -456,7 +458,9 @@ def _load_decision_log(days: int, event_type: str) -> list[dict]:
                 ORDER BY created_at
             """.replace(":d days", f"{int(days)} days")), {"ev": event_type}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("portfolio_learning_silent_error", error=str(e))
         return []
 
 
@@ -466,7 +470,9 @@ def _get_state(entry: dict) -> dict:
     if isinstance(st, str):
         try:
             return json.loads(st)
-        except Exception:
+        except Exception as e:
+
+            logger.warning("portfolio_learning_silent_error", error=str(e))
             return {}
     return st or {}
 
@@ -541,5 +547,7 @@ def _load_rules() -> list[AdaptiveRule]:
                 confidence=float(r["confidence"]),
                 active=bool(r["active"]),
             ) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("portfolio_learning_silent_error", error=str(e))
         return []

@@ -371,7 +371,9 @@ def get_reallocation_log(limit: int = 20) -> list[dict]:
                 FROM reallocation_log ORDER BY created_at DESC LIMIT :l
             """), {"l": limit}).mappings().all()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as e:
+
+        logger.warning("portfolio_allocator_silent_error", error=str(e))
         return []
 
 
@@ -409,7 +411,9 @@ def _count_recent_reallocs() -> int:
             return conn.execute(text(
                 "SELECT COUNT(*) FROM reallocation_log WHERE created_at > NOW() - INTERVAL '1 hour'"
             )).scalar() or 0
-    except Exception:
+    except Exception as e:
+
+        logger.warning("portfolio_allocator_silent_error", error=str(e))
         return 0
 
 
