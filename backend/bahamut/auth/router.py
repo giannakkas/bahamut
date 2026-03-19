@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -79,6 +80,7 @@ class RegisterRequest(BaseModel):
     password: str
     full_name: str
     workspace_name: str
+    invite_code: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -146,6 +148,11 @@ async def get_current_user(
 
 @router.post("/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    # Registration requires invite code — prevents unauthorized account creation
+    invite_code = getattr(req, 'invite_code', None)
+    expected_code = os.environ.get("REGISTRATION_SECRET", settings.jwt_secret[:16])
+    if not invite_code or invite_code != expected_code:
+        raise HTTPException(status_code=403, detail="Invalid or missing invite code")
     try:
         # Check existing
         existing = await db.execute(select(User).where(User.email == req.email))
