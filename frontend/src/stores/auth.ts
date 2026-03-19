@@ -16,7 +16,7 @@ interface AuthStore {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, workspace: string) => Promise<void>;
+  register: (email: string, password: string, name: string, workspace: string, inviteCode?: string) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
 }
@@ -46,10 +46,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     }
   },
 
-  register: async (email, password, name, workspace) => {
+  register: async (email, password, name, workspace, inviteCode) => {
     set({ isLoading: true });
     try {
-      const res = await api.register(email, password, name, workspace);
+      const res = await api.register(email, password, name, workspace, inviteCode);
       api.setToken(res.access_token);
       api.setRefreshToken(res.refresh_token);
       if (typeof window !== 'undefined') {

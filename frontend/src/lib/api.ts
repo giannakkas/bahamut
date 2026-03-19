@@ -90,7 +90,7 @@ class ApiClient {
 
   // Auth
   async login(e: string, p: string) { return this.request<any>('/auth/login', { method: 'POST', body: JSON.stringify({ email: e, password: p }) }); }
-  async register(e: string, p: string, n: string, w: string) { return this.request<any>('/auth/register', { method: 'POST', body: JSON.stringify({ email: e, password: p, full_name: n, workspace_name: w }) }); }
+  async register(e: string, p: string, n: string, w: string, ic?: string) { return this.request<any>('/auth/register', { method: 'POST', body: JSON.stringify({ email: e, password: p, full_name: n, workspace_name: w, invite_code: ic || '' }) }); }
   async getMe() { return this.request<any>('/auth/me'); }
 
   // Agents
