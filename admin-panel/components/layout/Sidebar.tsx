@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -47,11 +46,7 @@ export function Sidebar() {
   // Get role from sessionStorage
   const userRole = typeof window !== "undefined" ? sessionStorage.getItem("bah_user_role") || "admin" : "admin";
   const isSuperAdmin = userRole === "super_admin";
-
-  // View mode toggle — super_admin can preview admin view
-  const [viewAs, setViewAs] = useState<"super_admin" | "admin">(isSuperAdmin ? "super_admin" : "admin");
-  const effectiveRole = isSuperAdmin ? viewAs : userRole;
-  const userLevel = ROLE_LEVELS[effectiveRole] ?? 0;
+  const userLevel = ROLE_LEVELS[userRole] ?? 0;
   const visibleNav = NAV_ITEMS.filter((item) => userLevel >= (ROLE_LEVELS[item.minRole] ?? 0));
 
   return (
@@ -106,20 +101,19 @@ export function Sidebar() {
 
         {/* Super Admin view toggle */}
         {isSuperAdmin && (
-          <button
-            onClick={() => setViewAs(viewAs === "super_admin" ? "admin" : "super_admin")}
-            className={cn(
-              "w-full mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all duration-200",
-              viewAs === "super_admin"
-                ? "border-purple-500/40 bg-purple-500/10 text-purple-400"
-                : "border-bah-border bg-white/[0.02] text-bah-muted"
-            )}
+          <a
+            href="https://bahamut.ai"
+            className="w-full mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-md border border-bah-border bg-white/[0.02] text-bah-muted hover:bg-white/[0.04] hover:text-bah-heading transition-all duration-200"
           >
             <span className="text-[10px] font-semibold tracking-wide uppercase">
-              {viewAs === "super_admin" ? "⚡ Super Admin" : "👤 Admin View"}
+              👤 Switch to Frontend
             </span>
-            <span className="text-[9px] opacity-60">Switch</span>
-          </button>
+            <span className="text-[9px] opacity-60">→</span>
+          </a>
+        )}
+
+        {isSuperAdmin && (
+          <div className="text-[9px] text-purple-400 font-semibold tracking-wider uppercase mt-2">⚡ Super Admin</div>
         )}
 
         <div className="flex justify-between mt-2">

@@ -71,6 +71,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="border-t border-border-default p-2 space-y-0.5">
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <a href="https://admin.bahamut.ai" className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-accent-violet hover:bg-bg-tertiary font-semibold">
+              <span className="text-xs opacity-80 w-4 text-center">⚡</span> Admin Panel
+            </a>
+          )}
           <a href="/settings" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-text-secondary hover:bg-bg-tertiary">
             <span className="text-xs opacity-60 w-4 text-center">⚙</span> Settings
           </a>
