@@ -32,10 +32,8 @@ export function Sidebar() {
     <nav className="flex flex-col w-[220px] shrink-0 sticky top-0 h-screen overflow-y-auto border-r border-bah-border bg-gradient-to-b from-bah-surface to-bah-bg">
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-bah-border/60">
-        <div className="text-lg font-extrabold tracking-widest bg-gradient-to-r from-bah-cyan to-bah-purple bg-clip-text text-transparent">
-          BAHAMUT
-        </div>
-        <div className="text-[9px] text-bah-muted tracking-[0.15em] uppercase mt-0.5">
+        <img src="/logo.png" alt="Bahamut.AI" className="h-9 w-auto object-contain" />
+        <div className="text-[9px] text-bah-muted tracking-[0.15em] uppercase mt-1">
           Trading Intelligence Control
         </div>
       </div>

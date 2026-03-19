@@ -6,6 +6,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Bahamut TICC — Trading Intelligence Control Center",
   description: "AI-driven portfolio intelligence admin panel",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
