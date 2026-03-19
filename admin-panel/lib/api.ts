@@ -192,6 +192,10 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}, _isRetry = 
       _onAuthExpired?.();
       throw new ApiError("Session expired — please log in again", 401);
     }
+    if (res.status === 401 && skipAuth) {
+      // Login/register attempt failed — don't clear tokens or trigger logout
+      throw new ApiError("Invalid email or password", 401);
+    }
     if (res.status === 401) {
       clearToken();
       _onAuthExpired?.();
