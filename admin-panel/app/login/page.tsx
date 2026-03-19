@@ -55,7 +55,7 @@ export default function LoginPage() {
 
         {/* Header */}
         <div className="text-center mb-6">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-12 mx-auto object-contain" />
+          <img src="/logo.png" alt="Bahamut.AI" className="h-20 mx-auto object-contain" />
           <div className="text-[9px] text-bah-muted tracking-[0.2em] uppercase mt-2">
             Trading Intelligence Control Center
           </div>
