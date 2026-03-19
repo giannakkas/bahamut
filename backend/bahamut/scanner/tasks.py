@@ -114,8 +114,8 @@ def deep_analyze_top_picks(symbols: list[str]):
         r = redis.from_url(settings.redis_url)
         r.set("bahamut:deep_analysis", json.dumps(deep_results, default=str), ex=1800)
         r.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("deep_analysis_cache_failed", error=str(e))
 
     logger.info("deep_analysis_completed", analyzed=len(deep_results),
                 signals=[r for r in deep_results if r.get("decision") in ("SIGNAL", "STRONG_SIGNAL")])

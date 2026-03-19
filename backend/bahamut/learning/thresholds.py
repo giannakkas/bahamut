@@ -57,8 +57,8 @@ def apply_threshold_tuning(report) -> dict:
                     elif act == "LOOSEN":
                         all_actions.append({"action": "LOOSEN_CANDIDATE",
                                             "reason": f"[stress] {a.get('reason', '')}"})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("stress_assessment_for_thresholds_failed", error=str(e))
 
     for action in all_actions:
         act = action.get("action", "")

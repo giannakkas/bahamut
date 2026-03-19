@@ -34,8 +34,8 @@ async def generate_daily_brief() -> dict:
                 if d:
                     cycle_summaries.append(f"{asset}: {d.get('direction','?')} (score={d.get('final_score',0):.2f}, {d.get('decision','?')})")
         r.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("daily_brief_cycle_cache_read_failed", error=str(e))
 
     # Build context for Gemini
     news_text = "\n".join([f"- [{a.get('source','')}] {a.get('title','')}" for a in news[:8]])

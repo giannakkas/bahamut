@@ -318,8 +318,8 @@ async def get_whale_score(symbol: str, asset_class: str, candles: list[dict] = N
             whale_data = score_whale_alerts_for_asset(alerts, symbol)
             result["whale_alert"] = whale_data
             result["total_whale_score"] += whale_data["whale_score"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("whale_alert_scoring_failed", symbol=symbol, error=str(e))
 
     # Clamp total score
     result["total_whale_score"] = max(-30, min(30, result["total_whale_score"]))

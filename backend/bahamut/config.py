@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     signal_cycle_interval_seconds: int = 900
     max_slippage_bps: int = 50
 
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = ["https://frontend-production-947b.up.railway.app"]
     port: int = 8000
 
     @property

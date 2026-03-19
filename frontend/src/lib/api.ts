@@ -2,22 +2,90 @@ const API_URL = 'https://bahamut-production.up.railway.app';
 
 class ApiClient {
   private token: string | null = null;
-  setToken(token: string) { this.token = token; }
-  clearToken() { this.token = null; }
+  private refreshToken: string | null = null;
+  private isRefreshing: boolean = false;
+  private refreshPromise: Promise<string | null> | null = null;
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  setToken(token: string) { this.token = token; }
+  setRefreshToken(token: string) { this.refreshToken = token; }
+  clearToken() { this.token = null; this.refreshToken = null; }
+
+  private async attemptRefresh(): Promise<string | null> {
+    if (!this.refreshToken) return null;
+
+    // Deduplicate concurrent refresh attempts
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const newToken = data.access_token;
+        if (newToken) {
+          this.token = newToken;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('bahamut_token', newToken);
+          }
+          return newToken;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  private async request<T>(path: string, options: RequestInit = {}, _isRetry = false): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> || {}) };
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(`${API_URL}/api/v1${path}`, { ...options, headers, signal: controller.signal });
+
+      if (res.status === 401 && !_isRetry && this.refreshToken) {
+        // Attempt token refresh, then retry once
+        const newToken = await this.attemptRefresh();
+        if (newToken) {
+          return this.request<T>(path, options, true);
+        }
+        // Refresh failed — trigger logout
+        this._triggerLogout();
+        throw new Error('Session expired — please log in again');
+      }
+
       if (!res.ok) { const err = await res.json().catch(() => ({ message: res.statusText })); throw new Error(err.detail || err.message || `API error ${res.status}`); }
       return res.json();
     } catch (e: any) {
       if (e.name === 'AbortError') throw new Error('Request timed out — server may be starting up, please try again');
       throw e;
     } finally { clearTimeout(timeout); }
+  }
+
+  private _logoutCallback: (() => void) | null = null;
+  onLogout(cb: () => void) { this._logoutCallback = cb; }
+  private _triggerLogout() {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('bahamut_token');
+      localStorage.removeItem('bahamut_refresh_token');
+      localStorage.removeItem('bahamut_user');
+    }
+    this.token = null;
+    this.refreshToken = null;
+    if (this._logoutCallback) this._logoutCallback();
   }
 
   // Auth

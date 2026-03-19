@@ -12,6 +12,7 @@ interface User {
 interface AuthStore {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -23,6 +24,7 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   token: null,
+  refreshToken: null,
   isAuthenticated: false,
   isLoading: false,
 
@@ -31,11 +33,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const res = await api.login(email, password);
       api.setToken(res.access_token);
+      api.setRefreshToken(res.refresh_token);
       if (typeof window !== 'undefined') {
         localStorage.setItem('bahamut_token', res.access_token);
+        localStorage.setItem('bahamut_refresh_token', res.refresh_token);
         localStorage.setItem('bahamut_user', JSON.stringify(res.user));
       }
-      set({ user: res.user, token: res.access_token, isAuthenticated: true, isLoading: false });
+      set({ user: res.user, token: res.access_token, refreshToken: res.refresh_token, isAuthenticated: true, isLoading: false });
     } catch (e) {
       set({ isLoading: false });
       throw e;
@@ -47,11 +51,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const res = await api.register(email, password, name, workspace);
       api.setToken(res.access_token);
+      api.setRefreshToken(res.refresh_token);
       if (typeof window !== 'undefined') {
         localStorage.setItem('bahamut_token', res.access_token);
+        localStorage.setItem('bahamut_refresh_token', res.refresh_token);
         localStorage.setItem('bahamut_user', JSON.stringify(res.user));
       }
-      set({ user: res.user, token: res.access_token, isAuthenticated: true, isLoading: false });
+      set({ user: res.user, token: res.access_token, refreshToken: res.refresh_token, isAuthenticated: true, isLoading: false });
     } catch (e) {
       set({ isLoading: false });
       throw e;
@@ -62,18 +68,26 @@ export const useAuthStore = create<AuthStore>((set) => ({
     api.clearToken();
     if (typeof window !== 'undefined') {
       localStorage.removeItem('bahamut_token');
+      localStorage.removeItem('bahamut_refresh_token');
       localStorage.removeItem('bahamut_user');
     }
-    set({ user: null, token: null, isAuthenticated: false });
+    set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
   },
 
   loadFromStorage: () => {
     if (typeof window === 'undefined') return;
     const token = localStorage.getItem('bahamut_token');
+    const refreshToken = localStorage.getItem('bahamut_refresh_token');
     const userStr = localStorage.getItem('bahamut_user');
     if (token && userStr) {
       api.setToken(token);
-      set({ token, user: JSON.parse(userStr), isAuthenticated: true });
+      if (refreshToken) api.setRefreshToken(refreshToken);
+      set({ token, refreshToken, user: JSON.parse(userStr), isAuthenticated: true });
     }
   },
 }));
+
+// Wire up the API client's logout callback to the store
+api.onLogout(() => {
+  useAuthStore.getState().logout();
+});

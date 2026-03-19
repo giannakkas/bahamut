@@ -121,8 +121,8 @@ def process_signal_sync(
                 bd = get_system_confidence()
                 sys_conf = bd.system_confidence
                 mean_trust = bd.mean_agent_trust
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("system_confidence_unavailable_in_executor", error=str(e))
 
             # Feed portfolio intelligence into execution policy
             augmented_flags = list(risk_flags)
@@ -269,8 +269,8 @@ def process_signal_sync(
                     row = pr.first()
                     if row:
                         link_trace_to_position(cycle_id, row[0])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("trace_link_failed", cycle_id=cycle_id, error=str(e))
 
             log.info("trade_opened_sync", sl=round(sl, 6), tp=round(tp, 6),
                      qty=round(qty, 6), risk=round(risk_amt, 2),
@@ -294,8 +294,8 @@ def process_signal_sync(
                         consensus_score=consensus_score,
                         portfolio_verdict_impact=portfolio_verdict.impact_score if portfolio_verdict else 0,
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("portfolio_entry_log_failed", cycle_id=cycle_id, error=str(e))
 
             return {
                 "action": "OPENED", "asset": asset, "direction": direction,

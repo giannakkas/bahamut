@@ -188,7 +188,7 @@ async def _score_impact(headline: str, source: str, assets: list[str]) -> float:
                                 return score
                         except ValueError:
                             continue
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("breaking_news_llm_scoring_failed", error=str(e))
 
     return min(1.0, base_score)

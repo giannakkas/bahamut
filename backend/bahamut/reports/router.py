@@ -26,8 +26,8 @@ async def daily_brief(user=Depends(get_current_user)):
     if redis_manager.redis:
         try:
             await redis_manager.redis.set("bahamut:daily_brief", json.dumps(brief, default=str), ex=3600)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("daily_brief_cache_failed", error=str(e))
 
     return brief
 
@@ -44,8 +44,8 @@ async def refresh_brief(user=Depends(get_current_user)):
     if redis_manager.redis:
         try:
             await redis_manager.redis.set("bahamut:daily_brief", json.dumps(brief, default=str), ex=3600)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("daily_brief_cache_failed", error=str(e))
 
     return brief
 

@@ -290,8 +290,8 @@ async def process_closed_trade(closed_trade: dict) -> dict:
             pnl=pnl, exit_status=closed_trade.get("status", ""),
             consensus_score=closed_trade.get("consensus_score", 0),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("portfolio_exit_log_failed", position_id=position_id, error=str(e))
 
     return {
         "position_id": position_id,

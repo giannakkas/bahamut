@@ -101,8 +101,8 @@ class AgentOrchestrator:
                 sa = get_stress_assessment()
                 if sa.has_recent_results:
                     s_score = sa.overall_stress_score
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("stress_assessment_unavailable", error=str(e))
 
             adjustment = resolve_effective_profile(
                 base_profile=trading_profile,
@@ -202,8 +202,8 @@ class AgentOrchestrator:
         try:
             from bahamut.consensus.system_confidence import get_system_confidence
             sys_conf_value = get_system_confidence().system_confidence
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("system_confidence_unavailable", error=str(e))
 
         decision = consensus_engine.calculate(
             agent_outputs=all_outputs, asset_class=asset_class,
@@ -287,8 +287,8 @@ class AgentOrchestrator:
                 contributions=decision.agent_contributions,
                 blocked=decision.blocked, block_reason=decision.block_reason,
             ).to_dict()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("explanation_generation_failed", error=str(e))
 
         return {
             "cycle_id": str(cycle_id),

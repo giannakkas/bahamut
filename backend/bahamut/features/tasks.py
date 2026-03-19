@@ -25,8 +25,8 @@ def detect_regime():
                 r = redis.from_url(get_settings().redis_url)
                 r.set("bahamut:current_regime", json.dumps(state.to_dict()), ex=600)
                 r.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("regime_cache_write_failed", error=str(e))
             return state.to_dict()
     except Exception as e:
         logger.error("detect_regime_failed", error=str(e))

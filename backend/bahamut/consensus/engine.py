@@ -325,8 +325,8 @@ class ConsensusEngine:
                 trading_profile=trading_profile, contributions=contributions,
             )
             explanation_text = expl.narrative
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("consensus_explanation_failed", error=str(e))
 
         return ConsensusDecisionSchema(
             consensus_id=uuid4(),

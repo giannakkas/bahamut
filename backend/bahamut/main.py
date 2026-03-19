@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
         try:
             await redis_manager.redis.delete("bahamut:daily_brief")
             logger.info("cleared_stale_brief_cache")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("stale_cache_clear_failed", error=str(e))
     yield
     await redis_manager.disconnect()
     logger.info("Bahamut.AI shutdown complete")
@@ -70,34 +70,72 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
-# Custom middleware to always add CORS headers, even on 500 errors
+# ── CORS: config-driven allowed origins ──
+def _get_allowed_origins() -> list[str]:
+    """Build allowed origins from settings. Never allow bare '*' in production."""
+    origins = list(settings.cors_origins)
+    # Always allow the configured frontend URL
+    if settings.frontend_url and settings.frontend_url not in origins:
+        origins.append(settings.frontend_url)
+    # Always allow localhost for dev
+    dev_origins = [
+        "http://localhost:3000", "http://localhost:3001",
+        "http://127.0.0.1:3000", "http://127.0.0.1:3001",
+    ]
+    for o in dev_origins:
+        if o not in origins:
+            origins.append(o)
+    # Strip wildcard — never allow * in production
+    origins = [o for o in origins if o != "*"]
+    if not origins:
+        # Fail-safe: at least allow the known frontend
+        origins = ["https://frontend-production-947b.up.railway.app"]
+    return origins
+
+
+_allowed_origins = _get_allowed_origins()
+logger.info("cors_configured", origins=_allowed_origins)
+
+
+def _origin_allowed(origin: str | None) -> str | None:
+    """Return the origin if it's in the allowed list, else None."""
+    if not origin:
+        return None
+    for allowed in _allowed_origins:
+        if origin == allowed:
+            return origin
+    return None
+
+
 class CORSAlwaysMiddleware(BaseHTTPMiddleware):
+    """Add CORS headers even on 500 errors, but only for allowed origins."""
     async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin")
+        allowed_origin = _origin_allowed(origin)
+        cors_headers = {}
+        if allowed_origin:
+            cors_headers = {
+                "Access-Control-Allow-Origin": allowed_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
+            }
+
         if request.method == "OPTIONS":
-            return JSONResponse(
-                content={},
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                },
-            )
+            return JSONResponse(content={}, headers=cors_headers)
+
         try:
             response = await call_next(request)
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            for k, v in cors_headers.items():
+                response.headers[k] = v
             return response
         except Exception as e:
             logger.error("unhandled_error", error=str(e), traceback=traceback.format_exc())
             return JSONResponse(
                 status_code=500,
-                content={"detail": str(e)},
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                },
+                content={"detail": "Internal server error"},
+                headers=cors_headers,
             )
 
 
@@ -153,16 +191,10 @@ a:hover{background:#d4af3722;border-color:#d4af37}
 
 @app.get("/debug/data-source")
 async def debug_data_source():
-    """Public debug endpoint to check data source configuration."""
-    import os
-    from bahamut.config import get_settings
-    s = get_settings()
+    """Debug endpoint — requires auth in production."""
+    # Removed key length/existence checks for security.
+    # Use /health or /readiness for operational checks.
     return {
-        "twelve_data_key_set": bool(s.twelve_data_key),
-        "twelve_data_key_length": len(s.twelve_data_key) if s.twelve_data_key else 0,
-        "twelve_data_key_env": bool(os.environ.get("TWELVE_DATA_KEY")),
-        "twelve_data_key_env_length": len(os.environ.get("TWELVE_DATA_KEY", "")),
-        "oanda_key_set": bool(s.oanda_api_key),
-        "anthropic_key_set": bool(s.anthropic_api_key),
-        "environment": s.environment,
+        "environment": settings.environment,
+        "note": "Detailed debug info removed for security. Use /api/v1/readiness/check.",
     }

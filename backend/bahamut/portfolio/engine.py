@@ -175,8 +175,16 @@ def evaluate_trade_for_portfolio(
         if ks_state.safe_mode_active:
             verdict.warnings.append(f"SAFE_MODE: {'; '.join(ks_state.triggers[:1])}")
             verdict.requires_approval = True
-    except Exception:
-        pass
+    except Exception as e:
+        # SAFETY: Kill switch failure = assume unsafe, block trade
+        logger.error("kill_switch_evaluation_failed", error=str(e), asset=proposed_asset)
+        from bahamut.shared.degraded import mark_degraded
+        mark_degraded("portfolio.kill_switch", str(e))
+        verdict.blockers.append("KILL_SWITCH_UNAVAILABLE: defaulting to BLOCK for safety")
+        verdict.allowed = False
+        verdict.size_multiplier = 0.0
+        verdict.warnings.append(f"Kill switch subsystem error: {str(e)[:100]}")
+        return verdict
 
     # ═══════════════════════════════════
     # 1. EXPOSURE ENGINE
@@ -273,8 +281,10 @@ def evaluate_trade_for_portfolio(
         if adaptive["force_approval"]:
             verdict.requires_approval = True
             verdict.warnings.append("ADAPTIVE: approval required by learned pattern")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("adaptive_rules_failed", error=str(e), asset=proposed_asset)
+        from bahamut.shared.degraded import mark_degraded
+        mark_degraded("portfolio.adaptive_rules", str(e))
 
     # ═══════════════════════════════════
     # 6. SCENARIO RISK (macro shock simulation)
@@ -308,8 +318,12 @@ def evaluate_trade_for_portfolio(
             verdict.size_multiplier *= scale
             verdict.warnings.append(
                 f"SCENARIO_RISK: size ×{scale:.2f} (tail_risk={tr:.1%}, worst={scenario_assessment.worst_scenario})")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("scenario_risk_failed", error=str(e), asset=proposed_asset)
+        from bahamut.shared.degraded import mark_degraded
+        mark_degraded("portfolio.scenario_risk", str(e))
+        verdict.warnings.append(f"SCENARIO_RISK_UNAVAILABLE: {str(e)[:80]}")
+        verdict.requires_approval = True  # conservative: require approval when scenarios can't evaluate
 
     if scenario_assessment:
         verdict.scenario_risk = scenario_assessment.to_dict()
@@ -345,8 +359,11 @@ def evaluate_trade_for_portfolio(
         if marginal_result.is_hedging:
             verdict.reasons.append(
                 f"HEDGING: trade reduces tail risk by {abs(marginal_result.marginal_tail_risk):.1%}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("marginal_risk_failed", error=str(e), asset=proposed_asset)
+        from bahamut.shared.degraded import mark_degraded
+        mark_degraded("portfolio.marginal_risk", str(e))
+        verdict.warnings.append(f"MARGINAL_RISK_UNAVAILABLE: {str(e)[:80]}")
 
     # ═══════════════════════════════════
     # 8. QUALITY RATIO (expected return / marginal risk)
@@ -374,8 +391,10 @@ def evaluate_trade_for_portfolio(
             verdict.size_multiplier *= 0.7
             verdict.warnings.append(
                 f"QUALITY_RATIO: {qr.quality_ratio:.2f} — size ×0.70")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("quality_ratio_failed", error=str(e), asset=proposed_asset)
+        from bahamut.shared.degraded import mark_degraded
+        mark_degraded("portfolio.quality_ratio", str(e))
 
     # ═══════════════════════════════════
     # FINAL VERDICT

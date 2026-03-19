@@ -97,8 +97,8 @@ class DynamicWeightResolver:
                 row = r.first()
                 if row and row[0] and isinstance(row[0], dict):
                     return row[0]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("regime_weights_load_failed", regime=regime, error=str(e))
         return None
 
     def get_weight_explanation(self, asset_class, regime, timeframe="4H",

@@ -80,8 +80,8 @@ def run_daily_calibration() -> CalibrationResult:
         active_rules = [r for r in rules if r.active]
         if active_rules:
             notes.append(f"Portfolio learning: {len(active_rules)} adaptive rules active")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("portfolio_pattern_analysis_failed", error=str(e))
 
     logger.info("daily_calibration", trades=total, notes=notes)
     return result

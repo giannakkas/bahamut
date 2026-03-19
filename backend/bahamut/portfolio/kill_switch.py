@@ -178,5 +178,5 @@ def _log_event(event_type: str, detail: str):
                 INSERT INTO kill_switch_events (event_type, detail) VALUES (:e, :d)
             """), {"e": event_type, "d": detail})
             conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("kill_switch_event_log_failed", event_type=event_type, error=str(e))

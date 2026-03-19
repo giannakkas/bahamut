@@ -277,8 +277,8 @@ async def get_cached_scan() -> dict | None:
         r.close()
         if cached:
             return json.loads(cached)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("scan_cache_read_failed", error=str(e))
     return None
 
 

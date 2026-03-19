@@ -210,8 +210,8 @@ async def get_current_prices() -> dict[str, float]:
             ))
             for row in result:
                 assets_to_fetch.add(row[0])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("open_positions_query_failed", error=str(e))
 
     # Fallback: always check the core assets even if no open positions
     if not assets_to_fetch:

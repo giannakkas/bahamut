@@ -35,8 +35,8 @@ def check_paper_positions(self):
     try:
         from bahamut.agents.persistence import ensure_tables
         ensure_tables()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ensure_tables_failed_in_check_positions", error=str(e))
 
     try:
         closed = run_async(_check_positions_async())
