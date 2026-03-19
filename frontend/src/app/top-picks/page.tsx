@@ -52,13 +52,13 @@ export default function TopPicksPage() {
   // Countdown timer
   useEffect(() => {
     const tick = () => {
-      if (!data?.scanned_at) { setCountdown('--:--'); return; }
+      if (!data?.scanned_at) { setCountdown('Ready'); return; }
       const scannedAt = new Date(data.scanned_at).getTime();
       const nextScan = scannedAt + SCAN_INTERVAL * 1000;
       const remaining = Math.max(0, Math.floor((nextScan - Date.now()) / 1000));
       const min = Math.floor(remaining / 60);
       const sec = remaining % 60;
-      setCountdown(remaining <= 0 ? 'Scanning...' : `${min}:${sec.toString().padStart(2, '0')}`);
+      setCountdown(remaining <= 0 ? 'Ready' : `${min}:${sec.toString().padStart(2, '0')}`);
     };
     tick();
     const timer = setInterval(tick, 1000);
