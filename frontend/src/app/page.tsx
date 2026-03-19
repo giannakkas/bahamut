@@ -61,18 +61,24 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [headlines, setHeadlines] = useState<any[]>([]);
+  const [killSwitch, setKillSwitch] = useState<any>(null);
+  const [systemConf, setSystemConf] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [r, b, c] = await Promise.allSettled([
+        const [r, b, c, ks, sc] = await Promise.allSettled([
           api.getRiskDashboard(),
           api.getDailyBrief(),
           api.getAllLatestCycles(),
+          api.getKillSwitchState(),
+          api.getSystemConfidence(),
         ]);
         if (r.status === 'fulfilled') setRisk(r.value);
         if (b.status === 'fulfilled') setBrief(b.value);
         if (c.status === 'fulfilled') setCycles(c.value);
+        if (ks.status === 'fulfilled') setKillSwitch(ks.value);
+        if (sc.status === 'fulfilled') setSystemConf(sc.value);
       } catch (e) { console.error(e); }
       try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
       try { const n = await api.getNews('general', 15); setHeadlines(n.articles || []); } catch {}
@@ -114,11 +120,24 @@ export default function DashboardPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Regime Banner */}
-        <div className="bg-bg-secondary border border-border-default rounded-lg p-4 flex items-center justify-between">
+        <div className={`bg-bg-secondary border rounded-lg p-4 flex items-center justify-between ${
+          killSwitch?.kill_switch_active ? 'border-accent-crimson/50' : 'border-border-default'
+        }`}>
           <div className="flex items-center gap-4">
-            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">RISK_ON</span>
-            <span className="text-sm text-text-secondary">Confidence: <span className="font-mono text-text-primary">78%</span></span>
-            {signalCount > 0 && (
+            {killSwitch?.kill_switch_active ? (
+              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-crimson/20 text-accent-crimson border border-accent-crimson/30 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
+                KILL ACTIVE
+              </span>
+            ) : killSwitch?.safe_mode_active ? (
+              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-amber/20 text-accent-amber border border-accent-amber/30">SAFE MODE</span>
+            ) : (
+              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">RISK_ON</span>
+            )}
+            <span className="text-sm text-text-secondary">Confidence: <span className="font-mono text-text-primary">{
+              systemConf?.composite_score ? `${(systemConf.composite_score * 100).toFixed(0)}%` : '—'
+            }</span></span>
+            {signalCount > 0 && !killSwitch?.kill_switch_active && (
               <span className="flex items-center gap-1.5 text-sm text-accent-emerald">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
@@ -131,6 +150,21 @@ export default function DashboardPage() {
           {brief && <div className="text-xs text-text-muted max-w-lg truncate">{brief.summary?.slice(0, 120)}...</div>}
         </div>
 
+
+        {/* Kill Switch Warning */}
+        {killSwitch?.kill_switch_active && (
+          <div className="bg-accent-crimson/15 border-2 border-accent-crimson/40 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-accent-crimson animate-pulse" />
+              <div>
+                <div className="text-sm font-bold text-accent-crimson">Kill Switch Active — Trading Halted</div>
+                <div className="text-xs text-text-secondary mt-0.5">
+                  {killSwitch?.triggers?.[0] || 'Portfolio risk exceeded safety thresholds. All new trades are blocked until risk normalizes.'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Breaking News Alerts */}
         {alerts.length > 0 && (
@@ -159,7 +193,14 @@ export default function DashboardPage() {
           <MetricCard label="Active Signals" value={String(signalCount)} sub={strongSignals > 0 ? strongSignals + ' actionable' : 'Monitoring'} variant={strongSignals > 0 ? 'positive' : 'neutral'} />
           <MetricCard label="Agents Online" value="6 / 6" sub="All operational" variant="positive" />
           <MetricCard label="Consensus Cycles" value={String(signalCount)} sub="Last 30 min" />
-          <MetricCard label="Risk Status" value={dd.daily > limits.daily * 0.8 ? 'CAUTION' : 'CLEAR'} sub={'Daily DD: ' + (dd.daily * 100).toFixed(1) + '%'} variant={dd.daily > limits.daily * 0.8 ? 'negative' : 'positive'} />
+          <MetricCard label="Risk Status" value={
+            killSwitch?.kill_switch_active ? 'KILL ACTIVE' :
+            killSwitch?.safe_mode_active ? 'SAFE MODE' :
+            dd.daily > limits.daily * 0.8 ? 'CAUTION' : 'CLEAR'
+          } sub={'Daily DD: ' + (dd.daily * 100).toFixed(1) + '%'} variant={
+            killSwitch?.kill_switch_active ? 'negative' :
+            dd.daily > limits.daily * 0.8 ? 'negative' : 'positive'
+          } />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

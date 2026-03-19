@@ -94,8 +94,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-sm text-text-secondary">{user?.full_name || 'Trader'}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">
-                RISK_ON 78%
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-bg-tertiary text-text-secondary border border-border-default">
+                {user?.role === 'super_admin' ? '⚡ Super Admin' : user?.role === 'admin' ? '🔧 Admin' : '📊 Trader'}
               </span>
               <div className="w-7 h-7 rounded-full bg-accent-violet flex items-center justify-center text-[10px] font-bold text-white">{initials}</div>
             </div>
