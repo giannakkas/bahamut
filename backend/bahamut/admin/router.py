@@ -62,38 +62,75 @@ async def get_audit(limit: int = 50, user=Depends(get_current_user)):
 @router.get("/summary")
 async def admin_summary(user=Depends(get_current_user)):
     """Read-only system summary for admin dashboard."""
-    summary = {}
+    summary = {
+        "kill_switch": {"active": False},
+        "safe_mode": {"active": False},
+        "risk_level": "LOW",
+        "last_cycle": None,
+        "readiness": {"score": 0.5, "grade": "C", "components": {},
+                      "pass": 0, "warn": 0, "fail": 0},
+        "system_confidence": {},
+        "config_overrides_count": 0,
+    }
     try:
         from bahamut.portfolio.kill_switch import get_current_state
-        summary["kill_switch"] = get_current_state()
+        ks = get_current_state()
+        summary["kill_switch"] = {
+            "active": ks.get("kill_switch_active", False),
+            "triggers": ks.get("triggers", []),
+        }
+        summary["safe_mode"] = {
+            "active": ks.get("safe_mode_active", False),
+        }
     except Exception as e:
-
         logger.warning("admin_silent_error", error=str(e))
-        summary["kill_switch"] = {"error": "unavailable"}
+
     try:
         from bahamut.readiness.checklist import run_readiness_check
         r = run_readiness_check()
-        summary["readiness"] = {"overall": r.overall, "pass": r.pass_count,
-                                 "warn": r.warn_count, "fail": r.fail_count}
+        total = r.pass_count + r.warn_count + r.fail_count
+        score = r.pass_count / total if total > 0 else 0
+        grade = "A" if score >= 0.9 else "B" if score >= 0.7 else "C" if score >= 0.5 else "D"
+        components = {}
+        for c in getattr(r, 'checks', []):
+            components[c.get("name", "unknown")] = c.get("status", "unknown")
+        summary["readiness"] = {
+            "overall": r.overall, "score": round(score, 2), "grade": grade,
+            "pass": r.pass_count, "warn": r.warn_count, "fail": r.fail_count,
+            "components": components,
+        }
     except Exception as e:
-
         logger.warning("admin_silent_error", error=str(e))
-        summary["readiness"] = {"error": "unavailable"}
+
+    try:
+        from bahamut.db.query import run_query_one
+        row = run_query_one("SELECT completed_at FROM signal_cycles ORDER BY completed_at DESC LIMIT 1")
+        if row:
+            summary["last_cycle"] = str(row.get("completed_at", ""))
+    except Exception:
+        pass
+
+    try:
+        from bahamut.shared.degraded import get_degraded_flags
+        flags = get_degraded_flags()
+        critical = {"portfolio.kill_switch", "portfolio.scenario_risk", "auth.revocation"}
+        has_critical = any(k in critical for k in flags)
+        summary["risk_level"] = "HIGH" if has_critical else "MEDIUM" if flags else "LOW"
+    except Exception:
+        pass
+
     try:
         from bahamut.consensus.system_confidence import get_system_confidence
         bd = get_system_confidence()
         summary["system_confidence"] = bd.to_dict()
     except Exception as e:
-
         logger.warning("admin_silent_error", error=str(e))
         summary["system_confidence"] = {"error": "unavailable"}
     try:
         from bahamut.admin.config import get_overrides
         summary["config_overrides_count"] = len(get_overrides())
     except Exception as e:
-
         logger.warning("admin_silent_error", error=str(e))
-        summary["config_overrides_count"] = 0
     return summary
 
 
