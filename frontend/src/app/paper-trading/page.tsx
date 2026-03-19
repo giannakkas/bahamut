@@ -255,7 +255,7 @@ export default function PaperTradingPage() {
         <StatCard
           label="Open Positions"
           value={`${p?.open_positions?.length || 0}`}
-          sub="/ 5 max"
+          sub={`/ ${p?.max_open_positions || 10} max`}
         />
       </div>
 
