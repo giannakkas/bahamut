@@ -18,18 +18,17 @@ const NAV_ITEMS = [
   { href: "/learning", label: "Learning", icon: "🧬", minRole: "admin" },
   { href: "/ai-opt", label: "AI Optimizer", icon: "🤖", minRole: "admin" },
   { href: "/users", label: "Users", icon: "👥", minRole: "admin" },
-  // ─── Super Admin: Engine Controls ───
+  { href: "/paper-trading", label: "Paper Trading", icon: "💰", minRole: "admin" },
+  { href: "/agent-council", label: "Agent Council", icon: "◎", minRole: "admin" },
+  { href: "/learning-lab", label: "Learning Lab", icon: "◐", minRole: "admin" },
+  { href: "/execution", label: "Execution Monitor", icon: "⚡", minRole: "admin" },
+  { href: "/trade-journal", label: "Trade Journal", icon: "☰", minRole: "admin" },
+  // ─── Super Admin Only: Raw Engine Controls ───
   { href: "/config", label: "Configuration", icon: "⚙", minRole: "super_admin" },
   { href: "/overrides", label: "Overrides", icon: "🎛", minRole: "super_admin" },
   { href: "/trust", label: "Trust & Intelligence", icon: "🧠", minRole: "super_admin" },
   { href: "/adaptive-risk", label: "Adaptive Risk", icon: "📊", minRole: "super_admin" },
   { href: "/agent-ranking", label: "Agent Ranking", icon: "🏆", minRole: "super_admin" },
-  // ─── Super Admin: Trading Platform ───
-  { href: "/paper-trading", label: "Paper Trading", icon: "💰", minRole: "super_admin" },
-  { href: "/agent-council", label: "Agent Council", icon: "◎", minRole: "super_admin" },
-  { href: "/learning-lab", label: "Learning Lab", icon: "◐", minRole: "super_admin" },
-  { href: "/execution", label: "Execution Monitor", icon: "⚡", minRole: "super_admin" },
-  { href: "/trade-journal", label: "Trade Journal", icon: "☰", minRole: "super_admin" },
 ];
 
 const ROLE_LEVELS: Record<string, number> = {
