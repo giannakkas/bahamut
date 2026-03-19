@@ -179,7 +179,7 @@ TABLES = [
         peak_balance FLOAT DEFAULT 100000.0,
         is_active BOOLEAN DEFAULT TRUE,
         risk_per_trade_pct FLOAT DEFAULT 2.0,
-        max_open_positions INTEGER DEFAULT 5,
+        max_open_positions INTEGER DEFAULT 10,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
     )""",

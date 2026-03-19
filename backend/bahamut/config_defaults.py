@@ -96,7 +96,7 @@ PROFILE_PRESETS = {
     },
     "balanced": {
         "risk_per_trade_pct": 2.0,
-        "max_concurrent_trades": 5,
+        "max_concurrent_trades": 10,
         "max_leverage": 5.0,
         "stop_loss_atr_multiple": 1.5,
         "take_profit_atr_multiple": 2.25,

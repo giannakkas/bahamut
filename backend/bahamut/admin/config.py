@@ -82,7 +82,7 @@ DEFAULTS = {
     "profile.conservative.min_score": 0.65,
     "profile.balanced.max_daily_dd": 0.03,
     "profile.balanced.max_weekly_dd": 0.06,
-    "profile.balanced.max_trades": 5,
+    "profile.balanced.max_trades": 10,
     "profile.balanced.min_score": 0.55,
     "profile.aggressive.max_daily_dd": 0.05,
     "profile.aggressive.max_weekly_dd": 0.10,

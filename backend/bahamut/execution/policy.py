@@ -54,17 +54,17 @@ class ExecutionDecision:
 PROFILE_LIMITS = {
     "CONSERVATIVE": {
         "max_daily_drawdown": 0.02, "max_weekly_drawdown": 0.04,
-        "max_concurrent_trades": 3, "min_consensus_score": 0.65,
+        "max_concurrent_trades": 5, "min_consensus_score": 0.65,
         "auto_trade_allowed": False, "max_position_pct": 0.02,
     },
     "BALANCED": {
         "max_daily_drawdown": 0.03, "max_weekly_drawdown": 0.06,
-        "max_concurrent_trades": 5, "min_consensus_score": 0.55,
+        "max_concurrent_trades": 10, "min_consensus_score": 0.55,
         "auto_trade_allowed": True, "max_position_pct": 0.03,
     },
     "AGGRESSIVE": {
         "max_daily_drawdown": 0.05, "max_weekly_drawdown": 0.10,
-        "max_concurrent_trades": 8, "min_consensus_score": 0.45,
+        "max_concurrent_trades": 15, "min_consensus_score": 0.45,
         "auto_trade_allowed": True, "max_position_pct": 0.05,
     },
 }

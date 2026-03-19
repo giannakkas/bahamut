@@ -56,7 +56,7 @@ class KillSwitchState:
     deleverage_recommended: bool = False
     deleverage_targets: list = field(default_factory=list)
     triggers: list = field(default_factory=list)
-    effective_max_trades: int = 5
+    effective_max_trades: int = 10
     effective_max_position_pct: float = 0.03
 
     def to_dict(self):

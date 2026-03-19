@@ -48,7 +48,7 @@ class PaperPortfolio(Base):
     peak_balance = Column(Float, default=100_000.0)
     is_active = Column(Boolean, default=True)
     risk_per_trade_pct = Column(Float, default=2.0)    # % of portfolio per trade
-    max_open_positions = Column(Integer, default=5)
+    max_open_positions = Column(Integer, default=10)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))

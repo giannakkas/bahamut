@@ -54,6 +54,15 @@ async def lifespan(app: FastAPI):
         logger.info("super_admin_check_complete")
     except Exception as e:
         logger.debug("super_admin_promotion_skipped", error=str(e))
+    # Update existing portfolios to current max_open_positions default
+    try:
+        from bahamut.db.query import run_transaction
+        run_transaction(
+            "UPDATE paper_portfolios SET max_open_positions = 10 WHERE max_open_positions < 10",
+            {}
+        )
+    except Exception as e:
+        logger.debug("portfolio_max_positions_update_skipped", error=str(e))
     # Load persisted threshold overrides
     try:
         from bahamut.learning.thresholds import load_persisted_thresholds
