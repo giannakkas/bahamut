@@ -48,7 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-[220px] lg:w-[220px] bg-bg-secondary border-r border-border-default flex flex-col shrink-0 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="h-14 flex items-center justify-center px-3 border-b border-border-default">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-10 w-auto object-contain" />
+          <img src="/logo.png" alt="Bahamut.AI" className="h-14 w-auto object-contain" />
         </div>
         <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map(item => (
