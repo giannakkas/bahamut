@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -46,7 +47,12 @@ export function Sidebar() {
 
   // Get role from sessionStorage
   const userRole = typeof window !== "undefined" ? sessionStorage.getItem("bah_user_role") || "admin" : "admin";
-  const userLevel = ROLE_LEVELS[userRole] ?? 0;
+  const isSuperAdmin = userRole === "super_admin";
+
+  // View mode toggle — super_admin can preview admin view
+  const [viewAs, setViewAs] = useState<"super_admin" | "admin">(isSuperAdmin ? "super_admin" : "admin");
+  const effectiveRole = isSuperAdmin ? viewAs : userRole;
+  const userLevel = ROLE_LEVELS[effectiveRole] ?? 0;
   const visibleNav = NAV_ITEMS.filter((item) => userLevel >= (ROLE_LEVELS[item.minRole] ?? 0));
 
   return (
@@ -98,9 +104,25 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-4 py-3 border-t border-bah-border/60 text-[10px] text-bah-muted">
         <EnvIndicator />
-        {userRole === "super_admin" && (
-          <div className="text-[9px] text-purple-400 font-semibold tracking-wider uppercase mt-1">⚡ Super Admin</div>
+
+        {/* Super Admin view toggle */}
+        {isSuperAdmin && (
+          <button
+            onClick={() => setViewAs(viewAs === "super_admin" ? "admin" : "super_admin")}
+            className={cn(
+              "w-full mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all duration-200",
+              viewAs === "super_admin"
+                ? "border-purple-500/40 bg-purple-500/10 text-purple-400"
+                : "border-bah-border bg-white/[0.02] text-bah-muted"
+            )}
+          >
+            <span className="text-[10px] font-semibold tracking-wide uppercase">
+              {viewAs === "super_admin" ? "⚡ Super Admin" : "👤 Admin View"}
+            </span>
+            <span className="text-[9px] opacity-60">Switch</span>
+          </button>
         )}
+
         <div className="flex justify-between mt-2">
           <span>v1.0.0</span>
           <button
