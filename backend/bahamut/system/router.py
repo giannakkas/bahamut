@@ -110,6 +110,29 @@ async def system_health():
     except Exception as e:
         checks["warmup"] = {"mode": "unknown", "error": str(e)[:80]}
 
+    # ── Adaptive risk ──
+    try:
+        from bahamut.intelligence.adaptive_risk import compute_adaptive_adjustments
+        adaptive = compute_adaptive_adjustments()
+        checks["adaptive_risk"] = {
+            "volatility": adaptive["conditions"].get("volatility_level", "unknown"),
+            "drawdown_trend": adaptive["conditions"].get("drawdown_trend", "unknown"),
+            "adjustments_active": any(a["delta"] != 0 for a in adaptive["adjustments"].values()),
+        }
+    except Exception:
+        checks["adaptive_risk"] = {"status": "unavailable"}
+
+    # ── Kill switch recovery ──
+    try:
+        from bahamut.intelligence.kill_switch_recovery import get_recovery_status
+        recovery = get_recovery_status()
+        checks["kill_switch_recovery"] = {
+            "status": recovery["status"],
+            "size_multiplier": recovery.get("size_multiplier", 1.0),
+        }
+    except Exception:
+        checks["kill_switch_recovery"] = {"status": "unknown"}
+
     # ── Overall ──
     db_ok = checks.get("db", {}).get("status") == "ok"
     redis_ok = checks.get("redis", {}).get("status") == "ok"

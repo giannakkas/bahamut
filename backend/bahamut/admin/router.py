@@ -66,6 +66,10 @@ async def get_single_config(key: str, user=Depends(get_current_user)):
 async def set_config_value(body: ConfigUpdate, user=Depends(get_current_user)):
     """Set a config value (super_admin only — persisted, audited)."""
     require_super_admin(user)
+    from bahamut.intelligence.config_guardrails import validate_config_change
+    ok, error_msg = validate_config_change(body.key, body.value)
+    if not ok:
+        raise HTTPException(status_code=400, detail=error_msg)
     from bahamut.admin.config import set_config
     return set_config(body.key, body.value, changed_by=user.email)
 
@@ -478,6 +482,12 @@ async def set_user_control(body: UserControlUpdate, user=Depends(get_current_use
     """Set a simplified user control — maps to backend config safely."""
     from bahamut.config_defaults import USER_CONTROL_MAPPINGS
     from bahamut.admin.config import set_config
+    from bahamut.intelligence.config_guardrails import validate_user_control
+
+    # Guardrail check
+    ok, error_msg = validate_user_control(body.control, body.value)
+    if not ok:
+        raise HTTPException(status_code=400, detail=error_msg)
 
     if body.control not in USER_CONTROL_MAPPINGS:
         raise HTTPException(status_code=400, detail=f"Unknown control: {body.control}")

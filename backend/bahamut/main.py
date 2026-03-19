@@ -25,6 +25,7 @@ from bahamut.readiness.router import router as readiness_router
 from bahamut.portfolio.router import router as portfolio_router
 from bahamut.admin.router import router as admin_router
 from bahamut.system.router import router as system_router
+from bahamut.intelligence.router import router as trust_router
 from bahamut.shared.redis_client import redis_manager
 
 settings = get_settings()
@@ -182,6 +183,7 @@ app.include_router(readiness_router, prefix="/api/v1/readiness", tags=["readines
 app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["portfolio-intel"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
+app.include_router(trust_router, prefix="/api/v1/trust", tags=["trust"])
 app.include_router(metrics_router, tags=["metrics"])
 
 
