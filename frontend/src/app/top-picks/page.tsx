@@ -52,13 +52,19 @@ export default function TopPicksPage() {
   // Countdown timer
   useEffect(() => {
     const tick = () => {
-      if (!data?.scanned_at) { setCountdown('Ready'); return; }
+      if (!data?.scanned_at) { setCountdown('No scan yet'); return; }
       const scannedAt = new Date(data.scanned_at).getTime();
       const nextScan = scannedAt + SCAN_INTERVAL * 1000;
       const remaining = Math.max(0, Math.floor((nextScan - Date.now()) / 1000));
-      const min = Math.floor(remaining / 60);
-      const sec = remaining % 60;
-      setCountdown(remaining <= 0 ? 'Ready' : `${min}:${sec.toString().padStart(2, '0')}`);
+      if (remaining <= 0) {
+        // Show how long ago the last scan was
+        const ago = Math.floor((Date.now() - scannedAt) / 60000);
+        setCountdown(ago < 60 ? `${ago}m ago` : `${Math.floor(ago / 60)}h ago`);
+      } else {
+        const min = Math.floor(remaining / 60);
+        const sec = remaining % 60;
+        setCountdown(`${min}:${sec.toString().padStart(2, '0')}`);
+      }
     };
     tick();
     const timer = setInterval(tick, 1000);
@@ -112,7 +118,7 @@ export default function TopPicksPage() {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <div className="text-[10px] text-text-muted uppercase tracking-wider">Next scan</div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider">{countdown.includes('ago') ? 'Last scan' : 'Next scan'}</div>
               <div className="text-sm font-mono font-bold text-accent-violet">{countdown}</div>
             </div>
             <button onClick={triggerScan} disabled={scanning}

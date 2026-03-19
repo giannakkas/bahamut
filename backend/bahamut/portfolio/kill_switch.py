@@ -85,7 +85,7 @@ def evaluate_kill_switch(
     state = KillSwitchState()
 
     # ── 1. Hard kill switch ──
-    ks_threshold = get_config("kill_switch.tail_risk_threshold", 0.15)
+    ks_threshold = get_config("kill_switch.tail_risk_threshold", 0.25)
     if weighted_tail_risk >= ks_threshold:
         state.kill_switch_active = True
         state.triggers.append(

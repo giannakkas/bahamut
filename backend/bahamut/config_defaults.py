@@ -9,7 +9,7 @@ CONFIG_DEFAULTS_VERSION = 1
 
 # ─── Kill Switch ───
 KILL_SWITCH_DEFAULTS = {
-    "kill_switch.tail_risk_threshold": 0.15,
+    "kill_switch.tail_risk_threshold": 0.25,
     "kill_switch.fragility_threshold": 0.80,
     "kill_switch.combined_stress_threshold": 0.70,
 }

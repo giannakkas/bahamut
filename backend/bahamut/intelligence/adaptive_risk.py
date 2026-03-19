@@ -20,7 +20,7 @@ HARD_BOUNDS = {
 
 # Default base values
 BASE_VALUES = {
-    "tail_risk_threshold": 0.15,
+    "tail_risk_threshold": 0.25,
     "gross_exposure_max": 0.80,
     "confidence_min_trade": 0.58,
 }
