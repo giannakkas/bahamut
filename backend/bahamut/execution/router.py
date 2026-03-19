@@ -9,7 +9,7 @@ router = APIRouter()
 
 @router.post("/kill-switch")
 async def kill_switch(user=Depends(get_current_user)):
-    if user.role not in ("trader", "admin"):
+    if user.role not in ("trader", "admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
         from bahamut.paper_trading.store import close_all_positions

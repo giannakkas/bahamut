@@ -16,6 +16,38 @@ from bahamut.admin.config import get_config
 
 logger = structlog.get_logger()
 
+# Manual override — allows admin to temporarily resume trading
+# Resets on next server restart or if conditions worsen significantly
+import time as _time
+_manual_override = {"active": False, "set_at": 0, "set_by": ""}
+_OVERRIDE_TTL = 3600  # override expires after 1 hour
+
+
+def force_resume_trading(set_by: str = "admin"):
+    """Admin override: temporarily resume trading despite kill switch conditions."""
+    _manual_override["active"] = True
+    _manual_override["set_at"] = _time.time()
+    _manual_override["set_by"] = set_by
+    logger.warning("kill_switch_manual_override", set_by=set_by)
+
+
+def force_activate_kill_switch(set_by: str = "admin"):
+    """Admin override: force kill switch active."""
+    _manual_override["active"] = False
+    logger.warning("kill_switch_force_activated", set_by=set_by)
+
+
+def is_override_active() -> bool:
+    """Check if manual override is still valid."""
+    if not _manual_override["active"]:
+        return False
+    elapsed = _time.time() - _manual_override["set_at"]
+    if elapsed > _OVERRIDE_TTL:
+        _manual_override["active"] = False
+        logger.info("kill_switch_override_expired")
+        return False
+    return True
+
 
 @dataclass
 class KillSwitchState:
@@ -142,6 +174,12 @@ def get_current_state() -> dict:
             drawdown_proximity=frag.drawdown_proximity,
             position_count=snap.position_count,
         )
+
+        # Apply manual override if admin has resumed trading
+        if state.kill_switch_active and is_override_active():
+            state.kill_switch_active = False
+            state.triggers = [f"Kill switch overridden by {_manual_override['set_by']} (expires in {int(_OVERRIDE_TTL - (_time.time() - _manual_override['set_at']))}s)"]
+
         return state.to_dict()
     except Exception as e:
         logger.error("kill_switch_state_unavailable", error=str(e))

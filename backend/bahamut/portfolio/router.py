@@ -1,5 +1,5 @@
 """Portfolio Intelligence API routes."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from bahamut.auth.router import get_current_user
 
 router = APIRouter()
@@ -173,6 +173,28 @@ async def get_kill_switch_state(user=Depends(get_current_user)):
     """Get current portfolio kill switch / safe mode state."""
     from bahamut.portfolio.kill_switch import get_current_state
     return get_current_state()
+
+
+@router.post("/kill-switch")
+async def toggle_kill_switch(body: dict = {}, user=Depends(get_current_user)):
+    """Toggle kill switch on/off (admin/super_admin only)."""
+    from bahamut.auth.permissions import is_admin_or_above
+    if not is_admin_or_above(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    active = body.get("active", True)
+
+    if active:
+        # Force activate kill switch
+        from bahamut.portfolio.kill_switch import force_activate_kill_switch
+        force_activate_kill_switch(set_by=getattr(user, "email", "admin"))
+        return {"status": "kill_switch_activated", "active": True}
+    else:
+        # Resume trading (override)
+        from bahamut.portfolio.kill_switch import force_resume_trading
+        force_resume_trading(set_by=getattr(user, "email", "admin"))
+        return {"status": "trading_resumed", "active": False,
+                "note": "Override active for 1 hour. Kill switch will re-trigger if conditions worsen."}
 
 
 @router.get("/health")
