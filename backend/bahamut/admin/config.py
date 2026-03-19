@@ -55,7 +55,7 @@ DEFAULTS = {
     "exposure.single_asset_max": 0.15,
 
     # ── Kill switch / safe mode ──
-    "kill_switch.tail_risk_threshold": 0.15,
+    "kill_switch.tail_risk_threshold": 0.25,
     "kill_switch.fragility_threshold": 0.80,
     "kill_switch.combined_stress_threshold": 0.70,
     "safe_mode.enabled": False,
