@@ -4,18 +4,22 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth';
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Command', icon: '⊞' },
-  { href: '/top-picks', label: 'Top Picks', icon: '🎯' },
-  { href: '/macro-arena', label: 'Macro Arena', icon: '◉' },
-  { href: '/event-radar', label: 'Event Radar', icon: '◈' },
-  { href: '/agent-council', label: 'Agent Council', icon: '◎' },
-  { href: '/execution', label: 'Execution', icon: '⚡' },
-  { href: '/risk-control', label: 'Risk Control', icon: '◆' },
-  { href: '/journal', label: 'Trade Journal', icon: '☰' },
-  { href: '/paper-trading', label: 'Self-Learning', icon: '🧠' },
-  { href: '/learning-lab', label: 'Learning Lab', icon: '◐' },
-  { href: '/intel-reports', label: 'Intel Reports', icon: '▤' },
+  { href: '/', label: 'Command', icon: '⊞', minRole: 'user' },
+  { href: '/top-picks', label: 'Top Picks', icon: '🎯', minRole: 'user' },
+  { href: '/macro-arena', label: 'Macro Arena', icon: '◉', minRole: 'user' },
+  { href: '/event-radar', label: 'Event Radar', icon: '◈', minRole: 'user' },
+  { href: '/execution', label: 'Execution', icon: '⚡', minRole: 'trader' },
+  { href: '/risk-control', label: 'Risk Control', icon: '◆', minRole: 'trader' },
+  { href: '/journal', label: 'Trade Journal', icon: '☰', minRole: 'trader' },
+  { href: '/paper-trading', label: 'Paper Trading', icon: '🧠', minRole: 'trader' },
+  { href: '/intel-reports', label: 'Intel Reports', icon: '▤', minRole: 'user' },
+  { href: '/agent-council', label: 'Agent Council', icon: '◎', minRole: 'admin' },
+  { href: '/learning-lab', label: 'Learning Lab', icon: '◐', minRole: 'admin' },
 ];
+
+const ROLE_LEVELS: Record<string, number> = {
+  user: 0, viewer: 0, trader: 1, admin: 2, super_admin: 3,
+};
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, loadFromStorage, logout } = useAuthStore();
@@ -37,6 +41,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const initials = user?.full_name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U';
+  const userRole = user?.role || 'user';
+  const userLevel = ROLE_LEVELS[userRole] ?? 0;
+  const visibleNav = NAV_ITEMS.filter(item => userLevel >= (ROLE_LEVELS[item.minRole] ?? 0));
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -51,7 +58,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <img src="/logo.png" alt="Bahamut.AI" className="h-14 w-auto object-contain" />
         </div>
         <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map(item => (
+          {visibleNav.map(item => (
             <a key={item.href} href={item.href} onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
                 currentPath === item.href
