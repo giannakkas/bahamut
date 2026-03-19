@@ -257,3 +257,125 @@ async def delete_user(user_id: str, user=Depends(get_current_user), db=Depends(g
     target.is_active = False
     await db.commit()
     return {"status": "deactivated", "email": target.email}
+
+
+# ─── Learning Patterns ───
+
+@router.get("/learning/patterns")
+async def get_learning_patterns(user=Depends(get_current_user)):
+    """Get learned trading patterns from portfolio history."""
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT pattern_key as pattern, sample_count as frequency,
+                   confidence, win_rate, updated_at as last_seen
+            FROM portfolio_adaptive_rules
+            WHERE active = TRUE
+            ORDER BY confidence DESC LIMIT 20
+        """)
+        return [
+            {
+                "pattern": r.get("pattern", ""),
+                "frequency": r.get("frequency", 0),
+                "confidence": round(float(r.get("confidence", 0)), 3),
+                "win_rate": round(float(r.get("win_rate", 0)), 3),
+                "last_seen": str(r.get("last_seen", "")),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.warning("learning_patterns_error", error=str(e))
+        return []
+
+
+# ─── Alerts ───
+
+@router.get("/alerts")
+async def get_alerts(user=Depends(get_current_user)):
+    """Get system alerts from degraded subsystems and recent events."""
+    alerts = []
+    alert_id = 0
+    try:
+        from bahamut.shared.degraded import get_degraded_flags
+        flags = get_degraded_flags()
+        for subsystem, info in flags.items():
+            alert_id += 1
+            critical = subsystem in {"portfolio.kill_switch", "portfolio.scenario_risk",
+                                      "auth.revocation", "schema.version"}
+            alerts.append({
+                "id": alert_id,
+                "type": "critical" if critical else "warning",
+                "message": f"{subsystem}: {info.get('reason', 'degraded')}",
+                "timestamp": str(info.get("since", "")),
+            })
+    except Exception:
+        pass
+
+    # Add recent kill switch events
+    try:
+        from bahamut.db.query import run_query
+        events = run_query("""
+            SELECT id, event_type, detail, created_at
+            FROM kill_switch_events ORDER BY created_at DESC LIMIT 5
+        """)
+        for ev in events:
+            alerts.append({
+                "id": 1000 + ev.get("id", 0),
+                "type": "critical" if "kill" in ev.get("event_type", "") else "warning",
+                "message": f"{ev.get('event_type', '')}: {ev.get('detail', '')[:100]}",
+                "timestamp": str(ev.get("created_at", "")),
+            })
+    except Exception:
+        pass
+
+    return alerts
+
+
+@router.post("/alerts/{alert_id}/dismiss")
+async def dismiss_alert(alert_id: int, user=Depends(get_current_user)):
+    """Dismiss an alert (currently just acknowledges — degraded flags auto-expire)."""
+    return {"status": "dismissed", "alert_id": alert_id}
+
+
+# ─── AI Optimizer ───
+
+@router.get("/ai/optimize")
+async def get_ai_suggestions(user=Depends(get_current_user)):
+    """Get AI-generated configuration optimization suggestions."""
+    suggestions = []
+    try:
+        from bahamut.db.query import run_query_one
+        # Check if thresholds could be improved based on recent performance
+        from bahamut.shared.degraded import get_degraded_flags
+        flags = get_degraded_flags()
+
+        if flags:
+            suggestions.append({
+                "key": "system.degraded_subsystems",
+                "current": len(flags),
+                "suggested": 0,
+                "reason": f"{len(flags)} subsystem(s) degraded — investigate and resolve",
+            })
+
+        # Basic suggestions based on portfolio state
+        pf = run_query_one("SELECT win_rate, total_trades FROM paper_portfolios WHERE name = 'SYSTEM_DEMO'")
+        if pf and pf.get("total_trades", 0) > 10:
+            wr = float(pf.get("win_rate", 0))
+            if wr < 0.45:
+                suggestions.append({
+                    "key": "confidence.min_trade",
+                    "current": 0.58,
+                    "suggested": 0.65,
+                    "reason": f"Win rate is {wr:.0%} — raising signal threshold may improve quality",
+                })
+            elif wr > 0.65:
+                suggestions.append({
+                    "key": "confidence.min_trade",
+                    "current": 0.58,
+                    "suggested": 0.52,
+                    "reason": f"Win rate is {wr:.0%} — system could capture more opportunities",
+                })
+    except Exception as e:
+        logger.warning("ai_optimize_error", error=str(e))
+
+    return suggestions
