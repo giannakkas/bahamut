@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/overrides", label: "Overrides", icon: "🎛" },
   { href: "/alerts", label: "Alerts", icon: "🔔" },
   { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
+  { href: "/users", label: "Users", icon: "👥" },
 ];
 
 export function Sidebar() {
