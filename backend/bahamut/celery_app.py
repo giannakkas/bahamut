@@ -95,7 +95,7 @@ celery_app.conf.update(
         },
         "check-paper-positions": {
             "task": "paper_trading.check_positions",
-            "schedule": 60.0,  # Every 1 min
+            "schedule": 300.0,  # Every 5 min (price cache is 15 min, so 1 min was wasteful)
         },
         "paper-trading-daily-report": {
             "task": "paper_trading.daily_report",
