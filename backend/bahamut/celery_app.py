@@ -71,7 +71,7 @@ celery_app.conf.update(
         },
         "run-market-scan": {
             "task": "scanner.run_market_scan",
-            "schedule": 900.0,  # Every 15 min
+            "schedule": 14400.0,  # Every 4 hours (219 assets × ~5 scans/day = 800 credits)
         },
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",

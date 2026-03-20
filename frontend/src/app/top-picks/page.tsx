@@ -34,7 +34,7 @@ export default function TopPicksPage() {
   const [countdown, setCountdown] = useState('');
   const [modal, setModal] = useState<{ symbol: string; reasons: string[]; direction: string; score: number } | null>(null);
 
-  const SCAN_INTERVAL = 15 * 60; // 30 minutes in seconds
+  const SCAN_INTERVAL = 4 * 60 * 60; // 30 minutes in seconds
 
   const fetchData = useCallback(async () => {
     try {
@@ -240,7 +240,7 @@ export default function TopPicksPage() {
                 <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">Loading scanner results...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">
-                  No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 15 min).
+                  No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 4 hours).
                 </td></tr>
               ) : (
                 filtered.map((r: any, i: number) => {
@@ -308,7 +308,7 @@ export default function TopPicksPage() {
 
         {/* Info */}
         <div className="bg-bg-secondary/50 border border-border-default/50 rounded-xl p-4 text-xs text-text-muted">
-          <strong className="text-text-secondary">How the scanner works:</strong> Every 15 minutes, Bahamut scans all 45 assets
+          <strong className="text-text-secondary">How the scanner works:</strong> Every 4 hours, Bahamut scans all 45 assets
           (8 FX pairs, 10 cryptocurrencies, 25 stocks, 2 commodities). Each asset gets a technical score based on RSI, EMA alignment,
           MACD momentum, ADX trend strength, and Bollinger Band breakouts. <strong className="text-text-secondary">Whale detection</strong> adds bonus points for
           unusual volume spikes (🐋) — large volume = institutional/whale activity. The top 10 then get a full 6-agent deep analysis.

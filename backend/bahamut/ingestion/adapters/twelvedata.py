@@ -1,8 +1,10 @@
 """
 Twelve Data Market Data Adapter
 Free tier: 800 API calls/day. Covers FX, stocks, crypto, commodities.
+Aggressive caching to minimize credit usage.
 """
 import httpx
+import time as _time
 import structlog
 from typing import Optional
 from bahamut.config import get_settings
@@ -11,6 +13,34 @@ logger = structlog.get_logger()
 settings = get_settings()
 
 BASE_URL = "https://api.twelvedata.com"
+
+# In-memory cache: key -> (data, expires_at)
+_cache: dict[str, tuple[any, float]] = {}
+_CANDLE_TTL = 3600    # 1 hour cache for candles (4H candles barely change within 1 hour)
+_PRICE_TTL = 900      # 15 min cache for live prices (matches signal cycle frequency)
+_cache_hits = 0
+_cache_misses = 0
+
+
+def _cache_get(key: str):
+    global _cache_hits
+    entry = _cache.get(key)
+    if entry and entry[1] > _time.time():
+        _cache_hits += 1
+        return entry[0]
+    return None
+
+
+def _cache_set(key: str, data, ttl: int):
+    global _cache_misses
+    _cache_misses += 1
+    _cache[key] = (data, _time.time() + ttl)
+    # Evict old entries every 100 misses
+    if _cache_misses % 100 == 0:
+        now = _time.time()
+        expired = [k for k, (_, exp) in _cache.items() if exp < now]
+        for k in expired:
+            del _cache[k]
 
 
 class TwelveDataAdapter:
@@ -24,6 +54,12 @@ class TwelveDataAdapter:
     async def get_candles(self, symbol: str, interval: str = "4h", count: int = 200) -> list[dict]:
         if not self.configured:
             return []
+
+        # Check cache first
+        cache_key = f"candles:{symbol}:{interval}:{count}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         url = f"{BASE_URL}/time_series"
         params = {"symbol": symbol, "interval": interval, "outputsize": count, "apikey": self.api_key}
@@ -68,6 +104,7 @@ class TwelveDataAdapter:
                     })
 
                 logger.info("twelvedata_candles", symbol=symbol, interval=interval, count=len(candles))
+                _cache_set(cache_key, candles, _CANDLE_TTL)
                 return candles
 
             except Exception as e:
@@ -82,15 +119,27 @@ class TwelveDataAdapter:
     async def get_latest_price(self, symbol: str) -> Optional[dict]:
         if not self.configured:
             return None
+
+        # Check cache first
+        cache_key = f"price:{symbol}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"{BASE_URL}/price", params={"symbol": symbol, "apikey": self.api_key})
+                if resp.status_code == 429:
+                    logger.warning("twelvedata_price_rate_limit", symbol=symbol)
+                    return None
                 resp.raise_for_status()
                 data = resp.json()
             if "price" not in data:
                 return None
             price = float(data["price"])
-            return {"instrument": symbol, "mid": price, "bid": price * 0.99995, "ask": price * 1.00005, "tradeable": True}
+            result = {"instrument": symbol, "mid": price, "bid": price * 0.99995, "ask": price * 1.00005, "tradeable": True}
+            _cache_set(cache_key, result, _PRICE_TTL)
+            return result
         except Exception as e:
             logger.error("twelvedata_price_error", symbol=symbol, error=str(e))
             return None
