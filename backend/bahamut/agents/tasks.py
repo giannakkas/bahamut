@@ -122,10 +122,15 @@ def _cache_to_redis(asset: str, result: dict):
 
 
 def _run_assets(assets: list, timeframe: str = "4H"):
+    """Run signal cycles — parallel batches for speed."""
+    import concurrent.futures
+
     loop = asyncio.new_event_loop()
-    for asset_info in assets:
+
+    def run_one(asset_info):
+        local_loop = asyncio.new_event_loop()
         try:
-            result = loop.run_until_complete(
+            result = local_loop.run_until_complete(
                 orchestrator.run_cycle(
                     asset=asset_info["symbol"],
                     asset_class=asset_info["asset_class"],
@@ -137,13 +142,23 @@ def _run_assets(assets: list, timeframe: str = "4H"):
             logger.info("cycle_result", asset=asset_info["symbol"],
                         direction=d.get("direction"), score=d.get("final_score"),
                         source=result.get("data_source"))
-
             _cache_to_redis(asset_info["symbol"], result)
             save_cycle_to_db(result)
             save_decision_trace(result)
-
+            return result
         except Exception as e:
             logger.exception("cycle_failed", asset=asset_info["symbol"], error=str(e))
+            return {"error": str(e)}
+        finally:
+            local_loop.close()
+
+    # Run in batches of 3 (parallel within batch, sequential between batches)
+    BATCH_SIZE = 3
+    for i in range(0, len(assets), BATCH_SIZE):
+        batch = assets[i:i + BATCH_SIZE]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
+            list(executor.map(run_one, batch))
+
     loop.close()
 
 
