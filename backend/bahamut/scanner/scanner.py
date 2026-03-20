@@ -277,8 +277,8 @@ async def run_full_scan(timeframe: str = "4h") -> dict:
     results = []
     errors = 0
 
-    # Batch 10 at a time with 8s pause between batches (= ~50/min, within 55 limit)
-    batch_size = 10
+    # Batch 5 at a time with 12s pause (= ~25/min, safe for most API plans)
+    batch_size = 5
     for i in range(0, len(ALL_SYMBOLS), batch_size):
         batch = ALL_SYMBOLS[i:i + batch_size]
         tasks = [scan_single_asset(s, timeframe) for s in batch]
@@ -295,7 +295,7 @@ async def run_full_scan(timeframe: str = "4h") -> dict:
 
         # Rate limit pause (skip on last batch)
         if i + batch_size < len(ALL_SYMBOLS):
-            await asyncio.sleep(8)
+            await asyncio.sleep(12)
 
     # Sort by score descending
     results.sort(key=lambda x: x["score"], reverse=True)

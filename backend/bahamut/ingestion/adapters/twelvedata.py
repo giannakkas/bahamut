@@ -28,19 +28,25 @@ class TwelveDataAdapter:
         url = f"{BASE_URL}/time_series"
         params = {"symbol": symbol, "interval": interval, "outputsize": count, "apikey": self.api_key}
 
-        # Retry up to 2 times (free tier can be slow/flaky)
-        for attempt in range(2):
+        # Retry up to 3 times (handles rate limits + flakiness)
+        for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.get(url, params=params)
+                    if resp.status_code == 429:
+                        import asyncio
+                        wait = 15 * (attempt + 1)
+                        logger.warning("twelvedata_rate_limit", symbol=symbol, wait=wait, attempt=attempt)
+                        await asyncio.sleep(wait)
+                        continue
                     resp.raise_for_status()
                     data = resp.json()
 
                 if "code" in data and data["code"] != 200:
                     logger.error("twelvedata_error", code=data.get("code"), message=data.get("message", ""), attempt=attempt)
-                    if attempt == 0 and data.get("code") == 429:
+                    if attempt < 2 and data.get("code") == 429:
                         import asyncio
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(15 * (attempt + 1))
                         continue
                     return []
 
