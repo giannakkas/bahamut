@@ -226,24 +226,23 @@ export default function ExecutionPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                const newVal = !autoApprove;
+                try {
+                  await api.request('/admin/auto-approve', { method: 'POST', body: JSON.stringify({ enabled: newVal }) });
+                  setAutoApprove(newVal);
+                } catch (e) { console.error(e); }
+              }}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                autoApprove
+                  ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30'
+                  : 'bg-bg-tertiary text-text-secondary border-border-default hover:text-text-primary'
+              }`}
+            >
+              {autoApprove ? '⚡ Auto-Approve ON' : 'Auto-Approve OFF'}
+            </button>
             <a href="/risk-control" className="text-sm text-accent-crimson hover:underline">Risk Control →</a>
-          </div>
-          <button
-            onClick={async () => {
-              const newVal = !autoApprove;
-              try {
-                await api.request('/admin/auto-approve', { method: 'POST', body: JSON.stringify({ enabled: newVal }) });
-                setAutoApprove(newVal);
-              } catch (e) { console.error(e); }
-            }}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
-              autoApprove
-                ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30'
-                : 'bg-bg-tertiary text-text-secondary border-border-default hover:text-text-primary'
-            }`}
-          >
-            {autoApprove ? '⚡ Auto-Approve ON' : 'Auto-Approve OFF'}
-          </button>
           </div>
         </div>
 
