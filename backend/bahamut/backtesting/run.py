@@ -211,6 +211,11 @@ def print_metrics(m: dict):
         for reason, stats in m["exit_reasons"].items():
             wr = stats["wins"] / stats["count"] * 100 if stats["count"] > 0 else 0
             print(f"    {reason:<10} {stats['count']:>4} trades, {wr:.0f}% win, ${stats['total_pnl']:>10,.2f}")
+    if m.get("regime_stats"):
+        print(f"\n  Regime Breakdown:")
+        for regime, stats in sorted(m["regime_stats"].items()):
+            wr = stats["wins"] / stats["count"] * 100 if stats["count"] > 0 else 0
+            print(f"    {regime:<18} {stats['count']:>4} trades, {wr:.0f}% win, ${stats['total_pnl']:>10,.2f}")
     print(f"{'─'*50}\n")
 
 

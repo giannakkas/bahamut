@@ -148,18 +148,71 @@ class TechnicalAgent(BaseAgent):
             score = int(score * 0.85)
             risk_notes.append(f"Weak trend ADX={adx:.1f}")
 
-        # ── 8. REGIME ADJUSTMENTS ──
-        if regime == "CRISIS":
-            score = int(score * 0.5) if score > 0 else int(score * 1.1)
-        elif regime == "HIGH_VOL":
+        # ── 8. v3 REGIME ADJUSTMENTS (uses composite regime if available) ──
+        regime_v3 = features.get("regime_v3", {})
+        vol_state = regime_v3.get("volatility", {}).get("state", "")
+        struct_state = regime_v3.get("structure", {}).get("state", "")
+        primary_regime = regime_v3.get("primary_label", regime)
+
+        if primary_regime == "CRISIS":
+            score = int(score * 0.4) if score > 0 else int(score * 1.15)
+        elif vol_state == "EXTREME":
+            score = int(score * 0.5)
+        elif vol_state == "HIGH_VOL":
             score = int(score * 0.7)
-        elif regime == "LOW_VOL" and adx < 20 and not compressed:
+        elif primary_regime in ("HIGH_VOL", "VOLATILE_TREND"):
+            score = int(score * 0.7)
+        elif struct_state == "CHOPPY":
+            score = int(score * 0.65)
+            risk_notes.append("Choppy structure — reduced conviction")
+        elif struct_state == "RANGE" and adx < 20 and not compressed:
+            score = int(score * 0.80)
+        elif primary_regime in ("LOW_VOL", "LOW_VOL_RANGE") and adx < 20:
             score = int(score * 0.85)
-        elif regime == "RISK_OFF" and score > 0:
-            score = int(score * 0.75)
+
+        # ── 9. v3 CROSS-ASSET CONFIRMATION ──
+        ca = features.get("cross_asset", {})
+        ca_risk_label = ca.get("risk_regime", {}).get("label", "")
+        ca_divergences = ca.get("divergences", [])
+
+        if ca_risk_label:
+            if ca_risk_label == "RISK_OFF" and score > 0:
+                score = int(score * 0.75)
+                risk_notes.append(f"Cross-asset: RISK_OFF dampens bullish signal")
+            elif ca_risk_label == "RISK_ON" and score < 0:
+                score = int(score * 0.75)
+                risk_notes.append(f"Cross-asset: RISK_ON dampens bearish signal")
+            elif ca_risk_label == "RISK_ON" and score > 0:
+                score = int(score * 1.05)
+                evidence.append(Evidence(
+                    claim="Cross-asset risk-on confirms bullish bias",
+                    data_point=f"Risk score={ca.get('risk_regime', {}).get('score', 0):.2f}",
+                    weight=0.4,
+                ))
+            elif ca_risk_label == "RISK_OFF" and score < 0:
+                score = int(score * 1.05)
+                evidence.append(Evidence(
+                    claim="Cross-asset risk-off confirms bearish bias",
+                    data_point=f"Risk score={ca.get('risk_regime', {}).get('score', 0):.2f}",
+                    weight=0.4,
+                ))
+
+        # Divergence warnings
+        for div in ca_divergences:
+            if div.get("strength", 0) > 0.5:
+                risk_notes.append(f"Cross-asset divergence: {div.get('pair', '?')} ({div.get('bias', '?')})")
+                if div.get("confidence", 0) > 0.6:
+                    score = int(score * 0.90)
 
         # ── FINAL OUTPUT ──
-        neutral_zone = 20 if regime in ("HIGH_VOL", "CRISIS") else 15
+        # Regime-aware neutral zone
+        if primary_regime in ("CRISIS", "CHOPPY") or vol_state in ("EXTREME", "HIGH_VOL"):
+            neutral_zone = 25
+        elif struct_state in ("TRENDING_UP", "TRENDING_DOWN"):
+            neutral_zone = 12  # Easier to trigger in trends
+        else:
+            neutral_zone = 15
+
         if score > neutral_zone:
             bias = "LONG"
             confidence = min(0.90, 0.45 + (score / 120) * 0.45)
@@ -185,7 +238,8 @@ class TechnicalAgent(BaseAgent):
             urgency="IMMEDIATE" if trend_strong and abs(score) > 50 else "NEXT_BAR",
             meta={"score": score, "rsi": rsi, "macd_hist": macd_hist, "adx": adx,
                   "atr": atr, "trend_strong": trend_strong, "structure": structure["label"],
-                  "compression": compressed, "ema_score": ema_score},
+                  "compression": compressed, "ema_score": ema_score,
+                  "regime_v3": primary_regime, "ca_risk": ca_risk_label},
         )
 
     def _detect_market_structure(self, candles: list) -> dict:

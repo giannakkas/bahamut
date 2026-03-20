@@ -70,81 +70,16 @@ class AgentOrchestrator:
         data_source = features.get("source", "unknown")
 
         # ═════════════════════════════════════
-        # v3: CROSS-ASSET INTELLIGENCE
+        # AUTO-DETECT REGIME
         # ═════════════════════════════════════
-        cross_asset_ctx = None
-        try:
-            from bahamut.intelligence.cross_asset import cross_asset_engine
-            from bahamut.ingestion.multi_asset import fetch_context_prices
-            price_series = await fetch_context_prices(asset, timeframe, count=120)
-            if len(price_series) >= 3:
-                cross_asset_ctx = cross_asset_engine.compute(price_series, asset)
-                logger.info("cross_asset_computed", asset=asset,
-                             risk_regime=cross_asset_ctx.risk_regime.label,
-                             divergences=len(cross_asset_ctx.divergences),
-                             adjustment=cross_asset_ctx.signal_adjustment)
-        except Exception as e:
-            logger.warning("cross_asset_failed", error=str(e)[:100])
-
-        # ═════════════════════════════════════
-        # v3: ADVANCED REGIME DETECTION
-        # ═════════════════════════════════════
-        composite_regime = None
-        if features.get("indicators"):
+        if regime == "RISK_ON" and features.get("indicators"):
             try:
-                from bahamut.intelligence.regime import regime_detector
-                import numpy as np
-                candles = features.get("candles", [])
-                ind = features["indicators"]
-
-                # Try to get full candle history for HMM
-                all_candles = features.get("all_candles", candles)
-                if all_candles and len(all_candles) >= 30:
-                    closes = np.array([c["close"] for c in all_candles])
-                    highs = np.array([c.get("high", c["close"]) for c in all_candles])
-                    lows = np.array([c.get("low", c["close"]) for c in all_candles])
-                else:
-                    closes = np.array([ind.get("close", 0)])
-                    highs = np.array([ind.get("high", ind.get("close", 0))])
-                    lows = np.array([ind.get("low", ind.get("close", 0))])
-
-                composite_regime = regime_detector.detect(closes, highs, lows, ind)
-                regime = composite_regime.primary_label
-                regime_confidence = composite_regime.confidence
-
-                logger.info("v3_regime_detected", asset=asset,
-                             primary=composite_regime.primary_label,
-                             vol=composite_regime.volatility.state,
-                             struct=composite_regime.structure.state,
-                             hmm=composite_regime.hmm.state_label,
-                             confidence=composite_regime.confidence)
+                from bahamut.features.regime import detect_regime_from_features
+                detected = detect_regime_from_features(features)
+                regime = detected.primary_regime
+                regime_confidence = detected.confidence
             except Exception as e:
-                logger.warning("v3_regime_failed_fallback_v1", error=str(e)[:100])
-                # Fallback to v1 regime detection
-                try:
-                    from bahamut.features.regime import detect_regime_from_features
-                    detected = detect_regime_from_features(features)
-                    regime = detected.primary_regime
-                    regime_confidence = detected.confidence
-                except Exception as e2:
-                    logger.warning("regime_detect_failed", error=str(e2))
-
-        # ═════════════════════════════════════
-        # v3: ADAPTIVE STRATEGY PARAMETERS
-        # ═════════════════════════════════════
-        adaptive_params = None
-        try:
-            from bahamut.strategy.adaptive import adaptive_strategy
-            adaptive_params = adaptive_strategy.compute(
-                regime=composite_regime.to_dict() if composite_regime else None,
-                cross_asset=cross_asset_ctx.to_dict() if cross_asset_ctx else None,
-                signal_confidence=0.5,  # Will be updated after consensus
-                asset_class=asset_class,
-            )
-            logger.info("adaptive_params", sl=adaptive_params.sl_multiplier,
-                         tp=adaptive_params.tp_multiplier, size=adaptive_params.size_multiplier)
-        except Exception as e:
-            logger.warning("adaptive_strategy_failed", error=str(e)[:100])
+                logger.warning("regime_detect_failed", error=str(e))
 
         # ═════════════════════════════════════
         # ADAPTIVE PROFILE
@@ -193,12 +128,6 @@ class AgentOrchestrator:
 
         logger.info("signal_cycle_started", cycle_id=str(cycle_id),
                      asset=asset, timeframe=timeframe, regime=regime)
-
-        # v3: Inject context into features for agent access
-        if cross_asset_ctx:
-            features["cross_asset"] = cross_asset_ctx.to_dict()
-        if composite_regime:
-            features["regime_v3"] = composite_regime.to_dict()
 
         # ═════════════════════════════════════
         # ROUND 1: Independent Analysis
@@ -283,39 +212,6 @@ class AgentOrchestrator:
             disagreement_metrics=disagreement_metrics,
             system_confidence=sys_conf_value,
         )
-
-        # ═════════════════════════════════════
-        # v3: CROSS-ASSET SCORE ADJUSTMENT
-        # ═════════════════════════════════════
-        if cross_asset_ctx and decision.direction in ("LONG", "SHORT"):
-            ca_ctx = cross_asset_engine.compute(
-                price_series=await fetch_context_prices(asset, timeframe, 120)
-                if 'fetch_context_prices' in dir() else {},
-                target_asset=asset,
-                target_direction=decision.direction,
-            )
-            if ca_ctx.signal_adjustment != 1.0:
-                old_score = decision.final_score
-                decision.final_score = round(
-                    max(0.0, min(1.0, decision.final_score * ca_ctx.signal_adjustment)), 4
-                )
-                logger.info("v3_cross_asset_adjustment", asset=asset,
-                             old_score=old_score, new_score=decision.final_score,
-                             multiplier=ca_ctx.signal_adjustment, bias=ca_ctx.bias_adjustment)
-
-        # v3: Update adaptive params with actual consensus confidence
-        if adaptive_params:
-            try:
-                from bahamut.strategy.adaptive import adaptive_strategy
-                adaptive_params = adaptive_strategy.compute(
-                    regime=composite_regime.to_dict() if composite_regime else None,
-                    cross_asset=cross_asset_ctx.to_dict() if cross_asset_ctx else None,
-                    signal_confidence=decision.final_score,
-                    asset_class=asset_class,
-                    direction=decision.direction,
-                )
-            except Exception:
-                pass
 
         elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -405,10 +301,6 @@ class AgentOrchestrator:
             "elapsed_ms": elapsed_ms,
             "data_source": data_source,
             "market_price": features.get("indicators", {}).get("close"),
-            # v3 intelligence layers
-            "cross_asset": cross_asset_ctx.to_dict() if cross_asset_ctx else None,
-            "regime_v3": composite_regime.to_dict() if composite_regime else None,
-            "adaptive_params": adaptive_params.to_dict() if adaptive_params else None,
         }
 
     def _detect_conflicts(self, cycle_id, outputs):
