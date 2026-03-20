@@ -366,9 +366,12 @@ export async function getAlerts(): Promise<Alert[]> {
   return apiFetch<Alert[]>("/admin/alerts");
 }
 
-export async function dismissAlert(id: number): Promise<void> {
+export async function dismissAlert(id: number, subsystem?: string): Promise<void> {
   if (isMockMode()) return;
-  await apiFetch(`/admin/alerts/${id}/dismiss`, { method: "POST" });
+  await apiFetch(`/admin/alerts/${id}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ subsystem: subsystem || "" }),
+  });
 }
 
 // ─── AI Optimization ─────────────────────────────────────────────

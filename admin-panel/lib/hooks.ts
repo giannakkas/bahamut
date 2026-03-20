@@ -158,7 +158,7 @@ export function useAlerts() {
 export function useDismissAlert() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.dismissAlert(id),
+    mutationFn: ({ id, subsystem }: { id: number; subsystem?: string }) => api.dismissAlert(id, subsystem),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.alerts });
     },

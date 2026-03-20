@@ -360,6 +360,14 @@ TABLES = [
         version INTEGER NOT NULL,
         applied_at TIMESTAMP DEFAULT NOW()
     )""",
+
+    # ── Dismissed Alerts ──
+    """CREATE TABLE IF NOT EXISTS dismissed_alerts (
+        id SERIAL PRIMARY KEY,
+        alert_key VARCHAR(200) UNIQUE NOT NULL,
+        dismissed_by VARCHAR(100) DEFAULT 'admin',
+        dismissed_at TIMESTAMP DEFAULT NOW()
+    )""",
 ]
 
 

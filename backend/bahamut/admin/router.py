@@ -341,21 +341,38 @@ async def get_learning_patterns(user=Depends(get_current_user)):
 
 # ─── Alerts ───
 
-# In-memory dismissed alerts (persists within worker process, resets on deploy)
+# Dismissed alerts stored in DB for persistence
 import time as _alert_time
-_dismissed_alerts: dict[str, float] = {}  # key -> dismissed_at timestamp
-_DISMISS_TTL = 86400  # dismissed for 24 hours
+
+
+def _get_dismissed_keys() -> set:
+    """Load dismissed alert keys from DB."""
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("SELECT alert_key, dismissed_at FROM dismissed_alerts")
+        return {r["alert_key"] for r in rows}
+    except Exception:
+        return set()
+
+
+def _dismiss_key(key: str, dismissed_by: str = "admin"):
+    """Store a dismissed alert key in DB."""
+    try:
+        from bahamut.db.query import run_transaction
+        run_transaction(
+            """INSERT INTO dismissed_alerts (alert_key, dismissed_by, dismissed_at)
+               VALUES (:k, :by, NOW())
+               ON CONFLICT (alert_key) DO UPDATE SET dismissed_at = NOW()""",
+            {"k": key, "by": dismissed_by}
+        )
+    except Exception:
+        pass
 
 
 @router.get("/alerts")
 async def get_alerts(user=Depends(get_current_user)):
     """Get system alerts with human-readable messages and deduplication."""
-    # Clean expired dismissals
-    now = _alert_time.time()
-    expired = [k for k, t in _dismissed_alerts.items() if now - t > _DISMISS_TTL]
-    for k in expired:
-        del _dismissed_alerts[k]
-
+    dismissed_keys = _get_dismissed_keys()
     alerts = []
     alert_id = 0
     seen_keys = set()
@@ -433,19 +450,23 @@ async def get_alerts(user=Depends(get_current_user)):
     for a in alerts:
         sub = a.get("subsystem", "")
         aid = a.get("id", 0)
-        a["dismissed"] = (f"id_{aid}" in _dismissed_alerts) or (f"sub_{sub}" in _dismissed_alerts)
+        a["dismissed"] = (f"id_{aid}" in dismissed_keys) or (f"sub_{sub}" in dismissed_keys) or (sub in dismissed_keys)
 
     return alerts
 
 
 @router.post("/alerts/{alert_id}/dismiss")
 async def dismiss_alert(alert_id: int, body: dict = {}, user=Depends(get_current_user)):
-    """Dismiss an alert for 24 hours."""
-    # Store by ID and by subsystem if provided
-    _dismissed_alerts[f"id_{alert_id}"] = _alert_time.time()
+    """Dismiss an alert permanently (stored in DB)."""
+    email = getattr(user, "email", "admin")
+    _dismiss_key(f"id_{alert_id}", email)
     subsystem = body.get("subsystem", "")
     if subsystem:
-        _dismissed_alerts[f"sub_{subsystem}"] = _alert_time.time()
+        _dismiss_key(f"sub_{subsystem}", email)
+        _dismiss_key(subsystem, email)
+    # Also dismiss by the alert ID pattern for kill switch events
+    if alert_id >= 1000:
+        _dismiss_key(f"id_{alert_id}", email)
     return {"status": "dismissed", "alert_id": alert_id}
 
 
