@@ -276,32 +276,38 @@ class ConsensusEngine:
         # Recompute after floor (approximate)
         final_score = round(raw_score, 4)
 
-        # ── Step 6: AI Consensus Reviewer (optional) ──
+        # ── Step 6: AI Consensus Reviewer (OPTIONAL — only top 5% signals) ──
+        # v2: Reviewer is a confidence auditor, NOT a score modifier.
+        # It only runs when score >= strong_signal threshold (top signals).
+        # It can ONLY reduce score (never increase), and CANNOT override direction.
         try:
-            from bahamut.consensus.ai_reviewer import ai_consensus_review_sync
-            reviewer_result = ai_consensus_review_sync(
-                asset=directional_outputs[0].asset if directional_outputs else "",
-                direction=candidate_dir, score=final_score,
-                agent_summaries=[
-                    {"agent": o.agent_id, "bias": o.directional_bias,
-                     "confidence": float(o.confidence),
-                     "reason": o.evidence[0].claim if o.evidence else ""}
-                    for o in directional_outputs
-                ],
-            )
-            if reviewer_result:
-                old_score = final_score
-                # Reviewer can adjust score by ±0.15 max
-                adj = max(-0.15, min(0.15, reviewer_result.get("score_adjustment", 0)))
-                final_score = round(max(0.0, min(1.0, final_score + adj)), 4)
-                if reviewer_result.get("override_direction") and reviewer_result["override_direction"] != candidate_dir:
-                    candidate_dir = reviewer_result["override_direction"]
-                    logger.warning("ai_reviewer_override_direction",
-                                    old=candidate_dir, new=reviewer_result["override_direction"])
-                logger.info("ai_consensus_review",
-                            asset=directional_outputs[0].asset if directional_outputs else "",
-                            old_score=old_score, new_score=final_score, adj=adj,
-                            reviewer_note=reviewer_result.get("note", ""))
+            from bahamut.admin.config import get_config
+            reviewer_enabled = get_config("ai_reviewer.enabled", False)
+            strong_threshold = thresholds.get("strong_signal", 0.72)
+
+            if reviewer_enabled and final_score >= strong_threshold:
+                from bahamut.consensus.ai_reviewer import ai_consensus_review_sync
+                reviewer_result = ai_consensus_review_sync(
+                    asset=directional_outputs[0].asset if directional_outputs else "",
+                    direction=candidate_dir, score=final_score,
+                    agent_summaries=[
+                        {"agent": o.agent_id, "bias": o.directional_bias,
+                         "confidence": float(o.confidence),
+                         "reason": o.evidence[0].claim if o.evidence else ""}
+                        for o in directional_outputs
+                    ],
+                )
+                if reviewer_result:
+                    old_score = final_score
+                    adj = reviewer_result.get("score_adjustment", 0)
+                    # v2: can only REDUCE, max -0.10 (was ±0.15)
+                    adj = max(-0.10, min(0.0, adj))
+                    final_score = round(max(0.0, final_score + adj), 4)
+                    # v2: NEVER override direction — removed that capability
+                    logger.info("ai_consensus_review",
+                                asset=directional_outputs[0].asset if directional_outputs else "",
+                                old_score=old_score, new_score=final_score, adj=adj,
+                                reviewer_note=reviewer_result.get("note", ""))
         except Exception as e:
             logger.debug("ai_reviewer_skipped", reason=str(e)[:100])
 
