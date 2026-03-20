@@ -341,9 +341,21 @@ async def get_learning_patterns(user=Depends(get_current_user)):
 
 # ─── Alerts ───
 
+# In-memory dismissed alerts (persists within worker process, resets on deploy)
+import time as _alert_time
+_dismissed_alerts: dict[str, float] = {}  # key -> dismissed_at timestamp
+_DISMISS_TTL = 86400  # dismissed for 24 hours
+
+
 @router.get("/alerts")
 async def get_alerts(user=Depends(get_current_user)):
     """Get system alerts with human-readable messages and deduplication."""
+    # Clean expired dismissals
+    now = _alert_time.time()
+    expired = [k for k, t in _dismissed_alerts.items() if now - t > _DISMISS_TTL]
+    for k in expired:
+        del _dismissed_alerts[k]
+
     alerts = []
     alert_id = 0
     seen_keys = set()
@@ -417,12 +429,23 @@ async def get_alerts(user=Depends(get_current_user)):
     except Exception:
         pass
 
+    # Mark dismissed alerts
+    for a in alerts:
+        sub = a.get("subsystem", "")
+        aid = a.get("id", 0)
+        a["dismissed"] = (f"id_{aid}" in _dismissed_alerts) or (f"sub_{sub}" in _dismissed_alerts)
+
     return alerts
 
 
 @router.post("/alerts/{alert_id}/dismiss")
-async def dismiss_alert(alert_id: int, user=Depends(get_current_user)):
-    """Dismiss an alert (currently just acknowledges — degraded flags auto-expire)."""
+async def dismiss_alert(alert_id: int, body: dict = {}, user=Depends(get_current_user)):
+    """Dismiss an alert for 24 hours."""
+    # Store by ID and by subsystem if provided
+    _dismissed_alerts[f"id_{alert_id}"] = _alert_time.time()
+    subsystem = body.get("subsystem", "")
+    if subsystem:
+        _dismissed_alerts[f"sub_{subsystem}"] = _alert_time.time()
     return {"status": "dismissed", "alert_id": alert_id}
 
 
