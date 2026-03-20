@@ -25,19 +25,22 @@ settings = get_settings()
 ASSET_UNIVERSE = {
     "fx": [
         "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD", "EURGBP",
+        "EURJPY", "GBPJPY", "AUDJPY",
     ],
     "commodities": [
-        "XAUUSD", "XAGUSD",
+        "XAUUSD", "XAGUSD", "WTIUSD", "NATGASUSD", "PLATINUMUSD",
     ],
     "crypto": [
         "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "ADAUSD",
         "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
+        "TONUSD", "SHIBUSD", "NEARUSD", "SUIUSD", "PEPEUSD",
     ],
     "indices": [
         "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
         "JPM", "V", "UNH", "MA", "HD", "PG", "JNJ",
         "AMD", "CRM", "NFLX", "ADBE", "INTC", "PYPL",
         "UBER", "SQ", "SHOP", "PLTR", "COIN",
+        "AVGO", "LLY", "BAC", "DIS", "KO", "WMT", "COST", "MU", "ARM",
     ],
 }
 

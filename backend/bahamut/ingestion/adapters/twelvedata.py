@@ -105,18 +105,21 @@ class TwelveDataAdapter:
 # ── Symbol Maps ──
 # Twelve Data uses standard ticker format
 TWELVE_SYMBOL_MAP = {
-    # FX (8)
+    # FX (11)
     "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
     "AUDUSD": "AUD/USD", "USDCHF": "USD/CHF", "USDCAD": "USD/CAD",
     "NZDUSD": "NZD/USD", "EURGBP": "EUR/GBP",
-    # Commodities (4)
+    "EURJPY": "EUR/JPY", "GBPJPY": "GBP/JPY", "AUDJPY": "AUD/JPY",
+    # Commodities (5)
     "XAUUSD": "XAU/USD", "XAGUSD": "XAG/USD",
-    "WTIUSD": "WTI/USD", "BCOUSD": "BRENT/USD",
-    # Crypto (12)
+    "WTIUSD": "WTI/USD", "NATGASUSD": "NG/USD", "PLATINUMUSD": "XPT/USD",
+    # Crypto (15)
     "BTCUSD": "BTC/USD", "ETHUSD": "ETH/USD", "SOLUSD": "SOL/USD",
     "BNBUSD": "BNB/USD", "XRPUSD": "XRP/USD", "ADAUSD": "ADA/USD",
     "DOGEUSD": "DOGE/USD", "AVAXUSD": "AVAX/USD", "DOTUSD": "DOT/USD",
     "LINKUSD": "LINK/USD", "MATICUSD": "MATIC/USD", "SHIBUSD": "SHIB/USD",
+    "TONUSD": "TON/USD", "NEARUSD": "NEAR/USD", "SUIUSD": "SUI/USD",
+    "PEPEUSD": "PEPE/USD",
     # US Mega Cap (15)
     "AAPL": "AAPL", "MSFT": "MSFT", "GOOGL": "GOOGL", "AMZN": "AMZN",
     "NVDA": "NVDA", "META": "META", "TSLA": "TSLA", "BRK.B": "BRK.B",
@@ -127,6 +130,9 @@ TWELVE_SYMBOL_MAP = {
     "INTC": "INTC", "PYPL": "PYPL", "UBER": "UBER", "SQ": "SQ",
     "SHOP": "SHOP", "SNOW": "SNOW", "PLTR": "PLTR", "COIN": "COIN",
     "RBLX": "RBLX", "MARA": "MARA", "RIOT": "RIOT",
+    # US Expanded (9)
+    "AVGO": "AVGO", "LLY": "LLY", "BAC": "BAC", "DIS": "DIS",
+    "KO": "KO", "WMT": "WMT", "COST": "COST", "MU": "MU", "ARM": "ARM",
     # Indices (3)
     "SPX": "SPX", "IXIC": "IXIC", "DJI": "DJI",
 }

@@ -14,22 +14,43 @@ FX_ASSETS = [
     {"symbol": "EURUSD", "asset_class": "fx"},
     {"symbol": "GBPUSD", "asset_class": "fx"},
     {"symbol": "USDJPY", "asset_class": "fx"},
+    {"symbol": "EURJPY", "asset_class": "fx"},
+    {"symbol": "GBPJPY", "asset_class": "fx"},
 ]
 
 COMMODITY_ASSETS = [
     {"symbol": "XAUUSD", "asset_class": "commodities"},
+    {"symbol": "XAGUSD", "asset_class": "commodities"},
+    {"symbol": "WTIUSD", "asset_class": "commodities"},
 ]
 
 CRYPTO_ASSETS = [
     {"symbol": "BTCUSD", "asset_class": "crypto"},
     {"symbol": "ETHUSD", "asset_class": "crypto"},
+    {"symbol": "SOLUSD", "asset_class": "crypto"},
+    {"symbol": "BNBUSD", "asset_class": "crypto"},
+    {"symbol": "XRPUSD", "asset_class": "crypto"},
+    {"symbol": "ADAUSD", "asset_class": "crypto"},
+    {"symbol": "DOGEUSD", "asset_class": "crypto"},
+    {"symbol": "LINKUSD", "asset_class": "crypto"},
 ]
 
 STOCK_ASSETS = [
     {"symbol": "AAPL", "asset_class": "indices"},
-    {"symbol": "TSLA", "asset_class": "indices"},
+    {"symbol": "MSFT", "asset_class": "indices"},
+    {"symbol": "GOOGL", "asset_class": "indices"},
+    {"symbol": "AMZN", "asset_class": "indices"},
     {"symbol": "NVDA", "asset_class": "indices"},
     {"symbol": "META", "asset_class": "indices"},
+    {"symbol": "TSLA", "asset_class": "indices"},
+    {"symbol": "AMD", "asset_class": "indices"},
+    {"symbol": "NFLX", "asset_class": "indices"},
+    {"symbol": "AVGO", "asset_class": "indices"},
+    {"symbol": "JPM", "asset_class": "indices"},
+    {"symbol": "V", "asset_class": "indices"},
+    {"symbol": "HD", "asset_class": "indices"},
+    {"symbol": "PG", "asset_class": "indices"},
+    {"symbol": "COIN", "asset_class": "indices"},
 ]
 
 ALL_ASSETS = FX_ASSETS + COMMODITY_ASSETS + CRYPTO_ASSETS + STOCK_ASSETS
