@@ -27,13 +27,14 @@ export default function TopPicksPage() {
   const [data, setData] = useState<any>(null);
   const [filter, setFilter] = useState("all");
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState("");
   const [modal, setModal] = useState<{ symbol: string; reasons: string[]; direction: string; score: number } | null>(null);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const SCAN_INTERVAL = 30 * 60;
+  const SCAN_INTERVAL = 15 * 60;
 
   const fetchData = useCallback(async () => {
     try {
@@ -71,19 +72,22 @@ export default function TopPicksPage() {
 
   const triggerScan = async () => {
     setScanning(true);
+    setScanProgress(5);
     try {
       await fetch(`${apiBase()}/scanner/trigger`, { method: "POST", headers });
       for (let i = 0; i < 20; i++) {
+        setScanProgress(Math.min(95, 5 + (i + 1) * 4.5));
         await new Promise(r => setTimeout(r, 10000));
         const res = await fetch(`${apiBase()}/scanner/top-picks`, { headers });
         const newData = await res.json();
         if (newData?.total_scanned > 0 && newData.scanned_at !== data?.scanned_at) {
           setData(newData);
+          setScanProgress(100);
           break;
         }
       }
     } catch (e) { console.error(e); }
-    setScanning(false);
+    setTimeout(() => { setScanning(false); setScanProgress(0); }, 500);
   };
 
   const allResults = data?.all_results || [];
@@ -124,6 +128,26 @@ export default function TopPicksPage() {
           </button>
         </div>
       </div>
+
+      {/* Scan Progress Bar */}
+      {scanning && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#6C63FF] font-semibold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#6C63FF] animate-pulse" />
+              Scanning {data?.total_scanned || 45} assets...
+            </span>
+            <span className="text-[#8888AA] font-mono">{Math.round(scanProgress)}%</span>
+          </div>
+          <div className="w-full h-2 bg-[#1C1C35] rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-[#6C63FF] to-[#10b981] rounded-full transition-all duration-1000 ease-out"
+              style={{ width: `${scanProgress}%` }} />
+          </div>
+          <div className="text-[10px] text-[#555570]">
+            Analyzing technical indicators, whale activity, EMA alignment, RSI, MACD, ADX...
+          </div>
+        </div>
+      )}
 
       {/* Top 5 Cards */}
       {topPicks.length > 0 && (
@@ -274,7 +298,7 @@ export default function TopPicksPage() {
 
       {/* Info */}
       <div className="bg-[#0F0F1E]/50 border border-[#2A2A4A]/50 rounded-lg p-3 text-xs text-[#555570]">
-        <strong className="text-[#8888AA]">How the scanner works:</strong> Every 30 minutes, Bahamut scans all assets.
+        <strong className="text-[#8888AA]">How the scanner works:</strong> Every 15 minutes, Bahamut scans all assets.
         Each gets a technical score based on RSI, EMA alignment, MACD momentum, ADX trend strength, and Bollinger Band breakouts.
         <strong className="text-[#8888AA]"> Whale detection</strong> adds bonus points for unusual volume spikes (🐋).
         The top 10 get a full 6-agent deep analysis. Scores above 70 = strong opportunity.

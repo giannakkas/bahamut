@@ -29,11 +29,12 @@ export default function TopPicksPage() {
   const [data, setData] = useState<any>(null);
   const [filter, setFilter] = useState('all');
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState('');
   const [modal, setModal] = useState<{ symbol: string; reasons: string[]; direction: string; score: number } | null>(null);
 
-  const SCAN_INTERVAL = 30 * 60; // 30 minutes in seconds
+  const SCAN_INTERVAL = 15 * 60; // 30 minutes in seconds
 
   const fetchData = useCallback(async () => {
     try {
@@ -73,19 +74,21 @@ export default function TopPicksPage() {
 
   const triggerScan = async () => {
     setScanning(true);
+    setScanProgress(5);
     try {
       await api.triggerScan();
-      // Poll for results
       for (let i = 0; i < 20; i++) {
+        setScanProgress(Math.min(95, 5 + (i + 1) * 4.5));
         await new Promise(r => setTimeout(r, 10000));
         const res = await api.getTopPicks();
         if (res?.total_scanned > 0 && res.scanned_at !== data?.scanned_at) {
           setData(res);
+          setScanProgress(100);
           break;
         }
       }
     } catch (e) { console.error(e); }
-    setScanning(false);
+    setTimeout(() => { setScanning(false); setScanProgress(0); }, 500);
   };
 
   const allResults = data?.all_results || [];
@@ -127,6 +130,26 @@ export default function TopPicksPage() {
             </button>
           </div>
         </div>
+
+        {/* Scan Progress Bar */}
+        {scanning && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-accent-violet font-semibold flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-accent-violet animate-pulse" />
+                Scanning {data?.total_scanned || 45} assets...
+              </span>
+              <span className="text-text-muted font-mono">{Math.round(scanProgress)}%</span>
+            </div>
+            <div className="w-full h-2 bg-bg-surface rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-accent-violet to-accent-emerald rounded-full transition-all duration-1000 ease-out"
+                style={{ width: `${scanProgress}%` }} />
+            </div>
+            <div className="text-[10px] text-text-muted">
+              Analyzing technical indicators, whale activity, EMA alignment, RSI, MACD, ADX...
+            </div>
+          </div>
+        )}
 
         {/* Top 5 Cards */}
         {topPicks.length > 0 && (
@@ -217,7 +240,7 @@ export default function TopPicksPage() {
                 <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">Loading scanner results...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">
-                  No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 30 min).
+                  No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 15 min).
                 </td></tr>
               ) : (
                 filtered.map((r: any, i: number) => {
@@ -285,7 +308,7 @@ export default function TopPicksPage() {
 
         {/* Info */}
         <div className="bg-bg-secondary/50 border border-border-default/50 rounded-xl p-4 text-xs text-text-muted">
-          <strong className="text-text-secondary">How the scanner works:</strong> Every 30 minutes, Bahamut scans all 45 assets
+          <strong className="text-text-secondary">How the scanner works:</strong> Every 15 minutes, Bahamut scans all 45 assets
           (8 FX pairs, 10 cryptocurrencies, 25 stocks, 2 commodities). Each asset gets a technical score based on RSI, EMA alignment,
           MACD momentum, ADX trend strength, and Bollinger Band breakouts. <strong className="text-text-secondary">Whale detection</strong> adds bonus points for
           unusual volume spikes (🐋) — large volume = institutional/whale activity. The top 10 then get a full 6-agent deep analysis.

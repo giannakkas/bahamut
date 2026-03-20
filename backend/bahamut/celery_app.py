@@ -63,7 +63,7 @@ celery_app.conf.update(
         },
         "run-stock-cycles": {
             "task": "bahamut.agents.tasks.run_stock_cycles",
-            "schedule": 1800.0,  # Every 30 min
+            "schedule": 900.0,  # Every 15 min
         },
         "run-signal-cycles": {
             "task": "bahamut.agents.tasks.run_all_signal_cycles",
@@ -71,7 +71,7 @@ celery_app.conf.update(
         },
         "run-market-scan": {
             "task": "scanner.run_market_scan",
-            "schedule": 1800.0,  # Every 30 min
+            "schedule": 900.0,  # Every 15 min
         },
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",
