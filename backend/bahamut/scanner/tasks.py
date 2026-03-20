@@ -41,8 +41,8 @@ def run_market_scan(self):
                         top_pick=results["top_picks"][0]["symbol"] if results["top_picks"] else "none",
                         top_score=results["top_picks"][0]["score"] if results["top_picks"] else 0)
 
-            # Trigger deep analysis on top 10
-            deep_analyze_top_picks.delay([p["symbol"] for p in results["top_picks"][:10]])
+            # Trigger deep analysis on top 20 scanner results
+            deep_analyze_top_picks.delay([p["symbol"] for p in results["top_picks"][:20]])
 
         return {"status": "ok", "scanned": results.get("total_scanned", 0)}
     except Exception as e:

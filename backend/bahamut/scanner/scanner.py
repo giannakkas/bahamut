@@ -24,45 +24,69 @@ settings = get_settings()
 # ── Full Asset Universe ──
 ASSET_UNIVERSE = {
     "fx": [
-        "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD", "EURGBP",
-        "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "EURCHF", "GBPAUD", "NZDJPY",
-        "CADJPY", "CHFJPY", "AUDCAD", "AUDNZD", "GBPCAD",
+        # Majors
+        "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD",
+        # Crosses
+        "EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "EURCHF", "GBPAUD",
+        "NZDJPY", "CADJPY", "CHFJPY", "AUDCAD", "AUDNZD", "GBPCAD",
+        "GBPCHF", "GBPNZD", "EURNTD", "EURCAD", "EURNZD", "NZDCAD", "AUDCHF",
     ],
     "commodities": [
         "XAUUSD", "XAGUSD", "WTIUSD", "NATGASUSD", "PLATINUMUSD",
         "COPPERUSD", "PALLADIUMUSD",
     ],
     "crypto": [
-        "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "ADAUSD",
-        "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
+        # Top 10
+        "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
+        "ADAUSD", "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
+        # 11-20
         "TONUSD", "SHIBUSD", "NEARUSD", "SUIUSD", "PEPEUSD",
         "TRXUSD", "LTCUSD", "BCHUSD", "XLMUSD", "UNIUSD",
+        # 21-40
         "ICPUSD", "HBARUSD", "FILUSD", "APTUSD", "ARBUSD",
         "OPUSD", "MKRUSD", "AAVEUSD", "ATOMUSD", "ALGOUSD",
+        "VETUSD", "FTMUSD", "SANDUSD", "MANAUSD", "AXSUSD",
+        "GALAUSD", "ENSUSD", "LDOUSD", "RENDERUSD", "INJUSD",
     ],
     "indices": [
-        # Mega Cap
+        # ── MEGA CAP (8) ──
         "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B",
-        # Finance
-        "JPM", "V", "MA", "BAC", "GS", "MS", "AXP", "BLK", "SCHW", "C",
-        # Healthcare
+        # ── FINANCE (12) ──
+        "JPM", "V", "MA", "BAC", "GS", "MS", "AXP", "BLK", "SCHW", "C", "WFC", "USB",
+        # ── HEALTHCARE (14) ──
         "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT", "ISRG", "AMGN",
-        # Consumer
+        "GILD", "VRTX", "REGN", "BMY",
+        # ── CONSUMER (14) ──
         "HD", "PG", "KO", "PEP", "COST", "WMT", "NKE", "MCD", "SBUX", "TGT",
-        # Tech / Growth
-        "AMD", "CRM", "NFLX", "ADBE", "INTC", "PYPL", "UBER", "SQ", "SHOP", "PLTR",
-        "AVGO", "MU", "ARM", "QCOM", "AMAT", "LRCX", "KLAC", "MRVL", "PANW", "CRWD",
-        "SNOW", "DDOG", "NET", "ZS", "TEAM", "WDAY", "NOW", "FTNT",
-        # Crypto-adjacent
+        "LOW", "CL", "MDLZ", "EL",
+        # ── SEMICONDUCTORS (12) ──
+        "AMD", "AVGO", "MU", "QCOM", "AMAT", "LRCX", "KLAC", "MRVL", "ARM",
+        "TXN", "ADI", "ON",
+        # ── SOFTWARE / CLOUD (16) ──
+        "CRM", "ADBE", "NOW", "SNOW", "DDOG", "NET", "ZS", "TEAM", "WDAY", "FTNT",
+        "PLTR", "HUBS", "VEEV", "BILL", "DOCU", "TWLO",
+        # ── CYBERSECURITY (4) ──
+        "PANW", "CRWD", "S", "OKTA",
+        # ── STREAMING / MEDIA (8) ──
+        "NFLX", "DIS", "CMCSA", "WBD", "RBLX", "SPOT", "TTWO", "EA",
+        # ── E-COMMERCE / FINTECH (8) ──
+        "PYPL", "SQ", "SHOP", "UBER", "ABNB", "DASH", "PINS", "SNAP",
+        # ── CRYPTO-ADJACENT (5) ──
         "COIN", "MARA", "RIOT", "MSTR", "HUT",
-        # EV / Energy
-        "RIVN", "LCID", "ENPH", "FSLR", "NEE",
-        # Media / Entertainment
-        "DIS", "CMCSA", "WBD", "RBLX", "SPOT", "TTWO",
-        # Industrial / Defense
-        "GE", "CAT", "BA", "LMT", "RTX", "HON",
-        # Other high-volume
-        "XOM", "CVX", "COP", "OXY", "SLB",
+        # ── EV / CLEAN ENERGY (8) ──
+        "RIVN", "LCID", "ENPH", "FSLR", "NEE", "PLUG", "SEDG", "RUN",
+        # ── AI / ROBOTICS (6) ──
+        "AI", "PATH", "UPST", "IREN", "SMCI", "IONQ",
+        # ── OIL & GAS (6) ──
+        "XOM", "CVX", "COP", "OXY", "SLB", "EOG",
+        # ── INDUSTRIAL / DEFENSE (10) ──
+        "GE", "CAT", "BA", "LMT", "RTX", "HON", "DE", "UPS", "FDX", "MMM",
+        # ── TELECOM / UTILITIES (4) ──
+        "T", "VZ", "TMUS", "SO",
+        # ── REITS (4) ──
+        "AMT", "PLD", "CCI", "EQIX",
+        # ── OTHER HIGH-VOLUME (6) ──
+        "GM", "F", "DAL", "UAL", "LUV", "AAL",
     ],
 }
 

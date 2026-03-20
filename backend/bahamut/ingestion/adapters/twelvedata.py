@@ -105,7 +105,7 @@ class TwelveDataAdapter:
 # ── Symbol Maps ──
 # Twelve Data uses standard ticker format
 TWELVE_SYMBOL_MAP = {
-    # FX (20)
+    # FX (27)
     "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
     "AUDUSD": "AUD/USD", "USDCHF": "USD/CHF", "USDCAD": "USD/CAD",
     "NZDUSD": "NZD/USD", "EURGBP": "EUR/GBP",
@@ -113,11 +113,13 @@ TWELVE_SYMBOL_MAP = {
     "EURAUD": "EUR/AUD", "EURCHF": "EUR/CHF", "GBPAUD": "GBP/AUD",
     "NZDJPY": "NZD/JPY", "CADJPY": "CAD/JPY", "CHFJPY": "CHF/JPY",
     "AUDCAD": "AUD/CAD", "AUDNZD": "AUD/NZD", "GBPCAD": "GBP/CAD",
+    "GBPCHF": "GBP/CHF", "GBPNZD": "GBP/NZD", "EURNTD": "EUR/NTD",
+    "EURCAD": "EUR/CAD", "EURNZD": "EUR/NZD", "NZDCAD": "NZD/CAD", "AUDCHF": "AUD/CHF",
     # Commodities (7)
     "XAUUSD": "XAU/USD", "XAGUSD": "XAG/USD",
     "WTIUSD": "WTI/USD", "NATGASUSD": "NG/USD", "PLATINUMUSD": "XPT/USD",
     "COPPERUSD": "HG/USD", "PALLADIUMUSD": "XPD/USD",
-    # Crypto (30)
+    # Crypto (40)
     "BTCUSD": "BTC/USD", "ETHUSD": "ETH/USD", "SOLUSD": "SOL/USD",
     "BNBUSD": "BNB/USD", "XRPUSD": "XRP/USD", "ADAUSD": "ADA/USD",
     "DOGEUSD": "DOGE/USD", "AVAXUSD": "AVAX/USD", "DOTUSD": "DOT/USD",
@@ -128,7 +130,10 @@ TWELVE_SYMBOL_MAP = {
     "ICPUSD": "ICP/USD", "HBARUSD": "HBAR/USD", "FILUSD": "FIL/USD",
     "APTUSD": "APT/USD", "ARBUSD": "ARB/USD", "OPUSD": "OP/USD",
     "MKRUSD": "MKR/USD", "AAVEUSD": "AAVE/USD", "ATOMUSD": "ATOM/USD",
-    "ALGOUSD": "ALGO/USD",
+    "ALGOUSD": "ALGO/USD", "VETUSD": "VET/USD", "FTMUSD": "FTM/USD",
+    "SANDUSD": "SAND/USD", "MANAUSD": "MANA/USD", "AXSUSD": "AXS/USD",
+    "GALAUSD": "GALA/USD", "ENSUSD": "ENS/USD", "LDOUSD": "LDO/USD",
+    "RENDERUSD": "RENDER/USD", "INJUSD": "INJ/USD",
     # Indices (3)
     "SPX": "SPX", "IXIC": "IXIC", "DJI": "DJI",
 }
