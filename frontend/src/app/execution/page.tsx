@@ -167,7 +167,7 @@ export default function ExecutionPage() {
       try {
         const [c, aa] = await Promise.all([
           api.getAllLatestCycles(),
-          api.request('/admin/auto-approve').catch(() => ({ auto_approve: false })),
+          api.getAutoApprove().catch(() => ({ auto_approve: false })),
         ]);
         setCycles(c);
         setAutoApprove(aa?.auto_approve || false);
@@ -182,7 +182,7 @@ export default function ExecutionPage() {
   const handleApprove = async (asset: string) => {
     setActions(prev => ({ ...prev, [asset]: 'APPROVING' }));
     try {
-      await api.request(`/execution/approve/${asset}`, { method: 'POST' });
+      await api.approveTrade(asset);
       setActions(prev => ({ ...prev, [asset]: 'APPROVED' }));
     } catch (e) {
       console.error('Approve failed:', e);
@@ -230,7 +230,7 @@ export default function ExecutionPage() {
               onClick={async () => {
                 const newVal = !autoApprove;
                 try {
-                  await api.request('/admin/auto-approve', { method: 'POST', body: JSON.stringify({ enabled: newVal }) });
+                  await api.setAutoApprove(newVal);
                   setAutoApprove(newVal);
                 } catch (e) { console.error(e); }
               }}

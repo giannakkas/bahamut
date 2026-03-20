@@ -174,6 +174,12 @@ class ApiClient {
   async getPortfolioRankings() { return this.request<any>('/portfolio/rankings'); }
   async getReallocationLog(limit: number = 10) { return this.request<any>(`/portfolio/reallocation-log?limit=${limit}`); }
   async getAdaptiveRules() { return this.request<any>('/portfolio/adaptive-rules'); }
+
+  // Execution
+  async getAutoApprove() { return this.request<any>('/admin/auto-approve'); }
+  async setAutoApprove(enabled: boolean) { return this.request<any>('/admin/auto-approve', { method: 'POST', body: JSON.stringify({ enabled }) }); }
+  async approveTrade(asset: string) { return this.request<any>(`/execution/approve/${asset}`, { method: 'POST' }); }
+  async approveAllTrades() { return this.request<any>('/execution/approve-all', { method: 'POST' }); }
   async getPortfolioDecisionLog(limit: number = 10) { return this.request<any>(`/portfolio/decision-log?limit=${limit}`); }
   async getScenarioList() { return this.request<any>('/portfolio/scenarios'); }
   async getScenarioSim() { return this.request<any>('/portfolio/scenario-sim'); }
