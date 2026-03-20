@@ -69,6 +69,10 @@ celery_app.conf.update(
             "task": "bahamut.agents.tasks.run_all_signal_cycles",
             "schedule": 900.0,  # Every 15 min
         },
+        "run-market-scan": {
+            "task": "scanner.run_market_scan",
+            "schedule": 1800.0,  # Every 30 min
+        },
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",
             "schedule": crontab(hour=0, minute=15),
