@@ -30,6 +30,12 @@ def evaluate_exit(
     indicators: dict,
     candles_since_entry: list,
     structure: object = None,
+    # Configurable parameters for tuning
+    trail_atr_mult: float = 1.5,     # ATR multiplier for trailing stop distance
+    breakeven_r: float = 1.0,         # R-multiple to trigger break-even
+    trail_trigger_r: float = 1.5,     # R-multiple to activate trailing
+    partial_r: float = 1.8,           # R-multiple for partial TP
+    partial_frac: float = 0.30,       # Fraction to take off at partial
 ) -> ExitDecision:
     """
     Evaluate whether to modify stop, take partial, or force exit.
@@ -67,8 +73,8 @@ def evaluate_exit(
     progress = favorable / tp_dist if tp_dist > 0 else 0
 
     # ── A. BREAK-EVEN LOGIC ──
-    # Move to break-even after 1R favorable (covers entry costs)
-    if r_multiple >= 1.0 and not _is_at_breakeven(trade, entry):
+    # Move to break-even after breakeven_r favorable
+    if r_multiple >= breakeven_r and not _is_at_breakeven(trade, entry):
         be_price = entry + (atr * 0.1 if is_long else -atr * 0.1)  # Tiny buffer
         if is_long and be_price > sl:
             decision.move_to_breakeven = True
@@ -80,16 +86,15 @@ def evaluate_exit(
             decision.reason = f"BE at 1R (r={r_multiple:.1f})"
 
     # ── B. PARTIAL TAKE-PROFIT ──
-    # Take 30% off at 1.8R (conservative — let winners run)
-    if 1.7 <= r_multiple < 2.5 and mfe_r >= 1.7:
-        decision.partial_take_profit = 0.30
-        decision.reason += "; partial TP at 1.8R"
+    if partial_frac > 0 and partial_r <= r_multiple < partial_r + 0.8 and mfe_r >= partial_r:
+        decision.partial_take_profit = partial_frac
+        decision.reason += f"; partial TP at {partial_r:.1f}R"
 
     # ── C. ATR TRAILING STOP ──
-    if r_multiple >= 1.5:
+    if r_multiple >= trail_trigger_r:
         decision.trail_active = True
         decision.trail_method = "atr"
-        trail_distance = atr * 1.5
+        trail_distance = atr * trail_atr_mult
         if is_long:
             trail_stop = close - trail_distance
             if trail_stop > sl and trail_stop > entry:
@@ -159,27 +164,23 @@ def evaluate_exit(
                     decision.reason += "; momentum fading — tightened stop"
 
     # ── F. TIME DECAY ──
+    # Only mild tightening, NO force exit (audit proved force exit is net negative)
     max_hold = trade.get("max_hold", 12)
     time_fraction = bars_held / max(1, max_hold)
 
-    if time_fraction > 0.80 and r_multiple < 0.3:
-        # 80%+ of max hold used with < 0.3R progress → tighten
+    if time_fraction > 0.85 and r_multiple < 0.2:
+        # Very late in trade with almost no progress → tighten gently
         if is_long:
-            tight_stop = close - atr * 0.8
+            tight_stop = close - atr * 1.0
             if tight_stop > sl:
                 decision.new_stop_loss = max(decision.new_stop_loss, round(tight_stop, 8))
-                decision.reason += "; time decay tightening"
+                decision.reason += "; late-hold tightening"
         else:
-            tight_stop = close + atr * 0.8
+            tight_stop = close + atr * 1.0
             if tight_stop < sl:
                 sn = decision.new_stop_loss
                 decision.new_stop_loss = min(sn, round(tight_stop, 8)) if sn > 0 else round(tight_stop, 8)
-                decision.reason += "; time decay tightening"
-
-    if time_fraction > 0.92 and r_multiple < -0.3:
-        # Almost at timeout and significantly underwater → exit early
-        decision.force_exit = True
-        decision.reason += "; time decay force exit"
+                decision.reason += "; late-hold tightening"
 
     return decision
 

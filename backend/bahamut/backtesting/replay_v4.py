@@ -44,11 +44,21 @@ class V4Config:
     min_candles_warmup: int = 200
     # v4 feature flags
     enable_structure: bool = True
-    enable_entry_engine: bool = True
+    enable_entry_engine: bool = False   # Disabled — hurts returns
     enable_exit_engine: bool = True
     enable_trailing: bool = True
-    enable_partial_tp: bool = True
+    enable_partial_tp: bool = False     # Disabled by default
     enable_breakeven: bool = True
+    # v4.1 tunable exit parameters
+    trail_atr_mult: float = 2.0
+    breakeven_r: float = 1.0
+    trail_trigger_r: float = 1.5
+    partial_r: float = 2.0
+    partial_frac: float = 0.30
+    # v4.1 execution realism
+    next_bar_entry: bool = True
+    worst_case_fill: bool = True
+    dynamic_spread: bool = True
 
 
 @dataclass
@@ -76,6 +86,7 @@ class V4ReplayEngine:
     def run(self, candles: list[dict]) -> V4Result:
         cfg = self.config
         self._all_candles = candles
+        pending_signal = None  # For next-bar entry
 
         if len(candles) < cfg.min_candles_warmup + 10:
             raise ValueError(f"Need {cfg.min_candles_warmup + 10}+ candles")
@@ -94,24 +105,31 @@ class V4ReplayEngine:
             if cfg.enable_structure:
                 structure = analyze_structure(history[-50:], indicators, lookback=40)
 
-            # 3. Manage open trades (exits, trailing, partial TP)
+            # 3. Execute pending signal at THIS bar's open (next-bar entry)
+            if cfg.next_bar_entry and pending_signal is not None:
+                if len(self.open_trades) < cfg.max_concurrent:
+                    existing = [t for t in self.open_trades
+                                if t.direction == pending_signal["direction"]]
+                    if not existing:
+                        self._open_trade_at_open(pending_signal, candle, indicators, i)
+                pending_signal = None
+
+            # 4. Manage open trades (exits, trailing, partial TP)
             self._manage_trades(candle, i, indicators, structure, history)
 
-            # 4. Generate v2 directional signal
+            # 5. Generate v2 directional signal
             signal = self._generate_v2_signal(indicators, history[-30:])
 
-            # 5. Entry quality scoring (v4)
+            # 6. Entry quality scoring (v4)
             entry_q = None
             if cfg.enable_entry_engine and signal["direction"] in ("LONG", "SHORT"):
                 entry_q = score_entry(signal["direction"], indicators,
                                       structure, history[-25:])
-                # Apply entry quality adjustments
                 signal["confidence"] = min(0.95, max(0.1,
                     signal["confidence"] + entry_q.confidence_adjustment))
                 signal["entry_type"] = entry_q.entry_type
                 signal["entry_quality"] = entry_q.entry_quality
                 signal["size_adjustment"] = entry_q.size_adjustment
-                # Re-evaluate decision after confidence adjustment
                 if signal["confidence"] >= 0.65 and signal["direction"] != "NO_TRADE":
                     signal["decision"] = "STRONG_SIGNAL"
                 elif signal["confidence"] >= 0.50 and signal["direction"] != "NO_TRADE":
@@ -123,19 +141,23 @@ class V4ReplayEngine:
                 signal["entry_quality"] = 0.5
                 signal["size_adjustment"] = 1.0
 
-            # 6. Execute
+            # 7. Handle execution
             if signal["decision"] in ("SIGNAL", "STRONG_SIGNAL"):
-                if len(self.open_trades) < cfg.max_concurrent:
-                    existing = [t for t in self.open_trades
-                                if t.direction == signal["direction"]]
-                    if not existing:
-                        # Delay entry if entry engine says so (skip this bar)
-                        if entry_q and entry_q.should_delay_entry:
-                            pass  # Don't enter — wait for next bar
-                        else:
+                if entry_q and entry_q.should_delay_entry:
+                    pass  # Skip
+                elif cfg.next_bar_entry:
+                    # Store signal for execution at next bar's open
+                    pending_signal = signal.copy()
+                    pending_signal["_atr"] = indicators.get("atr_14", 0)
+                else:
+                    # Legacy: execute at current bar close
+                    if len(self.open_trades) < cfg.max_concurrent:
+                        existing = [t for t in self.open_trades
+                                    if t.direction == signal["direction"]]
+                        if not existing:
                             self._open_trade(signal, indicators, i)
 
-            # 7. Equity
+            # 8. Equity
             unrealized = self._calc_unrealized(candle["close"])
             equity = self.balance + unrealized
             self.peak_balance = max(self.peak_balance, equity)
@@ -288,6 +310,11 @@ class V4ReplayEngine:
                     indicators=indicators,
                     candles_since_entry=candles_since,
                     structure=structure,
+                    trail_atr_mult=cfg.trail_atr_mult,
+                    breakeven_r=cfg.breakeven_r,
+                    trail_trigger_r=cfg.trail_trigger_r,
+                    partial_r=cfg.partial_r,
+                    partial_frac=cfg.partial_frac,
                 )
 
                 # Apply break-even
@@ -330,25 +357,38 @@ class V4ReplayEngine:
                     self._close_trade(trade, close, candle_idx, reason)
                     continue
 
-            # ── Standard SL/TP/Timeout check ──
+            # ── Standard SL/TP/Timeout check with worst-case fill ──
             max_h = trade.max_hold if trade.max_hold > 0 else cfg.max_hold_candles
             if trade.bars_held >= max_h:
                 self._close_trade(trade, close, candle_idx, "TIMEOUT")
                 continue
 
             if trade.direction == "LONG":
-                if low <= trade.stop_loss:
+                sl_hit = low <= trade.stop_loss
+                tp_hit = high >= trade.take_profit
+                if sl_hit and tp_hit and cfg.worst_case_fill:
+                    # Both hit same bar → assume SL fills first (worst case)
                     reason = "TRAIL_SL" if trade.state == STATE_TRAILING else (
                         "BE_SL" if trade.state == STATE_BREAKEVEN else "SL")
                     self._close_trade(trade, trade.stop_loss, candle_idx, reason)
-                elif high >= trade.take_profit:
+                elif sl_hit:
+                    reason = "TRAIL_SL" if trade.state == STATE_TRAILING else (
+                        "BE_SL" if trade.state == STATE_BREAKEVEN else "SL")
+                    self._close_trade(trade, trade.stop_loss, candle_idx, reason)
+                elif tp_hit:
                     self._close_trade(trade, trade.take_profit, candle_idx, "TP")
             else:
-                if high >= trade.stop_loss:
+                sl_hit = high >= trade.stop_loss
+                tp_hit = low <= trade.take_profit
+                if sl_hit and tp_hit and cfg.worst_case_fill:
                     reason = "TRAIL_SL" if trade.state == STATE_TRAILING else (
                         "BE_SL" if trade.state == STATE_BREAKEVEN else "SL")
                     self._close_trade(trade, trade.stop_loss, candle_idx, reason)
-                elif low <= trade.take_profit:
+                elif sl_hit:
+                    reason = "TRAIL_SL" if trade.state == STATE_TRAILING else (
+                        "BE_SL" if trade.state == STATE_BREAKEVEN else "SL")
+                    self._close_trade(trade, trade.stop_loss, candle_idx, reason)
+                elif tp_hit:
                     self._close_trade(trade, trade.take_profit, candle_idx, "TP")
 
             # Mark as OPEN if still NEW
@@ -358,6 +398,51 @@ class V4ReplayEngine:
     # ═══════════════════════════════════════════════════════════
     # EXECUTION
     # ═══════════════════════════════════════════════════════════
+
+    def _open_trade_at_open(self, signal: dict, candle: dict,
+                            indicators: dict, candle_idx: int):
+        """Execute pending signal at this bar's open price (next-bar entry)."""
+        cfg = self.config
+        open_price = candle["open"]
+        atr = signal.get("_atr", 0) or indicators.get("atr_14", open_price * 0.01)
+
+        # Dynamic spread in high-vol environments
+        spread_mult = 1.0
+        if cfg.dynamic_spread:
+            bar_range = candle["high"] - candle["low"]
+            if atr > 0 and bar_range > atr * 1.5:
+                spread_mult = min(2.5, bar_range / atr)
+
+        slip = open_price * (cfg.slippage_bps / 10000)
+        spread = open_price * (cfg.spread_bps / 10000) * spread_mult
+        size_adj = signal.get("size_adjustment", 1.0)
+
+        if signal["direction"] == "LONG":
+            entry = open_price + slip + spread / 2
+            sl = entry - atr * cfg.sl_atr_mult
+            tp = entry + atr * cfg.tp_atr_mult
+        else:
+            entry = open_price - slip - spread / 2
+            sl = entry + atr * cfg.sl_atr_mult
+            tp = entry - atr * cfg.tp_atr_mult
+
+        trade = ManagedTrade(
+            trade_id=str(uuid4())[:8],
+            asset=cfg.asset,
+            direction=signal["direction"],
+            entry_price=round(entry, 8),
+            entry_time=candle_idx,
+            stop_loss=round(sl, 8),
+            take_profit=round(tp, 8),
+            original_stop_loss=round(sl, 8),
+            original_take_profit=round(tp, 8),
+            size_multiplier=round(size_adj, 3),
+            max_hold=cfg.max_hold_candles,
+            entry_type=signal.get("entry_type", "momentum"),
+            entry_quality=signal.get("entry_quality", 0.5),
+            state=STATE_NEW,
+        )
+        self.open_trades.append(trade)
 
     def _open_trade(self, signal: dict, indicators: dict, candle_idx: int):
         cfg = self.config
