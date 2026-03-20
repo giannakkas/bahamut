@@ -1,388 +1,311 @@
-# Bahamut.AI — Adaptive Portfolio Intelligence and Trading Control Platform
+# Bahamut.AI — Adaptive AI Trading Intelligence Platform
 
-Bahamut is a multi-agent portfolio intelligence system that analyzes financial markets, produces consensus trading signals, manages portfolio risk in real time, and learns from its own outcomes to improve over time.
+Bahamut is a multi-agent AI trading intelligence system that scans 219 financial assets, runs 6 specialized AI agents to produce consensus trading signals, manages portfolio risk through a 10-step evaluation pipeline, and continuously learns from its own trade outcomes.
 
-It runs 6 independent AI agents across 45+ assets (FX, crypto, equities, commodities), forces them to debate and challenge each other, computes weighted consensus, evaluates every proposed trade against the full portfolio context, and decides whether to execute, reduce, or block — with structured explanations for every decision.
+The system combines **Gemini 2.5 Flash** and **Claude** as dual AI providers with pure mathematical analysis, a challenge/debate system where agents argue against each other, and a self-learning feedback loop that evolves trust scores based on real performance.
 
-**Live system:** [frontend-production-947b.up.railway.app](https://frontend-production-947b.up.railway.app)
-**API:** [bahamut-production.up.railway.app](https://bahamut-production.up.railway.app)
-
----
-
-## Overview
-
-Most trading systems evaluate signals in isolation. A strong buy signal on BTCUSD might look good on its own, but if the portfolio is already 40% crypto, adding more concentrates risk instead of diversifying it.
-
-Bahamut solves this by treating signal generation and portfolio management as a single integrated system. Every proposed trade passes through a 10-step portfolio evaluation pipeline before it can execute. The system tracks how its decisions perform, identifies patterns in portfolio states that correlate with losses, and automatically adjusts its behavior.
-
-The platform is designed as a paper trading and analysis system. It generates and evaluates signals but does not connect to live brokers. Execution is simulated through a paper trading engine with full PnL tracking, learning attribution, and performance analytics.
+**Live:**
+- **Frontend:** [bahamut.ai](https://bahamut.ai)
+- **Admin Panel:** [admin.bahamut.ai](https://admin.bahamut.ai)
+- **API:** [api.bahamut.ai](https://api.bahamut.ai)
 
 ---
 
-## Key Capabilities
+## System Stats
 
-### Multi-Agent Analysis
+| Metric | Value |
+|--------|-------|
+| Backend Python files | 122 |
+| Backend LOC | ~19,700 |
+| Frontend + Admin TSX/TS LOC | ~6,300 |
+| API endpoints | 128 |
+| Database tables | 27 |
+| Config parameters | 54 |
+| Test cases | 290 (282 passing) |
+| Scanner assets | 219 |
+| Agent signal assets | 76 |
+| AI providers | 2 (Gemini + Claude) |
+| Frontend pages | 13 |
+| Admin pages | 18 |
+| Railway services | 8 |
 
-Six specialized agents independently analyze each asset:
+---
 
-- **Technical Agent** — price action, indicators, chart patterns
-- **Macro Agent** — economic data, interest rates, macro regime
-- **Volatility Agent** — VIX, implied vol, volatility regime
-- **Sentiment Agent** — news sentiment, market positioning
-- **Liquidity Agent** — volume, spread, market depth
-- **Risk Agent** — absolute authority veto, portfolio-level flags
+## Architecture Overview
 
-Agents run concurrently with 15-second timeouts. Each produces a directional bias (LONG/SHORT/NEUTRAL) with a confidence score and supporting evidence. Agents then challenge each other's conclusions before consensus is computed.
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Market Data Layer                           │
+│  Twelve Data (219 assets) · Finnhub (news) · Forex Factory (cal)  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   Asset Scanner (every 15 min)                     │
+│  219 assets: 27 FX · 7 Commodities · 40 Crypto · 145 Stocks      │
+│  RSI · EMA · MACD · ADX · Bollinger · Whale detection · Volume    │
+│  → Top 20 auto-trigger deep AI analysis                           │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               6 AI Agents (parallel, 20s timeout)                  │
+│                                                                     │
+│  🤖 Macro Agent ──────── Gemini AI reads news + macro data         │
+│  🤖 Sentiment Agent ──── Gemini + Claude dual-model (parallel)     │
+│  📊 Technical Agent ──── RSI, EMA, MACD, ADX, chart patterns       │
+│  📊 Volatility Agent ─── ATR, Bollinger, VIX regime                │
+│  📊 Liquidity Agent ──── Volume, whale detection, order flow       │
+│  🛡️ Risk Agent ─────────  Absolute veto authority, portfolio flags  │
+│                                                                     │
+│  Agents challenge each other → debate → consensus                  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Consensus Engine                                 │
+│  Trust-weighted scoring · Disagreement analysis · Floor logic      │
+│                                                                     │
+│  🤖 AI Consensus Reviewer (Gemini + Claude parallel)               │
+│     - Reviews borderline decisions (score 0.40-0.80)               │
+│     - Circuit breaker per provider (3 fails → 2 min cooldown)      │
+│     - 6s hard timeout ceiling · ±0.15 max score adjustment         │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              Portfolio Intelligence (10-step pipeline)              │
+│                                                                     │
+│  1. Kill switch check       6. Adaptive rules                      │
+│  2. Exposure engine          7. Scenario risk (5 macro scenarios)   │
+│  3. Correlation engine       8. Marginal risk                      │
+│  4. Fragility scoring        9. Quality ratio                      │
+│  5. Impact scoring          10. Final verdict (size/approve/block)  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   Execution Policy                                  │
+│  9 hard blockers · 4 soft constraints · Auto-approve toggle        │
+│  Dynamic reallocation (close weak → open strong)                   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                Paper Trading Engine                                 │
+│  Simulated execution · SL/TP/timeout monitoring (every 2 min)      │
+│  Position tracking · PnL attribution · Max 10 concurrent positions │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   Learning Pipeline                                 │
+│  Agent trust updates · Portfolio pattern analysis · Scenario        │
+│  outcome learning · Daily/weekly/monthly calibration                │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-### Consensus Engine
+---
 
-Agent outputs are weighted by four factors multiplied together:
+## Asset Universe
 
-`effective_weight = base_weight * trust_score * regime_factor * timeframe_factor`
+### Scanner (219 assets — every 15 min)
 
-Trust scores evolve with every trade outcome — agents that are consistently right gain influence, agents that are wrong lose it. The system detects when all trust scores are low and applies aggregate dampening to prevent the normalization from cancelling out individual unreliability.
+| Class | Count | Examples |
+|-------|-------|---------|
+| FX | 27 | EUR/USD, GBP/JPY, AUD/NZD, CHF/JPY, EUR/CAD... |
+| Commodities | 7 | Gold, Silver, WTI Crude, Natural Gas, Platinum, Copper, Palladium |
+| Crypto | 40 | BTC, ETH, SOL, BNB, XRP, ADA, DOGE, LINK, TON, SUI, PEPE, RENDER, INJ... |
+| Stocks | 145 | Mega Cap, Finance, Healthcare, Consumer, Semis, Cloud, Cybersecurity, EV, Oil, Defense, Airlines, REITs... |
 
-A disagreement engine computes a 5-component disagreement index. High disagreement can force approval-only mode or block execution entirely.
+### Agent Signals (76 assets — deep 6-agent analysis)
 
-### Portfolio Intelligence
+| Class | Count |
+|-------|-------|
+| FX | 10 |
+| Commodities | 4 |
+| Crypto | 15 |
+| Stocks | 47 |
 
-Every proposed trade passes through a 10-step evaluation pipeline:
+---
 
-1. **Kill switch check** — block all trades if portfolio stress is extreme
-2. **Exposure engine** — gross/net/per-class/per-theme exposure limits
-3. **Correlation engine** — directional overlap, HHI concentration, same-class detection
-4. **Fragility scoring** — concentration risk, directional risk, drawdown proximity
-5. **Impact scoring** — does this trade improve or worsen portfolio diversification
+## AI Intelligence Layer
+
+### Multi-Model Architecture
+
+| Component | Provider | Role |
+|-----------|----------|------|
+| Macro Agent | Gemini → Claude fallback → math | Reads news, VIX, DXY, yield curve, regime |
+| Sentiment Agent | Gemini + Claude **in parallel** | Dual opinion merge: agree/partial/disagree |
+| Consensus Reviewer | Gemini + Claude **in parallel** | Reviews borderline decisions ±0.15 |
+
+### AI Consensus Reviewer (`consensus/ai_reviewer.py`)
+
+Async-first architecture with dual interface:
+
+```python
+# Async (for async callers)
+result = await ai_consensus_review(asset, direction, score, agent_summaries)
+
+# Sync wrapper (for Celery workers)
+result = ai_consensus_review_sync(asset, direction, score, agent_summaries)
+```
+
+Features:
+- Parallel Gemini + Claude via `asyncio.gather()`
+- Per-provider circuit breaker (3 failures/5min → 2min cooldown → auto-recovery)
+- 5s timeout per provider, 6s hard ceiling
+- Latency logging per provider
+- Only reviews borderline scores (0.40-0.80)
+- Score adjustment clamped to ±0.15
+- `GET /trust/ai-reviewer-status` monitoring endpoint
+
+---
+
+## 6 AI Agents
+
+| Agent | Type | Analysis |
+|-------|------|----------|
+| **Technical** | 📊 Math | RSI, EMA (20/50/200), MACD, ADX, Bollinger Bands |
+| **Macro** | 🤖 AI | VIX, DXY, yield curve, regime + news via Gemini/Claude |
+| **Volatility** | 📊 Math | ATR, Bollinger width, VIX regime |
+| **Sentiment** | 🤖 AI | News + positioning via dual Gemini+Claude |
+| **Liquidity** | 📊 Math | Volume, whale detection, unusual activity |
+| **Risk** | 🛡️ Math | Portfolio-level veto, absolute authority |
+
+---
+
+## Portfolio Intelligence (10-Step Pipeline)
+
+1. **Kill switch** — blocks all trades if tail risk > 25% or fragility > 80%
+2. **Exposure engine** — gross/net/per-class/per-theme limits
+3. **Correlation engine** — directional overlap, HHI concentration
+4. **Fragility scoring** — concentration, directional risk, drawdown proximity
+5. **Impact scoring** — does this trade improve or worsen diversification
 6. **Adaptive rules** — learned patterns from historical portfolio states
-7. **Scenario risk** — weighted simulation across 5 macro scenarios
-8. **Marginal risk** — how much risk does this specific trade ADD to the portfolio
+7. **Scenario risk** — 5 macro scenarios with per-asset shock maps
+8. **Marginal risk** — how much risk does this trade ADD
 9. **Quality ratio** — expected return vs marginal risk
-10. **Final verdict** — combine all constraints, produce size/approval/block decision
-
-### Scenario Risk Engine
-
-Five predefined macro scenarios simulate portfolio PnL under stress:
-
-- **Risk-off** — flight to safety, equity and crypto selloff
-- **Risk-on** — broad risk appetite, safe havens weaken
-- **Volatility spike** — amplified moves, high-beta hit hardest
-- **USD shock** — sudden dollar weakness
-- **Crypto shock** — cascading liquidations, DeFi contagion
-
-Each scenario applies per-asset shock percentages (30+ assets mapped) to all open positions plus the proposed trade. Scenarios are probability-weighted (configurable), producing weighted tail risk, weighted expected stress, and top contributor analysis.
-
-### Self-Learning System
-
-The system learns at three levels:
-
-**Agent trust evolution** — per-agent, per-regime, per-asset-class trust scores updated after every trade closes. Asymmetric: wrong costs more than right rewards. High-confidence wrong answers receive extra penalties.
-
-**Portfolio pattern learning** — captures portfolio state (exposure, fragility, concentration, drawdown) at trade entry and exit. Daily analysis identifies patterns such as "trades opened when fragility > 0.5 have a 27% win rate" and generates adaptive rules that modify future sizing.
-
-**Scenario outcome learning** — tracks whether scenario risk warnings at entry correlated with actual trade outcomes. Identifies combined patterns such as "high theme concentration + scenario stress leads to accelerated losses."
-
-### Execution Policy
-
-Nine hard blockers and four soft constraints evaluated on every trade:
-
-Hard blockers: risk veto, daily drawdown, weekly drawdown, max positions, duplicate asset, score floor, disagreement blocked, crisis + conservative, hard risk flags.
-
-Soft constraints: crisis size reduction, disagreement approval-only, correlation size reduction, exposure size reduction. System confidence (composite of trust stability, disagreement trend, recent performance, calibration health) gates execution at three levels.
-
-### Dynamic Capital Allocation
-
-When the portfolio is full (max positions reached) and a strong signal arrives, the system evaluates whether to reallocate:
-
-- Every open position is scored on a 0-1 quality scale (signal quality, PnL trajectory, risk/reward, time decay, momentum)
-- The proposed trade is scored on the same scale
-- If the proposed trade materially outscores the weakest position (minimum 0.20 margin), the weakest is closed and capital is reallocated
-- Throttled to 3 reallocations per hour to prevent churn
-
-### Kill Switch and Safe Mode
-
-Portfolio-level emergency protections:
-
-- **Hard kill switch** — blocks all new trades when weighted tail risk exceeds threshold, fragility exceeds threshold, or combined stress exceeds threshold
-- **Safe mode** — tightens limits (2 max trades, 1% max position) when fragility is elevated but not critical
-- **Deleveraging** — recommends closing weakest positions when portfolio stress is extreme
-
-### Decision Explainability
-
-Every trade decision produces a structured explanation with 7 factors: trust, disagreement, regime, risk, system confidence, calibration, and agreement. Each factor includes a status (high/low/blocked), numeric value, impact classification (positive/negative/blocking), and human-readable detail text. A narrative string summarizes the reasoning.
-
-### Admin Configuration
-
-52 tunable system constants consolidated into a central configuration service:
-
-- Scenario weights and tail risk thresholds
-- Marginal risk and quality ratio thresholds
-- Exposure limits (gross, net, class, theme, asset)
-- Kill switch and safe mode triggers
-- Allocator rules (quality thresholds, reallocation margins)
-- Profile limits (drawdown, position count, score floors)
-- Readiness check thresholds
-
-All config is persisted to database with type validation, default values, and a versioned audit log.
+10. **Final verdict** — size/approve/block with structured explanation
 
 ---
 
-## Architecture
+## Execution & Safety
 
-### Infrastructure
+### Kill Switch
+- Tail risk threshold: 25% (configurable)
+- Manual override: 1 hour TTL, logged
+- Recovery: 15min cooldown → 30min gradual re-entry
+
+### Execution Modes
+- **AUTO** — executes immediately
+- **APPROVAL** — requires manual approval
+- **WATCH** — logged, not traded
+
+### Position Limits
+
+| Profile | Max Positions | Min Score | Max Daily DD |
+|---------|---------------|-----------|--------------|
+| Conservative | 5 | 0.65 | 2% |
+| Balanced | 10 | 0.55 | 3% |
+| Aggressive | 15 | 0.45 | 5% |
+
+---
+
+## Role-Based Access
+
+| Role | Access |
+|------|--------|
+| **super_admin** | Full access, config editing, role management |
+| **admin** | Dashboard, risk, alerts, users, paper trading, agents |
+| **trader** | Execution, risk control, journal, paper trading |
+| **user** | Command, top picks, macro arena, event radar |
+
+---
+
+## Infrastructure
+
+### Railway Services (8)
 
 | Service | Technology | Purpose |
 |---------|-----------|---------|
-| API | FastAPI (Python 3.12) | REST API, 103 endpoints across 16 modules |
-| Worker | Celery | Processes signal cycles, scans, paper trades, learning |
-| Beat | Celery Beat | Schedules periodic tasks (ingestion, cycles, calibration) |
-| Frontend | Next.js 14 (TypeScript) | Dashboard with 14 pages |
-| Database | PostgreSQL | 22 tables, full persistence |
-| Cache | Redis | Celery broker, result cache, real-time state |
+| API | FastAPI Python 3.12 | 128 endpoints |
+| Frontend | Next.js 14 | bahamut.ai (13 pages) |
+| Admin Panel | Next.js 14 | admin.bahamut.ai (18 pages) |
+| Worker | Celery | Signal cycles, scans, trades |
+| Beat | Celery Beat | Scheduled tasks |
+| Postgres | PostgreSQL 15 | 27 tables |
+| Redis | Redis 7 | Broker + cache |
 
-### Backend Modules
+### Scheduled Tasks
 
-The backend is organized into 20 modules:
-
-| Module | Purpose |
-|--------|---------|
-| `agents` | 6 AI agents, orchestrator, persistence, challenge system |
-| `consensus` | Weighted consensus engine, disagreement, trust store, weights, explainer, system confidence |
-| `execution` | Execution policy (9 blockers + soft constraints), kill switch endpoint |
-| `portfolio` | Registry, exposure/correlation/fragility engines, scenario risk, marginal risk, quality ratio, capital allocator, kill switch, adaptive learning |
-| `learning` | Calibration (daily/weekly/emergency), meta-evaluation, threshold tuning, profile adapter |
-| `stress` | Replay-based stress testing (13 scenarios including 5 with per-trace mutators), assessment bridge |
-| `readiness` | 13-point trading readiness checklist |
-| `admin` | Central config service (52 keys), audit log, admin API |
-| `paper_trading` | Simulated execution engine, position management, learning attribution |
-| `ingestion` | Market data adapters (Twelve Data, Finnhub), news, OHLCV |
-| `scanner` | 45+ asset scanner with scoring |
-| `features` | Technical indicators, regime detection |
-| `risk` | Risk dashboard, drawdown tracking |
-
-### Frontend Pages
-
-| Page | Content |
-|------|---------|
-| Command | System overview, active signals, risk status, news feed |
-| Agent Council | Signal cycles, agent outputs, challenge log, decision reasoning |
-| Learning Lab | 16 panels: trust, fitness, leaderboard, readiness, stress, portfolio exposure, fragility, scenarios, rankings, adaptive rules, reallocation log |
-| Paper Trading | Positions, PnL tracking, trade history |
-| Risk Control | Drawdown limits, exposure, circuit breakers |
-| Top Picks | Scanner results, ranked opportunities |
-| Execution | Kill switch, policy config, execution status |
-
-### Data Flow
-
-```
-Market Data (Twelve Data, Finnhub)
-    |
-    v
-Feature Computation (indicators, regime detection)
-    |
-    v
-6 AI Agents (parallel analysis, 15s timeout)
-    |
-    v
-Challenge System (agents debate each other)
-    |
-    v
-Consensus Engine (weighted scoring, disagreement, trust dampening)
-    |
-    v
-Risk Agent Veto (absolute authority, first check)
-    |
-    v
-Portfolio Intelligence (10-step pipeline)
-    |
-    v
-Execution Policy (9 blockers + soft constraints)
-    |
-    v
-Paper Trading Engine (simulated execution, SL/TP/timeout management)
-    |
-    v
-Learning Pipeline (trust updates, portfolio state capture, pattern analysis)
-    |
-    v
-Calibration (daily/weekly thresholds, adaptive rules, meta-evaluation)
-```
+| Task | Frequency |
+|------|-----------|
+| Signal cycles (FX/Crypto) | 15 min |
+| Stock cycles | 30 min (market hours) |
+| Market scanner | 15 min |
+| Position checker | 2 min |
+| OHLCV ingestion | 2 min |
+| News monitoring | 2 min |
+| Regime detection | 5 min |
+| Daily calibration | 00:15 UTC |
+| Weekly calibration | Sunday 20:00 UTC |
 
 ---
 
-## System Design Principles
+## Frontend Pages (bahamut.ai — 13 pages)
 
-**Safety-first execution.** Risk agent has absolute veto authority. Kill switch blocks all trades before any other evaluation runs. Nine independent hard blockers must all pass. The system defaults to caution.
+Command · Top Picks · Macro Arena · Event Radar · Execution · Risk Control · Trade Journal · Paper Trading · Intel Reports · Agent Council · Learning Lab · Settings · Login
 
-**Explainability.** Every decision carries structured reasoning — which factors contributed, what blocked it, why the size was reduced. No black-box outputs.
+## Admin Pages (admin.bahamut.ai — 18 pages)
 
-**Closed learning loop.** Trade outcomes feed back into trust scores, portfolio patterns generate adaptive rules, scenario risk warnings are validated against actual results. The system evolves from its own performance data.
-
-**Modularity.** Each module has clear boundaries and can be tested independently. The portfolio intelligence pipeline is a sequence of independent steps, each with its own verdict contribution.
-
-**Central configuration.** No scattered hardcoded constants. All 52 tunable parameters live in a single config service with defaults, type validation, persistence, and audit logging.
-
-**Graceful degradation.** If any module fails (agent timeout, DB unreachable, external API down), the system continues with reduced confidence rather than crashing. API calls have 10-second timeouts. All frontend loading uses `Promise.allSettled` with `finally` blocks.
+Dashboard · Top Picks · Risk & Kill Switch · Alerts (Active/Archived) · Audit Log · Learning · AI Optimizer · Users · Paper Trading · Agent Council · Learning Lab · Execution Monitor · Trade Journal · Configuration · Overrides · Trust & Intelligence · Adaptive Risk · Agent Ranking
 
 ---
 
-## API Overview
+## Market Data
 
-103 endpoints across 16 route groups:
-
-| Category | Endpoints | Examples |
-|----------|-----------|---------|
-| Auth | 4 | Login, register, token refresh, user info |
-| Agents | 11 | Trigger cycles, latest signals, trust scores, health |
-| Consensus | 5 | Thresholds, weights, disagreement config |
-| Learning | 13 | Meta-evaluation, trust summary, leaderboard, thresholds, fitness, system confidence |
-| Portfolio | 16 | Snapshot, exposure, fragility, rankings, scenario sim, marginal risk, kill switch, adaptive rules |
-| Paper Trading | 9 | Positions, open/close, portfolio stats, history |
-| Stress | 7 | Run scenarios, replay, assessment, history |
-| Admin | 8 | Config get/set/reset, audit log, system summary |
-| Execution | 4 | Kill switch, policy config, status |
-| Scanner | 8 | Full scan, top picks, scan history |
-| Market | 7 | Candles, prices, features |
-| Readiness | 2 | Health check, 13-point checklist |
-
-All endpoints require JWT authentication (access + refresh tokens).
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.12+
-- Node.js 20+
-- PostgreSQL 15+ (or use Docker)
-- Redis 7+
-
-### Backend
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Set environment variables (see below)
-cp .env.example .env
-
-# Run API
-uvicorn bahamut.main:app --host 0.0.0.0 --port 8000
-
-# Run worker (separate terminal)
-celery -A bahamut.celery_app worker --loglevel=info
-
-# Run scheduler (separate terminal)
-celery -A bahamut.celery_app beat --loglevel=info
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-
-# Set environment variables
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
-
-npm run dev
-```
-
-### Run Tests
-
-```bash
-cd backend
-python -m pytest tests/test_intelligence.py -v
-```
-
-190 tests across 25 subsystems covering consensus, execution policy, disagreement, trust scoring, regime detection, learning attribution, meta-learning, threshold tuning, adaptive profiles, stress testing, readiness, system confidence, stress assessment, decision explainability, portfolio intelligence, dynamic allocation, portfolio learning, scenario risk, admin config, weighted scenarios, marginal risk, quality ratio, kill switch, and scenario outcome learning.
+### Twelve Data (Grow plan — $29/mo)
+- 219 symbols, unlimited credits, 55 req/min
+- Global rate limiter at 50/min with auto-throttle
+- In-memory cache: 15min candles, 5min prices
+- 429 retry with progressive backoff
 
 ---
 
 ## Environment Variables
 
-### Backend
-
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `REDIS_URL` | Yes | Redis connection string |
-| `JWT_SECRET` | Yes | JWT signing secret (change in production) |
-| `JWT_REFRESH_SECRET` | Yes | Refresh token secret |
-| `TWELVE_DATA_KEY` | Yes | Twelve Data API key (market data) |
-| `FINNHUB_KEY` | Yes | Finnhub API key (news, earnings) |
-| `GEMINI_API_KEY` | No | Google Gemini API key (AI agent reasoning) |
-| `ANTHROPIC_API_KEY` | No | Anthropic API key (alternative AI provider) |
-| `NEWSAPI_KEY` | No | NewsAPI key (sentiment) |
-| `OANDA_API_KEY` | No | OANDA API key (FX data) |
-| `FRED_API_KEY` | No | FRED API key (economic data) |
-
-### Frontend
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | Yes | Backend API base URL |
-| `NEXT_PUBLIC_WS_URL` | No | WebSocket URL for real-time updates |
+| `DATABASE_URL` | Yes | PostgreSQL connection |
+| `REDIS_URL` | Yes | Redis connection |
+| `JWT_SECRET` | Yes | JWT signing secret |
+| `TWELVE_DATA_KEY` | Yes | Twelve Data API key |
+| `FINNHUB_KEY` | Yes | Finnhub API key |
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `ANTHROPIC_API_KEY` | Recommended | Anthropic API key |
 
 ---
 
-## Deployment
-
-### Railway (Recommended)
-
-The system is designed for Railway deployment with 6 services:
-
-1. **API** — FastAPI application
-2. **Worker** — Celery worker for async processing
-3. **Beat** — Celery Beat scheduler
-4. **Frontend** — Next.js application
-5. **PostgreSQL** — Managed database
-6. **Redis** — Managed cache/broker
-
-Each service has its own Dockerfile or Railway configuration. Environment variables are shared across services through Railway's variable reference system.
-
-### Docker Compose (Local Development)
+## Getting Started
 
 ```bash
-docker-compose up -d
+# Backend
+cd backend && pip install -r requirements.txt
+uvicorn bahamut.main:app --host 0.0.0.0 --port 8000
+celery -A bahamut.celery_app worker --loglevel=info
+celery -A bahamut.celery_app beat --loglevel=info
+
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Admin
+cd admin-panel && npm install && npm run dev
+
+# Tests
+cd backend && PYTHONPATH=. python -m pytest tests/ -v
+# 282 passed, 8 skipped
 ```
-
-This starts PostgreSQL, Redis, and the API service. Frontend runs separately with `npm run dev`.
-
----
-
-## Current Status
-
-The core system is functional and deployed:
-
-- Multi-agent analysis running on 15-minute cycles across 45+ assets
-- Full paper trading engine with simulated execution, SL/TP management, and PnL tracking
-- Self-learning pipeline processing every closed trade for trust score updates
-- Portfolio intelligence evaluating every proposed trade through 10-step pipeline
-- Stress testing with 13 scenarios (8 static + 5 dynamic mutators)
-- 190 tests passing across 25 subsystems
-- Admin configuration with 52 tunable parameters
-
-Areas still evolving:
-
-- Learning system needs more trade history to generate statistically significant adaptive rules (minimum sample counts enforced)
-- Scenario shock maps use simplified linear PnL approximation (no convexity, no cross-asset correlation matrices)
-- Market data dependent on external API reliability (Twelve Data, Finnhub)
-- Paper trading only — no live broker integration
-
----
-
-## Roadmap
-
-- Multi-user workspace support with role-based access control
-- Live broker integration (starting with FX via OANDA)
-- Advanced learning engine with regime-conditioned adaptive rules
-- Full admin control panel UI for configuration management
-- Real-time WebSocket push for signal updates and position changes
-- Historical backtesting engine using stored decision traces
-- Mobile-responsive dashboard
 
 ---
 
@@ -390,33 +313,43 @@ Areas still evolving:
 
 ```
 bahamut/
-├── backend/
-│   ├── bahamut/
-│   │   ├── admin/          # Central config, audit log
-│   │   ├── agents/         # 6 AI agents, orchestrator, challenge system
-│   │   ├── auth/           # JWT authentication
-│   │   ├── consensus/      # Weighted consensus, disagreement, trust, explainer
-│   │   ├── execution/      # Execution policy, kill switch
-│   │   ├── features/       # Indicators, regime detection
-│   │   ├── ingestion/      # Market data adapters
-│   │   ├── learning/       # Calibration, meta-learning, thresholds, profile adapter
-│   │   ├── paper_trading/  # Simulated execution, learning attribution
-│   │   ├── portfolio/      # Intelligence engine, scenarios, marginal risk, quality, allocator
-│   │   ├── readiness/      # Trading readiness checklist
-│   │   ├── risk/           # Risk dashboard
-│   │   ├── scanner/        # 45+ asset scanner
-│   │   ├── stress/         # Stress testing, scenarios, assessment
-│   │   └── ...
-│   └── tests/
-├── frontend/
-│   └── src/app/            # 14 Next.js pages
-├── docker-compose.yml
-├── Dockerfile
-└── railway.toml
+├── backend/bahamut/
+│   ├── admin/           # Config (54 keys), audit, alerts
+│   ├── agents/          # 6 AI agents, orchestrator, challenges
+│   │   ├── macro_agent.py      # 🤖 Gemini AI
+│   │   ├── sentiment_agent.py  # 🤖 Gemini + Claude dual
+│   │   ├── technical_agent.py  # 📊 Math
+│   │   ├── volatility_agent.py # 📊 Math
+│   │   ├── liquidity_agent.py  # 📊 Math
+│   │   └── risk_agent.py       # 🛡️ Veto authority
+│   ├── consensus/       # Engine + AI reviewer
+│   │   ├── engine.py
+│   │   └── ai_reviewer.py      # Async-first, circuit breaker
+│   ├── execution/       # Policy, kill switch
+│   ├── ingestion/       # Twelve Data (rate limiter), Finnhub
+│   ├── intelligence/    # Trust API, adaptive risk
+│   ├── learning/        # Calibration, meta-learning
+│   ├── paper_trading/   # Engine, SL/TP, positions
+│   ├── portfolio/       # 10-step intelligence pipeline
+│   └── scanner/         # 219-asset scanner
+├── frontend/            # bahamut.ai (13 pages)
+├── admin-panel/         # admin.bahamut.ai (18 pages)
+└── tests/               # 290 test cases
 ```
+
+---
+
+## Development Phases
+
+- **Phase 1** ✅ Infrastructure hardening, exception handling, fail-closed
+- **Phase 2** ✅ Production safety, single-writer, CORS, health
+- **Phase 3** ✅ Productization, warmup, roles, config guardrails
+- **Phase 4** ✅ Intelligence layer, explainability, adaptive risk
+- **Phase 5** ✅ AI upgrade: dual-model sentiment, AI macro, AI reviewer
+- **Phase 6** ✅ Asset expansion: 219 scanner, 76 agents, rate limiting
 
 ---
 
 ## License
 
-This is a proprietary project. All rights reserved.
+Proprietary. All rights reserved.
