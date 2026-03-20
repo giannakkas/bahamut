@@ -16,12 +16,18 @@ FX_ASSETS = [
     {"symbol": "USDJPY", "asset_class": "fx"},
     {"symbol": "EURJPY", "asset_class": "fx"},
     {"symbol": "GBPJPY", "asset_class": "fx"},
+    {"symbol": "AUDUSD", "asset_class": "fx"},
+    {"symbol": "USDCAD", "asset_class": "fx"},
+    {"symbol": "EURGBP", "asset_class": "fx"},
+    {"symbol": "USDCHF", "asset_class": "fx"},
+    {"symbol": "NZDUSD", "asset_class": "fx"},
 ]
 
 COMMODITY_ASSETS = [
     {"symbol": "XAUUSD", "asset_class": "commodities"},
     {"symbol": "XAGUSD", "asset_class": "commodities"},
     {"symbol": "WTIUSD", "asset_class": "commodities"},
+    {"symbol": "NATGASUSD", "asset_class": "commodities"},
 ]
 
 CRYPTO_ASSETS = [
@@ -33,9 +39,17 @@ CRYPTO_ASSETS = [
     {"symbol": "ADAUSD", "asset_class": "crypto"},
     {"symbol": "DOGEUSD", "asset_class": "crypto"},
     {"symbol": "LINKUSD", "asset_class": "crypto"},
+    {"symbol": "AVAXUSD", "asset_class": "crypto"},
+    {"symbol": "DOTUSD", "asset_class": "crypto"},
+    {"symbol": "TONUSD", "asset_class": "crypto"},
+    {"symbol": "SHIBUSD", "asset_class": "crypto"},
+    {"symbol": "NEARUSD", "asset_class": "crypto"},
+    {"symbol": "SUIUSD", "asset_class": "crypto"},
+    {"symbol": "LTCUSD", "asset_class": "crypto"},
 ]
 
 STOCK_ASSETS = [
+    # Mega Cap
     {"symbol": "AAPL", "asset_class": "indices"},
     {"symbol": "MSFT", "asset_class": "indices"},
     {"symbol": "GOOGL", "asset_class": "indices"},
@@ -43,14 +57,54 @@ STOCK_ASSETS = [
     {"symbol": "NVDA", "asset_class": "indices"},
     {"symbol": "META", "asset_class": "indices"},
     {"symbol": "TSLA", "asset_class": "indices"},
-    {"symbol": "AMD", "asset_class": "indices"},
-    {"symbol": "NFLX", "asset_class": "indices"},
-    {"symbol": "AVGO", "asset_class": "indices"},
+    # Finance
     {"symbol": "JPM", "asset_class": "indices"},
     {"symbol": "V", "asset_class": "indices"},
+    {"symbol": "MA", "asset_class": "indices"},
+    {"symbol": "BAC", "asset_class": "indices"},
+    {"symbol": "GS", "asset_class": "indices"},
+    # Healthcare
+    {"symbol": "UNH", "asset_class": "indices"},
+    {"symbol": "LLY", "asset_class": "indices"},
+    {"symbol": "JNJ", "asset_class": "indices"},
+    {"symbol": "PFE", "asset_class": "indices"},
+    {"symbol": "ABBV", "asset_class": "indices"},
+    # Consumer
     {"symbol": "HD", "asset_class": "indices"},
     {"symbol": "PG", "asset_class": "indices"},
+    {"symbol": "KO", "asset_class": "indices"},
+    {"symbol": "COST", "asset_class": "indices"},
+    {"symbol": "WMT", "asset_class": "indices"},
+    {"symbol": "NKE", "asset_class": "indices"},
+    # Tech / Semis
+    {"symbol": "AMD", "asset_class": "indices"},
+    {"symbol": "AVGO", "asset_class": "indices"},
+    {"symbol": "CRM", "asset_class": "indices"},
+    {"symbol": "NFLX", "asset_class": "indices"},
+    {"symbol": "ADBE", "asset_class": "indices"},
+    {"symbol": "MU", "asset_class": "indices"},
+    {"symbol": "QCOM", "asset_class": "indices"},
+    {"symbol": "ARM", "asset_class": "indices"},
+    {"symbol": "PANW", "asset_class": "indices"},
+    {"symbol": "CRWD", "asset_class": "indices"},
+    {"symbol": "PLTR", "asset_class": "indices"},
+    {"symbol": "NOW", "asset_class": "indices"},
+    # Crypto-adjacent / High-vol
     {"symbol": "COIN", "asset_class": "indices"},
+    {"symbol": "MSTR", "asset_class": "indices"},
+    {"symbol": "SQ", "asset_class": "indices"},
+    {"symbol": "SHOP", "asset_class": "indices"},
+    {"symbol": "UBER", "asset_class": "indices"},
+    # Energy
+    {"symbol": "XOM", "asset_class": "indices"},
+    {"symbol": "CVX", "asset_class": "indices"},
+    # Industrial
+    {"symbol": "GE", "asset_class": "indices"},
+    {"symbol": "CAT", "asset_class": "indices"},
+    {"symbol": "BA", "asset_class": "indices"},
+    # Media
+    {"symbol": "DIS", "asset_class": "indices"},
+    {"symbol": "SPOT", "asset_class": "indices"},
 ]
 
 ALL_ASSETS = FX_ASSETS + COMMODITY_ASSETS + CRYPTO_ASSETS + STOCK_ASSETS

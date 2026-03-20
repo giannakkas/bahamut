@@ -25,22 +25,44 @@ settings = get_settings()
 ASSET_UNIVERSE = {
     "fx": [
         "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD", "EURGBP",
-        "EURJPY", "GBPJPY", "AUDJPY",
+        "EURJPY", "GBPJPY", "AUDJPY", "EURAUD", "EURCHF", "GBPAUD", "NZDJPY",
+        "CADJPY", "CHFJPY", "AUDCAD", "AUDNZD", "GBPCAD",
     ],
     "commodities": [
         "XAUUSD", "XAGUSD", "WTIUSD", "NATGASUSD", "PLATINUMUSD",
+        "COPPERUSD", "PALLADIUMUSD",
     ],
     "crypto": [
         "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD", "ADAUSD",
         "DOGEUSD", "AVAXUSD", "DOTUSD", "LINKUSD",
         "TONUSD", "SHIBUSD", "NEARUSD", "SUIUSD", "PEPEUSD",
+        "TRXUSD", "LTCUSD", "BCHUSD", "XLMUSD", "UNIUSD",
+        "ICPUSD", "HBARUSD", "FILUSD", "APTUSD", "ARBUSD",
+        "OPUSD", "MKRUSD", "AAVEUSD", "ATOMUSD", "ALGOUSD",
     ],
     "indices": [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
-        "JPM", "V", "UNH", "MA", "HD", "PG", "JNJ",
-        "AMD", "CRM", "NFLX", "ADBE", "INTC", "PYPL",
-        "UBER", "SQ", "SHOP", "PLTR", "COIN",
-        "AVGO", "LLY", "BAC", "DIS", "KO", "WMT", "COST", "MU", "ARM",
+        # Mega Cap
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B",
+        # Finance
+        "JPM", "V", "MA", "BAC", "GS", "MS", "AXP", "BLK", "SCHW", "C",
+        # Healthcare
+        "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT", "ISRG", "AMGN",
+        # Consumer
+        "HD", "PG", "KO", "PEP", "COST", "WMT", "NKE", "MCD", "SBUX", "TGT",
+        # Tech / Growth
+        "AMD", "CRM", "NFLX", "ADBE", "INTC", "PYPL", "UBER", "SQ", "SHOP", "PLTR",
+        "AVGO", "MU", "ARM", "QCOM", "AMAT", "LRCX", "KLAC", "MRVL", "PANW", "CRWD",
+        "SNOW", "DDOG", "NET", "ZS", "TEAM", "WDAY", "NOW", "FTNT",
+        # Crypto-adjacent
+        "COIN", "MARA", "RIOT", "MSTR", "HUT",
+        # EV / Energy
+        "RIVN", "LCID", "ENPH", "FSLR", "NEE",
+        # Media / Entertainment
+        "DIS", "CMCSA", "WBD", "RBLX", "SPOT", "TTWO",
+        # Industrial / Defense
+        "GE", "CAT", "BA", "LMT", "RTX", "HON",
+        # Other high-volume
+        "XOM", "CVX", "COP", "OXY", "SLB",
     ],
 }
 

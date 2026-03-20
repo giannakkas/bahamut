@@ -105,34 +105,30 @@ class TwelveDataAdapter:
 # ── Symbol Maps ──
 # Twelve Data uses standard ticker format
 TWELVE_SYMBOL_MAP = {
-    # FX (11)
+    # FX (20)
     "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
     "AUDUSD": "AUD/USD", "USDCHF": "USD/CHF", "USDCAD": "USD/CAD",
     "NZDUSD": "NZD/USD", "EURGBP": "EUR/GBP",
     "EURJPY": "EUR/JPY", "GBPJPY": "GBP/JPY", "AUDJPY": "AUD/JPY",
-    # Commodities (5)
+    "EURAUD": "EUR/AUD", "EURCHF": "EUR/CHF", "GBPAUD": "GBP/AUD",
+    "NZDJPY": "NZD/JPY", "CADJPY": "CAD/JPY", "CHFJPY": "CHF/JPY",
+    "AUDCAD": "AUD/CAD", "AUDNZD": "AUD/NZD", "GBPCAD": "GBP/CAD",
+    # Commodities (7)
     "XAUUSD": "XAU/USD", "XAGUSD": "XAG/USD",
     "WTIUSD": "WTI/USD", "NATGASUSD": "NG/USD", "PLATINUMUSD": "XPT/USD",
-    # Crypto (15)
+    "COPPERUSD": "HG/USD", "PALLADIUMUSD": "XPD/USD",
+    # Crypto (30)
     "BTCUSD": "BTC/USD", "ETHUSD": "ETH/USD", "SOLUSD": "SOL/USD",
     "BNBUSD": "BNB/USD", "XRPUSD": "XRP/USD", "ADAUSD": "ADA/USD",
     "DOGEUSD": "DOGE/USD", "AVAXUSD": "AVAX/USD", "DOTUSD": "DOT/USD",
     "LINKUSD": "LINK/USD", "MATICUSD": "MATIC/USD", "SHIBUSD": "SHIB/USD",
     "TONUSD": "TON/USD", "NEARUSD": "NEAR/USD", "SUIUSD": "SUI/USD",
-    "PEPEUSD": "PEPE/USD",
-    # US Mega Cap (15)
-    "AAPL": "AAPL", "MSFT": "MSFT", "GOOGL": "GOOGL", "AMZN": "AMZN",
-    "NVDA": "NVDA", "META": "META", "TSLA": "TSLA", "BRK.B": "BRK.B",
-    "JPM": "JPM", "V": "V", "UNH": "UNH", "MA": "MA",
-    "HD": "HD", "PG": "PG", "JNJ": "JNJ",
-    # US Growth / Tech (15)
-    "AMD": "AMD", "CRM": "CRM", "NFLX": "NFLX", "ADBE": "ADBE",
-    "INTC": "INTC", "PYPL": "PYPL", "UBER": "UBER", "SQ": "SQ",
-    "SHOP": "SHOP", "SNOW": "SNOW", "PLTR": "PLTR", "COIN": "COIN",
-    "RBLX": "RBLX", "MARA": "MARA", "RIOT": "RIOT",
-    # US Expanded (9)
-    "AVGO": "AVGO", "LLY": "LLY", "BAC": "BAC", "DIS": "DIS",
-    "KO": "KO", "WMT": "WMT", "COST": "COST", "MU": "MU", "ARM": "ARM",
+    "PEPEUSD": "PEPE/USD", "TRXUSD": "TRX/USD", "LTCUSD": "LTC/USD",
+    "BCHUSD": "BCH/USD", "XLMUSD": "XLM/USD", "UNIUSD": "UNI/USD",
+    "ICPUSD": "ICP/USD", "HBARUSD": "HBAR/USD", "FILUSD": "FIL/USD",
+    "APTUSD": "APT/USD", "ARBUSD": "ARB/USD", "OPUSD": "OP/USD",
+    "MKRUSD": "MKR/USD", "AAVEUSD": "AAVE/USD", "ATOMUSD": "ATOM/USD",
+    "ALGOUSD": "ALGO/USD",
     # Indices (3)
     "SPX": "SPX", "IXIC": "IXIC", "DJI": "DJI",
 }
