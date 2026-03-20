@@ -104,3 +104,10 @@ async def get_kill_switch_recovery(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("kill_switch_recovery_failed", error=str(e))
         return {"status": "unknown", "error": str(e)[:100]}
+
+
+@router.get("/ai-reviewer-status")
+async def get_ai_reviewer_status(user=Depends(get_current_user)):
+    """Get AI consensus reviewer circuit breaker and provider status."""
+    from bahamut.consensus.ai_reviewer import get_reviewer_status
+    return get_reviewer_status()

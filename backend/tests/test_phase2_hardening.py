@@ -227,14 +227,14 @@ class TestTokenRevocation:
             mock_mgr.redis = mock_redis
             
             # Revoke
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 revoke_token(jti, expires, user_id="user1")
             )
             assert result is True
             mock_redis.set.assert_called_once()
             
             # Check revoked
-            is_revoked = asyncio.get_event_loop().run_until_complete(
+            is_revoked = asyncio.run(
                 is_token_revoked(jti)
             )
             assert is_revoked is True
@@ -250,7 +250,7 @@ class TestTokenRevocation:
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
             
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 is_token_revoked("unknown-jti")
             )
             assert result is False
@@ -267,7 +267,7 @@ class TestTokenRevocation:
             mock_mgr.redis = mock_redis
             # Also patch DB fallback to fail
             with patch("bahamut.db.query.run_query_one", side_effect=Exception("DB down")):
-                result = asyncio.get_event_loop().run_until_complete(
+                result = asyncio.run(
                     is_token_revoked("some-jti")
                 )
                 # Phase 2.5: fail-closed — block access when revocation check unavailable
@@ -278,12 +278,12 @@ class TestTokenRevocation:
         import asyncio
         from bahamut.auth.revocation import is_token_revoked
         
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             is_token_revoked("")
         )
         assert result is False
         
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             is_token_revoked(None)
         )
         assert result is False

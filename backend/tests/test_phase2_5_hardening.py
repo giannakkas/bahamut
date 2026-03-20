@@ -117,7 +117,7 @@ class TestTokenRevocationFailClosed:
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
             with patch("bahamut.db.query.run_query_one", side_effect=Exception("DB down")):
-                result = asyncio.get_event_loop().run_until_complete(
+                result = asyncio.run(
                     is_token_revoked("some-jti-123")
                 )
                 assert result is True, \
@@ -136,7 +136,7 @@ class TestTokenRevocationFailClosed:
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
             with patch("bahamut.db.query.run_query_one", side_effect=Exception("DB down")):
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     is_token_revoked("test-jti-456")
                 )
 
@@ -153,7 +153,7 @@ class TestTokenRevocationFailClosed:
 
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 is_token_revoked("valid-jti")
             )
             assert result is False
@@ -167,7 +167,7 @@ class TestTokenRevocationFailClosed:
 
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 is_token_revoked("revoked-jti")
             )
             assert result is True
@@ -182,7 +182,7 @@ class TestTokenRevocationFailClosed:
         with patch("bahamut.shared.redis_client.redis_manager") as mock_mgr:
             mock_mgr.redis = mock_redis
             with patch("bahamut.db.query.run_query_one", return_value=None):
-                result = asyncio.get_event_loop().run_until_complete(
+                result = asyncio.run(
                     is_token_revoked("test-jti-db")
                 )
                 assert result is False
@@ -190,11 +190,11 @@ class TestTokenRevocationFailClosed:
     def test_empty_jti_returns_false(self):
         """Empty JTI should not be blocked."""
         from bahamut.auth.revocation import is_token_revoked
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             is_token_revoked("")
         )
         assert result is False
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             is_token_revoked(None)
         )
         assert result is False
