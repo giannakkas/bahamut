@@ -47,36 +47,74 @@ async def health():
 
 @router.post("/approve/{asset}")
 async def approve_trade(asset: str, user=Depends(get_current_user)):
-    """Approve a pending APPROVAL trade for execution."""
+    """Approve a pending APPROVAL trade — fetches price and executes immediately."""
     if user.role not in ("trader", "admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
-        from bahamut.paper_trading.sync_executor import SyncPaperExecutor
-        executor = SyncPaperExecutor()
-        
-        # Get latest cycle for this asset
         from bahamut.db.query import run_query_one
-        cycle = run_query_one("""
-            SELECT cycle_id, asset, direction, final_score, execution_mode
+        import json
+
+        # Get latest consensus decision for this asset
+        decision = run_query_one("""
+            SELECT cycle_id, asset, direction, final_score, decision, execution_mode,
+                   agreement_pct, regime, trading_profile, risk_flags, disagreement_metrics,
+                   agent_contributions
             FROM consensus_decisions
             WHERE asset = :a ORDER BY created_at DESC LIMIT 1
         """, {"a": asset})
-        
-        if not cycle:
-            return {"status": "error", "message": f"No cycle found for {asset}"}
-        
-        if cycle.get("execution_mode") != "APPROVAL":
-            return {"status": "skipped", "message": f"{asset} is not pending approval"}
-        
-        # Force execute by triggering the sync executor
-        result = executor.execute_cycle_sync(
-            asset=asset,
-            asset_class="fx" if "USD" in asset or "EUR" in asset or "GBP" in asset or "JPY" in asset else "indices",
-            timeframe="4H",
-            trading_profile="BALANCED",
+
+        if not decision:
+            return {"status": "error", "message": f"No decision found for {asset}"}
+
+        # Fetch current price
+        try:
+            from bahamut.ingestion.market_data import get_current_prices
+            import asyncio
+            prices = await get_current_prices()
+            entry_price = prices.get(asset, 0)
+        except Exception:
+            entry_price = 0
+
+        if entry_price <= 0:
+            return {"status": "error", "message": f"Could not fetch price for {asset}"}
+
+        # Extract parameters
+        direction = decision.get("direction", "LONG")
+        score = float(decision.get("final_score", 0))
+        label = decision.get("decision", "SIGNAL")
+        regime = decision.get("regime", "RISK_ON")
+        profile = decision.get("trading_profile", "BALANCED")
+        cycle_id = decision.get("cycle_id")
+        risk_flags = decision.get("risk_flags") or []
+        if isinstance(risk_flags, str):
+            risk_flags = json.loads(risk_flags)
+
+        dm = decision.get("disagreement_metrics") or {}
+        if isinstance(dm, str):
+            dm = json.loads(dm)
+
+        agents = decision.get("agent_contributions") or {}
+        if isinstance(agents, str):
+            agents = json.loads(agents)
+
+        # Estimate ATR as 1% of price (safe fallback)
+        atr = entry_price * 0.01
+
+        # Execute via sync executor
+        from bahamut.paper_trading.sync_executor import process_signal_sync
+        result = process_signal_sync(
+            asset=asset, direction=direction,
+            consensus_score=score, signal_label=label,
+            entry_price=entry_price, atr=atr,
+            agent_votes=agents, cycle_id=cycle_id,
+            execution_gate="CLEAR", disagreement_index=dm.get("disagreement_index", 0),
+            risk_flags=risk_flags, risk_can_trade=True,
+            regime=regime, trading_profile=profile,
         )
-        return {"status": "approved", "asset": asset, "result": result}
+        return {"status": "approved", "asset": asset, "price": entry_price, "result": result}
     except Exception as e:
+        import traceback
+        logger.error("approve_failed", asset=asset, error=str(e), tb=traceback.format_exc())
         return {"status": "error", "message": str(e)[:200]}
 
 
@@ -85,29 +123,18 @@ async def approve_all_trades(user=Depends(get_current_user)):
     """Approve all pending APPROVAL trades."""
     if user.role not in ("trader", "admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    try:
-        from bahamut.db.query import run_query
-        pending = run_query("""
-            SELECT DISTINCT asset FROM consensus_decisions
-            WHERE execution_mode = 'APPROVAL'
-            AND created_at > NOW() - INTERVAL '2 hours'
-            ORDER BY asset
-        """)
-        results = []
-        for row in pending:
-            asset = row.get("asset", "")
-            try:
-                from bahamut.paper_trading.sync_executor import SyncPaperExecutor
-                executor = SyncPaperExecutor()
-                r = executor.execute_cycle_sync(
-                    asset=asset,
-                    asset_class="fx" if any(c in asset for c in ["USD","EUR","GBP","JPY"]) else "indices",
-                    timeframe="4H",
-                    trading_profile="BALANCED",
-                )
-                results.append({"asset": asset, "status": "approved", "result": str(r)[:100]})
-            except Exception as e:
-                results.append({"asset": asset, "status": "error", "error": str(e)[:100]})
-        return {"status": "ok", "approved_count": len(results), "results": results}
-    except Exception as e:
-        return {"status": "error", "message": str(e)[:200]}
+    from bahamut.db.query import run_query
+    pending = run_query("""
+        SELECT DISTINCT ON (asset) asset FROM consensus_decisions
+        WHERE execution_mode = 'APPROVAL' AND created_at > NOW() - INTERVAL '4 hours'
+    """)
+    results = []
+    for row in pending:
+        asset = row.get("asset", "")
+        try:
+            # Call ourselves for each asset
+            r = await approve_trade(asset, user)
+            results.append(r)
+        except Exception as e:
+            results.append({"asset": asset, "status": "error", "error": str(e)[:100]})
+    return {"status": "ok", "count": len(results), "results": results}
