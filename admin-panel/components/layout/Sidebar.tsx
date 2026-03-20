@@ -11,6 +11,7 @@ import { useOverrides } from "@/lib/hooks";
 const NAV_ITEMS = [
   // ─── Admin + Super Admin ───
   { href: "/dashboard", label: "Dashboard", icon: "◉", minRole: "admin" },
+  { href: "/top-picks", label: "Top Picks", icon: "🔥", minRole: "admin" },
   { href: "/risk", label: "Risk & Kill Switch", icon: "⚡", minRole: "admin" },
   { href: "/alerts", label: "Alerts", icon: "🔔", minRole: "admin" },
   { href: "/audit", label: "Audit Log", icon: "📜", minRole: "admin" },
