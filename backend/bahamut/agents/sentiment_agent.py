@@ -25,22 +25,82 @@ class SentimentAgent(BaseAgent):
         indicators = features.get("indicators", {})
         news_headlines = await self._fetch_news(asset)
 
-        # Try Gemini first (FREE), fallback to Claude
         import os
+        import asyncio
         gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
+        has_claude = bool(settings.anthropic_api_key)
+
+        # Multi-model: run both in parallel when both available
+        if gemini_key and has_claude:
+            try:
+                gemini_task = asyncio.create_task(self._gemini_analysis(request, indicators, news_headlines))
+                claude_task = asyncio.create_task(self._claude_fallback(request, indicators, news_headlines))
+                results = await asyncio.gather(gemini_task, claude_task, return_exceptions=True)
+
+                gemini_out = results[0] if not isinstance(results[0], Exception) else None
+                claude_out = results[1] if not isinstance(results[1], Exception) else None
+
+                if gemini_out and claude_out:
+                    return self._merge_opinions(gemini_out, claude_out, request)
+                elif gemini_out:
+                    return gemini_out
+                elif claude_out:
+                    return claude_out
+            except Exception as e:
+                logger.error("multi_model_failed", error=str(e))
+
+        # Single model fallback
         if gemini_key:
             try:
                 return await self._gemini_analysis(request, indicators, news_headlines)
             except Exception as e:
                 logger.error("gemini_failed", error=str(e))
 
-        if settings.anthropic_api_key:
+        if has_claude:
             try:
                 return await self._claude_fallback(request, indicators, news_headlines)
             except Exception as e:
                 logger.error("claude_fallback_failed", error=str(e))
 
         return self._regime_based_sentiment(request)
+
+    def _merge_opinions(self, gemini: AgentOutputSchema, claude: AgentOutputSchema, request) -> AgentOutputSchema:
+        """Merge two AI opinions — agreement boosts confidence, disagreement lowers it."""
+        g_bias = gemini.directional_bias
+        c_bias = claude.directional_bias
+        g_conf = gemini.confidence
+        c_conf = claude.confidence
+
+        if g_bias == c_bias:
+            # Agreement: boost confidence by 10%, take the higher
+            merged_bias = g_bias
+            merged_conf = min(0.95, max(g_conf, c_conf) * 1.10)
+            agreement = "AGREE"
+        elif g_bias == "NEUTRAL" or c_bias == "NEUTRAL":
+            # One neutral: use the decisive one with slight penalty
+            merged_bias = g_bias if g_bias != "NEUTRAL" else c_bias
+            merged_conf = max(g_conf, c_conf) * 0.85
+            agreement = "PARTIAL"
+        else:
+            # Disagreement: go neutral with low confidence
+            merged_bias = "NEUTRAL"
+            merged_conf = 0.30
+            agreement = "DISAGREE"
+
+        logger.info("multi_model_merge", asset=request.asset,
+                     gemini=f"{g_bias}/{g_conf:.2f}", claude=f"{c_bias}/{c_conf:.2f}",
+                     merged=f"{merged_bias}/{merged_conf:.2f}", agreement=agreement)
+
+        # Merge evidence from both
+        all_evidence = list(gemini.evidence) + [e for e in claude.evidence if e.claim not in [x.claim for x in gemini.evidence]]
+        all_risks = list(set(gemini.risk_notes + claude.risk_notes))
+
+        return self._make_output(
+            request=request, bias=merged_bias, confidence=round(merged_conf, 3),
+            evidence=all_evidence[:6], risk_notes=all_risks[:4],
+            urgency=gemini.urgency,
+            meta={"ai_model": f"multi_model({agreement})", "gemini_conf": g_conf, "claude_conf": c_conf},
+        )
 
     async def _fetch_news(self, asset: str) -> list[dict]:
         try:

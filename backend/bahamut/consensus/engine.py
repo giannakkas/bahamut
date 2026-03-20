@@ -276,7 +276,35 @@ class ConsensusEngine:
         # Recompute after floor (approximate)
         final_score = round(raw_score, 4)
 
-        # ── Step 6: Map to decision ──
+        # ── Step 6: AI Consensus Reviewer (optional) ──
+        try:
+            reviewer_result = self._ai_consensus_review_sync(
+                asset=directional_outputs[0].asset if directional_outputs else "",
+                direction=candidate_dir, score=final_score,
+                agent_summaries=[
+                    {"agent": o.agent_id, "bias": o.directional_bias,
+                     "confidence": float(o.confidence),
+                     "reason": o.evidence[0].claim if o.evidence else ""}
+                    for o in directional_outputs
+                ],
+            )
+            if reviewer_result:
+                old_score = final_score
+                # Reviewer can adjust score by ±0.15 max
+                adj = max(-0.15, min(0.15, reviewer_result.get("score_adjustment", 0)))
+                final_score = round(max(0.0, min(1.0, final_score + adj)), 4)
+                if reviewer_result.get("override_direction") and reviewer_result["override_direction"] != candidate_dir:
+                    candidate_dir = reviewer_result["override_direction"]
+                    logger.warning("ai_reviewer_override_direction",
+                                    old=candidate_dir, new=reviewer_result["override_direction"])
+                logger.info("ai_consensus_review",
+                            asset=directional_outputs[0].asset if directional_outputs else "",
+                            old_score=old_score, new_score=final_score, adj=adj,
+                            reviewer_note=reviewer_result.get("note", ""))
+        except Exception as e:
+            logger.debug("ai_reviewer_skipped", reason=str(e)[:100])
+
+        # ── Step 7: Map to decision ──
         decision = self._map_to_decision(final_score, trading_profile, thresholds)
 
         # Determine execution mode
@@ -373,6 +401,57 @@ class ConsensusEngine:
             conf_b = sum(o.confidence for o in outputs if o.directional_bias == dir_b) / top_two[1][1]
             return dir_a if conf_a >= conf_b else dir_b
         return top_two[0][0]
+
+    def _ai_consensus_review_sync(self, asset: str, direction: str, score: float,
+                                     agent_summaries: list) -> dict | None:
+        """AI reviews agent consensus before final decision. Sync version."""
+        import os, json, httpx
+        from bahamut.config import get_settings
+        settings = get_settings()
+        gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
+        if not gemini_key:
+            return None
+
+        # Only review borderline decisions (score 0.40-0.80) to save API calls
+        if score < 0.40 or score > 0.80:
+            return None
+
+        agents_txt = "\n".join(
+            f"  - {a['agent']}: {a['bias']} (conf={a['confidence']:.0%}) — {a['reason']}"
+            for a in agent_summaries
+        )
+
+        prompt = f"""You are a senior trading desk reviewer. 6 AI agents analyzed {asset} and produced this consensus:
+
+Direction: {direction} | Score: {score:.2f}
+
+AGENT VOTES:
+{agents_txt}
+
+As reviewer, assess: Is this consensus reasonable? Are there blind spots?
+
+Respond ONLY with JSON (no markdown):
+{{"score_adjustment": -0.15 to +0.15, "note": "brief 1-sentence review", "confidence_in_consensus": "HIGH/MEDIUM/LOW"}}"""
+
+        try:
+            GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+            resp = httpx.post(
+                f"{GEMINI_URL}?key={gemini_key}",
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200}},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if "```" in text:
+                text = text.split("```")[1].lstrip("json\n")
+            start, end = text.find("{"), text.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(text[start:end])
+        except Exception as e:
+            logger.debug("ai_reviewer_error", error=str(e)[:80])
+        return None
 
     def _map_to_decision(self, score: float, profile: str, thresholds: dict) -> str:
         if score >= thresholds["strong_signal"]:
