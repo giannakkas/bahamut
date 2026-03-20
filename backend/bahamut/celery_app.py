@@ -71,7 +71,7 @@ celery_app.conf.update(
         },
         "run-market-scan": {
             "task": "scanner.run_market_scan",
-            "schedule": 14400.0,  # Every 4 hours (219 assets × ~5 scans/day = 800 credits)
+            "schedule": 900.0,  # Every 15 min (unlimited credits, just respect 55/min rate)
         },
         "daily-trust-decay": {
             "task": "bahamut.learning.tasks.daily_trust_decay",
@@ -95,7 +95,7 @@ celery_app.conf.update(
         },
         "check-paper-positions": {
             "task": "paper_trading.check_positions",
-            "schedule": 300.0,  # Every 5 min (price cache is 15 min, so 1 min was wasteful)
+            "schedule": 120.0,  # Every 2 min
         },
         "paper-trading-daily-report": {
             "task": "paper_trading.daily_report",

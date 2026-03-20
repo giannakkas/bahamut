@@ -1,10 +1,11 @@
 """
 Twelve Data Market Data Adapter
-Free tier: 800 API calls/day. Covers FX, stocks, crypto, commodities.
-Aggressive caching to minimize credit usage.
+Grow 55 plan: unlimited credits, 55 requests/minute.
+Global rate limiter + aggressive caching.
 """
 import httpx
 import time as _time
+import asyncio
 import structlog
 from typing import Optional
 from bahamut.config import get_settings
@@ -14,10 +15,33 @@ settings = get_settings()
 
 BASE_URL = "https://api.twelvedata.com"
 
-# In-memory cache: key -> (data, expires_at)
+# ── Global Rate Limiter (50/min, leaving 5 headroom from 55 limit) ──
+_request_times: list[float] = []
+_RATE_LIMIT = 50  # requests per 60 seconds
+_rate_lock = asyncio.Lock() if hasattr(asyncio, 'Lock') else None
+
+
+async def _wait_for_rate_limit():
+    """Block until we're under the rate limit."""
+    now = _time.time()
+    # Prune old entries
+    cutoff = now - 60
+    while _request_times and _request_times[0] < cutoff:
+        _request_times.pop(0)
+
+    if len(_request_times) >= _RATE_LIMIT:
+        wait = _request_times[0] + 60 - now + 0.1
+        if wait > 0:
+            logger.info("twelvedata_rate_throttle", wait=round(wait, 1), queued=len(_request_times))
+            await asyncio.sleep(wait)
+
+    _request_times.append(_time.time())
+
+
+# ── In-memory cache ──
 _cache: dict[str, tuple[any, float]] = {}
-_CANDLE_TTL = 3600    # 1 hour cache for candles (4H candles barely change within 1 hour)
-_PRICE_TTL = 900      # 15 min cache for live prices (matches signal cycle frequency)
+_CANDLE_TTL = 900     # 15 min cache for candles (matches signal cycle)
+_PRICE_TTL = 300      # 5 min cache for live prices
 _cache_hits = 0
 _cache_misses = 0
 
@@ -35,7 +59,6 @@ def _cache_set(key: str, data, ttl: int):
     global _cache_misses
     _cache_misses += 1
     _cache[key] = (data, _time.time() + ttl)
-    # Evict old entries every 100 misses
     if _cache_misses % 100 == 0:
         now = _time.time()
         expired = [k for k, (_, exp) in _cache.items() if exp < now]
@@ -67,6 +90,7 @@ class TwelveDataAdapter:
         # Retry up to 3 times (handles rate limits + flakiness)
         for attempt in range(3):
             try:
+                await _wait_for_rate_limit()
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.get(url, params=params)
                     if resp.status_code == 429:
@@ -127,6 +151,7 @@ class TwelveDataAdapter:
             return cached
 
         try:
+            await _wait_for_rate_limit()
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"{BASE_URL}/price", params={"symbol": symbol, "apikey": self.api_key})
                 if resp.status_code == 429:

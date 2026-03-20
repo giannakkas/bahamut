@@ -34,7 +34,7 @@ export default function TopPicksPage() {
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const SCAN_INTERVAL = 4 * 60 * 60;
+  const SCAN_INTERVAL = 15 * 60;
 
   const fetchData = useCallback(async () => {
     try {
@@ -298,7 +298,7 @@ export default function TopPicksPage() {
 
       {/* Info */}
       <div className="bg-[#0F0F1E]/50 border border-[#2A2A4A]/50 rounded-lg p-3 text-xs text-[#555570]">
-        <strong className="text-[#8888AA]">How the scanner works:</strong> Every 4 hours, Bahamut scans all assets.
+        <strong className="text-[#8888AA]">How the scanner works:</strong> Every 15 minutes, Bahamut scans all assets.
         Each gets a technical score based on RSI, EMA alignment, MACD momentum, ADX trend strength, and Bollinger Band breakouts.
         <strong className="text-[#8888AA]"> Whale detection</strong> adds bonus points for unusual volume spikes (🐋).
         The top 10 get a full 6-agent deep analysis. Scores above 70 = strong opportunity.
