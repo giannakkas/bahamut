@@ -25,6 +25,9 @@ logger = structlog.get_logger()
 # ══════════════════════════════════════════
 
 DEFAULTS = {
+    # ── Execution ──
+    "execution.auto_approve": False,  # When True, APPROVAL trades execute automatically
+
     # ── Scenario weights ──
     "scenario.weight.risk_off": 0.30,
     "scenario.weight.volatility_spike": 0.25,

@@ -7,13 +7,19 @@ export default function ExecutionPage() {
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState<string | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   const load = async () => {
     try {
-      const res = await fetch(`${apiBase()}/agents/latest-cycles`, { headers });
-      setCycles(await res.json());
+      const [cyclesRes, aaRes] = await Promise.all([
+        fetch(`${apiBase()}/agents/latest-cycles`, { headers }),
+        fetch(`${apiBase()}/admin/auto-approve`, { headers }),
+      ]);
+      setCycles(await cyclesRes.json());
+      const aa = await aaRes.json();
+      setAutoApprove(aa?.auto_approve || false);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -54,7 +60,27 @@ export default function ExecutionPage() {
             {pending.length} pending approval · {autoTrades.length} auto-eligible · {watching.length} watch
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Auto-Approve Toggle */}
+          <button
+            onClick={async () => {
+              const newVal = !autoApprove;
+              try {
+                await fetch(`${apiBase()}/admin/auto-approve`, {
+                  method: "POST", headers,
+                  body: JSON.stringify({ enabled: newVal }),
+                });
+                setAutoApprove(newVal);
+              } catch (e) { console.error(e); }
+            }}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+              autoApprove
+                ? "bg-green-500/20 text-green-400 border-green-500/40"
+                : "bg-white/[0.02] text-bah-muted border-bah-border hover:text-bah-heading"
+            }`}
+          >
+            {autoApprove ? "⚡ Auto-Approve ON" : "Auto-Approve OFF"}
+          </button>
           {pending.length > 0 && (
             <button onClick={handleApproveAll} disabled={approvingAll}
               className="px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-semibold hover:bg-green-500/30 disabled:opacity-50 transition-colors">

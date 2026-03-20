@@ -283,9 +283,14 @@ class ConsensusEngine:
         if decision == "STRONG_SIGNAL":
             exec_mode = "AUTO"
         elif decision == "SIGNAL":
-            # During paper trading, auto-execute signals to accelerate learning
-            from bahamut.warmup import is_warmup_mode
-            exec_mode = "AUTO" if is_warmup_mode() else "APPROVAL"
+            # Auto-approve if enabled, or during warmup
+            from bahamut.admin.config import get_config
+            auto_approve = get_config("execution.auto_approve", False)
+            if auto_approve:
+                exec_mode = "AUTO"
+            else:
+                from bahamut.warmup import is_warmup_mode
+                exec_mode = "AUTO" if is_warmup_mode() else "APPROVAL"
         else:
             exec_mode = "WATCH"
 

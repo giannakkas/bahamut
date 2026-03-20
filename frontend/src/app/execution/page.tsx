@@ -160,12 +160,17 @@ export default function ExecutionPage() {
   const [cycles, setCycles] = useState<any>({});
   const [actions, setActions] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const c = await api.getAllLatestCycles();
+        const [c, aa] = await Promise.all([
+          api.getAllLatestCycles(),
+          api.request('/admin/auto-approve').catch(() => ({ auto_approve: false })),
+        ]);
         setCycles(c);
+        setAutoApprove(aa?.auto_approve || false);
       } catch (e) { console.error(e); }
       setLoading(false);
     };
@@ -222,6 +227,23 @@ export default function ExecutionPage() {
           </div>
           <div className="flex items-center gap-3">
             <a href="/risk-control" className="text-sm text-accent-crimson hover:underline">Risk Control →</a>
+          </div>
+          <button
+            onClick={async () => {
+              const newVal = !autoApprove;
+              try {
+                await api.request('/admin/auto-approve', { method: 'POST', body: JSON.stringify({ enabled: newVal }) });
+                setAutoApprove(newVal);
+              } catch (e) { console.error(e); }
+            }}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+              autoApprove
+                ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30'
+                : 'bg-bg-tertiary text-text-secondary border-border-default hover:text-text-primary'
+            }`}
+          >
+            {autoApprove ? '⚡ Auto-Approve ON' : 'Auto-Approve OFF'}
+          </button>
           </div>
         </div>
 

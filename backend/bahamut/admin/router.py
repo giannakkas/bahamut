@@ -561,3 +561,23 @@ async def set_user_role(user_id: str, body: dict, user=Depends(get_current_user)
     target.role = new_role
     await db.commit()
     return {"status": "role_updated", "email": target.email, "role": new_role}
+
+
+# ─── Auto-Approve Toggle ───
+
+@router.get("/auto-approve")
+async def get_auto_approve(user=Depends(get_current_user)):
+    """Get current auto-approve setting."""
+    from bahamut.admin.config import get_config
+    return {"auto_approve": get_config("execution.auto_approve", False)}
+
+
+@router.post("/auto-approve")
+async def set_auto_approve(body: dict, user=Depends(get_current_user)):
+    """Toggle auto-approve on/off (admin/super_admin only)."""
+    if not is_admin_or_above(user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from bahamut.admin.config import set_config
+    enabled = bool(body.get("enabled", False))
+    set_config("execution.auto_approve", enabled, changed_by=user.email)
+    return {"auto_approve": enabled, "status": "ok"}
