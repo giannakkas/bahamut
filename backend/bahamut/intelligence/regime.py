@@ -159,14 +159,30 @@ class RegimeDetector:
             if historical_atrs:
                 atr_percentile = float(np.mean(np.array(historical_atrs) < atr))
 
-        # Classification
-        if atr_percentile > 0.90 or realized_vol > 0.30 or bb_width > 0.06:
+        # Classification — percentile-based (asset-agnostic)
+        # ATR percentile is relative to asset's own history, so works for BTC and FX alike
+        # BB width percentile: compute from recent history
+        bb_width_pct = 0.5
+        if len(closes) >= 60:
+            historical_bb = []
+            for k in range(20, min(len(closes), 200)):
+                sma = float(np.mean(closes[k-20:k]))
+                std = float(np.std(closes[k-20:k]))
+                if sma > 0:
+                    historical_bb.append((2 * 2.0 * std) / sma)
+            if historical_bb:
+                bb_width_pct = float(np.mean(np.array(historical_bb) < bb_width))
+
+        if atr_percentile > 0.90 and bb_width_pct > 0.85:
             state = "EXTREME"
             confidence = 0.85
-        elif atr_percentile > 0.70 or realized_vol > 0.18 or bb_width > 0.035:
-            state = "HIGH_VOL"
+        elif atr_percentile > 0.90 or bb_width_pct > 0.90:
+            state = "EXTREME"
             confidence = 0.75
-        elif atr_percentile < 0.25 and realized_vol < 0.08 and bb_width < 0.012:
+        elif atr_percentile > 0.70 or bb_width_pct > 0.70:
+            state = "HIGH_VOL"
+            confidence = 0.70
+        elif atr_percentile < 0.25 and bb_width_pct < 0.25:
             state = "LOW_VOL"
             confidence = 0.70
         else:
@@ -263,55 +279,58 @@ class RegimeDetector:
     # LAYER 3: HIDDEN MARKOV MODEL
     # ═══════════════════════════════════════════════════════════
 
-    def _detect_hmm(self, closes: np.ndarray, n_states: int = 4) -> HMMRegime:
-        if not HMM_AVAILABLE or len(closes) < 60:
+    def _detect_hmm(self, closes: np.ndarray, n_states: int = 3) -> HMMRegime:
+        """
+        HMM regime detection.
+        Uses 3 states (low-vol, normal, high-vol) with diagonal covariance
+        for reliable convergence. Retrains every ~200 observations.
+        """
+        if not HMM_AVAILABLE or len(closes) < 100:
             return HMMRegime(state=-1, state_label="UNAVAILABLE", confidence=0)
 
         try:
-            # Feature matrix: [returns, volatility, momentum]
+            # Feature matrix: [returns, volatility]
+            # Dropped momentum — correlated with returns, hurts convergence
             returns = np.diff(np.log(closes + 1e-10))
             n = len(returns)
 
-            # Rolling volatility (10-period)
+            # Rolling volatility (20-period for stability)
             vol = np.array([
-                np.std(returns[max(0, i-10):i+1]) if i >= 10 else np.std(returns[:i+1])
+                np.std(returns[max(0, i-20):i+1]) if i >= 20 else np.std(returns[:i+1])
                 for i in range(n)
             ])
 
-            # Momentum (10-period return)
-            momentum = np.array([
-                returns[max(0, i-10):i+1].sum() for i in range(n)
-            ])
-
-            # Stack features
-            X = np.column_stack([returns, vol, momentum])
+            # Stack features (2D: returns + vol only)
+            X = np.column_stack([returns, vol])
 
             # Remove NaN/inf
             mask = np.all(np.isfinite(X), axis=1)
             X = X[mask]
 
-            if len(X) < 40:
+            if len(X) < 80:
                 return HMMRegime(state=-1, state_label="INSUFFICIENT_DATA", confidence=0)
 
-            # Fit or retrain model (retrain every 100 new observations)
+            # Retrain every ~200 candles or on first call
             should_retrain = (
                 not self._hmm_fitted
                 or self._hmm_model is None
-                or len(X) % 100 < 2  # Retrain roughly every 100 candles
+                or (len(X) - getattr(self, '_hmm_last_train_len', 0)) > 200
             )
             if should_retrain:
                 model = GaussianHMM(
                     n_components=n_states,
-                    covariance_type="full",
-                    n_iter=100,
+                    covariance_type="diag",   # diagonal converges reliably
+                    n_iter=200,
                     random_state=42,
-                    tol=0.01,
+                    tol=0.001,
+                    verbose=False,
                 )
                 model.fit(X)
                 self._hmm_model = model
                 self._hmm_fitted = True
+                self._hmm_last_train_len = len(X)
 
-                # Label states by their mean return and volatility
+                # Label states by their mean volatility
                 self._label_hmm_states(model, n_states)
 
             # Predict current state
@@ -341,42 +360,38 @@ class RegimeDetector:
             return HMMRegime(state=-1, state_label="ERROR", confidence=0)
 
     def _label_hmm_states(self, model, n_states: int):
-        """Assign human-readable labels to HMM states based on mean features."""
-        means = model.means_  # Shape: (n_states, n_features)
-        # Features: [return, volatility, momentum]
+        """Assign human-readable labels to HMM states based on mean features.
+        Features: [return, volatility] (2D)."""
+        means = model.means_  # Shape: (n_states, 2)
 
-        state_info = []
-        for i in range(n_states):
-            mean_ret = means[i][0]
-            mean_vol = means[i][1]
-            mean_mom = means[i][2]
-            state_info.append((i, mean_ret, mean_vol, mean_mom))
-
-        # Sort by volatility to assign labels
+        # Sort by mean volatility (feature index 1)
+        state_info = [(i, means[i][0], means[i][1]) for i in range(n_states)]
         by_vol = sorted(state_info, key=lambda x: x[2])
 
         labels = {}
-        for rank, (idx, ret, vol, mom) in enumerate(by_vol):
+        for rank, (idx, mean_ret, mean_vol) in enumerate(by_vol):
             if rank == 0:
                 labels[idx] = "CALM_MARKET"
             elif rank == n_states - 1:
-                if ret < 0:
+                if mean_ret < -0.001:
                     labels[idx] = "CRISIS_SELLOFF"
                 else:
-                    labels[idx] = "VOLATILE_RALLY"
-            elif ret > 0 and mom > 0:
-                labels[idx] = "BULL_TREND"
-            elif ret < 0 and mom < 0:
-                labels[idx] = "BEAR_TREND"
+                    labels[idx] = "HIGH_VOL"
             else:
-                labels[idx] = "TRANSITION"
+                if mean_ret > 0.0005:
+                    labels[idx] = "BULL_TREND"
+                elif mean_ret < -0.0005:
+                    labels[idx] = "BEAR_TREND"
+                else:
+                    labels[idx] = "TRANSITION"
 
         self._hmm_state_labels = labels
 
-    def retrain_hmm(self, closes: np.ndarray, n_states: int = 4):
+    def retrain_hmm(self, closes: np.ndarray, n_states: int = 3):
         """Force HMM retrain (e.g. daily or weekly)."""
         self._hmm_fitted = False
         self._hmm_model = None
+        self._hmm_last_train_len = 0
         return self._detect_hmm(closes, n_states)
 
     # ═══════════════════════════════════════════════════════════

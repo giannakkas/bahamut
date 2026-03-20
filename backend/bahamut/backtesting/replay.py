@@ -57,6 +57,10 @@ class BacktestConfig:
     disable_macro: bool = False
     disable_risk_veto: bool = False
     disable_trust_weighting: bool = False
+    # v3 ablation flags
+    disable_regime: bool = False        # Disable v3 regime detection
+    disable_adaptive: bool = False      # Disable v3 adaptive SL/TP/sizing
+    disable_cross_asset: bool = False   # Disable v3 cross-asset (always off in backtest anyway)
 
 
 @dataclass
@@ -103,24 +107,25 @@ class ReplayEngine:
             if not indicators:
                 continue
 
-            # 2. v3: Detect regime at this timestep
+            # 2. v3: Detect regime at this timestep (skipped if ablation flag set)
             regime_label = "NORMAL"
             vol_state = "NORMAL"
             struct_state = "RANGE"
             regime_risk_mult = 1.0
-            try:
-                from bahamut.intelligence.regime import regime_detector
-                closes_arr = np.array([c["close"] for c in history])
-                highs_arr = np.array([c.get("high", c["close"]) for c in history])
-                lows_arr = np.array([c.get("low", c["close"]) for c in history])
-                if len(closes_arr) >= 60:
-                    regime_result = regime_detector.detect(closes_arr, highs_arr, lows_arr, indicators)
-                    regime_label = regime_result.primary_label
-                    vol_state = regime_result.volatility.state
-                    struct_state = regime_result.structure.state
-                    regime_risk_mult = regime_result.risk_multiplier
-            except Exception:
-                pass
+            if not cfg.disable_regime:
+                try:
+                    from bahamut.intelligence.regime import regime_detector
+                    closes_arr = np.array([c["close"] for c in history])
+                    highs_arr = np.array([c.get("high", c["close"]) for c in history])
+                    lows_arr = np.array([c.get("low", c["close"]) for c in history])
+                    if len(closes_arr) >= 60:
+                        regime_result = regime_detector.detect(closes_arr, highs_arr, lows_arr, indicators)
+                        regime_label = regime_result.primary_label
+                        vol_state = regime_result.volatility.state
+                        struct_state = regime_result.structure.state
+                        regime_risk_mult = regime_result.risk_multiplier
+                except Exception:
+                    pass
 
             # 3. Check open trades for SL/TP/timeout
             self._check_exits(candle, i)
@@ -131,28 +136,29 @@ class ReplayEngine:
                                            vol_state=vol_state,
                                            struct_state=struct_state)
 
-            # 5. v3: Compute adaptive SL/TP for this trade
+            # 5. v3: Compute adaptive SL/TP for this trade (skipped if ablation flag set)
             sl_mult = cfg.sl_atr_mult
             tp_mult = cfg.tp_atr_mult
             size_mult = 1.0
             max_hold = cfg.max_hold_candles
-            try:
-                from bahamut.strategy.adaptive import adaptive_strategy
-                aparams = adaptive_strategy.compute(
-                    regime={"volatility": {"state": vol_state},
-                            "structure": {"state": struct_state},
-                            "primary_label": regime_label,
-                            "risk_multiplier": regime_risk_mult},
-                    signal_confidence=signal.get("confidence", 0.5),
-                    asset_class=cfg.asset_class,
-                    direction=signal.get("direction", ""),
-                )
-                sl_mult = aparams.sl_multiplier
-                tp_mult = aparams.tp_multiplier
-                size_mult = aparams.size_multiplier
-                max_hold = aparams.max_hold_candles
-            except Exception:
-                pass
+            if not cfg.disable_adaptive:
+                try:
+                    from bahamut.strategy.adaptive import adaptive_strategy
+                    aparams = adaptive_strategy.compute(
+                        regime={"volatility": {"state": vol_state},
+                                "structure": {"state": struct_state},
+                                "primary_label": regime_label,
+                                "risk_multiplier": regime_risk_mult},
+                        signal_confidence=signal.get("confidence", 0.5),
+                        asset_class=cfg.asset_class,
+                        direction=signal.get("direction", ""),
+                    )
+                    sl_mult = aparams.sl_multiplier
+                    tp_mult = aparams.tp_multiplier
+                    size_mult = aparams.size_multiplier
+                    max_hold = aparams.max_hold_candles
+                except Exception:
+                    pass
 
             # 6. Execute if conditions met
             if signal["decision"] in ("SIGNAL", "STRONG_SIGNAL"):
