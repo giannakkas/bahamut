@@ -94,7 +94,7 @@ def generate_synthetic_candles(
     base_price: float = 1.0850,
     count: int = 500,
     volatility: float = 0.001,
-    trend: float = 0.00005,
+    trend: float = 0.0,  # Zero drift for fair testing (was 0.00005)
 ) -> list[dict]:
     """Generate synthetic candle data for testing without API access."""
     import numpy as np

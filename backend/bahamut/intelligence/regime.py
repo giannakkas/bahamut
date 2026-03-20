@@ -140,12 +140,17 @@ class RegimeDetector:
         if len(closes) >= 50 and len(highs) >= 50:
             # Compute historical ATR values
             historical_atrs = []
-            for i in range(14, min(len(closes), 200)):
+            for i in range(15, min(len(closes), 200)):
+                h_slice = highs[i-14:i]
+                l_slice = lows[i-14:i]
+                c_prev = closes[i-15:i-1]
+                if len(h_slice) != len(c_prev) or len(h_slice) == 0:
+                    continue
                 tr_slice = np.maximum(
-                    highs[i-14:i] - lows[i-14:i],
+                    h_slice - l_slice,
                     np.maximum(
-                        np.abs(highs[i-14:i] - closes[i-15:i-1]),
-                        np.abs(lows[i-14:i] - closes[i-15:i-1])
+                        np.abs(h_slice - c_prev),
+                        np.abs(l_slice - c_prev)
                     )
                 )
                 if len(tr_slice) > 0:
@@ -288,8 +293,13 @@ class RegimeDetector:
             if len(X) < 40:
                 return HMMRegime(state=-1, state_label="INSUFFICIENT_DATA", confidence=0)
 
-            # Fit or reuse model
-            if not self._hmm_fitted or self._hmm_model is None:
+            # Fit or retrain model (retrain every 100 new observations)
+            should_retrain = (
+                not self._hmm_fitted
+                or self._hmm_model is None
+                or len(X) % 100 < 2  # Retrain roughly every 100 candles
+            )
+            if should_retrain:
                 model = GaussianHMM(
                     n_components=n_states,
                     covariance_type="full",

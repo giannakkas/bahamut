@@ -387,9 +387,8 @@ class ReplayEngine:
             trade.pnl_pct = (trade.entry_price - exit_price) / trade.entry_price
 
         risk_amount = self.balance * (self.config.risk_per_trade_pct / 100)
-        trade.pnl = round(risk_amount * trade.pnl_pct * (1 / (self.config.sl_atr_mult * 0.01 + 0.001)), 2)
 
-        # Simplified: PnL = position_size * price_change_pct
+        # PnL = position_size * price_change_pct
         # Position size = risk_amount / (SL distance as fraction of entry)
         sl_frac = abs(trade.entry_price - trade.stop_loss) / trade.entry_price
         if sl_frac > 0:
@@ -439,7 +438,11 @@ class ReplayEngine:
         # Sharpe (simplified — annualized)
         if len(pnls) > 1:
             returns = np.array(pnls) / self.config.initial_balance
-            sharpe = float(np.mean(returns) / (np.std(returns) + 1e-10) * np.sqrt(252))
+            # Annualize based on actual trade frequency, not daily assumption
+            # Approx trades per year: trades / (data_days/252)
+            n_trades = len(pnls)
+            trades_per_year = max(1, n_trades)  # Conservative: don't inflate
+            sharpe = float(np.mean(returns) / (np.std(returns) + 1e-10) * np.sqrt(trades_per_year))
         else:
             sharpe = 0
 
