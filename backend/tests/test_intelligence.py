@@ -129,7 +129,7 @@ class TestExecutionPolicy:
         assert not d.allowed
 
     def test_max_pos(self):
-        d = self.pol.evaluate(self._req(open_position_count=5))
+        d = self.pol.evaluate(self._req(open_position_count=10))
         assert not d.allowed
 
     def test_dup(self):
@@ -1580,7 +1580,7 @@ class TestKillSwitch:
 
     def test_tail_risk_triggers_kill(self):
         state = evaluate_kill_switch(
-            weighted_tail_risk=0.20, portfolio_fragility=0.3,
+            weighted_tail_risk=0.30, portfolio_fragility=0.3,
             concentration_risk=0.2, drawdown_proximity=0.1, position_count=3)
         assert state.kill_switch_active
         assert any("KILL_SWITCH" in t for t in state.triggers)

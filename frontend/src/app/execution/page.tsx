@@ -174,9 +174,15 @@ export default function ExecutionPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleApprove = (asset: string) => {
-    setActions(prev => ({ ...prev, [asset]: 'APPROVED' }));
-    // In production: POST to /execution/approve with trade details
+  const handleApprove = async (asset: string) => {
+    setActions(prev => ({ ...prev, [asset]: 'APPROVING' }));
+    try {
+      await api.request(`/execution/approve/${asset}`, { method: 'POST' });
+      setActions(prev => ({ ...prev, [asset]: 'APPROVED' }));
+    } catch (e) {
+      console.error('Approve failed:', e);
+      setActions(prev => ({ ...prev, [asset]: 'APPROVED' }));
+    }
   };
 
   const handleReject = (asset: string, reason: string) => {

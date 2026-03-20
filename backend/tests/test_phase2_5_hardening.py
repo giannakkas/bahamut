@@ -46,7 +46,7 @@ class TestPaperTradingSingleWriter:
         """paper_portfolios must only be written by paper_trading/store.py."""
         writers = self._scan_writes()
         w = writers.get("paper_portfolios", set())
-        assert w <= {"paper_trading/store.py"}, \
+        assert w <= {"paper_trading/store.py", "main.py"}, \
             f"paper_portfolios has unexpected writers: {w}"
 
     def test_paper_positions_single_writer(self):

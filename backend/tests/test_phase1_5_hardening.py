@@ -267,7 +267,7 @@ class TestKillSwitchFailSafe:
         with patch("bahamut.admin.config.get_config",
                     side_effect=lambda k, d: d):  # use defaults
             state = evaluate_kill_switch(
-                weighted_tail_risk=0.20,  # > 0.15 default threshold
+                weighted_tail_risk=0.30,  # > 0.25 default threshold
                 portfolio_fragility=0.3,
                 concentration_risk=0.2,
                 drawdown_proximity=0.1,
