@@ -38,6 +38,7 @@ export interface SystemSummary {
   open_positions: number;
   agents_active: number;
   last_cycle: string;
+  warmup?: { mode: string; progress: number; criteria?: any; message?: string };
 }
 
 export interface RiskContributor {
