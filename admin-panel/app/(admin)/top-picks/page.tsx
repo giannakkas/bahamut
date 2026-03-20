@@ -12,11 +12,11 @@ const CLASS_COLORS: Record<string, string> = {
 function ScoreBar({ score }: { score: number }) {
   const color = score >= 70 ? "bg-[#10b981]" : score >= 45 ? "bg-[#f59e0b]" : "bg-gray-600";
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-2 bg-[#1C1C35] rounded-full overflow-hidden">
+    <div className="flex items-center gap-1.5">
+      <div className="w-12 h-1.5 bg-[#1C1C35] rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
       </div>
-      <span className={`font-mono text-sm font-bold ${score >= 70 ? "text-[#10b981]" : score >= 45 ? "text-[#f59e0b]" : "text-[#555570]"}`}>
+      <span className={`font-mono text-xs font-bold ${score >= 70 ? "text-[#10b981]" : score >= 45 ? "text-[#f59e0b]" : "text-[#555570]"}`}>
         {score}
       </span>
     </div>
@@ -99,7 +99,7 @@ export default function TopPicksPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl space-y-5">
+    <div className="p-4 space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
@@ -127,13 +127,13 @@ export default function TopPicksPage() {
 
       {/* Top 5 Cards */}
       {topPicks.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {topPicks.slice(0, 5).map((pick: any, i: number) => (
-            <div key={pick.symbol} className={`bg-[#0F0F1E] border rounded-xl p-4 ${i === 0 ? "border-[#6C63FF]/50 ring-1 ring-[#6C63FF]/20" : "border-[#2A2A4A]"}`}>
+            <div key={pick.symbol} className={`bg-[#0F0F1E] border rounded-lg p-3 ${i === 0 ? "border-[#6C63FF]/50 ring-1 ring-[#6C63FF]/20" : "border-[#2A2A4A]"}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-bold ${i === 0 ? "text-[#6C63FF]" : "text-[#555570]"}`}>#{i + 1}</span>
-                  <span className="font-bold text-lg text-[#E8E8F0]">{pick.symbol}</span>
+                  <span className="font-bold text-base text-[#E8E8F0]">{pick.symbol}</span>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-xs font-bold border ${CLASS_COLORS[pick.asset_class] || "bg-gray-500/20 text-gray-400"}`}>
                   {pick.asset_class}
@@ -190,20 +190,20 @@ export default function TopPicksPage() {
 
       {/* Full Table */}
       <div className="bg-[#0F0F1E] border border-[#2A2A4A] rounded-lg overflow-x-auto">
-        <table className="w-full min-w-[800px]">
+        <table className="w-full min-w-[700px]">
           <thead>
             <tr className="border-b border-[#2A2A4A] text-xs text-[#555570] uppercase tracking-wider">
-              <th className="text-left py-3 px-4">Rank</th>
-              <th className="text-left py-3 px-4">Asset</th>
-              <th className="text-left py-3 px-4">Class</th>
-              <th className="text-right py-3 px-4">Price</th>
-              <th className="text-right py-3 px-4">Change</th>
-              <th className="text-center py-3 px-4">Direction</th>
-              <th className="text-right py-3 px-4">Score</th>
-              <th className="text-center py-3 px-4">Whales</th>
-              <th className="text-right py-3 px-4">RSI</th>
-              <th className="text-right py-3 px-4">ADX</th>
-              <th className="text-left py-3 px-4">Reasons</th>
+              <th className="text-left py-2.5 px-3">Rank</th>
+              <th className="text-left py-2.5 px-3">Asset</th>
+              <th className="text-left py-2.5 px-3">Class</th>
+              <th className="text-right py-2.5 px-3">Price</th>
+              <th className="text-right py-2.5 px-3">Change</th>
+              <th className="text-center py-2.5 px-3">Direction</th>
+              <th className="text-right py-2.5 px-3">Score</th>
+              <th className="text-center py-2.5 px-3">Whales</th>
+              <th className="text-right py-2.5 px-3">RSI</th>
+              <th className="text-right py-2.5 px-3">ADX</th>
+              <th className="text-left py-2.5 px-3">Reasons</th>
             </tr>
           </thead>
           <tbody>
@@ -218,24 +218,24 @@ export default function TopPicksPage() {
                 const rank = allResults.indexOf(r) + 1;
                 return (
                   <tr key={r.symbol} className="border-b border-[#2A2A4A]/50 hover:bg-[#161628]/50 transition-colors">
-                    <td className="py-2.5 px-4 text-sm font-mono text-[#555570]">{rank}</td>
-                    <td className="py-2.5 px-4 font-semibold text-sm text-[#E8E8F0]">{r.symbol}</td>
-                    <td className="py-2.5 px-4">
+                    <td className="py-2 px-3 text-xs font-mono text-[#555570]">{rank}</td>
+                    <td className="py-2 px-3 font-semibold text-xs text-[#E8E8F0]">{r.symbol}</td>
+                    <td className="py-2 px-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${CLASS_COLORS[r.asset_class] || ""}`}>
                         {r.asset_class}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4 text-right font-mono text-sm text-[#8888AA]">{r.price}</td>
-                    <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.change_pct >= 0 ? "text-[#10b981]" : "text-[#E94560]"}`}>
+                    <td className="py-2 px-3 text-right font-mono text-xs text-[#8888AA]">{r.price}</td>
+                    <td className={`py-2 px-3 text-right font-mono text-xs ${r.change_pct >= 0 ? "text-[#10b981]" : "text-[#E94560]"}`}>
                       {r.change_pct >= 0 ? "+" : ""}{r.change_pct}%
                     </td>
-                    <td className="py-2.5 px-4 text-center">
-                      <span className={`text-sm font-bold ${r.direction === "LONG" ? "text-[#10b981]" : r.direction === "SHORT" ? "text-[#E94560]" : "text-[#555570]"}`}>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`text-xs font-bold ${r.direction === "LONG" ? "text-[#10b981]" : r.direction === "SHORT" ? "text-[#E94560]" : "text-[#555570]"}`}>
                         {r.direction === "LONG" ? "▲" : r.direction === "SHORT" ? "▼" : "─"}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4 text-right"><ScoreBar score={r.score} /></td>
-                    <td className="py-2.5 px-4 text-center">
+                    <td className="py-2 px-3 text-right"><ScoreBar score={r.score} /></td>
+                    <td className="py-2 px-3 text-center">
                       {r.whale_score > 0 ? (
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                           r.whale_score >= 20 ? "bg-[#10b981]/20 text-[#10b981]" :
@@ -250,16 +250,16 @@ export default function TopPicksPage() {
                         <span className="text-xs text-[#555570]">—</span>
                       )}
                     </td>
-                    <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.rsi < 30 || r.rsi > 70 ? "text-[#f59e0b] font-bold" : "text-[#8888AA]"}`}>
+                    <td className={`py-2 px-3 text-right font-mono text-xs ${r.rsi < 30 || r.rsi > 70 ? "text-[#f59e0b] font-bold" : "text-[#8888AA]"}`}>
                       {r.rsi}
                     </td>
-                    <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.adx > 25 ? "text-[#10b981]" : "text-[#555570]"}`}>
+                    <td className={`py-2 px-3 text-right font-mono text-xs ${r.adx > 25 ? "text-[#10b981]" : "text-[#555570]"}`}>
                       {r.adx}
                     </td>
-                    <td className="py-2.5 px-4">
+                    <td className="py-2 px-3">
                       <button
                         onClick={() => setModal({ symbol: r.symbol, reasons: r.reasons || [], direction: r.direction, score: r.score })}
-                        className="text-xs text-[#6C63FF] hover:text-[#6C63FF]/80 hover:underline text-left max-w-[200px] truncate cursor-pointer"
+                        className="text-xs text-[#6C63FF] hover:text-[#6C63FF]/80 hover:underline text-left max-w-[160px] truncate cursor-pointer"
                       >
                         {r.reasons?.join(" · ") || "—"}
                       </button>
@@ -273,7 +273,7 @@ export default function TopPicksPage() {
       </div>
 
       {/* Info */}
-      <div className="bg-[#0F0F1E]/50 border border-[#2A2A4A]/50 rounded-xl p-4 text-xs text-[#555570]">
+      <div className="bg-[#0F0F1E]/50 border border-[#2A2A4A]/50 rounded-lg p-3 text-xs text-[#555570]">
         <strong className="text-[#8888AA]">How the scanner works:</strong> Every 30 minutes, Bahamut scans all assets.
         Each gets a technical score based on RSI, EMA alignment, MACD momentum, ADX trend strength, and Bollinger Band breakouts.
         <strong className="text-[#8888AA]"> Whale detection</strong> adds bonus points for unusual volume spikes (🐋).
