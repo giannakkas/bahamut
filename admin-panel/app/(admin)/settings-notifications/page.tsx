@@ -94,24 +94,43 @@ export default function NotificationSettings() {
 
   const test = async (channel: "telegram" | "email") => {
     setTesting(channel);
-    setMessage(null);
+    setMessage({ type: "info" as any, text: `Testing ${channel}...` });
 
-    // Send current form values so test works without saving first
-    const body = channel === "email" ? {
-      api_key: form.email_smtp_pass || undefined,
-      from_email: form.email_from,
-      to_email: form.email_to,
-    } : undefined;
+    try {
+      // Send current form values so test works without saving first
+      const body = channel === "email" ? {
+        api_key: form.email_smtp_pass || undefined,
+        from_email: form.email_from,
+        to_email: form.email_to,
+      } : undefined;
 
-    const res = await api(`/settings/test/${channel}`, {
-      method: "POST",
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    setTesting(null);
-    if (res?.ok) {
-      setMessage({ type: "success", text: res.message || `Test ${channel} sent! Check your ${channel === "telegram" ? "Telegram" : "inbox"}.` });
-    } else {
-      setMessage({ type: "error", text: res?.error || `Test ${channel} failed` });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      const r = await fetch(`${apiBase()}/monitoring/settings/test/${channel}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body ? JSON.stringify(body) : "{}",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const res = await r.json().catch(() => null);
+      setTesting(null);
+
+      if (res?.ok) {
+        setMessage({ type: "success", text: res.message || `Test ${channel} sent!` });
+      } else {
+        const errMsg = res?.error || res?.detail || `Test ${channel} failed (HTTP ${r.status})`;
+        setMessage({ type: "error", text: errMsg });
+      }
+    } catch (e: any) {
+      setTesting(null);
+      const msg = e.name === "AbortError" ? "Request timed out (20s)" : (e.message || "Network error");
+      setMessage({ type: "error", text: `Test ${channel} failed: ${msg}` });
     }
   };
 
@@ -127,9 +146,11 @@ export default function NotificationSettings() {
       </div>
 
       {message && (
-        <div className={`px-4 py-3 rounded-lg text-sm ${
+        <div className={`px-4 py-3 rounded-lg text-sm font-mono ${
           message.type === "success"
             ? "bg-green-500/10 text-green-400 border border-green-500/30"
+            : message.type === "info"
+            ? "bg-bah-cyan/10 text-bah-cyan border border-bah-cyan/30"
             : "bg-red-500/10 text-red-400 border border-red-500/30"
         }`}>{message.text}</div>
       )}
