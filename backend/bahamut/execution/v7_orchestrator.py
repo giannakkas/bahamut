@@ -163,16 +163,10 @@ def run_v7_cycle(self):
                     continue
 
                 # Check portfolio risk limits
-                can_trade, reason = pm.can_trade(strat_name)
+                can_trade, reason = pm.can_trade(strat_name, asset=asset)
                 if not can_trade:
-                    logger.debug("v7_trade_blocked", strategy=strat_name, reason=reason)
+                    logger.debug("v7_trade_blocked", strategy=strat_name, asset=asset, reason=reason)
                     continue
-
-                # Check per-asset position limit
-                existing_for_asset = [p for p in engine.open_positions
-                                      if p.strategy == strat_name and p.asset == asset]
-                if existing_for_asset:
-                    continue  # Already have a position for this strategy+asset
 
                 # Check combined crypto risk
                 try:

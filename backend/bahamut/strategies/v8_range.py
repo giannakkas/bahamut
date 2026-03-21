@@ -25,7 +25,7 @@ class V8Range(BaseStrategy):
     )
 
     def evaluate(self, candles: list, indicators: dict,
-                 prev_indicators: dict = None) -> Optional[Signal]:
+                 prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:
         close = indicators.get("close", 0)
         bb_upper = indicators.get("bollinger_upper", 0)
         bb_lower = indicators.get("bollinger_lower", 0)
@@ -59,7 +59,7 @@ class V8Range(BaseStrategy):
             if curr["close"] > curr["open"]:
                 return Signal(
                     strategy=self.meta.name,
-                    asset="BTCUSD",
+                    asset=asset,
                     direction="LONG",
                     sl_pct=self.meta.sl_pct,
                     tp_pct=self.meta.tp_pct,
@@ -75,7 +75,7 @@ class V8Range(BaseStrategy):
             if curr["close"] < curr["open"]:
                 return Signal(
                     strategy=self.meta.name,
-                    asset="BTCUSD",
+                    asset=asset,
                     direction="SHORT",
                     sl_pct=self.meta.sl_pct,
                     tp_pct=self.meta.tp_pct,

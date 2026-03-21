@@ -28,6 +28,6 @@ class V8Defensive(BaseStrategy):
     )
 
     def evaluate(self, candles: list, indicators: dict,
-                 prev_indicators: dict = None) -> Optional[Signal]:
+                 prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:
         """Always returns None. Capital stays idle in CRASH."""
         return None

@@ -17,20 +17,20 @@ logger = structlog.get_logger()
 # ── Allocation templates per regime ──
 REGIME_ALLOCATIONS = {
     "TREND": {
-        "active": ["v5_base", "v5_tuned"],
+        "active": ["v5_base", "v5_tuned", "v9_breakout"],
         "inactive": ["v8_range", "v8_defensive"],
-        "weights": {"v5_base": 0.5, "v5_tuned": 0.5},
+        "weights": {"v5_base": 0.35, "v5_tuned": 0.35, "v9_breakout": 0.30},
         "mode": "trend_capture",
     },
     "RANGE": {
         "active": ["v8_range"],
-        "inactive": ["v5_base", "v5_tuned", "v8_defensive"],
+        "inactive": ["v5_base", "v5_tuned", "v9_breakout", "v8_defensive"],
         "weights": {"v8_range": 1.0},
         "mode": "mean_reversion",
     },
     "CRASH": {
         "active": ["v8_defensive"],
-        "inactive": ["v5_base", "v5_tuned", "v8_range"],
+        "inactive": ["v5_base", "v5_tuned", "v9_breakout", "v8_range"],
         "weights": {"v8_defensive": 1.0},
         "mode": "capital_preservation",
     },

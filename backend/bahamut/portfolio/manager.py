@@ -35,7 +35,7 @@ class Sleeve:
     trade_count: int = 0
     win_count: int = 0
     enabled: bool = True
-    max_open_positions: int = 1
+    max_open_positions: int = 2  # 1 per asset × 2 assets
 
 
 @dataclass
@@ -141,7 +141,7 @@ class PortfolioManager:
     # RISK CHECK
     # ═══════════════════════════════════════════════════════
 
-    def can_trade(self, strategy: str) -> tuple[bool, str]:
+    def can_trade(self, strategy: str, asset: str = "") -> tuple[bool, str]:
         """Check if a strategy is allowed to trade right now."""
         if self.kill_switch_triggered:
             return False, "kill_switch_active"
@@ -152,8 +152,16 @@ class PortfolioManager:
         if not sleeve.enabled:
             return False, "strategy_disabled"
 
-        # Check open positions for this sleeve
         engine = get_execution_engine()
+
+        # Per-asset limit: max 1 position per strategy per asset
+        if asset:
+            asset_positions = [p for p in engine.open_positions
+                               if p.strategy == strategy and p.asset == asset]
+            if len(asset_positions) >= 1:
+                return False, f"position_exists_for_{asset}"
+
+        # Global per-strategy limit: max_open_positions across all assets
         open_for_strat = [p for p in engine.open_positions if p.strategy == strategy]
         if len(open_for_strat) >= sleeve.max_open_positions:
             return False, f"max_positions_reached ({sleeve.max_open_positions})"
