@@ -218,7 +218,7 @@ async function api(path) {
   try {
     const headers = {};
     if (AUTH_TOKEN) headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
-    const r = await fetch(`${API_BASE}/api/monitoring${path}`, { headers, timeout: 10000 });
+    const r = await fetch(`${API_BASE}/api/v1/monitoring${path}`, { headers, timeout: 10000 });
     if (r.ok) return await r.json();
     if (r.status === 401 || r.status === 403) { state.showConfig = true; render(); }
   } catch (e) { console.warn('API error:', path, e.message); }
@@ -229,7 +229,7 @@ async function v7api(path, opts = {}) {
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (AUTH_TOKEN) headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
-    const r = await fetch(`${API_BASE}/api/v7${path}`, { ...opts, headers });
+    const r = await fetch(`${API_BASE}/api/v1/v7${path}`, { ...opts, headers });
     if (r.ok) return await r.json();
   } catch (e) { console.warn('v7 API error:', path, e.message); }
   return null;

@@ -201,17 +201,17 @@ app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 app.include_router(trust_router, prefix="/api/v1/trust", tags=["trust"])
 app.include_router(metrics_router, tags=["metrics"])
 if v7_router:
-    app.include_router(v7_router, prefix="/api/v7", tags=["v7-dashboard"])
+    app.include_router(v7_router, prefix="/api/v1/v7", tags=["v7-dashboard"])
 
 # Monitoring dashboard + notification settings
 try:
     from bahamut.monitoring.dashboard_api import router as monitoring_router
-    app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitoring"])
+    app.include_router(monitoring_router, prefix="/api/v1/monitoring", tags=["monitoring"])
 except Exception:
     pass
 try:
     from bahamut.monitoring.settings_api import router as settings_router
-    app.include_router(settings_router, prefix="/api/monitoring", tags=["monitoring"])
+    app.include_router(settings_router, prefix="/api/v1/monitoring", tags=["monitoring"])
 except Exception:
     pass
 

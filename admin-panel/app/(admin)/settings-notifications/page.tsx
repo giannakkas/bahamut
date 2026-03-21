@@ -30,7 +30,7 @@ export default function NotificationSettings() {
 
   const api = useCallback(async (path: string, opts?: any) => {
     try {
-      const r = await fetch(`${apiBase}/api/monitoring${path}`, {
+      const r = await fetch(`${apiBase()}/monitoring${path}`, {
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

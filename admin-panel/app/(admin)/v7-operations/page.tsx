@@ -18,7 +18,7 @@ export default function DailyOperations() {
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const api = useCallback(async (path: string) => {
     try {
-      const r = await fetch(`${apiBase}/api/monitoring${path}`, {
+      const r = await fetch(`${apiBase()}/monitoring${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (r.ok) return r.json();
@@ -26,7 +26,7 @@ export default function DailyOperations() {
   }, [token]);
   const v7 = useCallback(async (path: string, opts?: any) => {
     try {
-      const r = await fetch(`${apiBase}/api/v7${path}`, {
+      const r = await fetch(`${apiBase()}/v7${path}`, {
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...opts,
       });
       if (r.ok) return r.json();
