@@ -154,11 +154,27 @@ def _run_v7_cycle_inner():
             latest_time = candles[-1].get("datetime", "")
             new_bar = is_new_bar(asset, latest_time)
 
+            # Always compute regime (cheap, no side effects) so we never show "?"
+            indicators = compute_indicators(candles)
+            prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
+            current_regime = "?"
+            regime_conf = 0.0
+            if indicators:
+                try:
+                    from bahamut.regime.v8_detector import detect_regime
+                    regime_result = detect_regime(indicators, candles[-15:])
+                    current_regime = regime_result.regime
+                    regime_conf = regime_result.confidence
+                    pm.asset_regimes[asset] = current_regime
+                except Exception:
+                    current_regime = pm.asset_regimes.get(asset, "?")
+
             if not new_bar:
                 add_asset_evaluation(AssetEvaluation(
                     asset=asset, timestamp=latest_time,
                     bar_close=candles[-1].get("close", 0),
-                    new_bar=False, regime=pm.asset_regimes.get(asset, "?"),
+                    new_bar=False, regime=current_regime,
+                    regime_confidence=regime_conf,
                     summary=f"same bar as last cycle ({latest_time})"))
                 continue
 
@@ -166,26 +182,21 @@ def _run_v7_cycle_inner():
                         close=candles[-1].get("close", 0),
                         source=get_data_source())
 
-            indicators = compute_indicators(candles)
-            prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
             if not indicators:
                 add_asset_evaluation(AssetEvaluation(
                     asset=asset, timestamp=latest_time, new_bar=True,
                     summary="indicator computation failed"))
                 continue
 
-            # Detect regime
-            regime_str = "RANGE"
-            regime_conf = 0.5
+            # Route strategies based on already-detected regime
+            regime_str = current_regime
             active_strats = []
             try:
-                from bahamut.regime.v8_detector import detect_regime
+                from bahamut.regime.v8_detector import RegimeResult
                 from bahamut.portfolio.router_v8 import route
-                regime = detect_regime(indicators, candles[-15:])
-                routing = route(regime, asset=asset)
+                regime_obj = RegimeResult(regime=current_regime, confidence=regime_conf)
+                routing = route(regime_obj, asset=asset)
                 pm.apply_routing(routing, asset=asset)
-                regime_str = regime.regime
-                regime_conf = regime.confidence
                 active_strats = routing.active_strategies
             except Exception as e:
                 logger.error("v8_regime_error", error=str(e))
