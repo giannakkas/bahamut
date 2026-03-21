@@ -121,13 +121,13 @@ class PortfolioManager:
 
     def apply_routing(self, decision):
         """
-        Apply a RoutingDecision to enable/disable sleeves and reallocate capital.
-        decision: RoutingDecision from router_v8.route()
+        Apply a RoutingDecision to enable/disable sleeves.
+        Does NOT reallocate capital every bar (that caused a feedback loop).
+        Capital only changes on explicit rebalance().
         """
         self.current_regime = decision.regime
         self.current_portfolio_mode = decision.portfolio_mode
 
-        # Enable active strategies, disable inactive
         for name in decision.active_strategies:
             if name in self.sleeves:
                 self.sleeves[name].enabled = True
@@ -136,14 +136,11 @@ class PortfolioManager:
             if name in self.sleeves:
                 self.sleeves[name].enabled = False
 
-        # Reallocate capital to active sleeves
-        total = self.total_equity
+        # Update target weights for display (not capital amounts)
         for name, weight in decision.weights.items():
             if name in self.sleeves:
                 self.sleeves[name].allocation_weight = weight
-                self.sleeves[name].initial_capital = round(total * weight, 2)
 
-        # Zero out inactive sleeve weights
         for name in decision.inactive_strategies:
             if name in self.sleeves:
                 self.sleeves[name].allocation_weight = 0.0

@@ -96,36 +96,38 @@ class ExecutionEngine:
     # BAR PROCESSING (called each new bar)
     # ═══════════════════════════════════════════════════════
 
-    def on_new_bar(self, bar: dict, sleeve_equities: dict[str, float]):
+    def on_new_bar(self, bar: dict, sleeve_equities: dict[str, float],
+                   asset: str = ""):
         """
-        Process a new bar:
-          1. Fill pending orders at bar open
-          2. Check open positions for SL/TP/timeout
+        Process a new bar for a specific asset:
+          1. Fill pending orders FOR THIS ASSET at bar open
+          2. Check open positions FOR THIS ASSET for SL/TP/timeout
         
         bar: {open, high, low, close, datetime, ...}
         sleeve_equities: {strategy_name: equity} for sizing
+        asset: which asset this bar belongs to (e.g. "BTCUSD")
         """
         with self._lock:
             bar_time = bar.get("datetime", datetime.now(timezone.utc).isoformat())
 
-            # 1. Fill pending orders
+            # 1. Fill pending orders FOR THIS ASSET ONLY
             for order in list(self.pending_orders):
+                if asset and order.asset != asset:
+                    continue  # Skip orders for other assets
+
                 equity = sleeve_equities.get(order.strategy, 0)
                 if equity <= 0:
                     order.status = OrderStatus.CANCELLED
                     self.pending_orders.remove(order)
                     continue
 
-                # Size the position
-                # We need a temporary entry price for sizing
                 temp_entry = bar["open"]
                 if order.direction == "LONG":
                     temp_sl = temp_entry * (1 - order.sl_pct)
                 else:
                     temp_sl = temp_entry * (1 + order.sl_pct)
 
-                sizing = size_position(equity, temp_entry, temp_sl,
-                                       risk_pct=0.02)
+                sizing = size_position(equity, temp_entry, temp_sl, risk_pct=0.02)
                 order.size = sizing["size"]
                 order.risk_amount = sizing["risk_amount"]
 
@@ -134,7 +136,6 @@ class ExecutionEngine:
                     self.pending_orders.remove(order)
                     continue
 
-                # Fill via broker
                 position = self.broker.fill_order(order, bar["open"], bar_time)
                 position.size = order.size
                 position.risk_amount = order.risk_amount
@@ -151,13 +152,17 @@ class ExecutionEngine:
                 logger.info("position_opened",
                             order_id=order.order_id,
                             strategy=order.strategy,
+                            asset=order.asset,
                             entry=position.entry_price,
                             sl=position.stop_price,
                             tp=position.tp_price,
                             size=position.size)
 
-            # 2. Check open positions
+            # 2. Check open positions FOR THIS ASSET ONLY
             for pos in list(self.open_positions):
+                if asset and pos.asset != asset:
+                    continue  # Don't apply BTC prices to ETH positions!
+
                 if pos.status != OrderStatus.OPEN:
                     continue
 

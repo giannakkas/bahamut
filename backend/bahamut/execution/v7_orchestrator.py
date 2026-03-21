@@ -154,7 +154,7 @@ def run_v7_cycle(self):
             }
 
             # 1. Process bar through execution engine (fills pending, checks exits)
-            engine.on_new_bar(bar, pm.get_sleeve_equities())
+            engine.on_new_bar(bar, pm.get_sleeve_equities(), asset=asset)
 
             # 2. Evaluate each enabled strategy
             for strat_name, strategy in strategies.items():
