@@ -433,6 +433,39 @@ async def dashboard_all(user=Depends(get_current_user)):
     except Exception:
         pass
 
+    # Timing
+    from bahamut.monitoring.time_utils import (
+        next_4h_close_utc, seconds_until_next_4h_close, get_asset_timing
+    )
+    from bahamut.data.live_data import get_last_bar_timestamp
+    from datetime import datetime as _dt, timezone as _tz
+
+    now_utc = _dt.now(_tz.utc)
+    asset_timing = {}
+    try:
+        from bahamut.config_assets import ACTIVE_TREND_ASSETS
+        timing_assets = ACTIVE_TREND_ASSETS
+    except ImportError:
+        timing_assets = ["BTCUSD"]
+    for a in timing_assets:
+        lbt = get_last_bar_timestamp(a)
+        asset_timing[a] = get_asset_timing(lbt)
+
+    timing = {
+        "now_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "next_4h_close": next_4h_close_utc(now_utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "seconds_until_next_close": seconds_until_next_4h_close(now_utc),
+        "assets": asset_timing,
+    }
+
+    # Strategy conditions
+    strategy_conds = {}
+    try:
+        from bahamut.monitoring.strategy_conditions import get_latest_snapshots
+        strategy_conds = get_latest_snapshots()
+    except Exception:
+        pass
+
     return {
         "portfolio": portfolio,
         "strategies": strats,
@@ -442,6 +475,8 @@ async def dashboard_all(user=Depends(get_current_user)):
         "last_cycle": last_cycle,
         "cycle_history": cycle_hist,
         "cycle_stats": cycle_stats,
+        "timing": timing,
+        "strategy_conditions": strategy_conds,
         "health": {
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
         },

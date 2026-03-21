@@ -169,6 +169,14 @@ def _run_v7_cycle_inner():
                 except Exception:
                     current_regime = pm.asset_regimes.get(asset, "?")
 
+            # Always compute strategy conditions for observability
+            if indicators:
+                try:
+                    from bahamut.monitoring.strategy_conditions import compute_conditions
+                    compute_conditions(asset, candles, indicators, prev_indicators, current_regime)
+                except Exception:
+                    pass
+
             if not new_bar:
                 add_asset_evaluation(AssetEvaluation(
                     asset=asset, timestamp=latest_time,

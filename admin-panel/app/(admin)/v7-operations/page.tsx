@@ -12,8 +12,11 @@ export default function DailyOperations() {
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
+  const [timing, setTiming] = useState<any>(null);
+  const [stratConds, setStratConds] = useState<any>({});
+  const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"cycle" | "strategies" | "positions" | "trades" | "alerts">("cycle");
+  const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts">("cycle");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -44,7 +47,6 @@ export default function DailyOperations() {
   }, [token]);
 
   const load = useCallback(async () => {
-    // Single API call instead of 9 parallel ones
     const d = await api("/dashboard");
     if (d) {
       setPortfolio(d.portfolio);
@@ -55,6 +57,8 @@ export default function DailyOperations() {
       setHealth(d.health);
       setLastCycle(d.last_cycle);
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
+      if (d.timing) { setTiming(d.timing); setCountdown(d.timing.seconds_until_next_close || 0); }
+      if (d.strategy_conditions) setStratConds(d.strategy_conditions);
     }
     setLoading(false);
     setLastUpdated(new Date());
@@ -63,10 +67,11 @@ export default function DailyOperations() {
   // Live auto-refresh every 5 seconds
   useEffect(() => { load(); const i = setInterval(load, 5_000); return () => clearInterval(i); }, [load]);
 
-  // Tick "seconds ago" counter every second
+  // Tick countdown + seconds-ago every second
   useEffect(() => {
     const i = setInterval(() => {
       if (lastUpdated) setSecondsAgo(Math.round((Date.now() - lastUpdated.getTime()) / 1000));
+      setCountdown(c => Math.max(0, c - 1));
     }, 1000);
     return () => clearInterval(i);
   }, [lastUpdated]);
@@ -121,6 +126,7 @@ export default function DailyOperations() {
   const fmtTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleTimeString("en-GB", { hour12: false }); } catch { return iso; } };
   const fmtDateTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return iso; } };
   const fmtDur = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
+  const fmtCountdown = (secs: number) => { const h = Math.floor(secs/3600); const m = Math.floor((secs%3600)/60); const s = secs%60; return `${h.toString().padStart(2,"0")}:${m.toString().padStart(2,"0")}:${s.toString().padStart(2,"0")}`; };
   const statusClr = (s: string) => s === "SUCCESS" ? "text-green-400" : s === "ERROR" ? "text-red-400" : s === "SKIPPED" ? "text-amber-400" : "text-bah-cyan";
   const statusBg = (s: string) => s === "SUCCESS" ? "bg-green-500/15 border-green-500/30" : s === "ERROR" ? "bg-red-500/15 border-red-500/30" : s === "SKIPPED" ? "bg-amber-500/15 border-amber-500/30" : "bg-bah-cyan/15 border-bah-cyan/30";
   const resultClr = (r: string) => r === "EXECUTED" ? "text-green-400" : r === "BLOCKED" ? "text-amber-400" : r === "NO_SIGNAL" ? "text-bah-muted" : r === "SIGNAL" ? "text-bah-cyan" : "text-bah-muted";
@@ -166,6 +172,31 @@ export default function DailyOperations() {
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-xs text-red-400 flex items-center justify-between">
           <span>Cycle error: {cycleError}</span>
           <button onClick={() => setCycleError("")} className="text-red-400 hover:text-red-300 ml-4">✕</button>
+        </div>
+      )}
+
+      {/* ═══ 4H COUNTDOWN TIMER ═══ */}
+      {timing && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl p-2.5 flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-bah-muted">Next 4H bar:</span>
+            <span className="font-mono font-bold text-bah-cyan text-sm">{fmtCountdown(countdown)}</span>
+          </div>
+          <div className="h-4 w-px bg-bah-border" />
+          <div className="flex-1 flex items-center gap-4">
+            {Object.entries(timing.assets || {}).map(([asset, t]: [string, any]) => (
+              <div key={asset} className="flex items-center gap-2">
+                <span className="font-semibold text-bah-heading">{asset}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  t.status === "NEW_BAR_READY" ? "bg-green-500/15 text-green-400" :
+                  t.status === "STALE" ? "bg-red-500/15 text-red-400" :
+                  "bg-bah-border text-bah-muted"
+                }`}>{t.status === "WAITING_FOR_NEW_BAR" ? "WAITING" : t.status}</span>
+                <span className="text-[10px] text-bah-muted font-mono">bar: {t.last_closed_bar?.slice(11, 16) || "?"}</span>
+              </div>
+            ))}
+          </div>
+          <span className="text-[10px] text-bah-muted font-mono">{timing.now_utc?.slice(11, 19)} UTC</span>
         </div>
       )}
 
@@ -245,10 +276,12 @@ export default function DailyOperations() {
 
       {/* ═══ TABS ═══ */}
       <div className="flex gap-1 border-b border-bah-border">
-        {(["cycle","strategies","positions","trades","alerts"] as const).map(t => (
+        {(["cycle","conditions","strategies","positions","trades","alerts"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
             tab===t?"border-bah-cyan text-bah-cyan":"border-transparent text-bah-muted hover:text-bah-heading"}`}>
-            {t==="cycle"?"🔍 Cycle Inspector":t==="strategies"?"📊 Strategies":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
+            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
+          </button>
+        ))}
           </button>
         ))}
       </div>
@@ -324,6 +357,59 @@ export default function DailyOperations() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ STRATEGY CONDITIONS TAB ═══ */}
+      {tab === "conditions" && (
+        <div className="space-y-3">
+          {Object.keys(stratConds).length > 0 ? (
+            Object.entries(stratConds).map(([asset, data]: [string, any]) => (
+              <div key={asset} className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-bah-border flex items-center gap-3">
+                  <span className="text-sm font-bold text-bah-heading">{asset}</span>
+                  <span className={`text-xs font-semibold ${data.regime==="TREND"?"text-green-400":data.regime==="CRASH"?"text-red-400":"text-amber-400"}`}>
+                    {data.regime}
+                  </span>
+                  {data.price > 0 && <span className="text-xs font-mono text-bah-muted">${data.price?.toLocaleString()}</span>}
+                </div>
+                <div className="divide-y divide-bah-border/40">
+                  {(data.strategies || []).map((s: any, si: number) => (
+                    <div key={si} className="px-4 py-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold text-bah-heading">{s.strategy}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          s.result==="SIGNAL"?"bg-green-500/15 text-green-400 border border-green-500/30":
+                          s.result==="BLOCKED"?"bg-amber-500/15 text-amber-400 border border-amber-500/30":
+                          "bg-bah-border text-bah-muted border border-bah-border"
+                        }`}>{s.result}</span>
+                        <span className="text-[11px] text-bah-muted">{s.reason}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(s.conditions || []).map((c: any, ci: number) => (
+                          <div key={ci} className="flex items-center gap-2 text-[11px]">
+                            <span className={`w-4 text-center font-bold ${c.passed ? "text-green-400" : "text-red-400"}`}>
+                              {c.passed ? "✓" : "✗"}
+                            </span>
+                            <span className="text-bah-muted w-44 shrink-0">{c.name}</span>
+                            <span className="font-mono text-bah-heading">{c.actual}</span>
+                            {!c.passed && <span className="text-bah-muted">→ need {c.target}</span>}
+                            {c.distance && c.distance !== "N/A" && (
+                              <span className={`font-mono text-[10px] ${c.passed ? "text-green-400/70" : "text-amber-400"}`}>({c.distance})</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-bah-surface border border-bah-border rounded-xl p-8 text-center text-sm text-bah-muted">
+              No strategy condition data yet — click ▶ Run Cycle to evaluate
             </div>
           )}
         </div>
