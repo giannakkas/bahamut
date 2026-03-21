@@ -278,10 +278,18 @@ export function isAuthenticated(): boolean {
 export async function checkHealth(): Promise<boolean> {
   if (isMockMode()) return true;
   try {
-    const res = await fetch(`${apiBase()}/health`, { signal: AbortSignal.timeout(3000) });
+    // Try the API health endpoint first (8s timeout — Railway can be slow)
+    const res = await fetch(`${apiBase()}/health`, { signal: AbortSignal.timeout(8000) });
     return res.ok;
   } catch {
-    return false;
+    try {
+      // Fallback: try root health endpoint
+      const base = apiBase().replace(/\/api\/v1\/?$/, '');
+      const res2 = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+      return res2.ok;
+    } catch {
+      return false;
+    }
   }
 }
 
