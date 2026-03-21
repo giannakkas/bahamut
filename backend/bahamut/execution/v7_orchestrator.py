@@ -38,11 +38,13 @@ def _get_strategies():
         from bahamut.strategies.v5_tuned import V5Tuned
         from bahamut.strategies.v8_range import V8Range
         from bahamut.strategies.v8_defensive import V8Defensive
+        from bahamut.alpha.v9_candidate import V9Breakout
         _strategies = {
             "v5_base": V5Base(),
             "v5_tuned": V5Tuned(),
             "v8_range": V8Range(),
             "v8_defensive": V8Defensive(),
+            "v9_breakout": V9Breakout(),
         }
     return _strategies
 

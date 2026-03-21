@@ -72,9 +72,9 @@ class PortfolioManager:
         self.current_portfolio_mode = "unknown"
 
         if allocations is None:
-            # v8: all four sleeves, but only trend sleeves start enabled
+            # All sleeves: trend strategies get capital, others start at 0
             allocations = {
-                "v5_base": 0.5, "v5_tuned": 0.5,
+                "v5_base": 0.35, "v5_tuned": 0.35, "v9_breakout": 0.30,
                 "v8_range": 0.0, "v8_defensive": 0.0,
             }
 

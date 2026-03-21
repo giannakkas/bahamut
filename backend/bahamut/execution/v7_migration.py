@@ -106,6 +106,10 @@ ON CONFLICT (strategy_name) DO NOTHING;
 INSERT INTO strategy_sleeves (strategy_name, allocation_weight, allocated_capital, current_equity, peak_equity)
 VALUES ('v5_tuned', 0.5, 50000, 50000, 50000)
 ON CONFLICT (strategy_name) DO NOTHING;
+
+INSERT INTO strategy_sleeves (strategy_name, allocation_weight, allocated_capital, current_equity, peak_equity)
+VALUES ('v9_breakout', 0.3, 30000, 30000, 30000)
+ON CONFLICT (strategy_name) DO NOTHING;
 """
 
 
