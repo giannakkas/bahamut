@@ -237,3 +237,147 @@ def get_btc_data(seed: int = 42) -> list[dict]:
 
     # Fall back to realistic synthetic
     return generate_realistic_btc(seed=seed)
+
+
+# ═══════════════════════════════════════════════════════════
+# ETH/USD REALISTIC DATA FROM KNOWN PRICE HISTORY
+# ═══════════════════════════════════════════════════════════
+
+ETH_ANCHORS = [
+    # (year, month, price, daily_vol_pct)
+    (2023, 1, 1580, 3.0),
+    (2023, 2, 1630, 2.5),
+    (2023, 3, 1810, 4.0),    # SVB rally
+    (2023, 4, 1900, 2.5),
+    (2023, 5, 1830, 2.5),
+    (2023, 6, 1880, 3.0),
+    (2023, 7, 1850, 2.0),
+    (2023, 8, 1660, 2.5),
+    (2023, 9, 1670, 1.8),
+    (2023, 10, 1800, 3.5),
+    (2023, 11, 2050, 3.0),
+    (2023, 12, 2350, 3.5),
+    (2024, 1, 2300, 3.5),
+    (2024, 2, 2900, 4.5),    # ETF momentum
+    (2024, 3, 3500, 5.5),    # ATH run
+    (2024, 4, 3150, 4.5),
+    (2024, 5, 3750, 3.5),
+    (2024, 6, 3400, 4.0),
+    (2024, 7, 3200, 3.0),
+    (2024, 8, 2500, 4.5),    # Carry trade crash
+    (2024, 9, 2650, 3.0),
+    (2024, 10, 2700, 3.5),
+    (2024, 11, 3700, 6.5),   # Trump pump
+    (2024, 12, 3400, 5.0),
+    (2025, 1, 3300, 4.5),
+    (2025, 2, 2200, 5.5),    # Tariff correction
+    (2025, 3, 2100, 4.0),
+]
+
+
+def generate_realistic_eth(seed: int = 42, candles_per_day: int = 6,
+                           btc_candles: list = None) -> list[dict]:
+    """
+    Generate ~2+ years of realistic ETH 4H candles.
+    If btc_candles provided, generates CORRELATED ETH (r~0.85).
+    Otherwise generates from ETH anchors independently.
+    """
+    if btc_candles and len(btc_candles) > 300:
+        return _generate_correlated_eth(btc_candles, seed=seed)
+
+    # Independent generation from anchors
+    np.random.seed(seed + 1000)
+    candles = []
+
+    for i in range(len(ETH_ANCHORS) - 1):
+        y1, m1, p1, v1 = ETH_ANCHORS[i]
+        y2, m2, p2, v2 = ETH_ANCHORS[i + 1]
+
+        days = 30
+        n_candles = days * candles_per_day
+        total_return = np.log(p2 / p1)
+        drift_per_candle = total_return / n_candles
+        avg_vol = (v1 + v2) / 2 / 100
+        vol_per_candle = avg_vol / np.sqrt(candles_per_day)
+
+        price = p1
+        for j in range(n_candles):
+            noise = np.random.normal(0, vol_per_candle)
+            expected_price = p1 * np.exp(total_return * (j + 1) / n_candles)
+            reversion = 0.02 * np.log(expected_price / price)
+            ret = drift_per_candle + noise + reversion
+
+            o = price
+            c = price * np.exp(ret)
+            range_mult = abs(noise) + vol_per_candle * 0.5
+            h = max(o, c) * (1 + abs(np.random.normal(0, range_mult * 0.4)))
+            l = min(o, c) * (1 - abs(np.random.normal(0, range_mult * 0.4)))
+            vol = max(500, np.random.normal(10000 + abs(ret) * 300000, 3000))
+
+            candle_day = j // candles_per_day
+            candle_hour = (j % candles_per_day) * 4
+            dt = f"{y1}-{m1:02d}-{min(28, candle_day+1):02d} {candle_hour:02d}:00"
+
+            candles.append({
+                "datetime": dt,
+                "open": round(o, 2), "high": round(h, 2),
+                "low": round(l, 2), "close": round(c, 2),
+                "volume": round(vol, 0),
+            })
+            price = c
+
+    return candles
+
+
+def _generate_correlated_eth(btc_candles: list, correlation: float = 0.85,
+                              beta: float = 1.3, seed: int = 42) -> list[dict]:
+    """Generate ETH candles correlated with BTC (r~0.85, beta~1.3)."""
+    np.random.seed(seed + 2000)
+
+    btc_closes = np.array([c["close"] for c in btc_candles])
+    btc_rets = np.diff(np.log(btc_closes))
+
+    noise = np.random.normal(0, 1, len(btc_rets))
+    eth_rets = correlation * beta * btc_rets + \
+               np.sqrt(1 - correlation**2) * noise * np.std(btc_rets) * beta
+
+    eth_price = 1580.0  # Jan 2023 ETH
+    candles = [{"datetime": btc_candles[0].get("datetime", "0"),
+                "open": round(eth_price, 2),
+                "high": round(eth_price * 1.005, 2),
+                "low": round(eth_price * 0.995, 2),
+                "close": round(eth_price, 2), "volume": 10000}]
+
+    for i, r in enumerate(eth_rets):
+        o = eth_price
+        c = eth_price * np.exp(r)
+        rng = abs(r) + 0.005
+        h = max(o, c) * (1 + abs(np.random.normal(0, rng * 0.3)))
+        l = min(o, c) * (1 - abs(np.random.normal(0, rng * 0.3)))
+        dt = btc_candles[i + 1].get("datetime", f"{i}") if i + 1 < len(btc_candles) else f"{i}"
+        candles.append({"datetime": dt, "open": round(o, 2), "high": round(h, 2),
+                       "low": round(l, 2), "close": round(c, 2), "volume": 10000})
+        eth_price = c
+
+    return candles
+
+
+def get_asset_data(asset: str = "BTCUSD", seed: int = 42,
+                   btc_candles: list = None) -> list[dict]:
+    """Get candle data for any supported asset."""
+    # Try cache first
+    try:
+        data = load_cache(asset.replace("/", ""), "4h")
+        if len(data) > 500:
+            return data
+    except FileNotFoundError:
+        pass
+
+    # Generate realistic synthetic
+    if "ETH" in asset.upper():
+        if btc_candles is None:
+            btc_candles = generate_realistic_btc(seed=seed)
+        return generate_realistic_eth(seed=seed, btc_candles=btc_candles)
+    else:
+        return generate_realistic_btc(seed=seed)
+

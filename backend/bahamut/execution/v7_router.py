@@ -209,14 +209,69 @@ async def v7_health():
         "mode": "paper",
         "kill_switch": pm.kill_switch_triggered,
         "strategies": {
-            name: {
-                "enabled": s.enabled,
-                "equity": s.current_equity,
-            }
+            name: {"enabled": s.enabled, "equity": s.current_equity}
             for name, s in pm.sleeves.items()
         },
         "open_positions": len(engine.open_positions),
         "pending_orders": len(engine.pending_orders),
         "total_closed": len(engine.closed_trades),
     }
+
+
+# ═══════════════════════════════════════════════════════
+# MULTI-ASSET ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+@router.get("/assets/summary")
+async def asset_summary():
+    """Per-asset breakdown of positions, PnL, and regime."""
+    engine = get_execution_engine()
+    pm = get_portfolio_manager()
+
+    try:
+        from bahamut.config_assets import ACTIVE_TREND_ASSETS, MAX_COMBINED_CRYPTO_OPEN_RISK_PCT
+        assets = ACTIVE_TREND_ASSETS
+        max_crypto_risk = MAX_COMBINED_CRYPTO_OPEN_RISK_PCT
+    except ImportError:
+        assets = ["BTCUSD"]
+        max_crypto_risk = 0.05
+
+    result = {}
+    total_open_risk = 0
+
+    for asset in assets:
+        open_pos = [p for p in engine.open_positions if p.asset == asset]
+        closed = [t for t in engine.closed_trades if t.asset == asset]
+        realized = sum(t.pnl for t in closed)
+        unrealized = sum(p.unrealized_pnl for p in open_pos)
+        risk = sum(p.risk_amount for p in open_pos)
+        total_open_risk += risk
+
+        result[asset] = {
+            "open_positions": len(open_pos),
+            "closed_trades": len(closed),
+            "realized_pnl": round(realized, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "open_risk": round(risk, 2),
+            "regime": getattr(pm, "current_regime", "RANGE"),
+        }
+
+    return {
+        "assets": result,
+        "total_crypto_risk": round(total_open_risk, 2),
+        "max_crypto_risk": round(max_crypto_risk * pm.total_equity, 2),
+        "crypto_risk_pct": round(total_open_risk / max(1, pm.total_equity) * 100, 2),
+    }
+
+
+@router.get("/assets/{asset}/positions")
+async def asset_positions(asset: str):
+    engine = get_execution_engine()
+    return [p for p in engine.get_open_positions_list() if p.get("asset") == asset]
+
+
+@router.get("/assets/{asset}/trades")
+async def asset_trades(asset: str):
+    engine = get_execution_engine()
+    return [t for t in engine.get_closed_trades_list() if t.get("asset") == asset]
 

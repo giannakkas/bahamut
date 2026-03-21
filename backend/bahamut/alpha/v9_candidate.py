@@ -127,17 +127,17 @@ class V9Breakout:
 
     def __init__(self):
         self.name = "v9_breakout"
-        self.sl_pct = 0.06       # 6% SL — tighter than v5 (breakout trades have cleaner invalidation)
-        self.tp_pct = 0.12       # 12% TP — 2:1 R:R
-        self.max_hold = 20       # ~3.3 days — shorter hold, breakout moves are faster
+        self.sl_pct = 0.10       # 10% SL — wider for BTC noise
+        self.tp_pct = 0.25       # 25% TP — 2.5:1 R:R
+        self.max_hold = 40       # ~6.7 days
         self.risk_pct = 0.02
 
-    def evaluate(self, candles, indicators, prev_indicators=None):
+    def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         sig = detect_confirmed_breakout(candles, indicators)
         if sig.valid:
             return Signal(
                 strategy=self.name,
-                asset="BTCUSD",
+                asset=asset,
                 direction=sig.direction,
                 sl_pct=self.sl_pct,
                 tp_pct=self.tp_pct,

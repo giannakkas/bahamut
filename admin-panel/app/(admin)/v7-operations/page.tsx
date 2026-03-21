@@ -68,6 +68,7 @@ export default function V7OperationsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [assetData, setAssetData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"overview" | "positions" | "trades">("overview");
@@ -93,14 +94,16 @@ export default function V7OperationsPage() {
   );
 
   const load = useCallback(async () => {
-    const [s, p, t] = await Promise.all([
+    const [s, p, t, a] = await Promise.all([
       api("/portfolio/summary"),
       api("/execution/open-positions"),
       api("/execution/closed-trades"),
+      api("/assets/summary"),
     ]);
     if (s) setSummary(s);
     if (p) setPositions(Array.isArray(p) ? p : []);
     if (t) setTrades(Array.isArray(t) ? t : []);
+    if (a) setAssetData(a);
     setLoading(false);
   }, [api]);
 
@@ -231,6 +234,55 @@ export default function V7OperationsPage() {
           </div>
           <div className="text-right text-xs text-bah-muted">
             <div>{s.regime === "TREND" ? "Trend strategies active" : s.regime === "CRASH" ? "Capital preservation mode" : "Range strategy active"}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Asset Breakdown */}
+      {assetData?.assets && (
+        <div className="grid grid-cols-2 gap-3">
+          {Object.entries(assetData.assets).map(([asset, data]: [string, any]) => (
+            <div key={asset} className="bg-bah-surface border border-bah-border rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-bah-heading">{asset}</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30">
+                  {data.open_positions} open
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div>
+                  <div className="text-bah-muted">Realized</div>
+                  <div className={data.realized_pnl >= 0 ? "text-green-400 font-semibold" : "text-red-400 font-semibold"}>
+                    ${data.realized_pnl.toFixed(0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-bah-muted">Unrealized</div>
+                  <div className={data.unrealized_pnl >= 0 ? "text-green-400 font-semibold" : "text-red-400 font-semibold"}>
+                    ${data.unrealized_pnl.toFixed(0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-bah-muted">Trades</div>
+                  <div className="text-bah-heading font-semibold">{data.closed_trades}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Crypto Risk Bar */}
+      {assetData && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl p-3 flex items-center justify-between text-xs">
+          <span className="text-bah-muted">Combined Crypto Risk:</span>
+          <div className="flex items-center gap-4">
+            <span className={`font-semibold ${assetData.crypto_risk_pct > 4 ? "text-red-400" : "text-bah-heading"}`}>
+              {assetData.crypto_risk_pct}% of portfolio
+            </span>
+            <span className="text-bah-muted">
+              (${assetData.total_crypto_risk.toLocaleString()} / ${assetData.max_crypto_risk.toLocaleString()} max)
+            </span>
           </div>
         </div>
       )}

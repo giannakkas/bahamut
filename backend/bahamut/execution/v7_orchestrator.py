@@ -76,8 +76,8 @@ def _fetch_candles(asset: str, timeframe: str = "4H", count: int = 260) -> list[
 
     # Fallback: try loading from data_real cache
     try:
-        from bahamut.backtesting.data_real import load_cache
-        candles = load_cache(asset.replace("/", ""), timeframe.lower())
+        from bahamut.backtesting.data_real import get_asset_data
+        candles = get_asset_data(asset)
         if candles and len(candles) >= 50:
             return candles[-count:]
     except Exception:
@@ -99,6 +99,11 @@ def run_v7_cycle(self):
     strategies = _get_strategies()
 
     assets = ["BTCUSD"]  # Extend as needed
+    try:
+        from bahamut.config_assets import ACTIVE_TREND_ASSETS
+        assets = ACTIVE_TREND_ASSETS
+    except ImportError:
+        pass
 
     for asset in assets:
         try:
@@ -162,11 +167,38 @@ def run_v7_cycle(self):
                     logger.debug("v7_trade_blocked", strategy=strat_name, reason=reason)
                     continue
 
-                # Evaluate strategy
-                signal = strategy.evaluate(candles, indicators, prev_indicators)
+                # Check per-asset position limit
+                existing_for_asset = [p for p in engine.open_positions
+                                      if p.strategy == strat_name and p.asset == asset]
+                if existing_for_asset:
+                    continue  # Already have a position for this strategy+asset
+
+                # Check combined crypto risk
+                try:
+                    from bahamut.config_assets import MAX_COMBINED_CRYPTO_OPEN_RISK_PCT
+                    total_risk = sum(p.risk_amount for p in engine.open_positions)
+                    if total_risk / max(1, pm.total_equity) > MAX_COMBINED_CRYPTO_OPEN_RISK_PCT:
+                        logger.debug("crypto_risk_cap", total_risk=total_risk)
+                        continue
+                except ImportError:
+                    pass
+
+                # Evaluate strategy — pass asset for asset-aware signal generation
+                try:
+                    signal = strategy.evaluate(candles, indicators, prev_indicators, asset=asset)
+                except TypeError:
+                    signal = strategy.evaluate(candles, indicators, prev_indicators)
+
                 if signal:
                     signal.asset = asset
-                    sleeve_eq = pm.get_sleeve_equity(strat_name)
+                    # Apply per-asset risk multiplier
+                    try:
+                        from bahamut.config_assets import get_risk_multiplier
+                        risk_mult = get_risk_multiplier(asset)
+                    except ImportError:
+                        risk_mult = 1.0
+
+                    sleeve_eq = pm.get_sleeve_equity(strat_name) * risk_mult
                     order = engine.submit_signal(signal, sleeve_eq)
                     if order:
                         logger.info("v7_signal_submitted",

@@ -57,18 +57,20 @@ class ExecutionEngine:
                 return None
             self._processed_signals.add(signal.signal_id)
 
-            # Check if strategy already has open position
+            # Check if strategy already has open position FOR THIS ASSET
             for pos in self.open_positions:
-                if pos.strategy == signal.strategy and pos.status == OrderStatus.OPEN:
+                if pos.strategy == signal.strategy and pos.asset == signal.asset \
+                   and pos.status == OrderStatus.OPEN:
                     logger.info("signal_rejected_existing_position",
-                                strategy=signal.strategy)
+                                strategy=signal.strategy, asset=signal.asset)
                     return None
 
-            # Check if strategy already has pending order
+            # Check if strategy already has pending order FOR THIS ASSET
             for o in self.pending_orders:
-                if o.strategy == signal.strategy and o.status == OrderStatus.PENDING:
+                if o.strategy == signal.strategy and o.asset == signal.asset \
+                   and o.status == OrderStatus.PENDING:
                     logger.info("signal_rejected_pending_order",
-                                strategy=signal.strategy)
+                                strategy=signal.strategy, asset=signal.asset)
                     return None
 
             # Create order (entry_price=0 means fill at next open)
