@@ -213,7 +213,7 @@ async def recent_alerts(user=Depends(get_current_user)):
 
 @router.get("/health")
 async def system_health(user=Depends(get_current_user)):
-    """Full system health check."""
+    """Comprehensive system diagnostics."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
 
@@ -226,16 +226,79 @@ async def system_health(user=Depends(get_current_user)):
     except ImportError:
         assets = ["BTCUSD"]
 
+    # Check DB connectivity
+    db_ok = False
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        pass
+
+    # Check Redis connectivity + last cycle time
+    redis_ok = False
+    last_cycle = None
+    lock_healthy = True
+    try:
+        import redis, os, time
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.ping()
+        redis_ok = True
+        lc = r.get("bahamut:last_v7_cycle")
+        if lc:
+            ts = float(lc)
+            last_cycle = ts
+            # If last cycle was >10 min ago, lock might be stuck
+            if time.time() - ts > 600:
+                lock_healthy = False
+    except Exception:
+        pass
+
+    # Check for live data vs synthetic
+    live_data = False
+    try:
+        from bahamut.ingestion.adapters.twelvedata import twelve_data
+        live_data = twelve_data.configured
+    except Exception:
+        pass
+
+    # Active strategies from sleeves
+    active_strategies = [n for n, s in pm.sleeves.items()
+                         if s.allocation_weight > 0]
+
+    # Legacy schedulers status
+    legacy_disabled = True
+    try:
+        from bahamut.celery_app import celery_app
+        beat = celery_app.conf.beat_schedule
+        legacy_tasks = [k for k in beat if k != "v7-trading-cycle"]
+        legacy_disabled = len(legacy_tasks) == 0
+    except Exception:
+        pass
+
     return {
         "status": "ok",
-        "mode": "paper",
+        "mode": "OPERATIONS",
+        "engine": "v7/v8/v9",
+        "data_source": "LIVE" if live_data else "SYNTHETIC",
         "assets": assets,
-        "strategies": list(pm.sleeves.keys()),
-        "kill_switch": pm.kill_switch_triggered,
-        "open_positions": len(engine.open_positions),
-        "total_trades": len(engine.closed_trades),
-        "equity": round(pm.total_equity, 2),
+        "active_strategies": active_strategies,
         "regimes": dict(getattr(pm, 'asset_regimes', {})),
-        "telegram_configured": tg_ok(),
-        "email_configured": em_ok(),
+        "portfolio": {
+            "equity": round(pm.total_equity, 2),
+            "kill_switch": pm.kill_switch_triggered,
+            "open_positions": len(engine.open_positions),
+            "total_trades": len(engine.closed_trades),
+        },
+        "infrastructure": {
+            "db_connected": db_ok,
+            "redis_connected": redis_ok,
+            "orchestrator_lock_healthy": lock_healthy,
+            "last_cycle_timestamp": last_cycle,
+            "legacy_schedulers_disabled": legacy_disabled,
+            "telegram_configured": tg_ok(),
+            "email_configured": em_ok(),
+        },
     }

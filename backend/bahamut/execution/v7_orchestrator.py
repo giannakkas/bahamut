@@ -93,14 +93,50 @@ def run_v7_cycle(self):
     """
     Main v7 trading cycle. Runs every 2 minutes.
     Only processes if a new bar is detected (avoids duplicate signals).
+    Uses Redis distributed lock to prevent overlapping cycles.
     """
+    global _last_bar_time
+
+    # ── Distributed lock: prevent concurrent cycles ──
+    lock = None
+    try:
+        import redis, os
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        lock = r.lock("bahamut:v7_cycle_lock", timeout=300, blocking=False)
+        if not lock.acquire(blocking=False):
+            logger.info("v7_cycle_skipped_lock_held")
+            return
+    except Exception as e:
+        logger.debug("v7_cycle_lock_unavailable", error=str(e))
+        # Proceed without lock if Redis unavailable
+
+    try:
+        _run_v7_cycle_inner()
+    finally:
+        if lock:
+            try:
+                lock.release()
+            except Exception:
+                pass
+
+        # Track last successful cycle
+        try:
+            import redis, os, time
+            r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            r.set("bahamut:last_v7_cycle", str(time.time()))
+        except Exception:
+            pass
+
+
+def _run_v7_cycle_inner():
+    """Inner cycle logic — separated for lock management."""
     global _last_bar_time
 
     engine = get_execution_engine()
     pm = get_portfolio_manager()
     strategies = _get_strategies()
 
-    assets = ["BTCUSD"]  # Extend as needed
+    assets = ["BTCUSD"]
     try:
         from bahamut.config_assets import ACTIVE_TREND_ASSETS
         assets = ACTIVE_TREND_ASSETS

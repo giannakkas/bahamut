@@ -34,10 +34,13 @@ export default function MonitoringDashboard() {
     return null;
   }, [token]);
 
+  const [health, setHealth] = useState<any>(null);
+
   const load = useCallback(async () => {
-    const [p, s, pos, t, e, a] = await Promise.all([
+    const [p, s, pos, t, e, a, h] = await Promise.all([
       monApi("/portfolio"), monApi("/strategies"), monApi("/positions"),
       monApi("/trades"), monApi("/execution"), monApi("/alerts"),
+      monApi("/health"),
     ]);
     if (p) setPortfolio(p);
     if (s) setStrategies(s);
@@ -45,6 +48,7 @@ export default function MonitoringDashboard() {
     if (t) setTrades(t);
     if (e) setExecution(e);
     if (a?.alerts) setAlerts(a.alerts);
+    if (h) setHealth(h);
     setLoading(false);
   }, [monApi]);
 
@@ -77,6 +81,14 @@ export default function MonitoringDashboard() {
           <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
             p?.kill_switch ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-green-500/20 text-green-400 border-green-500/30"
           }`}>{p?.kill_switch ? "HALTED" : "LIVE"}</span>
+          {health?.data_source && (
+            <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
+              health.data_source === "LIVE" ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+            }`}>{health.data_source === "LIVE" ? "LIVE DATA" : "SYNTHETIC"}</span>
+          )}
+          {health?.engine && (
+            <span className="px-2 py-0.5 text-[10px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>
+          )}
           {critAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{critAlerts} CRITICAL</span>}
           {warnAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">{warnAlerts} WARN</span>}
         </div>
