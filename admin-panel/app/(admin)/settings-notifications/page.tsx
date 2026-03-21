@@ -94,43 +94,46 @@ export default function NotificationSettings() {
 
   const test = async (channel: "telegram" | "email") => {
     setTesting(channel);
-    setMessage({ type: "info" as any, text: `Testing ${channel}...` });
+    setMessage({ type: "success", text: `Sending ${channel} test...` });
+    console.log(`[TEST] Starting ${channel} test`);
 
     try {
-      // Send current form values so test works without saving first
-      const body = channel === "email" ? {
-        api_key: form.email_smtp_pass || undefined,
-        from_email: form.email_from,
-        to_email: form.email_to,
-      } : undefined;
+      const body: any = {};
+      if (channel === "email") {
+        if (form.email_smtp_pass) body.api_key = form.email_smtp_pass;
+        body.from_email = form.email_from;
+        body.to_email = form.email_to;
+      }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
+      const url = `${apiBase()}/monitoring/settings/test/${channel}`;
+      console.log(`[TEST] POST ${url}`, body);
 
-      const r = await fetch(`${apiBase()}/monitoring/settings/test/${channel}`, {
+      const r = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: body ? JSON.stringify(body) : "{}",
-        signal: controller.signal,
+        body: JSON.stringify(body),
       });
-      clearTimeout(timeout);
 
-      const res = await r.json().catch(() => null);
+      console.log(`[TEST] Response status: ${r.status}`);
+      const text = await r.text();
+      console.log(`[TEST] Response body: ${text}`);
+
+      let res: any = null;
+      try { res = JSON.parse(text); } catch { res = { error: text }; }
+
       setTesting(null);
-
       if (res?.ok) {
-        setMessage({ type: "success", text: res.message || `Test ${channel} sent!` });
+        setMessage({ type: "success", text: res.message || `✅ Test ${channel} sent!` });
       } else {
-        const errMsg = res?.error || res?.detail || `Test ${channel} failed (HTTP ${r.status})`;
-        setMessage({ type: "error", text: errMsg });
+        setMessage({ type: "error", text: res?.error || res?.detail || `Failed (HTTP ${r.status}): ${text.slice(0, 200)}` });
       }
     } catch (e: any) {
+      console.error(`[TEST] Error:`, e);
       setTesting(null);
-      const msg = e.name === "AbortError" ? "Request timed out (20s)" : (e.message || "Network error");
-      setMessage({ type: "error", text: `Test ${channel} failed: ${msg}` });
+      setMessage({ type: "error", text: `Error: ${e.message || "Unknown"}` });
     }
   };
 
