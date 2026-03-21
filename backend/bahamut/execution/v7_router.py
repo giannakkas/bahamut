@@ -172,13 +172,14 @@ async def disable_strategy(name: str, user=Depends(get_current_user)):
 
 @router.post("/orchestrator/run-cycle")
 async def manual_run_cycle(user=Depends(get_current_user)):
-    """Manually trigger one v7 trading cycle (for testing)."""
+    """Manually trigger one v7 trading cycle."""
     try:
         from bahamut.execution.v7_orchestrator import run_v7_cycle_sync
-        run_v7_cycle_sync()
-        return {"status": "cycle_completed"}
+        result = run_v7_cycle_sync()
+        return {"status": "ok", "result": result}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        import traceback
+        return {"status": "error", "error": str(e), "trace": traceback.format_exc()}
 
 
 @router.get("/history/trades")

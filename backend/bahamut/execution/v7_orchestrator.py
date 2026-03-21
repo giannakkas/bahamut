@@ -12,12 +12,20 @@ Runs on each new 4H bar:
   8. Take equity snapshot
 
 Celery task: runs every 2 min, only acts when a new 4H bar is detected.
+Works standalone (without Celery) when called via run_v7_cycle_sync().
 """
 import time
 import structlog
 from datetime import datetime, timezone
 
-from bahamut.celery_app import celery_app
+# Celery import — optional, works without it for manual triggers
+try:
+    from bahamut.celery_app import celery_app
+    _has_celery = True
+except ImportError:
+    _has_celery = False
+    celery_app = None
+
 from bahamut.execution.engine import get_execution_engine
 from bahamut.portfolio.manager import get_portfolio_manager
 from bahamut.features.indicators import compute_indicators
@@ -88,8 +96,17 @@ def _fetch_candles(asset: str, timeframe: str = "4H", count: int = 260) -> list[
     return []
 
 
-@celery_app.task(name="bahamut.execution.v7_orchestrator.run_v7_cycle", bind=True, max_retries=1)
-def run_v7_cycle(self):
+def _celery_task(func):
+    """Register as Celery task if available, otherwise pass through."""
+    if _has_celery and celery_app:
+        return celery_app.task(
+            name="bahamut.execution.v7_orchestrator.run_v7_cycle",
+            bind=True, max_retries=1)(func)
+    return func
+
+
+@_celery_task
+def run_v7_cycle(self=None):
     """
     Main v7 trading cycle. Runs every 2 minutes.
     Uses Redis distributed lock. Full cycle instrumented for observability.
@@ -442,5 +459,14 @@ def _persist_snapshot(snap):
 # ── Manual trigger (for testing without Celery) ──
 
 def run_v7_cycle_sync():
-    """Run the v7 cycle synchronously (for testing/debugging)."""
-    run_v7_cycle()
+    """Run the v7 cycle synchronously — bypasses Celery and Redis lock."""
+    from bahamut.monitoring.cycle_log import start_cycle, end_cycle
+
+    cycle = start_cycle()
+    try:
+        _run_v7_cycle_inner()
+        end_cycle("SUCCESS")
+        return {"status": "SUCCESS", "cycle_id": cycle.cycle_id}
+    except Exception as e:
+        end_cycle("ERROR", error=str(e))
+        return {"status": "ERROR", "error": str(e)}
