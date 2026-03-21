@@ -101,54 +101,49 @@ async def test_telegram(user=Depends(get_current_user)):
 
 
 class EmailTestRequest(BaseModel):
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = None
-    smtp_user: Optional[str] = None
-    smtp_pass: Optional[str] = None
+    api_key: Optional[str] = None
     from_email: Optional[str] = None
     to_email: Optional[str] = None
 
 
 @router.post("/settings/test/email")
 async def test_email(body: EmailTestRequest = None, user=Depends(get_current_user)):
-    """Send a test email. Accepts inline config so user doesn't need to save first."""
-    import smtplib
-    from email.mime.text import MIMEText
+    """Send a test email via Brevo API."""
+    import json
+    import urllib.request
 
-    # Use inline values if provided, otherwise fall back to saved config
-    host = body.smtp_host if body and body.smtp_host else get_config("notify.email.smtp_host", "smtp-relay.brevo.com")
-    port = body.smtp_port if body and body.smtp_port else get_config("notify.email.smtp_port", 587)
-    smtp_user = body.smtp_user if body and body.smtp_user else get_config("notify.email.smtp_user", "")
-    smtp_pass = body.smtp_pass if body and body.smtp_pass else get_config("notify.email.smtp_pass", "")
-    from_email = body.from_email if body and body.from_email else get_config("notify.email.from_email", "")
-    to_email = body.to_email if body and body.to_email else get_config("notify.email.to_email", "")
+    api_key = (body.api_key if body and body.api_key else None) or get_config("notify.email.smtp_pass", "")
+    from_email = (body.from_email if body and body.from_email else None) or get_config("notify.email.from_email", "") or "noreply@bahamut.ai"
+    to_email = (body.to_email if body and body.to_email else None) or get_config("notify.email.to_email", "")
 
-    if not smtp_user:
-        return {"ok": False, "error": "SMTP login not set"}
-    if not smtp_pass:
-        return {"ok": False, "error": "SMTP key/password not set"}
+    if not api_key:
+        return {"ok": False, "error": "Brevo API key not set"}
     if not to_email:
         return {"ok": False, "error": "Recipient email not set"}
 
-    from_addr = from_email or smtp_user
+    payload = {
+        "sender": {"name": "Bahamut Alerts", "email": from_email},
+        "to": [{"email": to_email}],
+        "subject": "✅ Bahamut Alert Test",
+        "textContent": "This is a test email from Bahamut.AI.\n\nEmail notifications are working!",
+    }
 
     try:
-        msg = MIMEText("This is a test email from Bahamut.AI.\n\nEmail notifications are working!")
-        msg["Subject"] = "✅ Bahamut Alert Test"
-        msg["From"] = f"Bahamut Alerts <{from_addr}>"
-        msg["To"] = to_email
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=data, method="POST")
+        req.add_header("accept", "application/json")
+        req.add_header("content-type", "application/json")
+        req.add_header("api-key", api_key)
 
-        with smtplib.SMTP(host, int(port), timeout=15) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(from_addr, to_email, msg.as_string())
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            return {"ok": True, "message": f"Test email sent to {to_email}"}
 
-        return {"ok": True, "message": f"Test email sent to {to_email}"}
-    except smtplib.SMTPAuthenticationError as e:
-        return {"ok": False, "error": f"Authentication failed: {e.smtp_error.decode() if hasattr(e, 'smtp_error') else str(e)}"}
-    except smtplib.SMTPSenderRefused as e:
-        return {"ok": False, "error": f"Sender rejected (verify '{from_addr}' in Brevo): {str(e)}"}
-    except smtplib.SMTPRecipientsRefused as e:
-        return {"ok": False, "error": f"Recipient rejected: {str(e)}"}
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode())
+            return {"ok": False, "error": f"Brevo error ({e.code}): {err.get('message', str(err))}"}
+        except Exception:
+            return {"ok": False, "error": f"Brevo error ({e.code})"}
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {str(e)}"}
+        return {"ok": False, "error": str(e)}

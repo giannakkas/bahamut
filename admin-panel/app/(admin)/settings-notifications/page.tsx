@@ -98,10 +98,7 @@ export default function NotificationSettings() {
 
     // Send current form values so test works without saving first
     const body = channel === "email" ? {
-      smtp_host: form.email_smtp_host,
-      smtp_port: form.email_smtp_port,
-      smtp_user: form.email_smtp_user,
-      smtp_pass: form.email_smtp_pass || undefined, // Don't send empty (use saved)
+      api_key: form.email_smtp_pass || undefined,
       from_email: form.email_from,
       to_email: form.email_to,
     } : undefined;
@@ -178,14 +175,14 @@ export default function NotificationSettings() {
         </div>
       </div>
 
-      {/* ═══ EMAIL (BREVO) ═══ */}
+      {/* ═══ EMAIL (BREVO API) ═══ */}
       <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-bah-border flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-lg">📧</span>
             <div>
               <h2 className="text-sm font-semibold text-bah-heading">Email (Brevo)</h2>
-              <p className="text-[11px] text-bah-muted">SMTP email alerts via Brevo (Sendinblue)</p>
+              <p className="text-[11px] text-bah-muted">Email alerts via Brevo API</p>
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -196,42 +193,22 @@ export default function NotificationSettings() {
           </label>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-bah-muted mb-1 font-medium">SMTP Host</label>
-              <input type="text" value={form.email_smtp_host}
-                onChange={(e) => set("email_smtp_host", e.target.value)}
-                className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            </div>
-            <div>
-              <label className="block text-xs text-bah-muted mb-1 font-medium">SMTP Port</label>
-              <input type="number" value={form.email_smtp_port}
-                onChange={(e) => set("email_smtp_port", parseInt(e.target.value) || 587)}
-                className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            </div>
-          </div>
           <div>
-            <label className="block text-xs text-bah-muted mb-1 font-medium">SMTP Login (Brevo email)</label>
-            <input type="text" value={form.email_smtp_user}
-              onChange={(e) => set("email_smtp_user", e.target.value)}
-              placeholder="your@email.com"
-              className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-          </div>
-          <div>
-            <label className="block text-xs text-bah-muted mb-1 font-medium">SMTP Key</label>
+            <label className="block text-xs text-bah-muted mb-1 font-medium">Brevo API Key</label>
             <input type="password" value={form.email_smtp_pass}
               onChange={(e) => set("email_smtp_pass", e.target.value)}
-              placeholder={settings?.email_smtp_pass?.startsWith("●") ? settings.email_smtp_pass : "Brevo SMTP key"}
+              placeholder={settings?.email_smtp_pass?.startsWith("●") ? settings.email_smtp_pass : "xkeysib-..."}
               className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            <p className="text-[10px] text-bah-muted mt-1">Brevo → SMTP & API → SMTP → Generate SMTP Key</p>
+            <p className="text-[10px] text-bah-muted mt-1">Brevo → SMTP & API → API Keys → Generate</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-bah-muted mb-1 font-medium">From Email</label>
               <input type="email" value={form.email_from}
                 onChange={(e) => set("email_from", e.target.value)}
-                placeholder="alerts@yourdomain.com"
+                placeholder="info@bahamut.ai"
                 className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
+              <p className="text-[10px] text-bah-muted mt-1">Must be verified in Brevo → Senders</p>
             </div>
             <div>
               <label className="block text-xs text-bah-muted mb-1 font-medium">Send Alerts To</label>
