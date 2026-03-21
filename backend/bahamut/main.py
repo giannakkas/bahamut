@@ -203,10 +203,15 @@ app.include_router(metrics_router, tags=["metrics"])
 if v7_router:
     app.include_router(v7_router, prefix="/api/v7", tags=["v7-dashboard"])
 
-# Monitoring dashboard
+# Monitoring dashboard + notification settings
 try:
     from bahamut.monitoring.dashboard_api import router as monitoring_router
     app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitoring"])
+except Exception:
+    pass
+try:
+    from bahamut.monitoring.settings_api import router as settings_router
+    app.include_router(settings_router, prefix="/api/monitoring", tags=["monitoring"])
 except Exception:
     pass
 

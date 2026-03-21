@@ -99,6 +99,25 @@ DEFAULTS = {
     "readiness.max_consecutive_losses": 5,
     "readiness.calibration_max_age_hours": 48,
     "readiness.stress_score_min": 0.50,
+
+    # ── Notifications: Telegram ──
+    "notify.telegram.enabled": False,
+    "notify.telegram.bot_token": "",
+    "notify.telegram.chat_id": "",
+
+    # ── Notifications: Email (Brevo SMTP) ──
+    "notify.email.enabled": False,
+    "notify.email.smtp_host": "smtp-relay.brevo.com",
+    "notify.email.smtp_port": 587,
+    "notify.email.smtp_user": "",
+    "notify.email.smtp_pass": "",       # Brevo SMTP key
+    "notify.email.from_email": "",
+    "notify.email.to_email": "",
+
+    # ── Notifications: Alert levels ──
+    "notify.level.critical": True,      # Send CRITICAL alerts
+    "notify.level.warning": True,       # Send WARNING alerts
+    "notify.level.info": False,         # Send INFO alerts (trades/regime changes)
 }
 
 # Type constraints for validation
@@ -151,6 +170,8 @@ def set_config(key: str, value, changed_by: str = "system") -> dict:
                 value = int(value)
             elif expected_type is bool:
                 value = value in (True, "true", "True", 1, "1")
+            elif expected_type is str:
+                value = str(value)
             else:
                 return {"error": f"Type mismatch: expected {expected_type.__name__}, got {type(value).__name__}"}
         except (ValueError, TypeError):

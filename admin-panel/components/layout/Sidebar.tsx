@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/execution", label: "Execution Monitor", icon: "⚡", minRole: "admin" },
   { href: "/trade-journal", label: "Trade Journal", icon: "☰", minRole: "admin" },
   // ─── Super Admin Only: Raw Engine Controls ───
+  { href: "/settings-notifications", label: "Notifications", icon: "🔔", minRole: "admin" },
   { href: "/config", label: "Configuration", icon: "⚙", minRole: "super_admin" },
   { href: "/overrides", label: "Overrides", icon: "🎛", minRole: "super_admin" },
   { href: "/trust", label: "Trust & Intelligence", icon: "🧠", minRole: "super_admin" },
