@@ -229,11 +229,18 @@ export default function V7OperationsPage() {
             </span>
             <div className="text-xs text-bah-muted">
               <div>Mode: <span className="text-bah-heading font-semibold">{s.portfolio_mode || "—"}</span></div>
-              <div>Active: {s.sleeves ? Object.entries(s.sleeves).filter(([,v]: any) => v.enabled).map(([k]) => k).join(", ") || "none" : "—"}</div>
+              {s.asset_regimes && Object.keys(s.asset_regimes).length > 0 ? (
+                <div className="flex gap-3 mt-0.5">
+                  {Object.entries(s.asset_regimes).map(([a, r]: [string, any]) => (
+                    <span key={a} className={r === "TREND" ? "text-green-400" : r === "CRASH" ? "text-red-400" : "text-amber-400"}>
+                      {a}: {r as string}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div>Active: {s.sleeves ? Object.entries(s.sleeves).filter(([,v]: any) => v.enabled).map(([k]) => k).join(", ") || "none" : "—"}</div>
+              )}
             </div>
-          </div>
-          <div className="text-right text-xs text-bah-muted">
-            <div>{s.regime === "TREND" ? "Trend strategies active" : s.regime === "CRASH" ? "Capital preservation mode" : "Range strategy active"}</div>
           </div>
         </div>
       )}
@@ -245,9 +252,18 @@ export default function V7OperationsPage() {
             <div key={asset} className="bg-bah-surface border border-bah-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-bah-heading">{asset}</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30">
-                  {data.open_positions} open
-                </span>
+                <div className="flex gap-2">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                    data.regime === "TREND" ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                    data.regime === "CRASH" ? "bg-red-500/20 text-red-400 border-red-500/30" :
+                    "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                  }`}>
+                    {data.regime || "—"}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30">
+                    {data.open_positions} open
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-3 text-xs">
                 <div>

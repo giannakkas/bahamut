@@ -253,7 +253,7 @@ async def asset_summary():
             "realized_pnl": round(realized, 2),
             "unrealized_pnl": round(unrealized, 2),
             "open_risk": round(risk, 2),
-            "regime": getattr(pm, "current_regime", "RANGE"),
+            "regime": pm.asset_regimes.get(asset, "RANGE"),
         }
 
     return {

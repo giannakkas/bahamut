@@ -66,8 +66,9 @@ class PortfolioManager:
         self.peak_equity = total_capital
         self.kill_switch_triggered = False
 
-        # v8: regime state
-        self.current_regime = "RANGE"
+        # v8: regime state — per asset
+        self.asset_regimes: dict[str, str] = {}
+        self.current_regime = "RANGE"       # Last processed (for backward compat)
         self.current_portfolio_mode = "unknown"
 
         if allocations is None:
@@ -119,31 +120,22 @@ class PortfolioManager:
     # v8: REGIME-DRIVEN ACTIVATION
     # ═══════════════════════════════════════════════════════
 
-    def apply_routing(self, decision):
+    def apply_routing(self, decision, asset: str = ""):
         """
-        Apply a RoutingDecision to enable/disable sleeves.
-        Does NOT reallocate capital every bar (that caused a feedback loop).
-        Capital only changes on explicit rebalance().
+        Record the regime decision per asset.
+        Does NOT toggle sleeve enabled/disabled — that would create cross-asset
+        interference (BTC=TREND enables v5, ETH=CRASH disables v5 → breaks BTC).
+        The orchestrator uses routing.active_strategies per asset directly.
         """
         self.current_regime = decision.regime
         self.current_portfolio_mode = decision.portfolio_mode
+        if asset:
+            self.asset_regimes[asset] = decision.regime
 
-        for name in decision.active_strategies:
-            if name in self.sleeves:
-                self.sleeves[name].enabled = True
-
-        for name in decision.inactive_strategies:
-            if name in self.sleeves:
-                self.sleeves[name].enabled = False
-
-        # Update target weights for display (not capital amounts)
+        # Update target weights for display only
         for name, weight in decision.weights.items():
             if name in self.sleeves:
                 self.sleeves[name].allocation_weight = weight
-
-        for name in decision.inactive_strategies:
-            if name in self.sleeves:
-                self.sleeves[name].allocation_weight = 0.0
 
     # ═══════════════════════════════════════════════════════
     # RISK CHECK
@@ -290,6 +282,7 @@ class PortfolioManager:
             "kill_switch": self.kill_switch_triggered,
             "regime": self.current_regime,
             "portfolio_mode": self.current_portfolio_mode,
+            "asset_regimes": dict(self.asset_regimes),
             "sleeves": {
                 name: {
                     "allocation_pct": round(s.allocation_weight * 100, 1),

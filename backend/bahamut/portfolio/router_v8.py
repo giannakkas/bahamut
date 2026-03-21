@@ -56,13 +56,14 @@ class RoutingDecision:
             self.weights = {}
 
 
-# Track last regime for change detection
-_last_regime: str = ""
+# Track last regime PER ASSET for change detection
+_last_regime: dict[str, str] = {}
 
 
-def route(regime: RegimeResult) -> RoutingDecision:
+def route(regime: RegimeResult, asset: str = "BTCUSD") -> RoutingDecision:
     """
     Determine which strategies should be active based on the current regime.
+    Tracks regime changes per asset independently.
     """
     global _last_regime
 
@@ -78,19 +79,26 @@ def route(regime: RegimeResult) -> RoutingDecision:
         reason=regime.reason,
     )
 
-    # Log regime changes
-    if regime.regime != _last_regime:
+    # Log regime changes per asset
+    prev = _last_regime.get(asset, "")
+    if regime.regime != prev:
         logger.info("regime_change",
-                     old=_last_regime or "INIT",
+                     asset=asset,
+                     old=prev or "INIT",
                      new=regime.regime,
                      confidence=regime.confidence,
                      mode=template["mode"],
                      active=template["active"])
-        _last_regime = regime.regime
+        _last_regime[asset] = regime.regime
 
     return decision
 
 
-def get_current_regime() -> str:
-    """Return the last detected regime."""
-    return _last_regime or "RANGE"
+def get_current_regime(asset: str = "BTCUSD") -> str:
+    """Return the last detected regime for an asset."""
+    return _last_regime.get(asset, "RANGE")
+
+
+def get_all_regimes() -> dict[str, str]:
+    """Return current regime for all tracked assets."""
+    return dict(_last_regime)

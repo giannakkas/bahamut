@@ -134,8 +134,8 @@ def run_v7_cycle(self):
                 from bahamut.regime.v8_detector import detect_regime
                 from bahamut.portfolio.router_v8 import route
                 regime = detect_regime(indicators, candles[-15:])
-                routing = route(regime)
-                pm.apply_routing(routing)
+                routing = route(regime, asset=asset)
+                pm.apply_routing(routing, asset=asset)
                 logger.info("v8_regime", regime=regime.regime,
                             confidence=regime.confidence,
                             mode=routing.portfolio_mode,
@@ -156,9 +156,10 @@ def run_v7_cycle(self):
             # 1. Process bar through execution engine (fills pending, checks exits)
             engine.on_new_bar(bar, pm.get_sleeve_equities(), asset=asset)
 
-            # 2. Evaluate each enabled strategy
-            for strat_name, strategy in strategies.items():
-                if not pm.is_strategy_enabled(strat_name):
+            # 2. Evaluate active strategies for THIS ASSET's regime
+            for strat_name in routing.active_strategies:
+                strategy = strategies.get(strat_name)
+                if not strategy:
                     continue
 
                 # Check portfolio risk limits
