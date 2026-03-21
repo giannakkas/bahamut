@@ -1,352 +1,373 @@
-# Bahamut.AI — Adaptive AI Trading Intelligence Platform
+# Bahamut.AI
 
-Bahamut is a multi-agent AI trading intelligence system that scans 219 financial assets, runs 6 specialized AI agents to produce consensus trading signals, manages portfolio risk through a 10-step evaluation pipeline, and continuously learns from its own trade outcomes.
+A systematic multi-strategy crypto trading engine focused on trend capture, breakout confirmation, and disciplined risk management.
 
-The system combines **Gemini 2.5 Flash** and **Claude** as dual AI providers with pure mathematical analysis, a challenge/debate system where agents argue against each other, and a self-learning feedback loop that evolves trust scores based on real performance.
+Bahamut runs validated trading strategies across BTC and ETH, automatically detects market regimes, routes capital to the right strategy for current conditions, and monitors everything with real-time alerts.
 
-**Live:**
-- **Frontend:** [bahamut.ai](https://bahamut.ai)
-- **Admin Panel:** [admin.bahamut.ai](https://admin.bahamut.ai)
+**Live infrastructure:**
+- **Dashboard:** [admin.bahamut.ai](https://admin.bahamut.ai)
 - **API:** [api.bahamut.ai](https://api.bahamut.ai)
 
 ---
 
-## System Stats
+## Overview
 
-| Metric | Value |
-|--------|-------|
-| Backend Python files | 122 |
-| Backend LOC | ~19,700 |
-| Frontend + Admin TSX/TS LOC | ~6,300 |
-| API endpoints | 128 |
-| Database tables | 27 |
-| Config parameters | 54 |
-| Test cases | 290 (282 passing) |
-| Scanner assets | 219 |
-| Agent signal assets | 76 |
-| AI providers | 2 (Gemini + Claude) |
-| Frontend pages | 13 |
-| Admin pages | 18 |
-| Railway services | 8 |
+Bahamut solves a specific problem: most trend-following strategies lose money in sideways or crashing markets. Instead of trying to make one strategy work everywhere, Bahamut detects the current market regime and only trades when conditions match the strategy's edge.
+
+The system runs two independent strategies (trend continuation and confirmed breakout) across two assets (BTC and ETH), with a regime filter that blocks trading when market conditions aren't favorable. Everything runs through a paper trading execution engine with full portfolio accounting, risk controls, and a monitoring dashboard with Telegram and email alerts.
+
+**Current status:** Paper trading validation phase. Validated on historical data, not yet trading real capital.
 
 ---
 
-## Architecture Overview
+## Key Features
+
+- **Multi-strategy system** — v5 (trend continuation) + v9 (confirmed breakout), firing at independent times
+- **Regime-aware trading** — detects TREND / RANGE / CRASH per asset, only trades in favorable conditions
+- **Multi-asset support** — BTC and ETH in parallel with per-asset regime detection
+- **Execution engine** — paper broker with slippage, spread, risk-based position sizing, idempotency
+- **Portfolio manager** — isolated strategy sleeves, combined risk limits, kill switch at 10% drawdown
+- **Real-time monitoring** — dashboard with equity, drawdown, risk, strategy metrics, trade history
+- **Automated alerts** — Telegram + Email for critical events, throttled to avoid spam
+
+---
+
+## Strategies
+
+### v5 — Trend Continuation
+
+The core validated edge. Trades long when the market is in a confirmed uptrend.
+
+- **Regime filter:** Price must be above the 200-period EMA (bull market confirmation)
+- **Entry signal:** 20-period EMA crosses above the 50-period EMA (golden cross)
+- **Direction:** Long only
+- **Frequency:** Low — roughly 7 to 19 trades per year per asset
+- **Variants:** v5_base (SL 8%, TP 16%, hold 30 bars) and v5_tuned (SL 10%, TP 25%, hold 60 bars)
+
+This works because it only enters during confirmed bullish conditions and uses wide stops that survive normal crypto volatility. The low frequency avoids overtrading.
+
+### v9 — Confirmed Breakout
+
+A second, independent edge that fires at different times than v5.
+
+- **Signal:** Price breaks the 20-bar high AND holds above it for 3 consecutive bars
+- **Logic:** Breakouts that hold are statistically more likely to continue than raw breakouts
+- **Parameters:** SL 10%, TP 25%, max hold 40 bars
+- **Independence:** Only 2% entry overlap with v5 — genuinely different timing
+
+v9 catches the start of new moves (structural price action) while v5 catches the middle of trends (EMA alignment). Together they provide timing diversification within the trend regime.
+
+### v8 — Regime Filter
+
+Classifies the market into three states using simple, deterministic rules:
+
+| Regime | Detection | Trading Behavior |
+|--------|-----------|-----------------|
+| **TREND** | Price >3–5% above EMA200, positive EMA50 slope, ADX >25 | v5 + v9 active |
+| **RANGE** | Price within ±5% of EMA200, flat EMAs, low ADX | No trend trading |
+| **CRASH** | Price >5% below EMA200, elevated ATR | No trading (capital preservation) |
+
+Regime detection runs independently per asset. BTC can be in TREND while ETH is in RANGE.
+
+---
+
+## Portfolio Structure
+
+Strategies run in parallel with isolated capital sleeves:
+
+| Sleeve | Allocation | Risk per Trade |
+|--------|-----------|---------------|
+| v5_base | 35% | 2% |
+| v5_tuned | 35% | 2% |
+| v9_breakout | 30% | 2% |
+
+**Multi-asset deployment:**
+- BTCUSD: Full risk (1.0× multiplier)
+- ETHUSD: Reduced risk (0.75× multiplier) until validated on real data
+- Combined crypto risk cap: 5% of portfolio
+- Max 1 position per strategy per asset
+- Max 4 total open positions
+
+---
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Market Data Layer                           │
-│  Twelve Data (219 assets) · Finnhub (news) · Forex Factory (cal)  │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Asset Scanner (every 15 min)                     │
-│  219 assets: 27 FX · 7 Commodities · 40 Crypto · 145 Stocks      │
-│  RSI · EMA · MACD · ADX · Bollinger · Whale detection · Volume    │
-│  → Top 20 auto-trigger deep AI analysis                           │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│               6 AI Agents (parallel, 20s timeout)                  │
-│                                                                     │
-│  🤖 Macro Agent ──────── Gemini AI reads news + macro data         │
-│  🤖 Sentiment Agent ──── Gemini + Claude dual-model (parallel)     │
-│  📊 Technical Agent ──── RSI, EMA, MACD, ADX, chart patterns       │
-│  📊 Volatility Agent ─── ATR, Bollinger, VIX regime                │
-│  📊 Liquidity Agent ──── Volume, whale detection, order flow       │
-│  🛡️ Risk Agent ─────────  Absolute veto authority, portfolio flags  │
-│                                                                     │
-│  Agents challenge each other → debate → consensus                  │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Consensus Engine                                 │
-│  Trust-weighted scoring · Disagreement analysis · Floor logic      │
-│                                                                     │
-│  🤖 AI Consensus Reviewer (Gemini + Claude parallel)               │
-│     - Reviews borderline decisions (score 0.40-0.80)               │
-│     - Circuit breaker per provider (3 fails → 2 min cooldown)      │
-│     - 6s hard timeout ceiling · ±0.15 max score adjustment         │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│              Portfolio Intelligence (10-step pipeline)              │
-│                                                                     │
-│  1. Kill switch check       6. Adaptive rules                      │
-│  2. Exposure engine          7. Scenario risk (5 macro scenarios)   │
-│  3. Correlation engine       8. Marginal risk                      │
-│  4. Fragility scoring        9. Quality ratio                      │
-│  5. Impact scoring          10. Final verdict (size/approve/block)  │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Execution Policy                                  │
-│  9 hard blockers · 4 soft constraints · Auto-approve toggle        │
-│  Dynamic reallocation (close weak → open strong)                   │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                Paper Trading Engine                                 │
-│  Simulated execution · SL/TP/timeout monitoring (every 2 min)      │
-│  Position tracking · PnL attribution · Max 10 concurrent positions │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Learning Pipeline                                 │
-│  Agent trust updates · Portfolio pattern analysis · Scenario        │
-│  outcome learning · Daily/weekly/monthly calibration                │
-└─────────────────────────────────────────────────────────────────────┘
+Market Data (Twelve Data / Cache)
+       │
+       ▼
+┌─────────────────────┐
+│  Regime Detector     │  ← per asset: TREND / RANGE / CRASH
+│  (v8_detector.py)    │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│  Regime Router       │  ← activates strategies per regime
+│  (router_v8.py)      │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│  Strategy Evaluation │  ← v5_base, v5_tuned, v9_breakout
+│  (per asset)         │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│  Execution Engine    │  ← paper broker, slippage, risk sizing
+│  (engine.py)         │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│  Portfolio Manager   │  ← sleeve accounting, risk limits, kill switch
+│  (manager.py)        │
+└──────────┬──────────┘
+           ▼
+┌──────────┴──────────┐
+│  DB Persistence      │  PostgreSQL: orders, trades, snapshots
+│  Dashboard API       │  FastAPI: /api/v7 + /api/monitoring
+│  Alerts              │  Telegram + Email + Dashboard
+└─────────────────────┘
+```
+
+**Orchestrator** (`v7_orchestrator.py`) runs as a Celery task every 2 minutes. On each cycle it fetches candles for each asset, detects the regime, routes to active strategies, evaluates signals, submits to the execution engine, updates portfolio state, persists to the database, and checks alert rules.
+
+---
+
+## Monitoring & Alerts
+
+### Dashboard
+
+The monitoring dashboard at `/v7-operations` shows:
+
+- **Top bar:** Equity, total PnL, return %, drawdown %, open risk %, position count
+- **Regime cards:** Per-asset regime status (TREND / RANGE / CRASH)
+- **Strategies tab:** PnL, win rate, rolling-20 WR, profit factor, expectancy per strategy
+- **Positions tab:** Open positions with entry, current price, SL, TP, unrealized PnL, risk %
+- **Trades tab:** Recent closed trades with PnL, exit reason, duration
+- **Alerts tab:** Recent alerts color-coded by severity
+
+Auto-refreshes every 15 seconds.
+
+### Alert System
+
+Alerts fire automatically based on portfolio and execution state:
+
+| Level | Triggers | Delivery |
+|-------|----------|----------|
+| **CRITICAL** | Drawdown >8%, open risk >5%, kill switch, execution errors | Telegram + Email |
+| **WARNING** | Drawdown >5%, win rate <30%, approaching risk limit | Telegram |
+| **INFO** | Trade opened/closed, regime change | Dashboard only |
+
+All alerts are throttled to max once per 30 minutes per alert type to avoid spam.
+
+**Example alerts:**
+
+```
+🚨 [CRITICAL] Bahamut Alert
+Drawdown exceeded 8%
+Current drawdown: 9.2%
+Action: Review positions immediately.
+
+ℹ️ [INFO] Trade closed: BTCUSD ✅
+v5_base LONG BTCUSD
+PnL: +$1,542.00 | Reason: TP
+
+ℹ️ [INFO] Regime change: BTCUSD
+BTCUSD: RANGE → TREND 📈
 ```
 
 ---
 
-## Asset Universe
+## Installation
 
-### Scanner (219 assets — every 15 min)
+### Prerequisites
 
-| Class | Count | Examples |
-|-------|-------|---------|
-| FX | 27 | EUR/USD, GBP/JPY, AUD/NZD, CHF/JPY, EUR/CAD... |
-| Commodities | 7 | Gold, Silver, WTI Crude, Natural Gas, Platinum, Copper, Palladium |
-| Crypto | 40 | BTC, ETH, SOL, BNB, XRP, ADA, DOGE, LINK, TON, SUI, PEPE, RENDER, INJ... |
-| Stocks | 145 | Mega Cap, Finance, Healthcare, Consumer, Semis, Cloud, Cybersecurity, EV, Oil, Defense, Airlines, REITs... |
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL
+- Redis
 
-### Agent Signals (76 assets — deep 6-agent analysis)
+### Backend
 
-| Class | Count |
-|-------|-------|
-| FX | 10 |
-| Commodities | 4 |
-| Crypto | 15 |
-| Stocks | 47 |
+```bash
+cd backend
+pip install -r requirements.txt
 
----
+# Environment variables
+export DATABASE_URL="postgresql://user:pass@localhost:5432/bahamut"
+export REDIS_URL="redis://localhost:6379/0"
 
-## AI Intelligence Layer
+# Optional: Telegram alerts
+export TELEGRAM_BOT_TOKEN="your-bot-token"
+export TELEGRAM_CHAT_ID="your-chat-id"
 
-### Multi-Model Architecture
+# Optional: Email alerts
+export SMTP_HOST="smtp.gmail.com"
+export SMTP_PORT="587"
+export SMTP_USER="your@email.com"
+export SMTP_PASS="app-password"
+export ALERT_EMAIL_TO="alerts@email.com"
 
-| Component | Provider | Role |
-|-----------|----------|------|
-| Macro Agent | Gemini → Claude fallback → math | Reads news, VIX, DXY, yield curve, regime |
-| Sentiment Agent | Gemini + Claude **in parallel** | Dual opinion merge: agree/partial/disagree |
-| Consensus Reviewer | Gemini + Claude **in parallel** | Reviews borderline decisions ±0.15 |
+# Optional: Market data
+export TWELVE_DATA_KEY="your-api-key"
 
-### AI Consensus Reviewer (`consensus/ai_reviewer.py`)
-
-Async-first architecture with dual interface:
-
-```python
-# Async (for async callers)
-result = await ai_consensus_review(asset, direction, score, agent_summaries)
-
-# Sync wrapper (for Celery workers)
-result = ai_consensus_review_sync(asset, direction, score, agent_summaries)
+# Run database migrations
+python -m bahamut.execution.v7_migration
+python -m bahamut.regime.v8_migration
 ```
 
-Features:
-- Parallel Gemini + Claude via `asyncio.gather()`
-- Per-provider circuit breaker (3 failures/5min → 2min cooldown → auto-recovery)
-- 5s timeout per provider, 6s hard ceiling
-- Latency logging per provider
-- Only reviews borderline scores (0.40-0.80)
-- Score adjustment clamped to ±0.15
-- `GET /trust/ai-reviewer-status` monitoring endpoint
+### Frontend
 
----
+```bash
+cd admin-panel
+npm install
+```
 
-## 6 AI Agents
-
-| Agent | Type | Analysis |
-|-------|------|----------|
-| **Technical** | 📊 Math | RSI, EMA (20/50/200), MACD, ADX, Bollinger Bands |
-| **Macro** | 🤖 AI | VIX, DXY, yield curve, regime + news via Gemini/Claude |
-| **Volatility** | 📊 Math | ATR, Bollinger width, VIX regime |
-| **Sentiment** | 🤖 AI | News + positioning via dual Gemini+Claude |
-| **Liquidity** | 📊 Math | Volume, whale detection, unusual activity |
-| **Risk** | 🛡️ Math | Portfolio-level veto, absolute authority |
-
----
-
-## Portfolio Intelligence (10-Step Pipeline)
-
-1. **Kill switch** — blocks all trades if tail risk > 25% or fragility > 80%
-2. **Exposure engine** — gross/net/per-class/per-theme limits
-3. **Correlation engine** — directional overlap, HHI concentration
-4. **Fragility scoring** — concentration, directional risk, drawdown proximity
-5. **Impact scoring** — does this trade improve or worsen diversification
-6. **Adaptive rules** — learned patterns from historical portfolio states
-7. **Scenario risk** — 5 macro scenarios with per-asset shock maps
-8. **Marginal risk** — how much risk does this trade ADD
-9. **Quality ratio** — expected return vs marginal risk
-10. **Final verdict** — size/approve/block with structured explanation
-
----
-
-## Execution & Safety
-
-### Kill Switch
-- Tail risk threshold: 25% (configurable)
-- Manual override: 1 hour TTL, logged
-- Recovery: 15min cooldown → 30min gradual re-entry
-
-### Execution Modes
-- **AUTO** — executes immediately
-- **APPROVAL** — requires manual approval
-- **WATCH** — logged, not traded
-
-### Position Limits
-
-| Profile | Max Positions | Min Score | Max Daily DD |
-|---------|---------------|-----------|--------------|
-| Conservative | 5 | 0.65 | 2% |
-| Balanced | 10 | 0.55 | 3% |
-| Aggressive | 15 | 0.45 | 5% |
-
----
-
-## Role-Based Access
-
-| Role | Access |
-|------|--------|
-| **super_admin** | Full access, config editing, role management |
-| **admin** | Dashboard, risk, alerts, users, paper trading, agents |
-| **trader** | Execution, risk control, journal, paper trading |
-| **user** | Command, top picks, macro arena, event radar |
-
----
-
-## Infrastructure
-
-### Railway Services (8)
-
-| Service | Technology | Purpose |
-|---------|-----------|---------|
-| API | FastAPI Python 3.12 | 128 endpoints |
-| Frontend | Next.js 14 | bahamut.ai (13 pages) |
-| Admin Panel | Next.js 14 | admin.bahamut.ai (18 pages) |
-| Worker | Celery | Signal cycles, scans, trades |
-| Beat | Celery Beat | Scheduled tasks |
-| Postgres | PostgreSQL 15 | 27 tables |
-| Redis | Redis 7 | Broker + cache |
-
-### Scheduled Tasks
-
-| Task | Frequency |
-|------|-----------|
-| Signal cycles (FX/Crypto) | 15 min |
-| Stock cycles | 30 min (market hours) |
-| Market scanner | 15 min |
-| Position checker | 2 min |
-| OHLCV ingestion | 2 min |
-| News monitoring | 2 min |
-| Regime detection | 5 min |
-| Daily calibration | 00:15 UTC |
-| Weekly calibration | Sunday 20:00 UTC |
-
----
-
-## Frontend Pages (bahamut.ai — 13 pages)
-
-Command · Top Picks · Macro Arena · Event Radar · Execution · Risk Control · Trade Journal · Paper Trading · Intel Reports · Agent Council · Learning Lab · Settings · Login
-
-## Admin Pages (admin.bahamut.ai — 18 pages)
-
-Dashboard · Top Picks · Risk & Kill Switch · Alerts (Active/Archived) · Audit Log · Learning · AI Optimizer · Users · Paper Trading · Agent Council · Learning Lab · Execution Monitor · Trade Journal · Configuration · Overrides · Trust & Intelligence · Adaptive Risk · Agent Ranking
-
----
-
-## Market Data
-
-### Twelve Data (Grow plan — $29/mo)
-- 219 symbols, unlimited credits, 55 req/min
-- Global rate limiter at 50/min with auto-throttle
-- In-memory cache: 15min candles, 5min prices
-- 429 retry with progressive backoff
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection |
-| `REDIS_URL` | Yes | Redis connection |
-| `JWT_SECRET` | Yes | JWT signing secret |
-| `TWELVE_DATA_KEY` | Yes | Twelve Data API key |
-| `FINNHUB_KEY` | Yes | Finnhub API key |
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
-| `ANTHROPIC_API_KEY` | Recommended | Anthropic API key |
-
----
-
-## Getting Started
+### Running
 
 ```bash
 # Backend
-cd backend && pip install -r requirements.txt
-uvicorn bahamut.main:app --host 0.0.0.0 --port 8000
-celery -A bahamut.celery_app worker --loglevel=info
-celery -A bahamut.celery_app beat --loglevel=info
+cd backend
+uvicorn bahamut.main:app --reload
+
+# Celery worker (execution queue)
+celery -A bahamut.celery_app worker -Q critical
+
+# Celery beat (schedules the 2-minute trading cycle)
+celery -A bahamut.celery_app beat
 
 # Frontend
-cd frontend && npm install && npm run dev
+cd admin-panel
+npm run dev
+```
 
-# Admin
-cd admin-panel && npm install && npm run dev
+The monitoring dashboard will be available at `/v7-operations` in the admin panel.
 
-# Tests
-cd backend && PYTHONPATH=. python -m pytest tests/ -v
-# 282 passed, 8 skipped
+---
+
+## API
+
+### Monitoring Endpoints (`/api/monitoring`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/portfolio` | Equity, PnL, drawdown, risk, regimes |
+| GET | `/strategies` | Per-strategy metrics, rolling WR, PF, expectancy |
+| GET | `/positions` | Open positions with risk breakdown |
+| GET | `/trades` | Recent closed trades |
+| GET | `/execution` | Execution quality: signals, slippage, cancellations |
+| GET | `/alerts` | Recent alerts for dashboard |
+| GET | `/health` | Full system health check |
+
+### Operations Endpoints (`/api/v7`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/portfolio/summary` | Full portfolio with sleeve breakdown |
+| GET | `/portfolio/equity-curve` | Equity snapshots for charting |
+| POST | `/portfolio/kill-switch` | Emergency close all positions |
+| POST | `/portfolio/resume` | Resume trading after kill switch |
+| POST | `/portfolio/rebalance` | Rebalance sleeve allocations |
+| GET | `/execution/open-positions` | Live open positions |
+| GET | `/execution/closed-trades` | Trade history |
+| GET | `/execution/stats` | Win/loss/PnL summary |
+| POST | `/strategies/{name}/enable` | Enable a strategy |
+| POST | `/strategies/{name}/disable` | Disable a strategy |
+| POST | `/orchestrator/run-cycle` | Manually trigger a trading cycle |
+| GET | `/assets/summary` | Per-asset breakdown and combined risk |
+
+---
+
+## Validated Performance
+
+Tested on realistic synthetic BTC + ETH data (correlated, r=0.85) over approximately 14 months:
+
+| Strategy | BTC Trades | ETH Trades | Total | Win Rate | PnL |
+|----------|-----------|-----------|-------|----------|-----|
+| v5_base | 8 | 12 | 20 | 50% | +$1,372 |
+| v5_tuned | 7 | 11 | 18 | 56% | +$1,617 |
+| v9_breakout | 18 | 20 | 38 | 63% | +$4,876 |
+| **Total** | **33** | **43** | **76** | **58%** | **+$7,865** |
+
+Portfolio return: +7.86% on $100K starting capital. Projected annual trade count: ~76.
+
+These results are from synthetic data designed to follow real BTC price paths (2023–2025). They have not been validated on live market data.
+
+---
+
+## Risk Controls
+
+| Control | Value |
+|---------|-------|
+| Max total open risk | 6% of portfolio |
+| Max combined crypto risk | 5% (BTC + ETH correlation-aware) |
+| Max positions per strategy per asset | 1 |
+| Max total open positions | 4 |
+| Kill switch | Auto-triggers at 10% portfolio drawdown |
+| ETH risk multiplier | 0.75× |
+| Slippage model | 8 bps (BTC), 10 bps (ETH) |
+| Spread model | 12 bps (BTC), 15 bps (ETH) |
+| Worst-case fill | If SL and TP hit same bar, fills at SL |
+| Signal idempotency | Asset-scoped signal IDs prevent duplicates |
+
+---
+
+## Database
+
+| Table | Purpose |
+|-------|---------|
+| `strategy_sleeves` | Per-strategy capital and performance tracking |
+| `v7_orders` | Order lifecycle: PENDING → OPEN → CLOSED |
+| `v7_trades` | Closed trade history with PnL and regime |
+| `v7_portfolio_snapshots` | Equity curve with regime metadata |
+| `v8_regime_history` | Regime classification log per asset |
+
+---
+
+## Project Structure
+
+```
+backend/
+├── bahamut/
+│   ├── strategies/          # v5_base, v5_tuned, v8_range, v8_defensive
+│   ├── alpha/               # v9_candidate (confirmed breakout)
+│   ├── regime/              # v8_detector, v8_migration
+│   ├── execution/           # engine, paper_broker, sizer, orchestrator, v7_router
+│   ├── portfolio/           # manager, router_v8
+│   ├── monitoring/          # alerts, dashboard_api, telegram, email
+│   ├── backtesting/         # data_real, run_v5, run_v8, run_v9, run_multi_asset
+│   ├── config_assets.py     # Multi-asset configuration
+│   └── main.py              # FastAPI application
+admin-panel/
+├── app/(admin)/
+│   └── v7-operations/       # Monitoring dashboard
+└── components/
 ```
 
 ---
 
-## Repository Structure
+## Roadmap
 
-```
-bahamut/
-├── backend/bahamut/
-│   ├── admin/           # Config (54 keys), audit, alerts
-│   ├── agents/          # 6 AI agents, orchestrator, challenges
-│   │   ├── macro_agent.py      # 🤖 Gemini AI
-│   │   ├── sentiment_agent.py  # 🤖 Gemini + Claude dual
-│   │   ├── technical_agent.py  # 📊 Math
-│   │   ├── volatility_agent.py # 📊 Math
-│   │   ├── liquidity_agent.py  # 📊 Math
-│   │   └── risk_agent.py       # 🛡️ Veto authority
-│   ├── consensus/       # Engine + AI reviewer
-│   │   ├── engine.py
-│   │   └── ai_reviewer.py      # Async-first, circuit breaker
-│   ├── execution/       # Policy, kill switch
-│   ├── ingestion/       # Twelve Data (rate limiter), Finnhub
-│   ├── intelligence/    # Trust API, adaptive risk
-│   ├── learning/        # Calibration, meta-learning
-│   ├── paper_trading/   # Engine, SL/TP, positions
-│   ├── portfolio/       # 10-step intelligence pipeline
-│   └── scanner/         # 219-asset scanner
-├── frontend/            # bahamut.ai (13 pages)
-├── admin-panel/         # admin.bahamut.ai (18 pages)
-└── tests/               # 290 test cases
-```
+- [ ] Connect real market data (Twelve Data API for live BTC + ETH candles)
+- [ ] Live broker integration (Binance or Coinbase API)
+- [ ] Validate strategies on real ETH historical data
+- [ ] WebSocket push for real-time dashboard updates
+- [ ] Position reconciliation on system restart
+- [ ] Additional assets (SOL, major forex pairs)
+- [ ] Further edge discovery (v10)
 
 ---
 
-## Development Phases
+## Current Status
 
-- **Phase 1** ✅ Infrastructure hardening, exception handling, fail-closed
-- **Phase 2** ✅ Production safety, single-writer, CORS, health
-- **Phase 3** ✅ Productization, warmup, roles, config guardrails
-- **Phase 4** ✅ Intelligence layer, explainability, adaptive risk
-- **Phase 5** ✅ AI upgrade: dual-model sentiment, AI macro, AI reviewer
-- **Phase 6** ✅ Asset expansion: 219 scanner, 76 agents, rate limiting
+Bahamut is in **paper trading validation phase**. The system is operationally complete — strategies, execution, portfolio management, monitoring, and alerting all work end-to-end. The strategies have been validated on realistic synthetic data but have not yet been tested with real capital.
+
+The next step is connecting live market data and running paper trades on real-time candles to accumulate 30+ trades for statistical validation before any capital deployment.
+
+---
+
+## Disclaimer
+
+This software is experimental and provided as-is. It is not financial advice. Trading cryptocurrencies involves substantial risk of loss. Past performance on synthetic data does not guarantee future results. Do not trade with money you cannot afford to lose. The authors are not responsible for any financial losses incurred through the use of this software.
 
 ---
 
