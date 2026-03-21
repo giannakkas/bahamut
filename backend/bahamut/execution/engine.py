@@ -158,6 +158,14 @@ class ExecutionEngine:
                             tp=position.tp_price,
                             size=position.size)
 
+                # Fire trade opened alert
+                try:
+                    from bahamut.monitoring.alerts import fire_trade_alert
+                    fire_trade_alert({"asset": order.asset, "strategy": order.strategy,
+                                      "direction": order.direction, "entry_price": position.entry_price}, "opened")
+                except Exception:
+                    pass
+
             # 2. Check open positions FOR THIS ASSET ONLY
             for pos in list(self.open_positions):
                 if asset and pos.asset != asset:
@@ -187,6 +195,15 @@ class ExecutionEngine:
                                 reason=closed.exit_reason,
                                 pnl=closed.pnl,
                                 bars=closed.bars_held)
+
+                    # Fire trade closed alert
+                    try:
+                        from bahamut.monitoring.alerts import fire_trade_alert
+                        fire_trade_alert({"asset": closed.asset, "strategy": closed.strategy,
+                                          "direction": closed.direction, "pnl": closed.pnl,
+                                          "exit_reason": closed.exit_reason}, "closed")
+                    except Exception:
+                        pass
                 else:
                     pos.update_price(bar["close"])
 

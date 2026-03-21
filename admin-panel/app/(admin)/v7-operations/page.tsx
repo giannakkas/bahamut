@@ -2,507 +2,263 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiBase } from "@/lib/utils";
 
-// ─── Types ───
-interface Sleeve {
-  allocation_pct: number;
-  equity: number;
-  realized_pnl: number;
-  unrealized_pnl: number;
-  drawdown_pct: number;
-  trades: number;
-  wins: number;
-  win_rate: number;
-  enabled: boolean;
-  open_positions: number;
-}
-
-interface Summary {
-  total_equity: number;
-  initial_capital: number;
-  total_return_pct: number;
-  total_realized_pnl: number;
-  total_unrealized_pnl: number;
-  total_open_risk: number;
-  drawdown_pct: number;
-  peak_equity: number;
-  open_positions: number;
-  total_trades: number;
-  kill_switch: boolean;
-  sleeves: Record<string, Sleeve>;
-}
-
-interface Position {
-  order_id: string;
-  strategy: string;
-  asset: string;
-  direction: string;
-  entry_price: number;
-  current_price: number;
-  stop_price: number;
-  tp_price: number;
-  size: number;
-  unrealized_pnl: number;
-  unrealized_pnl_pct: number;
-  bars_held: number;
-  max_hold_bars: number;
-  entry_time: string;
-}
-
-interface Trade {
-  trade_id: string;
-  strategy: string;
-  asset: string;
-  direction: string;
-  entry_price: number;
-  exit_price: number;
-  pnl: number;
-  pnl_pct: number;
-  exit_reason: string;
-  bars_held: number;
-  entry_time: string;
-  exit_time: string;
-}
-
-// ─── Component ───
-export default function V7OperationsPage() {
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [assetData, setAssetData] = useState<any>(null);
+export default function MonitoringDashboard() {
+  const [portfolio, setPortfolio] = useState<any>(null);
+  const [strategies, setStrategies] = useState<any>(null);
+  const [positions, setPositions] = useState<any>(null);
+  const [trades, setTrades] = useState<any>(null);
+  const [execution, setExecution] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [tab, setTab] = useState<"overview" | "positions" | "trades">("overview");
+  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "alerts">("overview");
 
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const monApi = useCallback(async (path: string) => {
+    try {
+      const r = await fetch(`${apiBase}/api/monitoring${path}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (r.ok) return r.json();
+    } catch {}
+    return null;
+  }, [token]);
 
-  const api = useCallback(
-    async (path: string, opts?: RequestInit) => {
-      try {
-        const res = await fetch(`${apiBase().replace("/api/v1", "/api/v7")}${path}`, {
-          ...opts,
-          headers: { "Content-Type": "application/json", ...headers, ...(opts?.headers || {}) },
-        });
-        if (!res.ok) throw new Error(`${res.status}`);
-        return res.json();
-      } catch (e: any) {
-        console.error(`v7 API ${path}:`, e);
-        return null;
-      }
-    },
-    [token]
-  );
+  const v7Api = useCallback(async (path: string, opts?: any) => {
+    try {
+      const r = await fetch(`${apiBase}/api/v7${path}`, {
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        ...opts,
+      });
+      if (r.ok) return r.json();
+    } catch {}
+    return null;
+  }, [token]);
 
   const load = useCallback(async () => {
-    const [s, p, t, a] = await Promise.all([
-      api("/portfolio/summary"),
-      api("/execution/open-positions"),
-      api("/execution/closed-trades"),
-      api("/assets/summary"),
+    const [p, s, pos, t, e, a] = await Promise.all([
+      monApi("/portfolio"), monApi("/strategies"), monApi("/positions"),
+      monApi("/trades"), monApi("/execution"), monApi("/alerts"),
     ]);
-    if (s) setSummary(s);
-    if (p) setPositions(Array.isArray(p) ? p : []);
-    if (t) setTrades(Array.isArray(t) ? t : []);
-    if (a) setAssetData(a);
+    if (p) setPortfolio(p);
+    if (s) setStrategies(s);
+    if (pos) setPositions(pos);
+    if (t) setTrades(t);
+    if (e) setExecution(e);
+    if (a?.alerts) setAlerts(a.alerts);
     setLoading(false);
-  }, [api]);
+  }, [monApi]);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000); // Refresh every 30s
-    return () => clearInterval(interval);
-  }, [load]);
+  useEffect(() => { load(); const i = setInterval(load, 15_000); return () => clearInterval(i); }, [load]);
 
   const handleKillSwitch = async () => {
-    if (!confirm("Activate kill switch? This will close ALL open positions.")) return;
-    await api("/portfolio/kill-switch", { method: "POST" });
-    load();
+    if (!confirm("Activate kill switch? This closes ALL positions.")) return;
+    await v7Api("/portfolio/kill-switch", { method: "POST" }); load();
   };
+  const handleResume = async () => { await v7Api("/portfolio/resume", { method: "POST" }); load(); };
+  const handleRunCycle = async () => { await v7Api("/orchestrator/run-cycle", { method: "POST" }); setTimeout(load, 1500); };
 
-  const handleResume = async () => {
-    await api("/portfolio/resume", { method: "POST" });
-    load();
-  };
+  if (loading) return <div className="p-8 text-bah-muted">Loading...</div>;
 
-  const handleToggleStrategy = async (name: string, enable: boolean) => {
-    await api(`/strategies/${name}/${enable ? "enable" : "disable"}`, { method: "POST" });
-    load();
-  };
-
-  const handleRebalance = async () => {
-    await api("/portfolio/rebalance", { method: "POST", body: "{}" });
-    load();
-  };
-
-  const handleRunCycle = async () => {
-    await api("/orchestrator/run-cycle", { method: "POST" });
-    setTimeout(load, 1000); // Refresh after cycle completes
-  };
-
-  if (loading) return <div className="p-6 text-bah-muted">Loading v7 operations...</div>;
-
-  const s = summary;
-  const totalPnl = (s?.total_realized_pnl || 0) + (s?.total_unrealized_pnl || 0);
+  const p = portfolio;
+  const dd = p?.drawdown_pct || 0;
+  const risk = p?.open_risk_pct || 0;
+  const pnl = p?.pnl_total || 0;
+  const ddColor = dd > 8 ? "text-red-400" : dd > 5 ? "text-amber-400" : "text-green-400";
+  const riskColor = risk > 5 ? "text-red-400" : risk > 4 ? "text-amber-400" : "text-bah-heading";
+  const critAlerts = alerts.filter(a => a.level === "CRITICAL").length;
+  const warnAlerts = alerts.filter(a => a.level === "WARNING").length;
 
   return (
-    <div className="p-6 max-w-7xl space-y-6">
-      {/* Header */}
+    <div className="p-4 max-w-[1400px] space-y-4">
+      {/* TOP BAR */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-bah-heading flex items-center gap-3">
-            v8 Trading Operations
-            <span
-              className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
-                s?.kill_switch
-                  ? "bg-red-500/20 text-red-400 border-red-500/30"
-                  : "bg-green-500/20 text-green-400 border-green-500/30"
-              }`}
-            >
-              {s?.kill_switch ? "KILL SWITCH ACTIVE" : "LIVE"}
-            </span>
-          </h1>
-          <p className="text-xs text-bah-muted mt-1">
-            Multi-regime portfolio • {s?.portfolio_mode || "initializing"}
-          </p>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold text-bah-heading">Bahamut Monitor</h1>
+          <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
+            p?.kill_switch ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-green-500/20 text-green-400 border-green-500/30"
+          }`}>{p?.kill_switch ? "HALTED" : "LIVE"}</span>
+          {critAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{critAlerts} CRITICAL</span>}
+          {warnAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">{warnAlerts} WARN</span>}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={handleRunCycle}
-            className="px-3 py-1.5 bg-bah-cyan/20 border border-bah-cyan/40 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/30"
-          >
-            ▶ Run Cycle
-          </button>
-          <button
-            onClick={() => { setLoading(true); load(); }}
-            className="px-3 py-1.5 border border-bah-border rounded-lg text-xs text-bah-muted hover:text-bah-heading transition-colors"
-          >
-            ↻ Refresh
-          </button>
-          {s?.kill_switch ? (
-            <button
-              onClick={handleResume}
-              className="px-3 py-1.5 bg-green-500/20 border border-green-500/40 rounded-lg text-xs text-green-400 hover:bg-green-500/30"
-            >
-              Resume Trading
-            </button>
-          ) : (
-            <button
-              onClick={handleKillSwitch}
-              className="px-3 py-1.5 bg-red-500/20 border border-red-500/40 rounded-lg text-xs text-red-400 hover:bg-red-500/30"
-            >
-              Kill Switch
-            </button>
+          <button onClick={handleRunCycle} className="px-3 py-1.5 bg-bah-cyan/20 border border-bah-cyan/40 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/30">▶ Cycle</button>
+          <button onClick={() => { setLoading(true); load(); }} className="px-3 py-1.5 border border-bah-border rounded-lg text-xs text-bah-muted hover:text-bah-heading">↻</button>
+          {p?.kill_switch
+            ? <button onClick={handleResume} className="px-3 py-1.5 bg-green-500/20 border border-green-500/40 rounded-lg text-xs text-green-400">Resume</button>
+            : <button onClick={handleKillSwitch} className="px-3 py-1.5 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">Kill Switch</button>
+          }
+        </div>
+      </div>
+
+      {/* KEY METRICS */}
+      <div className="grid grid-cols-6 gap-2">
+        {[
+          { l: "Equity", v: `$${(p?.equity || 100000).toLocaleString(undefined, {maximumFractionDigits:0})}`, c: "text-bah-heading" },
+          { l: "Total P&L", v: `${pnl >= 0 ? "+" : ""}$${Math.abs(pnl).toFixed(0)}`, c: pnl >= 0 ? "text-green-400" : "text-red-400" },
+          { l: "Return", v: `${(p?.return_pct||0) >= 0 ? "+" : ""}${(p?.return_pct||0).toFixed(2)}%`, c: (p?.return_pct||0) >= 0 ? "text-green-400" : "text-red-400" },
+          { l: "Drawdown", v: `${dd.toFixed(1)}%`, c: ddColor },
+          { l: "Open Risk", v: `${risk.toFixed(1)}%`, c: riskColor },
+          { l: "Positions", v: `${p?.open_positions||0} / ${p?.total_trades||0}`, c: "text-bah-cyan" },
+        ].map((m) => (
+          <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-3 text-center">
+            <div className={`text-lg font-bold ${m.c}`}>{m.v}</div>
+            <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* REGIME CARDS */}
+      {p?.regime && Object.keys(p.regime).length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(p.regime).map(([asset, regime]: [string, any]) => (
+            <div key={asset} className={`rounded-xl border p-3 flex items-center justify-between ${
+              regime === "TREND" ? "bg-green-500/5 border-green-500/20" :
+              regime === "CRASH" ? "bg-red-500/5 border-red-500/20" : "bg-amber-500/5 border-amber-500/20"
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-bah-heading">{asset}</span>
+                <span className={`text-xs font-semibold ${
+                  regime === "TREND" ? "text-green-400" : regime === "CRASH" ? "text-red-400" : "text-amber-400"
+                }`}>{regime === "TREND" ? "📈" : regime === "CRASH" ? "🔻" : "↔️"} {regime as string}</span>
+              </div>
+              <span className="text-[10px] text-bah-muted">{regime === "TREND" ? "v5+v9 active" : regime === "CRASH" ? "No trading" : "Range mode"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* TABS */}
+      <div className="flex gap-1 border-b border-bah-border">
+        {(["overview","positions","trades","alerts"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-heading"
+          }`}>{t === "overview" ? "📊 Strategies" : t === "positions" ? "📦 Positions" : t === "trades" ? "🔁 Trades" : `⚠️ Alerts (${alerts.length})`}</button>
+        ))}
+      </div>
+
+      {/* STRATEGIES TAB */}
+      {tab === "overview" && strategies && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-bah-muted border-b border-bah-border">
+              <th className="px-4 py-2.5">Strategy</th>
+              <th className="px-3 py-2.5 text-right">PnL</th>
+              <th className="px-3 py-2.5 text-right">Trades</th>
+              <th className="px-3 py-2.5 text-right">WR</th>
+              <th className="px-3 py-2.5 text-right">WR(20)</th>
+              <th className="px-3 py-2.5 text-right">PF</th>
+              <th className="px-3 py-2.5 text-right">Expect.</th>
+              <th className="px-3 py-2.5 text-right">Equity</th>
+              <th className="px-3 py-2.5 text-right">Open</th>
+            </tr></thead>
+            <tbody>
+              {Object.entries(strategies).filter(([,v]: any) => v.trades > 0 || v.open_positions > 0).map(([n, s]: [string, any]) => (
+                <tr key={n} className="border-b border-bah-border/50 hover:bg-bah-border/10">
+                  <td className="px-4 py-2.5 font-medium text-bah-heading">{n}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${s.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${s.pnl.toFixed(0)}</td>
+                  <td className="px-3 py-2.5 text-right text-bah-heading">{s.trades}</td>
+                  <td className="px-3 py-2.5 text-right">{s.win_rate.toFixed(0)}%</td>
+                  <td className={`px-3 py-2.5 text-right font-medium ${s.rolling_wr >= 50 ? "text-green-400" : s.rolling_wr < 35 ? "text-red-400" : "text-amber-400"}`}>{s.rolling_wr.toFixed(0)}%</td>
+                  <td className={`px-3 py-2.5 text-right ${s.profit_factor >= 1.5 ? "text-green-400" : s.profit_factor < 1 ? "text-red-400" : "text-bah-heading"}`}>{s.profit_factor.toFixed(2)}</td>
+                  <td className={`px-3 py-2.5 text-right ${s.expectancy >= 0 ? "text-green-400" : "text-red-400"}`}>${s.expectancy.toFixed(0)}</td>
+                  <td className="px-3 py-2.5 text-right text-bah-muted">${s.equity.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                  <td className="px-3 py-2.5 text-right">{s.open_positions > 0 ? <span className="text-bah-cyan font-semibold">{s.open_positions}</span> : <span className="text-bah-muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {execution && (
+            <div className="px-4 py-2 border-t border-bah-border/50 flex gap-6 text-[10px] text-bah-muted">
+              <span>Signals: {execution.total_signals_processed}</span>
+              <span>Orders: {execution.total_orders}</span>
+              <span>Cancelled: {execution.cancelled_orders}</span>
+              <span>Avg Slippage: {execution.avg_slippage_bps}bps</span>
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Portfolio Stats */}
-      <div className="grid grid-cols-6 gap-3">
-        {[
-          { label: "Total Equity", value: `$${(s?.total_equity || 100000).toLocaleString()}`, color: "text-bah-heading" },
-          { label: "Total P&L", value: `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(0)}`, color: totalPnl >= 0 ? "text-green-400" : "text-red-400" },
-          { label: "Return", value: `${(s?.total_return_pct || 0) >= 0 ? "+" : ""}${(s?.total_return_pct || 0).toFixed(2)}%`, color: (s?.total_return_pct || 0) >= 0 ? "text-green-400" : "text-red-400" },
-          { label: "Drawdown", value: `${(s?.drawdown_pct || 0).toFixed(2)}%`, color: (s?.drawdown_pct || 0) > 5 ? "text-red-400" : "text-amber-400" },
-          { label: "Open Risk", value: `$${(s?.total_open_risk || 0).toLocaleString()}`, color: "text-amber-400" },
-          { label: "Open / Total", value: `${s?.open_positions || 0} / ${s?.total_trades || 0}`, color: "text-bah-cyan" },
-        ].map((m) => (
-          <div key={m.label} className="bg-bah-surface border border-bah-border rounded-xl p-3 text-center">
-            <div className={`text-lg font-bold ${m.color}`}>{m.value}</div>
-            <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* v8 Regime Banner */}
-      {s?.regime && (
-        <div className={`rounded-xl border p-4 flex items-center justify-between ${
-          s.regime === "TREND" ? "bg-green-500/10 border-green-500/30" :
-          s.regime === "CRASH" ? "bg-red-500/10 border-red-500/30" :
-          "bg-amber-500/10 border-amber-500/30"
-        }`}>
-          <div className="flex items-center gap-3">
-            <span className={`text-2xl font-bold ${
-              s.regime === "TREND" ? "text-green-400" :
-              s.regime === "CRASH" ? "text-red-400" : "text-amber-400"
-            }`}>
-              {s.regime === "TREND" ? "📈" : s.regime === "CRASH" ? "🔻" : "↔️"} {s.regime}
-            </span>
-            <div className="text-xs text-bah-muted">
-              <div>Mode: <span className="text-bah-heading font-semibold">{s.portfolio_mode || "—"}</span></div>
-              {s.asset_regimes && Object.keys(s.asset_regimes).length > 0 ? (
-                <div className="flex gap-3 mt-0.5">
-                  {Object.entries(s.asset_regimes).map(([a, r]: [string, any]) => (
-                    <span key={a} className={r === "TREND" ? "text-green-400" : r === "CRASH" ? "text-red-400" : "text-amber-400"}>
-                      {a}: {r as string}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div>Active: {s.sleeves ? Object.entries(s.sleeves).filter(([,v]: any) => v.enabled).map(([k]) => k).join(", ") || "none" : "—"}</div>
-              )}
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* Asset Breakdown */}
-      {assetData?.assets && (
-        <div className="grid grid-cols-2 gap-3">
-          {Object.entries(assetData.assets).map(([asset, data]: [string, any]) => (
-            <div key={asset} className="bg-bah-surface border border-bah-border rounded-xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-bah-heading">{asset}</h3>
-                <div className="flex gap-2">
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                    data.regime === "TREND" ? "bg-green-500/20 text-green-400 border-green-500/30" :
-                    data.regime === "CRASH" ? "bg-red-500/20 text-red-400 border-red-500/30" :
-                    "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                  }`}>
-                    {data.regime || "—"}
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30">
-                    {data.open_positions} open
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div>
-                  <div className="text-bah-muted">Realized</div>
-                  <div className={data.realized_pnl >= 0 ? "text-green-400 font-semibold" : "text-red-400 font-semibold"}>
-                    ${data.realized_pnl.toFixed(0)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Unrealized</div>
-                  <div className={data.unrealized_pnl >= 0 ? "text-green-400 font-semibold" : "text-red-400 font-semibold"}>
-                    ${data.unrealized_pnl.toFixed(0)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Trades</div>
-                  <div className="text-bah-heading font-semibold">{data.closed_trades}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Crypto Risk Bar */}
-      {assetData && (
-        <div className="bg-bah-surface border border-bah-border rounded-xl p-3 flex items-center justify-between text-xs">
-          <span className="text-bah-muted">Combined Crypto Risk:</span>
-          <div className="flex items-center gap-4">
-            <span className={`font-semibold ${assetData.crypto_risk_pct > 4 ? "text-red-400" : "text-bah-heading"}`}>
-              {assetData.crypto_risk_pct}% of portfolio
-            </span>
-            <span className="text-bah-muted">
-              (${assetData.total_crypto_risk.toLocaleString()} / ${assetData.max_crypto_risk.toLocaleString()} max)
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Strategy Sleeves */}
-      <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-bah-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-bah-heading">Strategy Sleeves</h2>
-          <button
-            onClick={handleRebalance}
-            className="px-2 py-1 text-[10px] border border-bah-border rounded text-bah-muted hover:text-bah-heading"
-          >
-            Rebalance
-          </button>
-        </div>
-        <div className="divide-y divide-bah-border">
-          {s?.sleeves && Object.entries(s.sleeves).map(([name, sleeve]) => (
-            <div key={name} className="px-4 py-3 flex items-center gap-6">
-              <div className="flex items-center gap-2 w-32">
-                <span className={`w-2 h-2 rounded-full ${sleeve.enabled ? "bg-green-400" : "bg-gray-600"}`} />
-                <span className="text-sm font-mono text-bah-heading">{name}</span>
-              </div>
-              <div className="flex-1 grid grid-cols-7 gap-4 text-xs">
-                <div>
-                  <div className="text-bah-muted">Allocation</div>
-                  <div className="text-bah-heading font-semibold">{sleeve.allocation_pct}%</div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Equity</div>
-                  <div className="text-bah-heading font-semibold">${sleeve.equity.toLocaleString()}</div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">P&L</div>
-                  <div className={(sleeve.realized_pnl + sleeve.unrealized_pnl) >= 0 ? "text-green-400 font-semibold" : "text-red-400 font-semibold"}>
-                    ${(sleeve.realized_pnl + sleeve.unrealized_pnl).toFixed(0)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Drawdown</div>
-                  <div className={sleeve.drawdown_pct > 5 ? "text-red-400" : "text-bah-heading"}>{sleeve.drawdown_pct}%</div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Win Rate</div>
-                  <div className="text-bah-heading">{sleeve.win_rate}%</div>
-                </div>
-                <div>
-                  <div className="text-bah-muted">Trades</div>
-                  <div className="text-bah-heading">{sleeve.trades}</div>
-                </div>
-                <div className="flex items-center">
-                  <button
-                    onClick={() => handleToggleStrategy(name, !sleeve.enabled)}
-                    className={`px-2 py-0.5 text-[10px] rounded border ${
-                      sleeve.enabled
-                        ? "border-green-500/40 text-green-400 hover:bg-green-500/10"
-                        : "border-red-500/40 text-red-400 hover:bg-red-500/10"
-                    }`}
-                  >
-                    {sleeve.enabled ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-bah-border">
-        {(["overview", "positions", "trades"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
-              tab === t
-                ? "border-bah-cyan text-bah-cyan"
-                : "border-transparent text-bah-muted hover:text-bah-heading"
-            }`}
-          >
-            {t === "overview" ? "Overview" : t === "positions" ? `Open Positions (${positions.length})` : `Trade History (${trades.length})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      {tab === "overview" && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-bah-heading mb-3">Regime Routing</h3>
-            <div className="text-xs space-y-2">
-              <div className="flex justify-between"><span className="text-bah-muted">TREND regime</span><span className="text-green-400">→ v5_base + v5_tuned</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">RANGE regime</span><span className="text-amber-400">→ v8_range (mean reversion)</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">CRASH regime</span><span className="text-red-400">→ v8_defensive (no trade)</span></div>
-              <div className="pt-2 border-t border-bah-border/50 mt-2">
-                <div className="text-bah-muted">v5 signal: EMA20×50 cross, price &gt; EMA200, long only</div>
-                <div className="text-bah-muted">v8_range: BB mean reversion, long near lower / short near upper</div>
-              </div>
-            </div>
-          </div>
-          <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-bah-heading mb-3">Risk Limits</h3>
-            <div className="text-xs space-y-2">
-              <div className="flex justify-between"><span className="text-bah-muted">Max total open risk</span><span className="text-bah-heading">6%</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">Max positions per sleeve</span><span className="text-bah-heading">1</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">v5 risk per trade</span><span className="text-bah-heading">2%</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">v8_range risk per trade</span><span className="text-bah-heading">1.5%</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">Kill switch threshold</span><span className="text-bah-heading">10% drawdown</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">Execution mode</span><span className="text-amber-400 font-semibold">PAPER</span></div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* POSITIONS TAB */}
       {tab === "positions" && (
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-          {positions.length === 0 ? (
-            <div className="p-8 text-center text-bah-muted text-sm">No open positions</div>
-          ) : (
+          {positions?.positions?.length > 0 ? (
             <table className="w-full text-xs">
-              <thead className="bg-bah-bg/50">
-                <tr className="text-bah-muted text-left">
-                  <th className="px-3 py-2">Strategy</th>
-                  <th className="px-3 py-2">Asset</th>
-                  <th className="px-3 py-2">Dir</th>
-                  <th className="px-3 py-2 text-right">Entry</th>
-                  <th className="px-3 py-2 text-right">Current</th>
-                  <th className="px-3 py-2 text-right">SL</th>
-                  <th className="px-3 py-2 text-right">TP</th>
-                  <th className="px-3 py-2 text-right">P&L</th>
-                  <th className="px-3 py-2 text-right">P&L %</th>
-                  <th className="px-3 py-2 text-right">Bars</th>
+              <thead><tr className="text-left text-bah-muted border-b border-bah-border">
+                <th className="px-4 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th>
+                <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Current</th>
+                <th className="px-3 py-2.5 text-right">SL</th><th className="px-3 py-2.5 text-right">TP</th>
+                <th className="px-3 py-2.5 text-right">PnL</th><th className="px-3 py-2.5 text-right">Risk%</th>
+                <th className="px-3 py-2.5 text-right">Bars</th>
+              </tr></thead>
+              <tbody>{positions.positions.map((pos: any, i: number) => (
+                <tr key={i} className="border-b border-bah-border/50">
+                  <td className="px-4 py-2.5 font-medium text-bah-heading">{pos.asset}</td>
+                  <td className="px-3 py-2.5 text-bah-muted">{pos.strategy}</td>
+                  <td className="px-3 py-2.5 text-right">${pos.entry_price.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right">${pos.current_price.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right text-red-400">${pos.stop_loss.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right text-green-400">${pos.take_profit.toLocaleString()}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${pos.unrealized_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${pos.unrealized_pnl.toFixed(0)}</td>
+                  <td className={`px-3 py-2.5 text-right ${pos.risk_pct > 3 ? "text-red-400" : "text-bah-heading"}`}>{pos.risk_pct.toFixed(1)}%</td>
+                  <td className="px-3 py-2.5 text-right text-bah-muted">{pos.bars_held}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-bah-border/50">
-                {positions.map((p) => (
-                  <tr key={p.order_id} className="hover:bg-white/[0.02]">
-                    <td className="px-3 py-2 font-mono">{p.strategy}</td>
-                    <td className="px-3 py-2">{p.asset}</td>
-                    <td className="px-3 py-2"><span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded text-[10px]">{p.direction}</span></td>
-                    <td className="px-3 py-2 text-right font-mono">${p.entry_price.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono">${p.current_price.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono text-red-400/70">${p.stop_price.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono text-green-400/70">${p.tp_price.toLocaleString()}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${p.unrealized_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      ${p.unrealized_pnl.toFixed(0)}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${p.unrealized_pnl_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {p.unrealized_pnl_pct >= 0 ? "+" : ""}{p.unrealized_pnl_pct.toFixed(2)}%
-                    </td>
-                    <td className="px-3 py-2 text-right">{p.bars_held}/{p.max_hold_bars}</td>
-                  </tr>
-                ))}
-              </tbody>
+              ))}</tbody>
             </table>
-          )}
+          ) : <div className="p-8 text-center text-bah-muted text-sm">No open positions</div>}
         </div>
       )}
 
+      {/* TRADES TAB */}
       {tab === "trades" && (
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-          {trades.length === 0 ? (
-            <div className="p-8 text-center text-bah-muted text-sm">No closed trades yet</div>
-          ) : (
+          {trades?.trades?.length > 0 ? (
             <table className="w-full text-xs">
-              <thead className="bg-bah-bg/50">
-                <tr className="text-bah-muted text-left">
-                  <th className="px-3 py-2">Strategy</th>
-                  <th className="px-3 py-2">Asset</th>
-                  <th className="px-3 py-2 text-right">Entry</th>
-                  <th className="px-3 py-2 text-right">Exit</th>
-                  <th className="px-3 py-2 text-right">P&L</th>
-                  <th className="px-3 py-2 text-right">P&L %</th>
-                  <th className="px-3 py-2">Reason</th>
-                  <th className="px-3 py-2 text-right">Bars</th>
-                  <th className="px-3 py-2">Exit Time</th>
+              <thead><tr className="text-left text-bah-muted border-b border-bah-border">
+                <th className="px-4 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th>
+                <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Exit</th>
+                <th className="px-3 py-2.5 text-right">PnL</th><th className="px-3 py-2.5">Reason</th>
+                <th className="px-3 py-2.5 text-right">Bars</th>
+              </tr></thead>
+              <tbody>{trades.trades.slice(0, 30).map((t: any, i: number) => (
+                <tr key={i} className="border-b border-bah-border/50">
+                  <td className="px-4 py-2.5 font-medium text-bah-heading">{t.asset}</td>
+                  <td className="px-3 py-2.5 text-bah-muted">{t.strategy}</td>
+                  <td className="px-3 py-2.5 text-right">${t.entry_price.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-right">${t.exit_price.toLocaleString()}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(0)}</td>
+                  <td className="px-3 py-2.5 text-bah-muted">{t.exit_reason}</td>
+                  <td className="px-3 py-2.5 text-right text-bah-muted">{t.bars_held}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-bah-border/50">
-                {trades.map((t) => (
-                  <tr key={t.trade_id} className="hover:bg-white/[0.02]">
-                    <td className="px-3 py-2 font-mono">{t.strategy}</td>
-                    <td className="px-3 py-2">{t.asset}</td>
-                    <td className="px-3 py-2 text-right font-mono">${t.entry_price.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono">${t.exit_price.toLocaleString()}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      ${t.pnl.toFixed(0)}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${t.pnl_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {t.pnl_pct >= 0 ? "+" : ""}{t.pnl_pct.toFixed(2)}%
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                        t.exit_reason === "TP" ? "bg-green-500/20 text-green-400" :
-                        t.exit_reason === "SL" ? "bg-red-500/20 text-red-400" :
-                        "bg-amber-500/20 text-amber-400"
-                      }`}>{t.exit_reason}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right">{t.bars_held}</td>
-                    <td className="px-3 py-2 text-bah-muted">{t.exit_time ? new Date(t.exit_time).toLocaleDateString() : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
+              ))}</tbody>
             </table>
-          )}
+          ) : <div className="p-8 text-center text-bah-muted text-sm">No trades yet</div>}
+        </div>
+      )}
+
+      {/* ALERTS TAB */}
+      {tab === "alerts" && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+          {alerts.length > 0 ? (
+            <div className="divide-y divide-bah-border/50">
+              {alerts.slice(0, 40).map((a: any, i: number) => (
+                <div key={i} className={`px-4 py-3 flex items-start gap-3 ${
+                  a.level === "CRITICAL" ? "bg-red-500/5" : a.level === "WARNING" ? "bg-amber-500/5" : ""
+                }`}>
+                  <span className={`mt-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    a.level === "CRITICAL" ? "bg-red-500/20 text-red-400" :
+                    a.level === "WARNING" ? "bg-amber-500/20 text-amber-400" : "bg-bah-border text-bah-muted"
+                  }`}>{a.level}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-bah-heading">{a.title}</div>
+                    <div className="text-[11px] text-bah-muted mt-0.5 whitespace-pre-line">{a.message}</div>
+                  </div>
+                  <div className="text-[10px] text-bah-muted whitespace-nowrap">
+                    {a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <div className="p-8 text-center text-bah-muted text-sm">No alerts</div>}
         </div>
       )}
     </div>

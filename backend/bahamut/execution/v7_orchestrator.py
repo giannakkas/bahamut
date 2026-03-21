@@ -226,6 +226,15 @@ def run_v7_cycle(self):
     except Exception as e:
         logger.error("v7_snapshot_error", error=str(e))
 
+    # Run alert checks
+    try:
+        from bahamut.monitoring.alerts import check_alerts
+        portfolio_state = pm.get_summary()
+        engine_state = engine.get_stats()
+        check_alerts(portfolio_state, engine_state)
+    except Exception as e:
+        logger.debug("alert_check_error", error=str(e))
+
 
 # ── Track what's been persisted ──
 _persisted_trade_ids: set = set()

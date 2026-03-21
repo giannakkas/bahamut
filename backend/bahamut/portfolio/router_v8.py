@@ -81,15 +81,22 @@ def route(regime: RegimeResult, asset: str = "BTCUSD") -> RoutingDecision:
 
     # Log regime changes per asset
     prev = _last_regime.get(asset, "")
-    if regime.regime != prev:
+    if regime.regime != prev and prev:  # Don't alert on INIT
         logger.info("regime_change",
                      asset=asset,
-                     old=prev or "INIT",
+                     old=prev,
                      new=regime.regime,
                      confidence=regime.confidence,
                      mode=template["mode"],
                      active=template["active"])
-        _last_regime[asset] = regime.regime
+
+        try:
+            from bahamut.monitoring.alerts import fire_regime_change
+            fire_regime_change(asset, prev, regime.regime)
+        except Exception:
+            pass
+
+    _last_regime[asset] = regime.regime
 
     return decision
 
