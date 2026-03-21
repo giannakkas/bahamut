@@ -162,3 +162,61 @@ async def disable_strategy(name: str):
         raise HTTPException(404, f"Strategy '{name}' not found")
     pm.disable_strategy(name)
     return {"status": "disabled", "strategy": name}
+
+
+# ═══════════════════════════════════════════════════════
+# MANUAL TRIGGER + DB HISTORY
+# ═══════════════════════════════════════════════════════
+
+@router.post("/orchestrator/run-cycle")
+async def manual_run_cycle():
+    """Manually trigger one v7 trading cycle (for testing)."""
+    try:
+        from bahamut.execution.v7_orchestrator import run_v7_cycle_sync
+        run_v7_cycle_sync()
+        return {"status": "cycle_completed"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@router.get("/history/trades")
+async def db_trade_history():
+    """Load trade history from DB (persisted across restarts)."""
+    try:
+        from bahamut.execution.v7_persistence import load_trades_from_db
+        return load_trades_from_db()
+    except Exception as e:
+        return {"error": str(e), "trades": []}
+
+
+@router.get("/history/equity-curve")
+async def db_equity_curve():
+    """Load equity curve from DB snapshots."""
+    try:
+        from bahamut.execution.v7_persistence import load_snapshots_from_db
+        return load_snapshots_from_db(limit=500)
+    except Exception as e:
+        return {"error": str(e), "snapshots": []}
+
+
+@router.get("/health")
+async def v7_health():
+    """Health check for v7 trading system."""
+    engine = get_execution_engine()
+    pm = get_portfolio_manager()
+    return {
+        "status": "ok",
+        "mode": "paper",
+        "kill_switch": pm.kill_switch_triggered,
+        "strategies": {
+            name: {
+                "enabled": s.enabled,
+                "equity": s.current_equity,
+            }
+            for name, s in pm.sleeves.items()
+        },
+        "open_positions": len(engine.open_positions),
+        "pending_orders": len(engine.pending_orders),
+        "total_closed": len(engine.closed_trades),
+    }
+

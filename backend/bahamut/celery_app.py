@@ -16,6 +16,7 @@ celery_app = Celery(
         "bahamut.reports.tasks",
         "bahamut.paper_trading.tasks",
         "bahamut.scanner.tasks",
+        "bahamut.execution.v7_orchestrator",
     ],
 )
 
@@ -108,6 +109,11 @@ celery_app.conf.update(
         "trade-triggered-calibration": {
             "task": "bahamut.learning.tasks.trade_triggered_calibration",
             "schedule": 900.0,
+        },
+        # ── v7: Strategy evaluation + execution cycle ──
+        "v7-trading-cycle": {
+            "task": "bahamut.execution.v7_orchestrator.run_v7_cycle",
+            "schedule": 120.0,  # Every 2 min — only acts on new 4H bars
         },
     },
 )

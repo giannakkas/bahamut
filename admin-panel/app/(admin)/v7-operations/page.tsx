@@ -131,6 +131,11 @@ export default function V7OperationsPage() {
     load();
   };
 
+  const handleRunCycle = async () => {
+    await api("/orchestrator/run-cycle", { method: "POST" });
+    setTimeout(load, 1000); // Refresh after cycle completes
+  };
+
   if (loading) return <div className="p-6 text-bah-muted">Loading v7 operations...</div>;
 
   const s = summary;
@@ -158,6 +163,12 @@ export default function V7OperationsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleRunCycle}
+            className="px-3 py-1.5 bg-bah-cyan/20 border border-bah-cyan/40 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/30"
+          >
+            ▶ Run Cycle
+          </button>
           <button
             onClick={() => { setLoading(true); load(); }}
             className="px-3 py-1.5 border border-bah-border rounded-lg text-xs text-bah-muted hover:text-bah-heading transition-colors"
