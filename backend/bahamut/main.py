@@ -175,6 +175,12 @@ app.add_middleware(ObservabilityMiddleware)
 
 # Routes
 from bahamut.middleware.metrics import router as metrics_router
+
+# v7 — Trading Operations Dashboard
+try:
+    from bahamut.execution.v7_router import router as v7_router
+except ImportError:
+    v7_router = None
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(agents_router, prefix="/api/v1/agents", tags=["agents"])
 app.include_router(consensus_router, prefix="/api/v1/consensus", tags=["consensus"])
@@ -194,6 +200,8 @@ app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 app.include_router(trust_router, prefix="/api/v1/trust", tags=["trust"])
 app.include_router(metrics_router, tags=["metrics"])
+if v7_router:
+    app.include_router(v7_router, prefix="/api/v7", tags=["v7-dashboard"])
 
 
 @app.get("/health")

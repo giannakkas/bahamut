@@ -1,0 +1,287 @@
+"""
+Bahamut v7 Portfolio Manager
+
+Runs multiple strategy sleeves in parallel with isolated capital.
+Each sleeve has its own equity, PnL tracking, and risk budget.
+
+Capital flows:
+  Total portfolio → allocated to sleeves by weight → strategies trade within sleeve
+
+Risk controls:
+  - Max total open risk (default 6%)
+  - Max open positions per sleeve (default 1)
+  - Kill switch at portfolio drawdown threshold (default 10%)
+"""
+import structlog
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+from bahamut.execution.engine import get_execution_engine
+
+logger = structlog.get_logger()
+
+
+@dataclass
+class Sleeve:
+    strategy_name: str
+    allocation_weight: float = 0.5
+    initial_capital: float = 50_000.0
+    current_equity: float = 50_000.0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    peak_equity: float = 50_000.0
+    drawdown: float = 0.0
+    trade_count: int = 0
+    win_count: int = 0
+    enabled: bool = True
+    max_open_positions: int = 1
+
+
+@dataclass
+class PortfolioSnapshot:
+    timestamp: str = ""
+    total_equity: float = 0.0
+    total_realized_pnl: float = 0.0
+    total_unrealized_pnl: float = 0.0
+    total_open_risk: float = 0.0
+    drawdown: float = 0.0
+    sleeve_data: dict = field(default_factory=dict)
+
+
+class PortfolioManager:
+    """Manages portfolio sleeves and risk."""
+
+    def __init__(
+        self,
+        total_capital: float = 100_000.0,
+        allocations: dict[str, float] = None,
+        max_total_risk_pct: float = 0.06,
+        max_drawdown_pct: float = 0.10,
+    ):
+        self.total_capital = total_capital
+        self.initial_capital = total_capital
+        self.max_total_risk_pct = max_total_risk_pct
+        self.max_drawdown_pct = max_drawdown_pct
+        self.peak_equity = total_capital
+        self.kill_switch_triggered = False
+
+        if allocations is None:
+            allocations = {"v5_base": 0.5, "v5_tuned": 0.5}
+
+        self.sleeves: dict[str, Sleeve] = {}
+        for name, weight in allocations.items():
+            capital = total_capital * weight
+            self.sleeves[name] = Sleeve(
+                strategy_name=name,
+                allocation_weight=weight,
+                initial_capital=capital,
+                current_equity=capital,
+                peak_equity=capital,
+            )
+
+        self.snapshots: list[PortfolioSnapshot] = []
+
+    # ═══════════════════════════════════════════════════════
+    # SLEEVE MANAGEMENT
+    # ═══════════════════════════════════════════════════════
+
+    def get_sleeve_equity(self, strategy: str) -> float:
+        sleeve = self.sleeves.get(strategy)
+        return sleeve.current_equity if sleeve else 0
+
+    def get_sleeve_equities(self) -> dict[str, float]:
+        return {name: s.current_equity for name, s in self.sleeves.items() if s.enabled}
+
+    def is_strategy_enabled(self, strategy: str) -> bool:
+        sleeve = self.sleeves.get(strategy)
+        return sleeve.enabled if sleeve else False
+
+    def enable_strategy(self, strategy: str):
+        if strategy in self.sleeves:
+            self.sleeves[strategy].enabled = True
+            logger.info("strategy_enabled", strategy=strategy)
+
+    def disable_strategy(self, strategy: str):
+        if strategy in self.sleeves:
+            self.sleeves[strategy].enabled = False
+            logger.info("strategy_disabled", strategy=strategy)
+
+    # ═══════════════════════════════════════════════════════
+    # RISK CHECK
+    # ═══════════════════════════════════════════════════════
+
+    def can_trade(self, strategy: str) -> tuple[bool, str]:
+        """Check if a strategy is allowed to trade right now."""
+        if self.kill_switch_triggered:
+            return False, "kill_switch_active"
+
+        sleeve = self.sleeves.get(strategy)
+        if not sleeve:
+            return False, "unknown_strategy"
+        if not sleeve.enabled:
+            return False, "strategy_disabled"
+
+        # Check open positions for this sleeve
+        engine = get_execution_engine()
+        open_for_strat = [p for p in engine.open_positions if p.strategy == strategy]
+        if len(open_for_strat) >= sleeve.max_open_positions:
+            return False, f"max_positions_reached ({sleeve.max_open_positions})"
+
+        # Check total open risk
+        total_risk = sum(p.risk_amount for p in engine.open_positions)
+        if total_risk / max(1, self.total_equity) > self.max_total_risk_pct:
+            return False, f"total_risk_exceeded ({self.max_total_risk_pct*100:.0f}%)"
+
+        return True, "ok"
+
+    # ═══════════════════════════════════════════════════════
+    # UPDATE (called each bar)
+    # ═══════════════════════════════════════════════════════
+
+    def update(self):
+        """Update sleeve equities from execution engine state."""
+        engine = get_execution_engine()
+
+        for name, sleeve in self.sleeves.items():
+            realized = engine.get_strategy_pnl(name)
+            unrealized = engine.get_strategy_unrealized(name)
+
+            sleeve.realized_pnl = round(realized, 2)
+            sleeve.unrealized_pnl = round(unrealized, 2)
+            sleeve.current_equity = round(sleeve.initial_capital + realized + unrealized, 2)
+            sleeve.peak_equity = max(sleeve.peak_equity, sleeve.current_equity)
+            sleeve.drawdown = round(
+                1 - sleeve.current_equity / sleeve.peak_equity
+                if sleeve.peak_equity > 0 else 0, 4)
+
+            # Trade count
+            sleeve.trade_count = len([t for t in engine.closed_trades if t.strategy == name])
+            sleeve.win_count = len([t for t in engine.closed_trades
+                                     if t.strategy == name and t.pnl > 0])
+
+        # Portfolio-level
+        self.total_capital = sum(s.current_equity for s in self.sleeves.values())
+        self.peak_equity = max(self.peak_equity, self.total_capital)
+
+        # Kill switch on drawdown
+        dd = 1 - self.total_capital / self.peak_equity if self.peak_equity > 0 else 0
+        if dd >= self.max_drawdown_pct and not self.kill_switch_triggered:
+            self.kill_switch_triggered = True
+            logger.warning("portfolio_kill_switch",
+                           drawdown=f"{dd*100:.1f}%",
+                           threshold=f"{self.max_drawdown_pct*100:.0f}%")
+
+    @property
+    def total_equity(self) -> float:
+        return sum(s.current_equity for s in self.sleeves.values())
+
+    @property
+    def total_drawdown(self) -> float:
+        return round(1 - self.total_equity / self.peak_equity
+                     if self.peak_equity > 0 else 0, 4)
+
+    # ═══════════════════════════════════════════════════════
+    # REBALANCE
+    # ═══════════════════════════════════════════════════════
+
+    def rebalance(self, new_weights: dict[str, float] = None):
+        """
+        Rebalance sleeve capital toward target weights.
+        Does NOT force-close trades — adjusts accounting only.
+        """
+        if new_weights:
+            for name, weight in new_weights.items():
+                if name in self.sleeves:
+                    self.sleeves[name].allocation_weight = weight
+
+        total = self.total_equity
+        for name, sleeve in self.sleeves.items():
+            target = total * sleeve.allocation_weight
+            sleeve.initial_capital = round(target, 2)
+
+        logger.info("portfolio_rebalanced",
+                     weights={n: s.allocation_weight for n, s in self.sleeves.items()})
+
+    # ═══════════════════════════════════════════════════════
+    # SNAPSHOT
+    # ═══════════════════════════════════════════════════════
+
+    def take_snapshot(self) -> PortfolioSnapshot:
+        engine = get_execution_engine()
+        snap = PortfolioSnapshot(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            total_equity=round(self.total_equity, 2),
+            total_realized_pnl=round(sum(s.realized_pnl for s in self.sleeves.values()), 2),
+            total_unrealized_pnl=round(sum(s.unrealized_pnl for s in self.sleeves.values()), 2),
+            total_open_risk=round(sum(p.risk_amount for p in engine.open_positions), 2),
+            drawdown=self.total_drawdown,
+            sleeve_data={
+                name: {
+                    "equity": s.current_equity,
+                    "realized_pnl": s.realized_pnl,
+                    "unrealized_pnl": s.unrealized_pnl,
+                    "drawdown": s.drawdown,
+                    "trades": s.trade_count,
+                    "wins": s.win_count,
+                    "enabled": s.enabled,
+                    "weight": s.allocation_weight,
+                }
+                for name, s in self.sleeves.items()
+            },
+        )
+        self.snapshots.append(snap)
+        return snap
+
+    def get_summary(self) -> dict:
+        engine = get_execution_engine()
+        self.update()
+
+        return {
+            "total_equity": round(self.total_equity, 2),
+            "initial_capital": self.initial_capital,
+            "total_return_pct": round(
+                (self.total_equity - self.initial_capital) / self.initial_capital * 100, 2),
+            "total_realized_pnl": round(sum(s.realized_pnl for s in self.sleeves.values()), 2),
+            "total_unrealized_pnl": round(sum(s.unrealized_pnl for s in self.sleeves.values()), 2),
+            "total_open_risk": round(sum(p.risk_amount for p in engine.open_positions), 2),
+            "drawdown_pct": round(self.total_drawdown * 100, 2),
+            "peak_equity": round(self.peak_equity, 2),
+            "open_positions": len(engine.open_positions),
+            "total_trades": len(engine.closed_trades),
+            "kill_switch": self.kill_switch_triggered,
+            "sleeves": {
+                name: {
+                    "allocation_pct": round(s.allocation_weight * 100, 1),
+                    "equity": s.current_equity,
+                    "realized_pnl": s.realized_pnl,
+                    "unrealized_pnl": s.unrealized_pnl,
+                    "drawdown_pct": round(s.drawdown * 100, 2),
+                    "trades": s.trade_count,
+                    "wins": s.win_count,
+                    "win_rate": round(s.win_count / max(1, s.trade_count) * 100, 1),
+                    "enabled": s.enabled,
+                    "open_positions": len([p for p in engine.open_positions
+                                           if p.strategy == name]),
+                }
+                for name, s in self.sleeves.items()
+            },
+        }
+
+
+# ── Singleton ──
+_manager: Optional[PortfolioManager] = None
+
+def get_portfolio_manager() -> PortfolioManager:
+    global _manager
+    if _manager is None:
+        _manager = PortfolioManager()
+    return _manager
+
+def init_portfolio_manager(
+    total_capital: float = 100_000.0,
+    allocations: dict = None,
+) -> PortfolioManager:
+    global _manager
+    _manager = PortfolioManager(total_capital=total_capital, allocations=allocations)
+    return _manager
