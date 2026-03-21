@@ -211,6 +211,34 @@ async def recent_alerts(user=Depends(get_current_user)):
     return {"alerts": alerts, "count": len(alerts)}
 
 
+# ═══════════════════════════════════════════════════════
+# CYCLE INSPECTOR
+# ═══════════════════════════════════════════════════════
+
+@router.get("/cycle/current")
+async def cycle_current(user=Depends(get_current_user)):
+    """Current or most recent cycle state."""
+    from bahamut.monitoring.cycle_log import get_current_cycle
+    return get_current_cycle() or {"status": "IDLE"}
+
+
+@router.get("/cycle/last")
+async def cycle_last(user=Depends(get_current_user)):
+    """Full detail of last completed cycle."""
+    from bahamut.monitoring.cycle_log import get_last_cycle
+    return get_last_cycle() or {"status": "NO_DATA"}
+
+
+@router.get("/cycle/history")
+async def cycle_history(user=Depends(get_current_user)):
+    """Recent cycle history (last 30)."""
+    from bahamut.monitoring.cycle_log import get_cycle_history, get_cycle_stats
+    return {
+        "cycles": get_cycle_history(30),
+        "stats": get_cycle_stats(),
+    }
+
+
 @router.get("/health")
 async def system_health(user=Depends(get_current_user)):
     """Comprehensive system diagnostics."""

@@ -92,12 +92,10 @@ def _fetch_candles(asset: str, timeframe: str = "4H", count: int = 260) -> list[
 def run_v7_cycle(self):
     """
     Main v7 trading cycle. Runs every 2 minutes.
-    Only processes if a new bar is detected (avoids duplicate signals).
-    Uses Redis distributed lock to prevent overlapping cycles.
+    Uses Redis distributed lock. Full cycle instrumented for observability.
     """
-    global _last_bar_time
+    from bahamut.monitoring.cycle_log import start_cycle, end_cycle, record_skip
 
-    # ── Distributed lock: prevent concurrent cycles ──
     lock = None
     try:
         import redis, os
@@ -105,32 +103,39 @@ def run_v7_cycle(self):
         lock = r.lock("bahamut:v7_cycle_lock", timeout=300, blocking=False)
         if not lock.acquire(blocking=False):
             logger.info("v7_cycle_skipped_lock_held")
+            record_skip("orchestrator lock already held")
             return
     except Exception as e:
         logger.debug("v7_cycle_lock_unavailable", error=str(e))
-        # Proceed without lock if Redis unavailable
 
+    cycle = start_cycle()
     try:
         _run_v7_cycle_inner()
+        end_cycle("SUCCESS")
+    except Exception as e:
+        logger.error("v7_cycle_fatal", error=str(e))
+        end_cycle("ERROR", error=str(e))
     finally:
         if lock:
             try:
                 lock.release()
             except Exception:
                 pass
-
-        # Track last successful cycle
         try:
-            import redis, os, time
+            import redis, os, time as _t
             r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-            r.set("bahamut:last_v7_cycle", str(time.time()))
+            r.set("bahamut:last_v7_cycle", str(_t.time()))
         except Exception:
             pass
 
 
 def _run_v7_cycle_inner():
-    """Inner cycle logic — separated for lock management."""
+    """Inner cycle logic with full observability instrumentation."""
     global _last_bar_time
+    from bahamut.monitoring.cycle_log import (
+        add_asset_evaluation, add_strategy_decision, record_signal, record_order,
+        record_position_closed, AssetEvaluation, StrategyDecision,
+    )
 
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -143,45 +148,64 @@ def _run_v7_cycle_inner():
     except ImportError:
         pass
 
+    closed_before = len(engine.closed_trades)
+
     for asset in assets:
         try:
             candles = _fetch_candles(asset)
             if not candles or len(candles) < 260:
-                logger.debug("v7_insufficient_data", asset=asset, candles=len(candles) if candles else 0)
+                add_asset_evaluation(AssetEvaluation(
+                    asset=asset, regime="UNKNOWN",
+                    summary=f"insufficient data ({len(candles) if candles else 0} candles)"))
                 continue
 
-            # Check if this is a new bar
             latest_time = candles[-1].get("datetime", "")
             bar_key = f"{asset}"
-            if _last_bar_time.get(bar_key) == latest_time:
-                continue  # Already processed this bar
-            _last_bar_time[bar_key] = latest_time
+            is_new_bar = _last_bar_time.get(bar_key) != latest_time
 
+            if not is_new_bar:
+                add_asset_evaluation(AssetEvaluation(
+                    asset=asset, timestamp=latest_time,
+                    bar_close=candles[-1].get("close", 0),
+                    new_bar=False, regime=pm.asset_regimes.get(asset, "?"),
+                    summary=f"same bar as last cycle ({latest_time})"))
+                continue
+
+            _last_bar_time[bar_key] = latest_time
             logger.info("v7_new_bar", asset=asset, time=latest_time,
                         close=candles[-1].get("close", 0))
 
-            # Compute indicators for current and previous bar
             indicators = compute_indicators(candles)
             prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
-
             if not indicators:
+                add_asset_evaluation(AssetEvaluation(
+                    asset=asset, timestamp=latest_time, new_bar=True,
+                    summary="indicator computation failed"))
                 continue
 
-            # v8: Detect regime and route strategies
+            # Detect regime
+            regime_str = "RANGE"
+            regime_conf = 0.5
+            active_strats = []
             try:
                 from bahamut.regime.v8_detector import detect_regime
                 from bahamut.portfolio.router_v8 import route
                 regime = detect_regime(indicators, candles[-15:])
                 routing = route(regime, asset=asset)
                 pm.apply_routing(routing, asset=asset)
-                logger.info("v8_regime", regime=regime.regime,
-                            confidence=regime.confidence,
-                            mode=routing.portfolio_mode,
-                            active=routing.active_strategies)
+                regime_str = regime.regime
+                regime_conf = regime.confidence
+                active_strats = routing.active_strategies
             except Exception as e:
                 logger.error("v8_regime_error", error=str(e))
 
-            # Build bar dict for execution engine
+            # Start asset evaluation record
+            asset_eval = AssetEvaluation(
+                asset=asset, timestamp=latest_time, regime=regime_str,
+                regime_confidence=regime_conf, active_strategies=list(active_strats),
+                bar_close=candles[-1].get("close", 0), new_bar=True,
+            )
+
             bar = {
                 "open": candles[-1].get("open", 0),
                 "high": candles[-1].get("high", 0),
@@ -191,32 +215,41 @@ def _run_v7_cycle_inner():
                 "volume": candles[-1].get("volume", 0),
             }
 
-            # 1. Process bar through execution engine (fills pending, checks exits)
             engine.on_new_bar(bar, pm.get_sleeve_equities(), asset=asset)
 
-            # 2. Evaluate active strategies for THIS ASSET's regime
-            for strat_name in routing.active_strategies:
+            # Check for positions closed by this bar
+            closed_after_bar = len(engine.closed_trades)
+            new_closes = closed_after_bar - closed_before
+            for _ in range(new_closes):
+                record_position_closed()
+            closed_before = closed_after_bar
+
+            # Evaluate strategies
+            for strat_name in active_strats:
                 strategy = strategies.get(strat_name)
                 if not strategy:
+                    asset_eval.strategies_evaluated.append(
+                        StrategyDecision(strat_name, "SKIPPED", "strategy not loaded"))
                     continue
 
-                # Check portfolio risk limits
                 can_trade, reason = pm.can_trade(strat_name, asset=asset)
                 if not can_trade:
-                    logger.debug("v7_trade_blocked", strategy=strat_name, asset=asset, reason=reason)
+                    asset_eval.strategies_evaluated.append(
+                        StrategyDecision(strat_name, "BLOCKED", reason))
                     continue
 
-                # Check combined crypto risk
+                # Crypto risk cap
                 try:
                     from bahamut.config_assets import MAX_COMBINED_CRYPTO_OPEN_RISK_PCT
                     total_risk = sum(p.risk_amount for p in engine.open_positions)
                     if total_risk / max(1, pm.total_equity) > MAX_COMBINED_CRYPTO_OPEN_RISK_PCT:
-                        logger.debug("crypto_risk_cap", total_risk=total_risk)
+                        asset_eval.strategies_evaluated.append(
+                            StrategyDecision(strat_name, "BLOCKED", "combined crypto risk cap exceeded"))
                         continue
                 except ImportError:
                     pass
 
-                # Evaluate strategy — pass asset for asset-aware signal generation
+                # Evaluate
                 try:
                     signal = strategy.evaluate(candles, indicators, prev_indicators, asset=asset)
                 except TypeError:
@@ -224,7 +257,7 @@ def _run_v7_cycle_inner():
 
                 if signal:
                     signal.asset = asset
-                    # Apply per-asset risk multiplier
+                    record_signal()
                     try:
                         from bahamut.config_assets import get_risk_multiplier
                         risk_mult = get_risk_multiplier(asset)
@@ -234,42 +267,72 @@ def _run_v7_cycle_inner():
                     sleeve_eq = pm.get_sleeve_equity(strat_name) * risk_mult
                     order = engine.submit_signal(signal, sleeve_eq)
                     if order:
-                        logger.info("v7_signal_submitted",
-                                    strategy=strat_name,
-                                    direction=signal.direction,
-                                    asset=asset,
-                                    order_id=order.order_id)
-
-                        # Persist order
+                        record_order()
+                        asset_eval.strategies_evaluated.append(
+                            StrategyDecision(strat_name, "EXECUTED",
+                                             f"signal {signal.direction}, order {order.order_id}"))
                         _persist_order(order)
+                    else:
+                        asset_eval.strategies_evaluated.append(
+                            StrategyDecision(strat_name, "BLOCKED",
+                                             "signal generated but order rejected (duplicate/limit)"))
+                else:
+                    # Provide reason for no signal
+                    reason_text = _get_no_signal_reason(strat_name, indicators, prev_indicators, asset)
+                    asset_eval.strategies_evaluated.append(
+                        StrategyDecision(strat_name, "NO_SIGNAL", reason_text))
 
-            # 3. Update portfolio
+            # Generate summary
+            results = [f"{s.strategy}→{s.result}" for s in asset_eval.strategies_evaluated]
+            asset_eval.summary = f"{regime_str} ({regime_conf:.0%}), {', '.join(results) or 'no strategies'}"
+            add_asset_evaluation(asset_eval)
+
             pm.update()
-
-            # 4. Persist any new closed trades
             _persist_new_trades(engine)
-
-            # 5. Persist sleeve states
             _persist_sleeves(pm)
 
         except Exception as e:
             logger.error("v7_cycle_error", asset=asset, error=str(e))
+            add_asset_evaluation(AssetEvaluation(
+                asset=asset, summary=f"ERROR: {str(e)[:100]}"))
 
-    # Take periodic snapshot (every cycle)
+    # Snapshot + alerts
     try:
         snap = pm.take_snapshot()
         _persist_snapshot(snap)
     except Exception as e:
         logger.error("v7_snapshot_error", error=str(e))
 
-    # Run alert checks
     try:
         from bahamut.monitoring.alerts import check_alerts
-        portfolio_state = pm.get_summary()
-        engine_state = engine.get_stats()
-        check_alerts(portfolio_state, engine_state)
-    except Exception as e:
-        logger.debug("alert_check_error", error=str(e))
+        check_alerts(pm.get_summary(), engine.get_stats())
+    except Exception:
+        pass
+
+
+def _get_no_signal_reason(strat_name: str, ind: dict, prev_ind: dict, asset: str) -> str:
+    """Generate a human-readable reason for NO_SIGNAL."""
+    close = ind.get("close", 0)
+    ema20 = ind.get("ema_20", 0)
+    ema50 = ind.get("ema_50", 0)
+    ema200 = ind.get("ema_200", 0)
+
+    if "v5" in strat_name:
+        if close <= ema200:
+            return f"price ${close:,.0f} below EMA200 ${ema200:,.0f} (no bull regime)"
+        if prev_ind:
+            p20 = prev_ind.get("ema_20", 0)
+            p50 = prev_ind.get("ema_50", 0)
+            if p20 > p50:
+                return f"EMA20 already above EMA50 (no new cross)"
+            else:
+                return f"EMA20 ${ema20:,.0f} has not crossed above EMA50 ${ema50:,.0f}"
+        return "waiting for EMA20×EMA50 golden cross"
+
+    if "v9" in strat_name or "breakout" in strat_name:
+        return "no confirmed 20-bar high breakout"
+
+    return "entry conditions not met"
 
 
 # ── Track what's been persisted ──
