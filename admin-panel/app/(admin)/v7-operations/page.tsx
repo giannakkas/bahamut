@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiBase } from "@/lib/utils";
 
 export default function DailyOperations() {
@@ -14,6 +14,8 @@ export default function DailyOperations() {
   const [cycleHistory, setCycleHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"cycle" | "strategies" | "positions" | "trades" | "alerts">("cycle");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [secondsAgo, setSecondsAgo] = useState(0);
 
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const api = useCallback(async (path: string) => {
@@ -43,21 +45,52 @@ export default function DailyOperations() {
     if (t) setTrades(t); if (e) setExecution(e); if (a?.alerts) setAlerts(a.alerts);
     if (h) setHealth(h); if (lc) setLastCycle(lc); if (ch) setCycleHistory(ch);
     setLoading(false);
+    setLastUpdated(new Date());
   }, [api]);
 
-  useEffect(() => { load(); const i = setInterval(load, 15_000); return () => clearInterval(i); }, [load]);
+  // Live auto-refresh every 5 seconds
+  useEffect(() => { load(); const i = setInterval(load, 5_000); return () => clearInterval(i); }, [load]);
 
+  // Tick "seconds ago" counter every second
+  useEffect(() => {
+    const i = setInterval(() => {
+      if (lastUpdated) setSecondsAgo(Math.round((Date.now() - lastUpdated.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(i);
+  }, [lastUpdated]);
+
+  // ── Run Cycle with progress bar ──
   const [cycleRunning, setCycleRunning] = useState(false);
+  const [cycleProgress, setCycleProgress] = useState(0);
   const [cycleError, setCycleError] = useState("");
+  const progressRef = useRef<NodeJS.Timeout | null>(null);
+
   const runCycle = async () => {
-    setCycleRunning(true); setCycleError("");
+    setCycleRunning(true); setCycleError(""); setCycleProgress(5);
+
+    // Animate progress bar
+    let prog = 5;
+    progressRef.current = setInterval(() => {
+      prog += Math.random() * 12 + 3;
+      if (prog > 90) prog = 90;
+      setCycleProgress(prog);
+    }, 200);
+
     try {
       const res = await v7("/orchestrator/run-cycle", { method: "POST" });
       if (res?.status === "error") setCycleError(res.error || "Unknown error");
     } catch (e: any) { setCycleError(e.message || "Network error"); }
-    setCycleRunning(false);
-    setTimeout(load, 500);
+
+    // Complete progress bar
+    if (progressRef.current) clearInterval(progressRef.current);
+    setCycleProgress(100);
+    setTimeout(() => { setCycleRunning(false); setCycleProgress(0); }, 600);
+
+    // Rapid reload
+    await load();
+    setTimeout(load, 1000);
   };
+
   const killSwitch = async () => { if (confirm("Kill switch?")) { await v7("/portfolio/kill-switch", { method: "POST" }); load(); } };
   const resume = async () => { await v7("/portfolio/resume", { method: "POST" }); load(); };
 
@@ -93,14 +126,28 @@ export default function DailyOperations() {
           {health?.engine && <span className="px-2 py-0.5 text-[10px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
           {critAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{critAlerts} CRITICAL</span>}
         </div>
-        <div className="flex gap-2">
-          <button onClick={runCycle} disabled={cycleRunning} className="px-3 py-1.5 bg-bah-cyan/20 border border-bah-cyan/40 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/30 disabled:opacity-50">{cycleRunning ? "Running..." : "▶ Run Cycle"}</button>
-          <button onClick={() => { setLoading(true); load(); }} className="px-3 py-1.5 border border-bah-border rounded-lg text-xs text-bah-muted hover:text-bah-heading">↻</button>
+        <div className="flex gap-2 items-center">
+          <span className="text-[10px] text-bah-muted font-mono flex items-center gap-1.5">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${secondsAgo < 10 ? "bg-green-400 animate-pulse" : secondsAgo < 30 ? "bg-amber-400" : "bg-red-400"}`} />
+            {secondsAgo}s ago
+          </span>
+          <button onClick={runCycle} disabled={cycleRunning} className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
+            cycleRunning ? "bg-bah-cyan/30 border-bah-cyan/50 text-bah-cyan" : "bg-bah-cyan/20 border-bah-cyan/40 text-bah-cyan hover:bg-bah-cyan/30"
+          }`}>{cycleRunning ? "⟳ Running..." : "▶ Run Cycle"}</button>
+          <button onClick={() => load()} className="px-3 py-1.5 border border-bah-border rounded-lg text-xs text-bah-muted hover:text-bah-heading">↻</button>
           {p?.kill_switch
             ? <button onClick={resume} className="px-3 py-1.5 bg-green-500/20 border border-green-500/40 rounded-lg text-xs text-green-400">Resume</button>
             : <button onClick={killSwitch} className="px-3 py-1.5 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">Kill Switch</button>}
         </div>
       </div>
+
+      {/* ═══ PROGRESS BAR ═══ */}
+      {(cycleRunning || cycleProgress > 0) && (
+        <div className="h-1 bg-bah-border rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-bah-cyan to-green-400 rounded-full transition-all duration-200 ease-out"
+            style={{ width: `${cycleProgress}%` }} />
+        </div>
+      )}
 
       {/* Cycle error display */}
       {cycleError && (
