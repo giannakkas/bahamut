@@ -66,8 +66,16 @@ class PortfolioManager:
         self.peak_equity = total_capital
         self.kill_switch_triggered = False
 
+        # v8: regime state
+        self.current_regime = "RANGE"
+        self.current_portfolio_mode = "unknown"
+
         if allocations is None:
-            allocations = {"v5_base": 0.5, "v5_tuned": 0.5}
+            # v8: all four sleeves, but only trend sleeves start enabled
+            allocations = {
+                "v5_base": 0.5, "v5_tuned": 0.5,
+                "v8_range": 0.0, "v8_defensive": 0.0,
+            }
 
         self.sleeves: dict[str, Sleeve] = {}
         for name, weight in allocations.items():
@@ -106,6 +114,39 @@ class PortfolioManager:
         if strategy in self.sleeves:
             self.sleeves[strategy].enabled = False
             logger.info("strategy_disabled", strategy=strategy)
+
+    # ═══════════════════════════════════════════════════════
+    # v8: REGIME-DRIVEN ACTIVATION
+    # ═══════════════════════════════════════════════════════
+
+    def apply_routing(self, decision):
+        """
+        Apply a RoutingDecision to enable/disable sleeves and reallocate capital.
+        decision: RoutingDecision from router_v8.route()
+        """
+        self.current_regime = decision.regime
+        self.current_portfolio_mode = decision.portfolio_mode
+
+        # Enable active strategies, disable inactive
+        for name in decision.active_strategies:
+            if name in self.sleeves:
+                self.sleeves[name].enabled = True
+
+        for name in decision.inactive_strategies:
+            if name in self.sleeves:
+                self.sleeves[name].enabled = False
+
+        # Reallocate capital to active sleeves
+        total = self.total_equity
+        for name, weight in decision.weights.items():
+            if name in self.sleeves:
+                self.sleeves[name].allocation_weight = weight
+                self.sleeves[name].initial_capital = round(total * weight, 2)
+
+        # Zero out inactive sleeve weights
+        for name in decision.inactive_strategies:
+            if name in self.sleeves:
+                self.sleeves[name].allocation_weight = 0.0
 
     # ═══════════════════════════════════════════════════════
     # RISK CHECK
@@ -250,6 +291,8 @@ class PortfolioManager:
             "open_positions": len(engine.open_positions),
             "total_trades": len(engine.closed_trades),
             "kill_switch": self.kill_switch_triggered,
+            "regime": self.current_regime,
+            "portfolio_mode": self.current_portfolio_mode,
             "sleeves": {
                 name: {
                     "allocation_pct": round(s.allocation_weight * 100, 1),

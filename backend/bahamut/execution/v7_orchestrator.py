@@ -36,9 +36,13 @@ def _get_strategies():
     if _strategies is None:
         from bahamut.strategies.v5_base import V5Base
         from bahamut.strategies.v5_tuned import V5Tuned
+        from bahamut.strategies.v8_range import V8Range
+        from bahamut.strategies.v8_defensive import V8Defensive
         _strategies = {
             "v5_base": V5Base(),
             "v5_tuned": V5Tuned(),
+            "v8_range": V8Range(),
+            "v8_defensive": V8Defensive(),
         }
     return _strategies
 
@@ -119,6 +123,20 @@ def run_v7_cycle(self):
 
             if not indicators:
                 continue
+
+            # v8: Detect regime and route strategies
+            try:
+                from bahamut.regime.v8_detector import detect_regime
+                from bahamut.portfolio.router_v8 import route
+                regime = detect_regime(indicators, candles[-15:])
+                routing = route(regime)
+                pm.apply_routing(routing)
+                logger.info("v8_regime", regime=regime.regime,
+                            confidence=regime.confidence,
+                            mode=routing.portfolio_mode,
+                            active=routing.active_strategies)
+            except Exception as e:
+                logger.error("v8_regime_error", error=str(e))
 
             # Build bar dict for execution engine
             bar = {

@@ -147,7 +147,7 @@ export default function V7OperationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-bah-heading flex items-center gap-3">
-            v7 Trading Operations
+            v8 Trading Operations
             <span
               className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
                 s?.kill_switch
@@ -159,7 +159,7 @@ export default function V7OperationsPage() {
             </span>
           </h1>
           <p className="text-xs text-bah-muted mt-1">
-            v5_base + v5_tuned running in parallel • Portfolio manager with risk controls
+            Multi-regime portfolio • {s?.portfolio_mode || "initializing"}
           </p>
         </div>
         <div className="flex gap-2">
@@ -209,6 +209,31 @@ export default function V7OperationsPage() {
           </div>
         ))}
       </div>
+
+      {/* v8 Regime Banner */}
+      {s?.regime && (
+        <div className={`rounded-xl border p-4 flex items-center justify-between ${
+          s.regime === "TREND" ? "bg-green-500/10 border-green-500/30" :
+          s.regime === "CRASH" ? "bg-red-500/10 border-red-500/30" :
+          "bg-amber-500/10 border-amber-500/30"
+        }`}>
+          <div className="flex items-center gap-3">
+            <span className={`text-2xl font-bold ${
+              s.regime === "TREND" ? "text-green-400" :
+              s.regime === "CRASH" ? "text-red-400" : "text-amber-400"
+            }`}>
+              {s.regime === "TREND" ? "📈" : s.regime === "CRASH" ? "🔻" : "↔️"} {s.regime}
+            </span>
+            <div className="text-xs text-bah-muted">
+              <div>Mode: <span className="text-bah-heading font-semibold">{s.portfolio_mode || "—"}</span></div>
+              <div>Active: {s.sleeves ? Object.entries(s.sleeves).filter(([,v]: any) => v.enabled).map(([k]) => k).join(", ") || "none" : "—"}</div>
+            </div>
+          </div>
+          <div className="text-right text-xs text-bah-muted">
+            <div>{s.regime === "TREND" ? "Trend strategies active" : s.regime === "CRASH" ? "Capital preservation mode" : "Range strategy active"}</div>
+          </div>
+        </div>
+      )}
 
       {/* Strategy Sleeves */}
       <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
@@ -294,13 +319,15 @@ export default function V7OperationsPage() {
       {tab === "overview" && (
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-bah-heading mb-3">Signal Logic</h3>
-            <div className="text-xs text-bah-muted space-y-1.5 font-mono">
-              <div>IF price &gt; EMA200 (bull regime)</div>
-              <div>AND EMA20 crosses above EMA50</div>
-              <div>THEN → LONG at next bar open</div>
-              <div className="pt-2 text-bah-subtle">v5_base: SL 8%, TP 16%, hold 30 bars</div>
-              <div className="text-bah-subtle">v5_tuned: SL 10%, TP 25%, hold 60 bars</div>
+            <h3 className="text-sm font-semibold text-bah-heading mb-3">Regime Routing</h3>
+            <div className="text-xs space-y-2">
+              <div className="flex justify-between"><span className="text-bah-muted">TREND regime</span><span className="text-green-400">→ v5_base + v5_tuned</span></div>
+              <div className="flex justify-between"><span className="text-bah-muted">RANGE regime</span><span className="text-amber-400">→ v8_range (mean reversion)</span></div>
+              <div className="flex justify-between"><span className="text-bah-muted">CRASH regime</span><span className="text-red-400">→ v8_defensive (no trade)</span></div>
+              <div className="pt-2 border-t border-bah-border/50 mt-2">
+                <div className="text-bah-muted">v5 signal: EMA20×50 cross, price &gt; EMA200, long only</div>
+                <div className="text-bah-muted">v8_range: BB mean reversion, long near lower / short near upper</div>
+              </div>
             </div>
           </div>
           <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
@@ -308,7 +335,8 @@ export default function V7OperationsPage() {
             <div className="text-xs space-y-2">
               <div className="flex justify-between"><span className="text-bah-muted">Max total open risk</span><span className="text-bah-heading">6%</span></div>
               <div className="flex justify-between"><span className="text-bah-muted">Max positions per sleeve</span><span className="text-bah-heading">1</span></div>
-              <div className="flex justify-between"><span className="text-bah-muted">Risk per trade</span><span className="text-bah-heading">2%</span></div>
+              <div className="flex justify-between"><span className="text-bah-muted">v5 risk per trade</span><span className="text-bah-heading">2%</span></div>
+              <div className="flex justify-between"><span className="text-bah-muted">v8_range risk per trade</span><span className="text-bah-heading">1.5%</span></div>
               <div className="flex justify-between"><span className="text-bah-muted">Kill switch threshold</span><span className="text-bah-heading">10% drawdown</span></div>
               <div className="flex justify-between"><span className="text-bah-muted">Execution mode</span><span className="text-amber-400 font-semibold">PAPER</span></div>
             </div>
