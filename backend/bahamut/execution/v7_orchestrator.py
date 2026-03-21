@@ -59,41 +59,15 @@ def _get_strategies():
 
 def _fetch_candles(asset: str, timeframe: str = "4H", count: int = 260) -> list[dict]:
     """
-    Fetch candles from market data service.
-    Tries Twelve Data → OANDA → cached/demo data.
+    Fetch candles via live data provider.
+    Tries: Redis cache → Twelve Data API → synthetic fallback.
     """
-    import asyncio
-
     try:
-        from bahamut.ingestion.market_data import MarketDataService
-        svc = MarketDataService()
-
-        loop = asyncio.new_event_loop()
-        try:
-            # Get raw candles if available
-            from bahamut.ingestion.adapters.twelvedata import twelve_data, to_twelve_symbol, to_twelve_interval
-            if twelve_data.configured:
-                td_sym = to_twelve_symbol(asset)
-                td_int = to_twelve_interval(timeframe)
-                candles = loop.run_until_complete(
-                    twelve_data.get_candles(td_sym, td_int, count=count))
-                if candles and len(candles) >= 50:
-                    return candles
-        finally:
-            loop.close()
+        from bahamut.data.live_data import fetch_candles
+        return fetch_candles(asset, count)
     except Exception as e:
-        logger.debug("candle_fetch_error", asset=asset, error=str(e))
-
-    # Fallback: try loading from data_real cache
-    try:
-        from bahamut.backtesting.data_real import get_asset_data
-        candles = get_asset_data(asset)
-        if candles and len(candles) >= 50:
-            return candles[-count:]
-    except Exception:
-        pass
-
-    return []
+        logger.error("candle_fetch_error", asset=asset, error=str(e))
+        return []
 
 
 def _celery_task(func):
@@ -153,6 +127,7 @@ def _run_v7_cycle_inner():
         add_asset_evaluation, add_strategy_decision, record_signal, record_order,
         record_position_closed, AssetEvaluation, StrategyDecision,
     )
+    from bahamut.data.live_data import is_new_bar, get_data_source
 
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -177,10 +152,9 @@ def _run_v7_cycle_inner():
                 continue
 
             latest_time = candles[-1].get("datetime", "")
-            bar_key = f"{asset}"
-            is_new_bar = _last_bar_time.get(bar_key) != latest_time
+            new_bar = is_new_bar(asset, latest_time)
 
-            if not is_new_bar:
+            if not new_bar:
                 add_asset_evaluation(AssetEvaluation(
                     asset=asset, timestamp=latest_time,
                     bar_close=candles[-1].get("close", 0),
@@ -188,9 +162,9 @@ def _run_v7_cycle_inner():
                     summary=f"same bar as last cycle ({latest_time})"))
                 continue
 
-            _last_bar_time[bar_key] = latest_time
             logger.info("v7_new_bar", asset=asset, time=latest_time,
-                        close=candles[-1].get("close", 0))
+                        close=candles[-1].get("close", 0),
+                        source=get_data_source())
 
             indicators = compute_indicators(candles)
             prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None

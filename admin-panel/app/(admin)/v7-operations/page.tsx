@@ -154,21 +154,33 @@ export default function DailyOperations() {
         ))}
       </div>
 
-      {/* ═══ REGIME CARDS ═══ */}
+      {/* ═══ REGIME CARDS (with data status) ═══ */}
       {p?.regime && Object.keys(p.regime).length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          {Object.entries(p.regime).map(([asset, regime]: [string, any]) => (
-            <div key={asset} className={`rounded-xl border p-3 flex items-center justify-between ${
-              regime==="TREND"?"bg-green-500/5 border-green-500/20":regime==="CRASH"?"bg-red-500/5 border-red-500/20":"bg-amber-500/5 border-amber-500/20"}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-bah-heading">{asset}</span>
-                <span className={`text-xs font-semibold ${regime==="TREND"?"text-green-400":regime==="CRASH"?"text-red-400":"text-amber-400"}`}>
-                  {regime==="TREND"?"📈":regime==="CRASH"?"🔻":"↔️"} {regime as string}
-                </span>
+          {Object.entries(p.regime).map(([asset, regime]: [string, any]) => {
+            const assetData = health?.data?.[asset];
+            const dataStatus = assetData?.status || "—";
+            const dataDetail = assetData?.detail || "";
+            return (
+              <div key={asset} className={`rounded-xl border p-3 ${
+                regime==="TREND"?"bg-green-500/5 border-green-500/20":regime==="CRASH"?"bg-red-500/5 border-red-500/20":"bg-amber-500/5 border-amber-500/20"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-bah-heading">{asset}</span>
+                    <span className={`text-xs font-semibold ${regime==="TREND"?"text-green-400":regime==="CRASH"?"text-red-400":"text-amber-400"}`}>
+                      {regime==="TREND"?"📈":regime==="CRASH"?"🔻":"↔️"} {regime as string}
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                    dataStatus==="OK"?"text-green-400 bg-green-500/10":dataStatus==="STALE"?"text-amber-400 bg-amber-500/10":"text-bah-muted bg-bah-border/50"
+                  }`}>{dataStatus === "OK" ? "LIVE" : dataStatus === "SYNTHETIC" ? "SYNTHETIC" : dataStatus}</span>
+                </div>
+                {dataDetail && (
+                  <div className="text-[10px] text-bah-muted mt-1 font-mono truncate">{dataDetail}</div>
+                )}
               </div>
-              <span className="text-[10px] text-bah-muted">{regime==="TREND"?"v5+v9 active":regime==="CRASH"?"No trading":"Range mode"}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

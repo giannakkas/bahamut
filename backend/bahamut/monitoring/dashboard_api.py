@@ -286,11 +286,18 @@ async def system_health(user=Depends(get_current_user)):
 
     # Check for live data vs synthetic
     live_data = False
+    data_status_map = {}
     try:
-        from bahamut.ingestion.adapters.twelvedata import twelve_data
-        live_data = twelve_data.configured
+        from bahamut.data.live_data import get_data_source, get_data_status, get_last_bar_timestamp
+        data_src = get_data_source()
+        live_data = data_src == "LIVE"
+        data_status_map = get_data_status()
     except Exception:
-        pass
+        try:
+            from bahamut.ingestion.adapters.twelvedata import twelve_data
+            live_data = twelve_data.configured
+        except Exception:
+            pass
 
     # Active strategies from sleeves
     active_strategies = [n for n, s in pm.sleeves.items()
@@ -314,6 +321,7 @@ async def system_health(user=Depends(get_current_user)):
         "assets": assets,
         "active_strategies": active_strategies,
         "regimes": dict(getattr(pm, 'asset_regimes', {})),
+        "data": data_status_map,
         "portfolio": {
             "equity": round(pm.total_equity, 2),
             "kill_switch": pm.kill_switch_triggered,

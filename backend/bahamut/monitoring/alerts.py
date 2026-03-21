@@ -225,6 +225,37 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
                        f"{dupes} duplicate signals rejected",
                        key="dupes_high")
 
+    # Data health checks
+    try:
+        from bahamut.data.live_data import get_data_status
+        for asset, info in get_data_status().items():
+            status = info.get("status", "")
+            if status == "ERROR":
+                fire_alert("CRITICAL", f"Data error: {asset}",
+                           f"Live data fetch failed for {asset}.\n{info.get('detail', '')}",
+                           key=f"data_error_{asset}")
+            elif status == "STALE":
+                fire_alert("WARNING", f"Stale data: {asset}",
+                           f"Using cached/stale data for {asset}.\n{info.get('detail', '')}",
+                           key=f"data_stale_{asset}")
+    except Exception:
+        pass
+
+    # Cycle health checks
+    try:
+        from bahamut.monitoring.cycle_log import get_cycle_stats
+        stats = get_cycle_stats()
+        if stats.get("errors", 0) >= 3:
+            fire_alert("CRITICAL", "Multiple cycle errors",
+                       f"{stats['errors']} errors in last {stats['total']} cycles",
+                       key="cycle_errors_high")
+        if stats.get("skipped", 0) >= 5:
+            fire_alert("WARNING", "High cycle skip rate",
+                       f"{stats['skipped']} skipped in last {stats['total']} cycles",
+                       key="cycle_skips_high")
+    except Exception:
+        pass
+
 
 def fire_trade_alert(trade: dict, action: str = "closed"):
     """Fire INFO alert for trade open/close events."""

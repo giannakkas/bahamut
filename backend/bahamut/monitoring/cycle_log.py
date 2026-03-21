@@ -78,11 +78,15 @@ def start_cycle() -> CycleRecord:
     # Detect data source
     data_src = "SYNTHETIC"
     try:
-        from bahamut.ingestion.adapters.twelvedata import twelve_data
-        if twelve_data.configured:
-            data_src = "LIVE"
+        from bahamut.data.live_data import get_data_source
+        data_src = get_data_source()
     except Exception:
-        pass
+        try:
+            from bahamut.ingestion.adapters.twelvedata import twelve_data
+            if twelve_data.configured:
+                data_src = "LIVE"
+        except Exception:
+            pass
 
     _current_cycle = CycleRecord(
         cycle_id=str(uuid.uuid4())[:8],
