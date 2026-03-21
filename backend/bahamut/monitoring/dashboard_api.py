@@ -338,3 +338,111 @@ async def system_health(user=Depends(get_current_user)):
             "email_configured": em_ok(),
         },
     }
+
+
+# ═══════════════════════════════════════════════════════
+# COMBINED DASHBOARD ENDPOINT — single call, all data
+# ═══════════════════════════════════════════════════════
+
+@router.get("/dashboard")
+async def dashboard_all(user=Depends(get_current_user)):
+    """Single endpoint returning all dashboard data. Reduces 9 calls to 1."""
+    engine = get_execution_engine()
+    pm = get_portfolio_manager()
+    pm.update()
+
+    equity = pm.total_equity
+    initial = pm.initial_capital
+
+    # Portfolio
+    dd_pct = round((1 - equity / pm.peak_equity) * 100 if pm.peak_equity > 0 else 0, 2)
+    open_risk = sum(p.risk_amount for p in engine.open_positions)
+    portfolio = {
+        "equity": round(equity, 2),
+        "pnl_total": round(equity - initial, 2),
+        "return_pct": round((equity - initial) / max(1, initial) * 100, 2),
+        "drawdown_pct": dd_pct,
+        "open_risk_pct": round(open_risk / max(1, equity) * 100, 2),
+        "open_positions": len(engine.open_positions),
+        "total_trades": len(engine.closed_trades),
+        "kill_switch": pm.kill_switch_triggered,
+        "regime": dict(getattr(pm, 'asset_regimes', {})),
+    }
+
+    # Strategies
+    strats = {}
+    for name, sleeve in pm.sleeves.items():
+        trades = [t for t in engine.closed_trades if t.strategy == name]
+        wins = [t for t in trades if t.pnl > 0]
+        losses = [t for t in trades if t.pnl <= 0]
+        total_pnl = sum(t.pnl for t in trades)
+        gp = sum(t.pnl for t in wins)
+        gl = abs(sum(t.pnl for t in losses)) if losses else 0
+        wr = len(wins) / max(1, len(trades))
+        recent = trades[-20:] if len(trades) >= 5 else trades
+        r_wins = [t for t in recent if t.pnl > 0]
+        r_wr = round(len(r_wins) / max(1, len(recent)) * 100, 1)
+        strats[name] = {
+            "pnl": round(total_pnl, 2), "trades": len(trades),
+            "win_rate": round(wr * 100, 1), "rolling_wr": r_wr,
+            "profit_factor": round(gp / gl, 2) if gl > 0 else 0,
+            "expectancy": round((gp / max(1, len(wins))) * wr - (gl / max(1, len(losses))) * (1 - wr), 2) if trades else 0,
+            "open_positions": len([p for p in engine.open_positions if p.strategy == name]),
+            "equity": round(sleeve.current_equity, 2),
+        }
+
+    # Positions
+    positions = []
+    for pos in engine.open_positions:
+        unreal = (pos.current_price - pos.entry_price) * pos.size if pos.direction == "LONG" else (pos.entry_price - pos.current_price) * pos.size
+        positions.append({
+            "asset": pos.asset, "strategy": pos.strategy, "direction": pos.direction,
+            "entry_price": round(pos.entry_price, 2), "current_price": round(pos.current_price, 2),
+            "stop_loss": round(pos.stop_price, 2), "take_profit": round(pos.tp_price, 2),
+            "unrealized_pnl": round(unreal, 2),
+            "risk_pct": round(pos.risk_amount / max(1, equity) * 100, 2),
+            "bars_held": pos.bars_held,
+        })
+
+    # Recent trades
+    recent_trades = []
+    for t in reversed(engine.closed_trades[-30:]):
+        recent_trades.append({
+            "asset": t.asset, "strategy": t.strategy, "direction": t.direction,
+            "entry_price": round(t.entry_price, 2), "exit_price": round(t.exit_price, 2),
+            "pnl": round(t.pnl, 2), "exit_reason": t.exit_reason, "bars_held": t.bars_held,
+        })
+
+    # Alerts
+    from bahamut.monitoring.alerts import get_recent_alerts
+    alerts = get_recent_alerts(limit=30)
+
+    # Cycle data
+    from bahamut.monitoring.cycle_log import get_last_cycle, get_cycle_history, get_cycle_stats
+    last_cycle = get_last_cycle()
+    cycle_hist = get_cycle_history(15)
+    cycle_stats = get_cycle_stats()
+
+    # Health (lightweight — skip DB/Redis checks for speed)
+    data_src = "SYNTHETIC"
+    data_status = {}
+    try:
+        from bahamut.data.live_data import get_data_source, get_data_status
+        data_src = get_data_source()
+        data_status = get_data_status()
+    except Exception:
+        pass
+
+    return {
+        "portfolio": portfolio,
+        "strategies": strats,
+        "positions": {"positions": positions, "count": len(positions)},
+        "trades": {"trades": recent_trades, "count": len(engine.closed_trades)},
+        "alerts": alerts,
+        "last_cycle": last_cycle,
+        "cycle_history": cycle_hist,
+        "cycle_stats": cycle_stats,
+        "health": {
+            "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
+        },
+    }

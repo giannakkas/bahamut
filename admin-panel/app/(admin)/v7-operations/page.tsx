@@ -7,7 +7,7 @@ export default function DailyOperations() {
   const [strategies, setStrategies] = useState<any>(null);
   const [positions, setPositions] = useState<any>(null);
   const [trades, setTrades] = useState<any>(null);
-  const [execution, setExecution] = useState<any>(null);
+  
   const [alerts, setAlerts] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
@@ -20,30 +20,42 @@ export default function DailyOperations() {
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
   const api = useCallback(async (path: string) => {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const r = await fetch(`${apiBase()}/monitoring${path}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (r.ok) return r.json();
     } catch {} return null;
   }, [token]);
   const v7 = useCallback(async (path: string, opts?: any) => {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
       const r = await fetch(`${apiBase()}/v7${path}`, {
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...opts,
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        signal: controller.signal, ...opts,
       });
+      clearTimeout(timeout);
       if (r.ok) return r.json();
     } catch {} return null;
   }, [token]);
 
   const load = useCallback(async () => {
-    const [p, s, pos, t, e, a, h, lc, ch] = await Promise.all([
-      api("/portfolio"), api("/strategies"), api("/positions"),
-      api("/trades"), api("/execution"), api("/alerts"),
-      api("/health"), api("/cycle/last"), api("/cycle/history"),
-    ]);
-    if (p) setPortfolio(p); if (s) setStrategies(s); if (pos) setPositions(pos);
-    if (t) setTrades(t); if (e) setExecution(e); if (a?.alerts) setAlerts(a.alerts);
-    if (h) setHealth(h); if (lc) setLastCycle(lc); if (ch) setCycleHistory(ch);
+    // Single API call instead of 9 parallel ones
+    const d = await api("/dashboard");
+    if (d) {
+      setPortfolio(d.portfolio);
+      setStrategies(d.strategies);
+      setPositions(d.positions);
+      setTrades(d.trades);
+      setAlerts(d.alerts || []);
+      setHealth(d.health);
+      setLastCycle(d.last_cycle);
+      setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
+    }
     setLoading(false);
     setLastUpdated(new Date());
   }, [api]);
@@ -342,10 +354,6 @@ export default function DailyOperations() {
               ))}
             </tbody>
           </table>
-          {execution && <div className="px-4 py-2 border-t border-bah-border/50 flex gap-6 text-[10px] text-bah-muted font-mono">
-            <span>Signals: {execution.total_signals_processed}</span><span>Orders: {execution.total_orders}</span>
-            <span>Cancelled: {execution.cancelled_orders}</span><span>Slippage: {execution.avg_slippage_bps}bps</span>
-          </div>}
         </div>
       )}
 
