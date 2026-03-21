@@ -95,13 +95,60 @@ async def save_notification_settings(body: NotificationSettings,
 
 @router.post("/settings/test/telegram")
 async def test_telegram(user=Depends(get_current_user)):
-    """Send a test Telegram message."""
+    """Send a test Telegram message using saved config."""
     from bahamut.monitoring.telegram import test_connection
     return test_connection()
 
 
+class EmailTestRequest(BaseModel):
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_pass: Optional[str] = None
+    from_email: Optional[str] = None
+    to_email: Optional[str] = None
+
+
 @router.post("/settings/test/email")
-async def test_email(user=Depends(get_current_user)):
-    """Send a test email."""
-    from bahamut.monitoring.email import test_connection
-    return test_connection()
+async def test_email(body: EmailTestRequest = None, user=Depends(get_current_user)):
+    """Send a test email. Accepts inline config so user doesn't need to save first."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    # Use inline values if provided, otherwise fall back to saved config
+    host = body.smtp_host if body and body.smtp_host else get_config("notify.email.smtp_host", "smtp-relay.brevo.com")
+    port = body.smtp_port if body and body.smtp_port else get_config("notify.email.smtp_port", 587)
+    smtp_user = body.smtp_user if body and body.smtp_user else get_config("notify.email.smtp_user", "")
+    smtp_pass = body.smtp_pass if body and body.smtp_pass else get_config("notify.email.smtp_pass", "")
+    from_email = body.from_email if body and body.from_email else get_config("notify.email.from_email", "")
+    to_email = body.to_email if body and body.to_email else get_config("notify.email.to_email", "")
+
+    if not smtp_user:
+        return {"ok": False, "error": "SMTP login not set"}
+    if not smtp_pass:
+        return {"ok": False, "error": "SMTP key/password not set"}
+    if not to_email:
+        return {"ok": False, "error": "Recipient email not set"}
+
+    from_addr = from_email or smtp_user
+
+    try:
+        msg = MIMEText("This is a test email from Bahamut.AI.\n\nEmail notifications are working!")
+        msg["Subject"] = "✅ Bahamut Alert Test"
+        msg["From"] = f"Bahamut Alerts <{from_addr}>"
+        msg["To"] = to_email
+
+        with smtplib.SMTP(host, int(port), timeout=15) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(from_addr, to_email, msg.as_string())
+
+        return {"ok": True, "message": f"Test email sent to {to_email}"}
+    except smtplib.SMTPAuthenticationError as e:
+        return {"ok": False, "error": f"Authentication failed: {e.smtp_error.decode() if hasattr(e, 'smtp_error') else str(e)}"}
+    except smtplib.SMTPSenderRefused as e:
+        return {"ok": False, "error": f"Sender rejected (verify '{from_addr}' in Brevo): {str(e)}"}
+    except smtplib.SMTPRecipientsRefused as e:
+        return {"ok": False, "error": f"Recipient rejected: {str(e)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {str(e)}"}

@@ -95,10 +95,24 @@ export default function NotificationSettings() {
   const test = async (channel: "telegram" | "email") => {
     setTesting(channel);
     setMessage(null);
-    const res = await api(`/settings/test/${channel}`, { method: "POST" });
+
+    // Send current form values so test works without saving first
+    const body = channel === "email" ? {
+      smtp_host: form.email_smtp_host,
+      smtp_port: form.email_smtp_port,
+      smtp_user: form.email_smtp_user,
+      smtp_pass: form.email_smtp_pass || undefined, // Don't send empty (use saved)
+      from_email: form.email_from,
+      to_email: form.email_to,
+    } : undefined;
+
+    const res = await api(`/settings/test/${channel}`, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    });
     setTesting(null);
     if (res?.ok) {
-      setMessage({ type: "success", text: `Test ${channel} sent! Check your ${channel === "telegram" ? "Telegram" : "inbox"}.` });
+      setMessage({ type: "success", text: res.message || `Test ${channel} sent! Check your ${channel === "telegram" ? "Telegram" : "inbox"}.` });
     } else {
       setMessage({ type: "error", text: res?.error || `Test ${channel} failed` });
     }
