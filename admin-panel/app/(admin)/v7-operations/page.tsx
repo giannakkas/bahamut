@@ -73,7 +73,7 @@ export default function MonitoringDashboard() {
       {/* TOP BAR */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-bah-heading">Bahamut Monitor</h1>
+          <h1 className="text-lg font-bold text-bah-heading">Daily Operations Monitor</h1>
           <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${
             p?.kill_switch ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-green-500/20 text-green-400 border-green-500/30"
           }`}>{p?.kill_switch ? "HALTED" : "LIVE"}</span>

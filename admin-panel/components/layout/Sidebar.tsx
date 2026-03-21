@@ -9,6 +9,8 @@ import { useAlerts } from "@/lib/hooks";
 import { useOverrides } from "@/lib/hooks";
 
 const NAV_ITEMS = [
+  // ─── Primary ───
+  { href: "/v7-operations", label: "Daily Operations", icon: "📊", minRole: "admin" },
   // ─── Admin + Super Admin ───
   { href: "/dashboard", label: "Dashboard", icon: "◉", minRole: "admin" },
   { href: "/top-picks", label: "Top Picks", icon: "🔥", minRole: "admin" },
@@ -22,7 +24,6 @@ const NAV_ITEMS = [
   { href: "/agent-council", label: "Agent Council", icon: "◎", minRole: "admin" },
   { href: "/learning-lab", label: "Learning Lab", icon: "◐", minRole: "admin" },
   { href: "/execution", label: "Execution Monitor", icon: "⚡", minRole: "admin" },
-  { href: "/v7-operations", label: "v7 Operations", icon: "🎯", minRole: "admin" },
   { href: "/trade-journal", label: "Trade Journal", icon: "☰", minRole: "admin" },
   // ─── Super Admin Only: Raw Engine Controls ───
   { href: "/config", label: "Configuration", icon: "⚙", minRole: "super_admin" },

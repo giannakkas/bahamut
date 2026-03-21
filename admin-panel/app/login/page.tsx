@@ -17,7 +17,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated()) {
-      router.replace("/dashboard");
+      router.replace("/v7-operations");
     }
   }, [router]);
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
     try {
       const res = await login(username, password);
       setUser(res.user);
-      router.replace("/dashboard");
+      router.replace("/v7-operations");
     } catch (err) {
       setError(
         err instanceof Error && err.message.includes("expired")
