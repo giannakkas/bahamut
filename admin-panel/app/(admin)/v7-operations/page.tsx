@@ -282,8 +282,6 @@ export default function DailyOperations() {
             {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
           </button>
         ))}
-          </button>
-        ))}
       </div>
 
       {/* ═══ CYCLE INSPECTOR TAB ═══ */}
