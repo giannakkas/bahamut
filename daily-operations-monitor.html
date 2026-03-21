@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bahamut — Daily Operations Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2235;
+  --border: #1e293b;
+  --border2: #2d3a4f;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --dim: #475569;
+  --cyan: #22d3ee;
+  --cyan2: #06b6d4;
+  --green: #34d399;
+  --green2: #10b981;
+  --red: #f87171;
+  --red2: #ef4444;
+  --amber: #fbbf24;
+  --amber2: #f59e0b;
+  --purple: #a78bfa;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Layout */
+.container { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+
+/* Header */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo {
+  font-size: 20px; font-weight: 800; letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--cyan) 0%, var(--purple) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.5px; text-transform: uppercase; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.badge-live { background: rgba(52,211,153,0.15); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
+.badge-halted { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+.badge-critical {
+  background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+.badge-warn { background: rgba(251,191,36,0.15); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+.controls { display: flex; gap: 8px; align-items: center; }
+.btn {
+  font-family: inherit; font-size: 11px; font-weight: 600; padding: 7px 14px;
+  border-radius: 8px; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border2);
+  background: var(--surface); color: var(--muted);
+}
+.btn:hover { color: var(--text); border-color: var(--dim); background: var(--surface2); }
+.btn-cyan { background: rgba(34,211,238,0.1); color: var(--cyan); border-color: rgba(34,211,238,0.3); }
+.btn-cyan:hover { background: rgba(34,211,238,0.2); }
+.btn-red { background: rgba(248,113,113,0.08); color: var(--red); border-color: rgba(248,113,113,0.25); }
+.btn-red:hover { background: rgba(248,113,113,0.15); }
+.btn-green { background: rgba(52,211,153,0.1); color: var(--green); border-color: rgba(52,211,153,0.3); }
+
+.refresh-indicator {
+  font-size: 10px; color: var(--dim); font-family: 'JetBrains Mono', monospace;
+}
+
+/* Metric Cards */
+.metric-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px; text-align: center; transition: border-color 0.2s;
+}
+.metric-card:hover { border-color: var(--border2); }
+.metric-value { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1.2; }
+.metric-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: 600; }
+
+/* Regime Cards */
+.regime-card {
+  border-radius: 12px; padding: 14px 18px; border: 1px solid;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.regime-trend { background: rgba(52,211,153,0.04); border-color: rgba(52,211,153,0.2); }
+.regime-range { background: rgba(251,191,36,0.04); border-color: rgba(251,191,36,0.2); }
+.regime-crash { background: rgba(248,113,113,0.04); border-color: rgba(248,113,113,0.2); }
+.regime-asset { font-size: 14px; font-weight: 700; }
+.regime-label { font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.regime-detail { font-size: 10px; color: var(--muted); }
+
+/* Panel */
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-title { font-size: 13px; font-weight: 700; color: var(--text); }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab {
+  font-family: inherit; font-size: 12px; font-weight: 600; padding: 10px 18px;
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; padding: 10px 14px; font-size: 10px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--border);
+}
+th.r { text-align: right; }
+td {
+  padding: 10px 14px; font-size: 12px; border-bottom: 1px solid rgba(30,41,59,0.5);
+  color: var(--text);
+}
+td.r { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+td.muted { color: var(--muted); }
+tr:hover { background: rgba(30,41,59,0.3); }
+
+/* Alerts */
+.alert-item {
+  padding: 12px 18px; display: flex; align-items: flex-start; gap: 12px;
+  border-bottom: 1px solid rgba(30,41,59,0.4);
+}
+.alert-critical { background: rgba(248,113,113,0.03); }
+.alert-warning { background: rgba(251,191,36,0.03); }
+.alert-badge {
+  font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  white-space: nowrap; margin-top: 2px;
+}
+.alert-badge-critical { background: rgba(248,113,113,0.15); color: var(--red); }
+.alert-badge-warning { background: rgba(251,191,36,0.15); color: var(--amber); }
+.alert-badge-info { background: rgba(100,116,139,0.15); color: var(--muted); }
+.alert-title { font-size: 12px; font-weight: 600; }
+.alert-msg { font-size: 11px; color: var(--muted); margin-top: 3px; white-space: pre-line; line-height: 1.5; }
+.alert-time { font-size: 10px; color: var(--dim); white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+
+/* Execution footer */
+.exec-footer {
+  padding: 10px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 24px; font-size: 10px; color: var(--dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Colors */
+.green { color: var(--green); } .red { color: var(--red); }
+.amber { color: var(--amber); } .cyan { color: var(--cyan); }
+.dim { color: var(--dim); }
+.bold { font-weight: 700; }
+
+.empty-state { padding: 48px; text-align: center; color: var(--muted); font-size: 13px; }
+.loading { padding: 80px; text-align: center; color: var(--dim); font-size: 13px; }
+
+/* Config Modal */
+.config-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+.config-modal {
+  background: var(--surface); border: 1px solid var(--border2); border-radius: 16px;
+  padding: 28px; width: 420px; max-width: 90vw;
+}
+.config-modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.config-modal label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.config-modal input {
+  width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 8px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  margin-bottom: 14px; outline: none;
+}
+.config-modal input:focus { border-color: var(--cyan); }
+.config-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+@media (max-width: 900px) {
+  .grid-6 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <div class="loading" id="loading">Connecting to Bahamut API...</div>
+</div>
+
+<script>
+// ── Config ──
+let API_BASE = localStorage.getItem('bahamut_api') || 'https://api.bahamut.ai';
+let AUTH_TOKEN = localStorage.getItem('bahamut_token') || '';
+
+let state = { portfolio: null, strategies: null, positions: null, trades: null, execution: null, alerts: [], tab: 'strategies', lastUpdate: null, showConfig: false };
+
+async function api(path) {
+  try {
+    const headers = {};
+    if (AUTH_TOKEN) headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+    const r = await fetch(`${API_BASE}/api/monitoring${path}`, { headers, timeout: 10000 });
+    if (r.ok) return await r.json();
+    if (r.status === 401 || r.status === 403) { state.showConfig = true; render(); }
+  } catch (e) { console.warn('API error:', path, e.message); }
+  return null;
+}
+
+async function v7api(path, opts = {}) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (AUTH_TOKEN) headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+    const r = await fetch(`${API_BASE}/api/v7${path}`, { ...opts, headers });
+    if (r.ok) return await r.json();
+  } catch (e) { console.warn('v7 API error:', path, e.message); }
+  return null;
+}
+
+async function load() {
+  const [p, s, pos, t, e, a] = await Promise.all([
+    api('/portfolio'), api('/strategies'), api('/positions'),
+    api('/trades'), api('/execution'), api('/alerts')
+  ]);
+  if (p) state.portfolio = p;
+  if (s) state.strategies = s;
+  if (pos) state.positions = pos;
+  if (t) state.trades = t;
+  if (e) state.execution = e;
+  if (a?.alerts) state.alerts = a.alerts;
+  state.lastUpdate = new Date();
+  render();
+}
+
+// ── Helpers ──
+function $(v, d = 0) { return v ?? d; }
+function money(v) { return v >= 0 ? `+$${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}` : `-$${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}`; }
+function pct(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(v < 10 ? 2 : 1)}%`; }
+function clr(v) { return v > 0 ? 'green' : v < 0 ? 'red' : ''; }
+function ddClr(v) { return v > 8 ? 'red' : v > 5 ? 'amber' : 'green'; }
+function riskClr(v) { return v > 5 ? 'red' : v > 4 ? 'amber' : ''; }
+function wrClr(v) { return v >= 50 ? 'green' : v < 35 ? 'red' : 'amber'; }
+function pfClr(v) { return v >= 1.5 ? 'green' : v < 1 ? 'red' : ''; }
+function timeStr(ts) { if (!ts) return ''; try { return new Date(ts).toLocaleTimeString(); } catch { return ''; } }
+function regimeClass(r) { return r === 'TREND' ? 'regime-trend' : r === 'CRASH' ? 'regime-crash' : 'regime-range'; }
+function regimeEmoji(r) { return r === 'TREND' ? '📈' : r === 'CRASH' ? '🔻' : '↔️'; }
+function regimeDetail(r) { return r === 'TREND' ? 'v5 + v9 active' : r === 'CRASH' ? 'No trading' : 'Range mode'; }
+
+// ── Render ──
+function render() {
+  const p = state.portfolio;
+  const app = document.getElementById('app');
+
+  if (!p) {
+    app.innerHTML = `<div class="loading">
+      <div style="margin-bottom:16px">Connecting to Bahamut API...</div>
+      <div style="font-size:11px;color:var(--dim)">API: ${API_BASE}</div>
+      <button class="btn btn-cyan" style="margin-top:16px" onclick="state.showConfig=true;render()">⚙ Configure</button>
+      ${state.showConfig ? configModal() : ''}
+    </div>`;
+    return;
+  }
+
+  const dd = $(p.drawdown_pct);
+  const risk = $(p.open_risk_pct);
+  const pnl = $(p.pnl_total);
+  const critAlerts = state.alerts.filter(a => a.level === 'CRITICAL').length;
+  const warnAlerts = state.alerts.filter(a => a.level === 'WARNING').length;
+
+  app.innerHTML = `
+    ${state.showConfig ? configModal() : ''}
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-left">
+        <div>
+          <div class="logo">BAHAMUT</div>
+          <div class="subtitle">Daily Operations Monitor</div>
+        </div>
+        <span class="badge ${p.kill_switch ? 'badge-halted' : 'badge-live'}">${p.kill_switch ? '⛔ HALTED' : '● LIVE'}</span>
+        ${critAlerts > 0 ? `<span class="badge badge-critical">${critAlerts} CRITICAL</span>` : ''}
+        ${warnAlerts > 0 ? `<span class="badge badge-warn">${warnAlerts} WARNING</span>` : ''}
+      </div>
+      <div class="controls">
+        <span class="refresh-indicator">${state.lastUpdate ? state.lastUpdate.toLocaleTimeString() : ''}</span>
+        <button class="btn btn-cyan" onclick="runCycle()">▶ Cycle</button>
+        <button class="btn" onclick="load()">↻</button>
+        <button class="btn" onclick="state.showConfig=true;render()">⚙</button>
+        ${p.kill_switch
+          ? `<button class="btn btn-green" onclick="resume()">Resume</button>`
+          : `<button class="btn btn-red" onclick="killSwitch()">Kill Switch</button>`}
+      </div>
+    </div>
+
+    <!-- KEY METRICS -->
+    <div class="grid-6" style="margin-bottom:14px">
+      <div class="metric-card">
+        <div class="metric-value">${$(p.equity, 100000).toLocaleString(undefined, {style:'currency',currency:'USD',maximumFractionDigits:0})}</div>
+        <div class="metric-label">Equity</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value ${clr(pnl)}">${money(pnl)}</div>
+        <div class="metric-label">Total P&L</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value ${clr($(p.return_pct))}">${pct($(p.return_pct))}</div>
+        <div class="metric-label">Return</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value ${ddClr(dd)}">${dd.toFixed(1)}%</div>
+        <div class="metric-label">Drawdown</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value ${riskClr(risk)}">${risk.toFixed(1)}%</div>
+        <div class="metric-label">Open Risk</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value cyan">${$(p.open_positions, 0)} / ${$(p.total_trades, 0)}</div>
+        <div class="metric-label">Open / Total</div>
+      </div>
+    </div>
+
+    <!-- REGIME CARDS -->
+    ${p.regime && Object.keys(p.regime).length > 0 ? `
+    <div class="grid-2" style="margin-bottom:14px">
+      ${Object.entries(p.regime).map(([asset, regime]) => `
+        <div class="regime-card ${regimeClass(regime)}">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="regime-asset">${asset}</span>
+            <span class="regime-label ${regime === 'TREND' ? 'green' : regime === 'CRASH' ? 'red' : 'amber'}">${regimeEmoji(regime)} ${regime}</span>
+          </div>
+          <span class="regime-detail">${regimeDetail(regime)}</span>
+        </div>
+      `).join('')}
+    </div>` : ''}
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab ${state.tab === 'strategies' ? 'active' : ''}" onclick="setTab('strategies')">📊 Strategies</button>
+      <button class="tab ${state.tab === 'positions' ? 'active' : ''}" onclick="setTab('positions')">📦 Positions</button>
+      <button class="tab ${state.tab === 'trades' ? 'active' : ''}" onclick="setTab('trades')">🔁 Trades</button>
+      <button class="tab ${state.tab === 'alerts' ? 'active' : ''}" onclick="setTab('alerts')">⚠️ Alerts (${state.alerts.length})</button>
+    </div>
+
+    <!-- TAB CONTENT -->
+    ${state.tab === 'strategies' ? renderStrategies() : ''}
+    ${state.tab === 'positions' ? renderPositions() : ''}
+    ${state.tab === 'trades' ? renderTrades() : ''}
+    ${state.tab === 'alerts' ? renderAlerts() : ''}
+  `;
+}
+
+function renderStrategies() {
+  const s = state.strategies;
+  if (!s) return '<div class="empty-state">No strategy data</div>';
+  const entries = Object.entries(s).filter(([,v]) => v.trades > 0 || v.open_positions > 0);
+  if (entries.length === 0) return '<div class="empty-state">No active strategies</div>';
+
+  return `<div class="panel">
+    <table>
+      <thead><tr>
+        <th>Strategy</th><th class="r">PnL</th><th class="r">Trades</th>
+        <th class="r">WR</th><th class="r">WR(20)</th><th class="r">PF</th>
+        <th class="r">Expect.</th><th class="r">Equity</th><th class="r">Open</th>
+      </tr></thead>
+      <tbody>
+        ${entries.map(([n, s]) => `<tr>
+          <td class="bold">${n}</td>
+          <td class="r bold ${clr(s.pnl)}">${money(s.pnl)}</td>
+          <td class="r">${s.trades}</td>
+          <td class="r">${s.win_rate.toFixed(0)}%</td>
+          <td class="r bold ${wrClr(s.rolling_wr)}">${s.rolling_wr.toFixed(0)}%</td>
+          <td class="r ${pfClr(s.profit_factor)}">${s.profit_factor.toFixed(2)}</td>
+          <td class="r ${clr(s.expectancy)}">${money(s.expectancy)}</td>
+          <td class="r muted">$${s.equity.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+          <td class="r">${s.open_positions > 0 ? `<span class="cyan bold">${s.open_positions}</span>` : '<span class="dim">—</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ${state.execution ? `<div class="exec-footer">
+      <span>Signals: ${state.execution.total_signals_processed}</span>
+      <span>Orders: ${state.execution.total_orders}</span>
+      <span>Cancelled: ${state.execution.cancelled_orders}</span>
+      <span>Slippage: ${state.execution.avg_slippage_bps}bps</span>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderPositions() {
+  const pos = state.positions?.positions;
+  if (!pos || pos.length === 0) return '<div class="panel"><div class="empty-state">No open positions</div></div>';
+
+  return `<div class="panel"><table>
+    <thead><tr>
+      <th>Asset</th><th>Strategy</th><th class="r">Entry</th><th class="r">Current</th>
+      <th class="r">SL</th><th class="r">TP</th><th class="r">Unreal. PnL</th>
+      <th class="r">Risk %</th><th class="r">Bars</th>
+    </tr></thead>
+    <tbody>
+      ${pos.map(p => `<tr>
+        <td class="bold">${p.asset}</td>
+        <td class="muted">${p.strategy}</td>
+        <td class="r">$${p.entry_price.toLocaleString()}</td>
+        <td class="r">$${p.current_price.toLocaleString()}</td>
+        <td class="r red">$${p.stop_loss.toLocaleString()}</td>
+        <td class="r green">$${p.take_profit.toLocaleString()}</td>
+        <td class="r bold ${clr(p.unrealized_pnl)}">${money(p.unrealized_pnl)}</td>
+        <td class="r ${p.risk_pct > 3 ? 'red' : ''}">${p.risk_pct.toFixed(1)}%</td>
+        <td class="r muted">${p.bars_held}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function renderTrades() {
+  const trades = state.trades?.trades;
+  if (!trades || trades.length === 0) return '<div class="panel"><div class="empty-state">No trades yet</div></div>';
+
+  return `<div class="panel"><table>
+    <thead><tr>
+      <th>Asset</th><th>Strategy</th><th>Dir</th><th class="r">Entry</th>
+      <th class="r">Exit</th><th class="r">PnL</th><th>Reason</th><th class="r">Bars</th>
+    </tr></thead>
+    <tbody>
+      ${trades.slice(0, 30).map(t => `<tr>
+        <td class="bold">${t.asset}</td>
+        <td class="muted">${t.strategy}</td>
+        <td><span class="${t.direction === 'LONG' ? 'green' : 'red'}">${t.direction}</span></td>
+        <td class="r">$${t.entry_price.toLocaleString()}</td>
+        <td class="r">$${t.exit_price.toLocaleString()}</td>
+        <td class="r bold ${clr(t.pnl)}">${money(t.pnl)}</td>
+        <td class="muted">${t.exit_reason}</td>
+        <td class="r muted">${t.bars_held}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  ${state.trades.count > 30 ? `<div class="exec-footer">Showing 30 of ${state.trades.count} trades</div>` : ''}
+  </div>`;
+}
+
+function renderAlerts() {
+  if (state.alerts.length === 0) return '<div class="panel"><div class="empty-state">No alerts</div></div>';
+
+  return `<div class="panel">
+    ${state.alerts.slice(0, 40).map(a => `
+      <div class="alert-item ${a.level === 'CRITICAL' ? 'alert-critical' : a.level === 'WARNING' ? 'alert-warning' : ''}">
+        <span class="alert-badge ${a.level === 'CRITICAL' ? 'alert-badge-critical' : a.level === 'WARNING' ? 'alert-badge-warning' : 'alert-badge-info'}">${a.level}</span>
+        <div style="flex:1;min-width:0">
+          <div class="alert-title">${a.title || ''}</div>
+          <div class="alert-msg">${a.message || ''}</div>
+        </div>
+        <div class="alert-time">${timeStr(a.timestamp)}</div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function configModal() {
+  return `<div class="config-overlay" onclick="if(event.target===this){state.showConfig=false;render()}">
+    <div class="config-modal">
+      <h3>⚙ Connection Settings</h3>
+      <label>API Base URL</label>
+      <input id="cfg-api" value="${API_BASE}" placeholder="https://api.bahamut.ai">
+      <label>Auth Token (optional)</label>
+      <input id="cfg-token" value="${AUTH_TOKEN}" placeholder="Bearer token" type="password">
+      <div class="config-actions">
+        <button class="btn" onclick="state.showConfig=false;render()">Cancel</button>
+        <button class="btn btn-cyan" onclick="saveConfig()">Save & Connect</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function saveConfig() {
+  API_BASE = document.getElementById('cfg-api').value.replace(/\/$/, '');
+  AUTH_TOKEN = document.getElementById('cfg-token').value;
+  localStorage.setItem('bahamut_api', API_BASE);
+  localStorage.setItem('bahamut_token', AUTH_TOKEN);
+  state.showConfig = false;
+  state.portfolio = null;
+  render();
+  load();
+}
+
+function setTab(t) { state.tab = t; render(); }
+
+async function runCycle() {
+  await v7api('/orchestrator/run-cycle', { method: 'POST' });
+  setTimeout(load, 1500);
+}
+
+async function killSwitch() {
+  if (!confirm('Activate kill switch? This closes ALL open positions.')) return;
+  await v7api('/portfolio/kill-switch', { method: 'POST' });
+  load();
+}
+
+async function resume() {
+  await v7api('/portfolio/resume', { method: 'POST' });
+  load();
+}
+
+// ── Init ──
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
