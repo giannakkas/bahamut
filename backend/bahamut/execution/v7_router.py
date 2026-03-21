@@ -14,9 +14,11 @@ Routes for the trader operations dashboard:
   /v7/strategies/{name}/enable — enable strategy
   /v7/strategies/{name}/disable — disable strategy
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
+
+from bahamut.auth.router import get_current_user
 
 from bahamut.portfolio.manager import get_portfolio_manager
 from bahamut.execution.engine import get_execution_engine
@@ -29,13 +31,13 @@ router = APIRouter()
 # ═══════════════════════════════════════════════════════
 
 @router.get("/portfolio/summary")
-async def portfolio_summary():
+async def portfolio_summary(user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     return pm.get_summary()
 
 
 @router.get("/portfolio/sleeves")
-async def portfolio_sleeves():
+async def portfolio_sleeves(user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     pm.update()
     return {
@@ -58,7 +60,7 @@ async def portfolio_sleeves():
 
 
 @router.get("/portfolio/equity-curve")
-async def equity_curve():
+async def equity_curve(user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     return [
         {
@@ -76,17 +78,17 @@ async def equity_curve():
 # ═══════════════════════════════════════════════════════
 
 @router.get("/execution/open-positions")
-async def open_positions():
+async def open_positions(user=Depends(get_current_user)):
     return get_execution_engine().get_open_positions_list()
 
 
 @router.get("/execution/closed-trades")
-async def closed_trades():
+async def closed_trades(user=Depends(get_current_user)):
     return get_execution_engine().get_closed_trades_list()
 
 
 @router.get("/execution/orders")
-async def all_orders():
+async def all_orders(user=Depends(get_current_user)):
     engine = get_execution_engine()
     return [
         {
@@ -102,7 +104,7 @@ async def all_orders():
 
 
 @router.get("/execution/stats")
-async def execution_stats():
+async def execution_stats(user=Depends(get_current_user)):
     return get_execution_engine().get_stats()
 
 
@@ -115,7 +117,7 @@ class RebalanceRequest(BaseModel):
 
 
 @router.post("/portfolio/rebalance")
-async def rebalance(req: RebalanceRequest = None):
+async def rebalance(req: RebalanceRequest = None, user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     pm.rebalance(req.weights if req else None)
     return {"status": "rebalanced", "sleeves": {
@@ -124,7 +126,7 @@ async def rebalance(req: RebalanceRequest = None):
 
 
 @router.post("/portfolio/kill-switch")
-async def kill_switch():
+async def kill_switch(user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     engine = get_execution_engine()
     # Use last known price or 0 to close at market
@@ -138,7 +140,7 @@ async def kill_switch():
 
 
 @router.post("/portfolio/resume")
-async def resume_trading():
+async def resume_trading(user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     engine = get_execution_engine()
     engine.resume_trading()
@@ -147,7 +149,7 @@ async def resume_trading():
 
 
 @router.post("/strategies/{name}/enable")
-async def enable_strategy(name: str):
+async def enable_strategy(name: str, user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     if name not in pm.sleeves:
         raise HTTPException(404, f"Strategy '{name}' not found")
@@ -156,7 +158,7 @@ async def enable_strategy(name: str):
 
 
 @router.post("/strategies/{name}/disable")
-async def disable_strategy(name: str):
+async def disable_strategy(name: str, user=Depends(get_current_user)):
     pm = get_portfolio_manager()
     if name not in pm.sleeves:
         raise HTTPException(404, f"Strategy '{name}' not found")
@@ -169,7 +171,7 @@ async def disable_strategy(name: str):
 # ═══════════════════════════════════════════════════════
 
 @router.post("/orchestrator/run-cycle")
-async def manual_run_cycle():
+async def manual_run_cycle(user=Depends(get_current_user)):
     """Manually trigger one v7 trading cycle (for testing)."""
     try:
         from bahamut.execution.v7_orchestrator import run_v7_cycle_sync
@@ -180,7 +182,7 @@ async def manual_run_cycle():
 
 
 @router.get("/history/trades")
-async def db_trade_history():
+async def db_trade_history(user=Depends(get_current_user)):
     """Load trade history from DB (persisted across restarts)."""
     try:
         from bahamut.execution.v7_persistence import load_trades_from_db
@@ -190,7 +192,7 @@ async def db_trade_history():
 
 
 @router.get("/history/equity-curve")
-async def db_equity_curve():
+async def db_equity_curve(user=Depends(get_current_user)):
     """Load equity curve from DB snapshots."""
     try:
         from bahamut.execution.v7_persistence import load_snapshots_from_db
@@ -200,7 +202,7 @@ async def db_equity_curve():
 
 
 @router.get("/health")
-async def v7_health():
+async def v7_health(user=Depends(get_current_user)):
     """Health check for v7 trading system."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -223,7 +225,7 @@ async def v7_health():
 # ═══════════════════════════════════════════════════════
 
 @router.get("/assets/summary")
-async def asset_summary():
+async def asset_summary(user=Depends(get_current_user)):
     """Per-asset breakdown of positions, PnL, and regime."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -265,13 +267,13 @@ async def asset_summary():
 
 
 @router.get("/assets/{asset}/positions")
-async def asset_positions(asset: str):
+async def asset_positions(asset: str, user=Depends(get_current_user)):
     engine = get_execution_engine()
     return [p for p in engine.get_open_positions_list() if p.get("asset") == asset]
 
 
 @router.get("/assets/{asset}/trades")
-async def asset_trades(asset: str):
+async def asset_trades(asset: str, user=Depends(get_current_user)):
     engine = get_execution_engine()
     return [t for t in engine.get_closed_trades_list() if t.get("asset") == asset]
 

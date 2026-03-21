@@ -1,6 +1,8 @@
 """
 Bahamut Monitoring Dashboard API
 
+All endpoints require authentication (JWT Bearer token).
+
 Endpoints:
   GET /api/monitoring/portfolio    — equity, PnL, drawdown, risk, regimes
   GET /api/monitoring/strategies   — per-strategy performance metrics
@@ -11,17 +13,18 @@ Endpoints:
   GET /api/monitoring/health       — system health check
 """
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from bahamut.execution.engine import get_execution_engine
 from bahamut.portfolio.manager import get_portfolio_manager
+from bahamut.auth.router import get_current_user
 
 logger = structlog.get_logger()
 router = APIRouter()
 
 
 @router.get("/portfolio")
-async def portfolio_summary():
+async def portfolio_summary(user=Depends(get_current_user)):
     """Core portfolio metrics — the numbers that matter."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -56,7 +59,7 @@ async def portfolio_summary():
 
 
 @router.get("/strategies")
-async def strategy_performance():
+async def strategy_performance(user=Depends(get_current_user)):
     """Per-strategy metrics: PnL, win rate, profit factor, expectancy."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -111,7 +114,7 @@ async def strategy_performance():
 
 
 @router.get("/positions")
-async def open_positions():
+async def open_positions(user=Depends(get_current_user)):
     """All open positions with risk metrics."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
@@ -146,7 +149,7 @@ async def open_positions():
 
 
 @router.get("/trades")
-async def trade_history():
+async def trade_history(user=Depends(get_current_user)):
     """Recent closed trades."""
     engine = get_execution_engine()
     trades = []
@@ -172,7 +175,7 @@ async def trade_history():
 
 
 @router.get("/execution")
-async def execution_quality():
+async def execution_quality(user=Depends(get_current_user)):
     """Execution quality metrics."""
     engine = get_execution_engine()
 
@@ -201,7 +204,7 @@ async def execution_quality():
 
 
 @router.get("/alerts")
-async def recent_alerts():
+async def recent_alerts(user=Depends(get_current_user)):
     """Get recent alerts for dashboard display."""
     from bahamut.monitoring.alerts import get_recent_alerts
     alerts = get_recent_alerts(limit=50)
@@ -209,7 +212,7 @@ async def recent_alerts():
 
 
 @router.get("/health")
-async def system_health():
+async def system_health(user=Depends(get_current_user)):
     """Full system health check."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
