@@ -107,6 +107,18 @@ def run_v7_cycle(self=None):
         logger.error("v7_cycle_fatal", error=str(e))
         end_cycle("ERROR", error=str(e))
     finally:
+        # Send cycle report email (only for new-bar cycles or errors)
+        try:
+            from bahamut.monitoring.cycle_log import get_last_cycle
+            from bahamut.monitoring.alerts import send_cycle_report
+            lc = get_last_cycle()
+            # Send report if: any asset had a new bar, or cycle errored
+            has_new_bar = any(a.get("new_bar") for a in lc.get("assets", []))
+            if has_new_bar or lc.get("status") == "ERROR":
+                send_cycle_report(lc)
+        except Exception as e:
+            logger.debug("cycle_report_error", error=str(e))
+
         if lock:
             try:
                 lock.release()
@@ -453,13 +465,25 @@ def _persist_snapshot(snap):
 
 def run_v7_cycle_sync():
     """Run the v7 cycle synchronously — bypasses Celery and Redis lock."""
-    from bahamut.monitoring.cycle_log import start_cycle, end_cycle
+    from bahamut.monitoring.cycle_log import start_cycle, end_cycle, get_last_cycle
 
     cycle = start_cycle()
     try:
         _run_v7_cycle_inner()
         end_cycle("SUCCESS")
-        return {"status": "SUCCESS", "cycle_id": cycle.cycle_id}
+        result = {"status": "SUCCESS", "cycle_id": cycle.cycle_id}
     except Exception as e:
         end_cycle("ERROR", error=str(e))
-        return {"status": "ERROR", "error": str(e)}
+        result = {"status": "ERROR", "error": str(e)}
+
+    # Send cycle report email
+    try:
+        from bahamut.monitoring.alerts import send_cycle_report
+        lc = get_last_cycle()
+        has_new_bar = any(a.get("new_bar") for a in lc.get("assets", []))
+        if has_new_bar or lc.get("status") == "ERROR":
+            send_cycle_report(lc)
+    except Exception:
+        pass
+
+    return result

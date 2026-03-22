@@ -101,12 +101,20 @@ def fire_alert(level: str, title: str, message: str, key: str = "",
     # Dispatch
     if level == "CRITICAL":
         _send_telegram(alert)
-        _send_email(alert)
+        _send_email_templated(alert)
         _mark_fired(alert_key)
     elif level == "WARNING":
         _send_telegram(alert)
+        _send_email_templated(alert)
         _mark_fired(alert_key)
-    # INFO = dashboard only (already stored in history)
+    elif level == "INFO":
+        # INFO: only send email if notify.level.info is enabled
+        try:
+            from bahamut.admin.config import get_config
+            if get_config("notify.level.info", False):
+                _send_email_templated(alert)
+        except Exception:
+            pass
 
     # Store in Redis for dashboard
     _store_alert(alert)
@@ -118,6 +126,59 @@ def _send_telegram(alert: dict):
         send_telegram_alert(alert["message"], alert["level"], alert["title"])
     except Exception as e:
         logger.error("telegram_send_failed", error=str(e))
+
+
+def _send_email_templated(alert: dict):
+    """Send email using HTML templates based on alert level."""
+    try:
+        from bahamut.monitoring.email_templates import critical_template, warning_template, info_template
+        from bahamut.monitoring.email import send_email_alert
+
+        level = alert.get("level", "INFO")
+        title = alert.get("title", "")
+        message = alert.get("message", "")
+        data = alert.get("data", {})
+
+        if level == "CRITICAL":
+            subject, html = critical_template(title, message, data)
+        elif level == "WARNING":
+            subject, html = warning_template(title, message, data)
+        else:
+            subject, html = info_template(title, message, data)
+
+        _send_email_html(subject, html)
+    except Exception as e:
+        logger.error("email_template_failed", error=str(e))
+        # Fallback to plain text
+        _send_email(alert)
+
+
+def _send_email_html(subject: str, html: str):
+    """Send an HTML email via the email module."""
+    try:
+        from bahamut.monitoring.email import _get_config
+        import json, urllib.request
+
+        cfg = _get_config()
+        if not cfg.get("enabled") or not cfg.get("api_key") or not cfg.get("to_email"):
+            return
+
+        from_email = cfg.get("from_email") or "noreply@bahamut.ai"
+        payload = {
+            "sender": {"name": "Bahamut Alerts", "email": from_email},
+            "to": [{"email": cfg["to_email"]}],
+            "subject": subject,
+            "htmlContent": html,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=data, method="POST")
+        req.add_header("accept", "application/json")
+        req.add_header("content-type", "application/json")
+        req.add_header("api-key", cfg["api_key"])
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            logger.info("email_html_sent", subject=subject)
+    except Exception as e:
+        logger.error("email_html_failed", error=str(e))
 
 
 def _send_email(alert: dict):
@@ -284,3 +345,64 @@ def fire_regime_change(asset: str, old_regime: str, new_regime: str):
     fire_alert("INFO", f"Regime change: {asset}",
                f"{asset}: {old_regime} → {new_regime} {emoji}",
                key=f"regime_{asset}_{new_regime}")
+
+
+# ═══════════════════════════════════════════════════════
+# 4H CYCLE REPORT EMAIL
+# ═══════════════════════════════════════════════════════
+
+def send_cycle_report(cycle: dict):
+    """
+    Send a 4H cycle report email after every new-bar cycle.
+    Includes: status, portfolio, asset evaluations, strategy conditions.
+    Only sends if email is configured and enabled.
+    """
+    try:
+        from bahamut.monitoring.email import _get_config
+        cfg = _get_config()
+        if not cfg.get("enabled") or not cfg.get("api_key") or not cfg.get("to_email"):
+            return
+
+        # Get portfolio data
+        portfolio = {}
+        try:
+            from bahamut.portfolio.manager import get_portfolio_manager
+            pm = get_portfolio_manager()
+            pm.update()
+            portfolio = {
+                "equity": round(pm.total_equity, 2),
+                "pnl_total": round(pm.total_equity - pm.initial_capital, 2),
+                "drawdown_pct": round((1 - pm.total_equity / pm.peak_equity) * 100 if pm.peak_equity > 0 else 0, 2),
+                "open_risk_pct": 0,
+                "open_positions": 0,
+            }
+            try:
+                from bahamut.execution.engine import get_execution_engine
+                engine = get_execution_engine()
+                open_risk = sum(p.risk_amount for p in engine.open_positions)
+                portfolio["open_risk_pct"] = round(open_risk / max(1, pm.total_equity) * 100, 2)
+                portfolio["open_positions"] = len(engine.open_positions)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Get strategy conditions
+        conditions = {}
+        try:
+            from bahamut.monitoring.strategy_conditions import get_latest_snapshots
+            conditions = get_latest_snapshots()
+        except Exception:
+            pass
+
+        # Build email
+        from bahamut.monitoring.email_templates import cycle_report_template
+        subject, html = cycle_report_template(cycle, portfolio, conditions)
+
+        # Send
+        _send_email_html(subject, html)
+        logger.info("cycle_report_sent", status=cycle.get("status"),
+                     signals=cycle.get("signals_generated", 0))
+
+    except Exception as e:
+        logger.error("cycle_report_failed", error=str(e))
