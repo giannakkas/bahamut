@@ -319,7 +319,7 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
 
 
 def fire_trade_alert(trade: dict, action: str = "closed"):
-    """Fire alert + send rich HTML email for trade open/close events."""
+    """Fire alert + send rich email + rich Telegram for trade events."""
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", trade.get("dir", "?"))
@@ -330,13 +330,20 @@ def fire_trade_alert(trade: dict, action: str = "closed"):
                    f"{strategy} {direction} {asset} @ ${entry:,.2f}",
                    key=f"trade_open_{asset}_{strategy}")
 
-        # Send rich HTML trade opened email
+        # Rich email
         try:
             from bahamut.monitoring.email_templates import trade_opened_template
             subject, html = trade_opened_template(trade)
             _send_email_html(subject, html)
         except Exception as e:
             logger.debug("trade_open_email_failed", error=str(e))
+
+        # Rich Telegram
+        try:
+            from bahamut.monitoring.telegram import send_trade_opened
+            send_trade_opened(trade)
+        except Exception as e:
+            logger.debug("trade_open_tg_failed", error=str(e))
     else:
         pnl = trade.get("pnl", 0)
         reason = trade.get("exit_reason", trade.get("reason", "?"))
@@ -346,13 +353,20 @@ def fire_trade_alert(trade: dict, action: str = "closed"):
                    f"PnL: ${pnl:+,.2f} | Reason: {reason}",
                    key=f"trade_close_{asset}_{strategy}_{time.time():.0f}")
 
-        # Send rich HTML trade closed email
+        # Rich email
         try:
             from bahamut.monitoring.email_templates import trade_closed_template
             subject, html = trade_closed_template(trade)
             _send_email_html(subject, html)
         except Exception as e:
             logger.debug("trade_close_email_failed", error=str(e))
+
+        # Rich Telegram
+        try:
+            from bahamut.monitoring.telegram import send_trade_closed
+            send_trade_closed(trade)
+        except Exception as e:
+            logger.debug("trade_close_tg_failed", error=str(e))
 
 
 def fire_regime_change(asset: str, old_regime: str, new_regime: str):
@@ -364,21 +378,15 @@ def fire_regime_change(asset: str, old_regime: str, new_regime: str):
 
 
 # ═══════════════════════════════════════════════════════
-# 4H CYCLE REPORT EMAIL
+# 4H CYCLE REPORT — EMAIL + TELEGRAM
 # ═══════════════════════════════════════════════════════
 
 def send_cycle_report(cycle: dict):
     """
-    Send a 4H cycle report email after every new-bar cycle.
+    Send 4H cycle report via email AND Telegram.
     Includes: status, portfolio, asset evaluations, strategy conditions.
-    Only sends if email is configured and enabled.
     """
     try:
-        from bahamut.monitoring.email import _get_config
-        cfg = _get_config()
-        if not cfg.get("enabled") or not cfg.get("api_key") or not cfg.get("to_email"):
-            return
-
         # Get portfolio data
         portfolio = {}
         try:
@@ -411,12 +419,24 @@ def send_cycle_report(cycle: dict):
         except Exception:
             pass
 
-        # Build email
-        from bahamut.monitoring.email_templates import cycle_report_template
-        subject, html = cycle_report_template(cycle, portfolio, conditions)
+        # Send email
+        try:
+            from bahamut.monitoring.email import _get_config
+            cfg = _get_config()
+            if cfg.get("enabled") and cfg.get("api_key") and cfg.get("to_email"):
+                from bahamut.monitoring.email_templates import cycle_report_template
+                subject, html = cycle_report_template(cycle, portfolio, conditions)
+                _send_email_html(subject, html)
+        except Exception as e:
+            logger.debug("cycle_report_email_failed", error=str(e))
 
-        # Send
-        _send_email_html(subject, html)
+        # Send Telegram
+        try:
+            from bahamut.monitoring.telegram import send_cycle_report as tg_cycle_report
+            tg_cycle_report(cycle, portfolio, conditions)
+        except Exception as e:
+            logger.debug("cycle_report_tg_failed", error=str(e))
+
         logger.info("cycle_report_sent", status=cycle.get("status"),
                      signals=cycle.get("signals_generated", 0))
 
