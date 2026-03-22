@@ -347,11 +347,17 @@ async def system_health(user=Depends(get_current_user)):
 @router.get("/dashboard")
 async def dashboard_all(user=Depends(get_current_user)):
     """Single endpoint returning all dashboard data. Reduces 9 calls to 1."""
+    diag = []
     try:
-        return _build_dashboard()
+        result = _build_dashboard()
+        # Add diagnostics
+        result["_diag"] = diag
+        return result
     except Exception as e:
-        logger.error("dashboard_crashed", error=str(e))
-        return {"error": str(e), "portfolio": {}, "strategies": {}, "positions": {"positions": [], "count": 0},
+        import traceback
+        logger.error("dashboard_crashed", error=str(e), tb=traceback.format_exc())
+        return {"error": str(e), "_traceback": traceback.format_exc()[-500:],
+                "portfolio": {}, "strategies": {}, "positions": {"positions": [], "count": 0},
                 "trades": {"trades": [], "count": 0}, "alerts": [], "last_cycle": {}, "cycle_history": [],
                 "cycle_stats": {}, "timing": {}, "strategy_conditions": {}, "health": {"engine": "v7/v8/v9", "data_source": "?", "data": {}}}
 

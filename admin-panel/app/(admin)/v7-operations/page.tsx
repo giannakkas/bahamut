@@ -17,6 +17,7 @@ export default function DailyOperations() {
   const [stratConds, setStratConds] = useState<any>({});
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [dashError, setDashError] = useState("");
   const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts">("cycle");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
@@ -63,9 +64,16 @@ export default function DailyOperations() {
   const load = useCallback(async () => {
     const d = await api("/dashboard");
     if (d) {
-      // Debug: log strategy conditions
-      console.log("[DASH] strategy_conditions:", JSON.stringify(d.strategy_conditions || "MISSING").substring(0, 200));
+      // Debug diagnostics
       console.log("[DASH] error:", d.error || "none");
+      console.log("[DASH] _traceback:", d._traceback || "none");
+      console.log("[DASH] last_cycle:", JSON.stringify(d.last_cycle || {}).substring(0, 100));
+      console.log("[DASH] strategy_conditions:", JSON.stringify(d.strategy_conditions || {}).substring(0, 200));
+      console.log("[DASH] cycle_history:", (d.cycle_history || []).length, "entries");
+      console.log("[DASH] alerts:", (d.alerts || []).length, "entries");
+      console.log("[DASH] health:", JSON.stringify(d.health || {}).substring(0, 200));
+      if (d.error) setDashError(`Backend: ${d.error}\n${d._traceback || ""}`);
+      else setDashError("");
       setPortfolio(d.portfolio);
       setStrategies(d.strategies);
       setPositions(d.positions);
@@ -76,6 +84,8 @@ export default function DailyOperations() {
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
       if (d.timing) { setTiming(d.timing); setCountdown(d.timing.seconds_until_next_close || 0); }
       if (d.strategy_conditions) setStratConds(d.strategy_conditions);
+    } else {
+      console.error("[DASH] API returned null/undefined");
     }
     setLoading(false);
     setLastUpdated(new Date());
@@ -186,6 +196,14 @@ export default function DailyOperations() {
         <div className="h-1 bg-bah-border rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-bah-cyan to-green-400 rounded-full transition-all duration-200 ease-out"
             style={{ width: `${cycleProgress}%` }} />
+        </div>
+      )}
+
+      {/* Dashboard backend error */}
+      {dashError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-xs text-red-400">
+          <div className="font-semibold mb-1">⚠️ Dashboard API Error:</div>
+          <pre className="whitespace-pre-wrap font-mono text-[10px] max-h-40 overflow-auto">{dashError}</pre>
         </div>
       )}
 
