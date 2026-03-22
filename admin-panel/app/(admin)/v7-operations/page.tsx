@@ -59,6 +59,9 @@ export default function DailyOperations() {
   const load = useCallback(async () => {
     const d = await api("/dashboard");
     if (d) {
+      // Debug: log strategy conditions
+      console.log("[DASH] strategy_conditions:", JSON.stringify(d.strategy_conditions || "MISSING").substring(0, 200));
+      console.log("[DASH] error:", d.error || "none");
       setPortfolio(d.portfolio);
       setStrategies(d.strategies);
       setPositions(d.positions);
