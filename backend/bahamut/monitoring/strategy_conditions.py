@@ -139,36 +139,34 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         "strategies": results,
     }
 
-    # Persist to Redis so FastAPI process can read what Celery computes
+    # Also persist to Redis for Celery worker → FastAPI cross-process reads
     try:
         import redis, os, json
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         r.hset("bahamut:strategy_conditions", asset, json.dumps(_snapshots[asset]))
-        r.expire("bahamut:strategy_conditions", 3600)
-    except Exception as e:
-        logger.error("strategy_conditions_redis_write_failed", error=str(e))
+    except Exception:
+        pass
 
     return results
 
 
 def get_latest_snapshots() -> dict:
     """Get most recent strategy condition snapshots for all assets."""
+    # In-memory first (same process — works with --workers 1)
+    if _snapshots:
+        return dict(_snapshots)
+    # Fallback: Redis (for when Celery worker wrote the data)
     try:
         import redis, os, json
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         raw = r.hgetall("bahamut:strategy_conditions")
         if raw:
-            result = {}
-            for k, v in raw.items():
-                key = k.decode() if isinstance(k, bytes) else k
-                result[key] = json.loads(v)
-            return result
+            return {(k.decode() if isinstance(k, bytes) else k): json.loads(v) for k, v in raw.items()}
     except Exception:
         pass
-    return dict(_snapshots)
+    return {}
 
 
 def get_asset_snapshot(asset: str) -> dict:
     """Get snapshot for a specific asset."""
-    all_snaps = get_latest_snapshots()
-    return all_snaps.get(asset, {})
+    return _snapshots.get(asset, {})

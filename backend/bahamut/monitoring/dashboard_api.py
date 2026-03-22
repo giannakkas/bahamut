@@ -12,7 +12,6 @@ Endpoints:
   GET /api/monitoring/alerts       — recent alerts
   GET /api/monitoring/health       — system health check
 """
-import os
 import structlog
 from fastapi import APIRouter, Depends
 
@@ -348,22 +347,6 @@ async def system_health(user=Depends(get_current_user)):
 @router.get("/dashboard")
 async def dashboard_all(user=Depends(get_current_user)):
     """Single endpoint returning all dashboard data. Reduces 9 calls to 1."""
-    diag = []
-    try:
-        result = _build_dashboard()
-        # Add diagnostics
-        result["_diag"] = diag
-        return result
-    except Exception as e:
-        import traceback
-        logger.error("dashboard_crashed", error=str(e), tb=traceback.format_exc())
-        return {"error": str(e), "_traceback": traceback.format_exc()[-500:],
-                "portfolio": {}, "strategies": {}, "positions": {"positions": [], "count": 0},
-                "trades": {"trades": [], "count": 0}, "alerts": [], "last_cycle": {}, "cycle_history": [],
-                "cycle_stats": {}, "timing": {}, "strategy_conditions": {}, "health": {"engine": "v7/v8/v9", "data_source": "?", "data": {}}}
-
-
-def _build_dashboard():
     engine = get_execution_engine()
     pm = get_portfolio_manager()
     pm.update()
@@ -446,13 +429,7 @@ def _build_dashboard():
     try:
         from bahamut.data.live_data import get_data_source, get_data_status
         data_src = get_data_source()
-        raw_status = get_data_status()
-        # Sanitize — ensure all values are JSON-serializable primitives
-        for k, v in raw_status.items():
-            if isinstance(v, dict):
-                data_status[k] = {sk: str(sv) if not isinstance(sv, (str, int, float, bool, type(None))) else sv for sk, sv in v.items()}
-            else:
-                data_status[k] = str(v)
+        data_status = get_data_status()
     except Exception:
         pass
 
@@ -489,22 +466,6 @@ def _build_dashboard():
     except Exception:
         pass
 
-    # Debug diagnostics
-    _debug = {}
-    try:
-        import redis as _redis
-        _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _r.ping()
-        _debug["redis"] = "OK"
-        _debug["redis_last_cycle"] = bool(_r.get("bahamut:last_cycle"))
-        _debug["redis_cycle_log_len"] = _r.llen("bahamut:cycle_log")
-        _debug["redis_strat_conds"] = {k.decode(): "exists" for k in _r.hkeys("bahamut:strategy_conditions")}
-    except Exception as e:
-        _debug["redis"] = f"FAIL: {str(e)}"
-    _debug["last_cycle_empty"] = not bool(last_cycle)
-    _debug["strategy_conds_count"] = len(strategy_conds)
-    _debug["cycle_hist_count"] = len(cycle_hist)
-
     return {
         "portfolio": portfolio,
         "strategies": strats,
@@ -516,7 +477,6 @@ def _build_dashboard():
         "cycle_stats": cycle_stats,
         "timing": timing,
         "strategy_conditions": strategy_conds,
-        "_debug": _debug,
         "health": {
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
         },
