@@ -105,8 +105,8 @@ def run_v7_cycle(self=None):
 
     cycle = start_cycle()
     try:
-        _run_v7_cycle_inner()
-        end_cycle("SUCCESS")
+        outcome = _run_v7_cycle_inner()
+        end_cycle(outcome or "SUCCESS")
     except Exception as e:
         logger.error("v7_cycle_fatal", error=str(e))
         end_cycle("ERROR", error=str(e))
@@ -161,6 +161,8 @@ def _run_v7_cycle_inner():
         pass
 
     closed_before = len(engine.closed_trades)
+    asset_errors = 0
+    assets_processed = 0
 
     for asset in assets:
         try:
@@ -325,8 +327,10 @@ def _run_v7_cycle_inner():
             # If processing crashed above, bar stays unprocessed → retried next cycle.
             from bahamut.data.live_data import mark_bar_processed
             mark_bar_processed(asset, latest_time)
+            assets_processed += 1
 
         except Exception as e:
+            asset_errors += 1
             logger.error("v7_cycle_error", asset=asset, error=str(e))
             add_asset_evaluation(AssetEvaluation(
                 asset=asset, summary=f"ERROR: {str(e)[:100]}"))
@@ -343,6 +347,13 @@ def _run_v7_cycle_inner():
         check_alerts(pm.get_summary(), engine.get_stats())
     except Exception:
         pass
+
+    # Return truthful cycle outcome
+    if asset_errors > 0 and assets_processed > 0:
+        return "PARTIAL_SUCCESS"
+    elif asset_errors > 0 and assets_processed == 0:
+        return "FAILED"
+    return "SUCCESS"
 
 
 def _get_no_signal_reason(strat_name: str, ind: dict, prev_ind: dict, asset: str) -> str:
@@ -373,11 +384,33 @@ def _get_no_signal_reason(strat_name: str, ind: dict, prev_ind: dict, asset: str
 # ── Track what's been persisted ──
 _persisted_trade_ids: set = set()
 _persisted_order_ids: set = set()
+_persist_ids_loaded: bool = False
+
+
+def _ensure_persist_ids_loaded():
+    """Load already-persisted IDs from DB on first call to avoid redundant writes."""
+    global _persist_ids_loaded
+    if _persist_ids_loaded:
+        return
+    _persist_ids_loaded = True
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            for row in conn.execute(text("SELECT order_id FROM v7_orders")).all():
+                _persisted_order_ids.add(row[0])
+            for row in conn.execute(text("SELECT trade_id FROM v7_trades")).all():
+                _persisted_trade_ids.add(row[0])
+        logger.info("persist_ids_loaded",
+                     orders=len(_persisted_order_ids), trades=len(_persisted_trade_ids))
+    except Exception as e:
+        logger.warning("persist_ids_load_failed", error=str(e))
 
 
 def _persist_order(order):
     """Persist order to DB."""
     global _persisted_order_ids
+    _ensure_persist_ids_loaded()
     if order.order_id in _persisted_order_ids:
         return
     try:
@@ -408,6 +441,7 @@ def _persist_order(order):
 def _persist_new_trades(engine):
     """Persist any newly closed trades."""
     global _persisted_trade_ids
+    _ensure_persist_ids_loaded()
     try:
         from bahamut.execution.v7_persistence import persist_trade
         for trade in engine.closed_trades:
@@ -482,9 +516,9 @@ def run_v7_cycle_sync():
 
     cycle = start_cycle()
     try:
-        _run_v7_cycle_inner()
-        end_cycle("SUCCESS")
-        result = {"status": "SUCCESS", "cycle_id": cycle.cycle_id}
+        outcome = _run_v7_cycle_inner()
+        end_cycle(outcome or "SUCCESS")
+        result = {"status": outcome or "SUCCESS", "cycle_id": cycle.cycle_id}
     except Exception as e:
         end_cycle("ERROR", error=str(e))
         result = {"status": "ERROR", "error": str(e)}

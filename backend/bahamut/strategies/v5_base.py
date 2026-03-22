@@ -51,6 +51,6 @@ class V5Base(BaseStrategy):
                 max_hold_bars=self.meta.max_hold_bars,
                 quality=0.7,
                 reason=f"EMA20x50 golden cross, bull regime ({asset})",
-                signal_id=f"{self.meta.name}:{asset}:{indicators.get('close',0):.0f}",
+                signal_id=f"{self.meta.name}:{asset}:{candles[-1].get('datetime', '') if candles else ''}",
             )
         return None

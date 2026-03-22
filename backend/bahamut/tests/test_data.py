@@ -89,10 +89,11 @@ def test_validation_bad_order():
 
 def test_new_bar_detection():
     """Same timestamp returns False, new timestamp returns True."""
-    from bahamut.data.live_data import is_new_bar, _last_bar_timestamps
+    from bahamut.data.live_data import is_new_bar, mark_bar_processed, _last_bar_timestamps
     _last_bar_timestamps.clear()
 
     assert is_new_bar("TEST", "2025-03-21 20:00") is True, "First bar should be new"
+    mark_bar_processed("TEST", "2025-03-21 20:00")
     assert is_new_bar("TEST", "2025-03-21 20:00") is False, "Same bar should not be new"
     assert is_new_bar("TEST", "2025-03-22 00:00") is True, "Different bar should be new"
     print("  ✓ New bar detection works")

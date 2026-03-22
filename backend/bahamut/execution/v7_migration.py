@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS v7_portfolio_snapshots (
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_v7_orders_strategy ON v7_orders(strategy_name);
 CREATE INDEX IF NOT EXISTS idx_v7_orders_status ON v7_orders(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_v7_orders_signal_dedup ON v7_orders(strategy_name, asset, signal_id) WHERE signal_id IS NOT NULL AND signal_id != '';
 CREATE INDEX IF NOT EXISTS idx_v7_trades_strategy ON v7_trades(strategy_name);
 CREATE INDEX IF NOT EXISTS idx_v7_trades_exit_time ON v7_trades(exit_time);
 CREATE INDEX IF NOT EXISTS idx_v7_snapshots_time ON v7_portfolio_snapshots(timestamp);

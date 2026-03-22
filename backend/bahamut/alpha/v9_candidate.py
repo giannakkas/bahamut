@@ -135,6 +135,8 @@ class V9Breakout:
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         sig = detect_confirmed_breakout(candles, indicators)
         if sig.valid:
+            # Deterministic signal_id: prevents duplicate orders if same bar replayed
+            bar_ts = candles[-1].get("datetime", "") if candles else ""
             return Signal(
                 strategy=self.name,
                 asset=asset,
@@ -144,5 +146,6 @@ class V9Breakout:
                 max_hold_bars=self.max_hold,
                 quality=sig.confidence,
                 reason=sig.reason,
+                signal_id=f"{self.name}:{asset}:{bar_ts}",
             )
         return None

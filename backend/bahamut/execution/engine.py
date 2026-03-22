@@ -316,4 +316,118 @@ def get_execution_engine() -> ExecutionEngine:
     global _engine
     if _engine is None:
         _engine = ExecutionEngine()
+        _reconcile_from_db(_engine)
     return _engine
+
+
+def _reconcile_from_db(engine: ExecutionEngine):
+    """Startup reconciliation: rebuild execution state from canonical DB records.
+
+    Loads:
+      1. Open orders/positions from v7_orders WHERE status = 'OPEN'
+      2. Closed trades from v7_trades (for performance metrics)
+      3. Processed signal_ids from v7_orders (for idempotency)
+
+    This ensures restart cannot cause:
+      - Orphan positions (open in DB but unknown to engine)
+      - Duplicate signals (signal_id set is empty after restart)
+      - Empty performance tab (closed_trades list is empty)
+    """
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+
+        with sync_engine.connect() as conn:
+            # 1. Load open positions
+            open_rows = conn.execute(text("""
+                SELECT order_id, strategy_name, asset, direction, status,
+                       entry_price, stop_price, tp_price, size, risk_amount,
+                       fill_time, sl_pct, tp_pct, max_hold_bars, signal_id
+                FROM v7_orders WHERE status = 'OPEN'
+                ORDER BY fill_time
+            """)).mappings().all()
+
+            for r in open_rows:
+                pos = Position(
+                    order_id=r["order_id"],
+                    strategy=r["strategy_name"],
+                    asset=r["asset"],
+                    direction=r["direction"],
+                    status=OrderStatus.OPEN,
+                    entry_price=float(r["entry_price"] or 0),
+                    current_price=float(r["entry_price"] or 0),
+                    stop_price=float(r["stop_price"] or 0),
+                    tp_price=float(r["tp_price"] or 0),
+                    size=float(r["size"] or 0),
+                    risk_amount=float(r["risk_amount"] or 0),
+                    entry_time=str(r["fill_time"] or ""),
+                    max_hold_bars=int(r["max_hold_bars"] or 30),
+                )
+                engine.open_positions.append(pos)
+
+                # Reconstruct order for all_orders
+                order = Order(
+                    order_id=r["order_id"],
+                    strategy=r["strategy_name"],
+                    asset=r["asset"],
+                    direction=r["direction"],
+                    status=OrderStatus.OPEN,
+                    signal_id=r["signal_id"] or "",
+                    entry_price=float(r["entry_price"] or 0),
+                    stop_price=float(r["stop_price"] or 0),
+                    tp_price=float(r["tp_price"] or 0),
+                    size=float(r["size"] or 0),
+                    risk_amount=float(r["risk_amount"] or 0),
+                    fill_time=str(r["fill_time"] or ""),
+                    sl_pct=float(r["sl_pct"] or 0),
+                    tp_pct=float(r["tp_pct"] or 0),
+                    max_hold_bars=int(r["max_hold_bars"] or 30),
+                )
+                engine.all_orders.append(order)
+
+            # 2. Load closed trades (last 200 for performance metrics)
+            trade_rows = conn.execute(text("""
+                SELECT trade_id, order_id, strategy_name, asset, direction,
+                       entry_price, exit_price, stop_price, tp_price, size,
+                       risk_amount, pnl, pnl_pct, entry_time, exit_time,
+                       exit_reason, bars_held
+                FROM v7_trades ORDER BY exit_time DESC LIMIT 200
+            """)).mappings().all()
+
+            for r in reversed(trade_rows):  # oldest first
+                trade = ClosedTrade(
+                    trade_id=r["trade_id"],
+                    order_id=r["order_id"],
+                    strategy=r["strategy_name"],
+                    asset=r["asset"],
+                    direction=r["direction"],
+                    entry_price=float(r["entry_price"] or 0),
+                    exit_price=float(r["exit_price"] or 0),
+                    stop_price=float(r["stop_price"] or 0),
+                    tp_price=float(r["tp_price"] or 0),
+                    size=float(r["size"] or 0),
+                    risk_amount=float(r["risk_amount"] or 0),
+                    pnl=float(r["pnl"] or 0),
+                    pnl_pct=float(r["pnl_pct"] or 0),
+                    entry_time=str(r["entry_time"] or ""),
+                    exit_time=str(r["exit_time"] or ""),
+                    exit_reason=str(r["exit_reason"] or ""),
+                    bars_held=int(r["bars_held"] or 0),
+                )
+                engine.closed_trades.append(trade)
+
+            # 3. Load all signal_ids for idempotency
+            sig_rows = conn.execute(text(
+                "SELECT signal_id FROM v7_orders WHERE signal_id IS NOT NULL AND signal_id != ''"
+            )).all()
+            for r in sig_rows:
+                engine._processed_signals.add(r[0])
+
+        logger.info("engine_reconciled_from_db",
+                     open_positions=len(engine.open_positions),
+                     closed_trades=len(engine.closed_trades),
+                     signal_ids=len(engine._processed_signals))
+
+    except Exception as e:
+        logger.warning("engine_reconciliation_failed", error=str(e),
+                       note="engine starts empty — first cycle will populate from live data")
