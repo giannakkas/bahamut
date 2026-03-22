@@ -137,10 +137,13 @@ export default function DailyOperations() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-base sm:text-lg font-bold text-bah-heading">Daily Operations Monitor</h1>
-          <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${p?.kill_switch ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-green-500/20 text-green-400 border-green-500/30"}`}>
-            {p?.kill_switch ? "HALTED" : "LIVE"}
-          </span>
-          {health?.data_source && <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold border ${health.data_source === "LIVE" ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-amber-500/20 text-amber-400 border-amber-500/30"}`}>{health.data_source}</span>}
+          {p?.kill_switch ? (
+            <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold border bg-red-500/20 text-red-400 border-red-500/30">HALTED</span>
+          ) : (
+            <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold border bg-green-500/20 text-green-400 border-green-500/30">
+              LIVE{health?.data_source === "LIVE" ? "" : ` · ${health?.data_source || "?"}`}
+            </span>
+          )}
           {health?.engine && <span className="px-2 py-0.5 text-[10px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
           {critAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{critAlerts} CRITICAL</span>}
         </div>
