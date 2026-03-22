@@ -9,13 +9,15 @@ export default function DailyOperations() {
   const [trades, setTrades] = useState<any>(null);
   
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+
+  // Load dismissed alerts from sessionStorage on mount
+  useEffect(() => {
     try {
       const saved = sessionStorage.getItem("bah_dismissed_alerts");
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch { return new Set(); }
-  });
+      if (saved) setDismissedAlerts(new Set(JSON.parse(saved)));
+    } catch {}
+  }, []);
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
