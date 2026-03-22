@@ -340,6 +340,15 @@ async def system_health(user=Depends(get_current_user)):
         },
     }
 
+    # Add system readiness
+    try:
+        from bahamut.execution.system_readiness import get_readiness_state
+        result["system_readiness"] = get_readiness_state()
+    except Exception:
+        result["system_readiness"] = {"can_trade": False, "reasons": ["readiness_check_failed"]}
+
+    return result
+
 
 # ═══════════════════════════════════════════════════════
 # COMBINED DASHBOARD ENDPOINT — single call, all data
@@ -508,6 +517,13 @@ async def dashboard_all(user=Depends(get_current_user)):
         result["data_health"] = get_data_health()
     except Exception:
         result["data_health"] = {"status": "UNKNOWN", "source": "?", "assets": {}}
+
+    # Add system readiness (canonical trading permission state)
+    try:
+        from bahamut.execution.system_readiness import get_readiness_state
+        result["system_readiness"] = get_readiness_state()
+    except Exception:
+        result["system_readiness"] = {"can_trade": False, "reasons": ["readiness_check_failed"]}
 
     # Operator trust strip — last key events
     trust = {}

@@ -148,10 +148,31 @@ def _run_v7_cycle_inner():
         record_position_closed, AssetEvaluation, StrategyDecision,
     )
     from bahamut.data.live_data import is_new_bar, get_data_source
+    from bahamut.execution.system_readiness import (
+        is_reconciled, update_asset_data_health, mark_db_ok,
+    )
 
     engine = get_execution_engine()
     pm = get_portfolio_manager()
     strategies = _get_strategies()
+
+    # Retry reconciliation if it failed at startup
+    if not is_reconciled():
+        logger.info("retrying_engine_reconciliation")
+        from bahamut.execution.engine import _reconcile_from_db
+        _reconcile_from_db(engine)
+
+    # Verify DB is reachable (lightweight check)
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        mark_db_ok()
+    except Exception as e:
+        from bahamut.execution.system_readiness import mark_db_error
+        mark_db_error(str(e))
+        logger.warning("db_health_check_failed", error=str(e))
 
     assets = ["BTCUSD"]
     try:
@@ -168,12 +189,28 @@ def _run_v7_cycle_inner():
         try:
             candles = _fetch_candles(asset)
             if not candles or len(candles) < 260:
+                update_asset_data_health(asset, "MISSING")
                 add_asset_evaluation(AssetEvaluation(
                     asset=asset, regime="UNKNOWN",
                     summary=f"insufficient data ({len(candles) if candles else 0} candles)"))
                 continue
 
             latest_time = candles[-1].get("datetime", "")
+
+            # Track data freshness for system readiness gate
+            try:
+                from datetime import datetime as _dt, timezone as _tz
+                bar_dt = _dt.fromisoformat(latest_time.replace("Z", "+00:00"))
+                age_s = int((_dt.now(_tz.utc) - bar_dt).total_seconds())
+                if age_s > 21600:  # > 6 hours
+                    update_asset_data_health(asset, "STALE", age_s)
+                elif age_s > 900:  # > 15 minutes
+                    update_asset_data_health(asset, "DEGRADED", age_s)
+                else:
+                    update_asset_data_health(asset, "HEALTHY", age_s)
+            except Exception:
+                update_asset_data_health(asset, "HEALTHY")  # can't parse → assume OK
+
             new_bar = is_new_bar(asset, latest_time)
 
             # Always compute regime (cheap, no side effects) so we never show "?"

@@ -51,6 +51,15 @@ class ExecutionEngine:
                 logger.warning("signal_rejected_kill_switch", strategy=signal.strategy)
                 return None
 
+            # System readiness gate — blocks when infrastructure is unhealthy
+            from bahamut.execution.system_readiness import can_system_trade
+            can_trade, reasons = can_system_trade(asset=signal.asset)
+            if not can_trade:
+                logger.warning("signal_rejected_system_not_ready",
+                               strategy=signal.strategy, asset=signal.asset,
+                               reasons=reasons)
+                return None
+
             # Idempotency: don't process same signal twice
             if signal.signal_id in self._processed_signals:
                 logger.info("signal_duplicate", signal_id=signal.signal_id)
@@ -428,6 +437,12 @@ def _reconcile_from_db(engine: ExecutionEngine):
                      closed_trades=len(engine.closed_trades),
                      signal_ids=len(engine._processed_signals))
 
+        from bahamut.execution.system_readiness import mark_reconciliation_success, mark_db_ok
+        mark_reconciliation_success()
+        mark_db_ok()
+
     except Exception as e:
         logger.warning("engine_reconciliation_failed", error=str(e),
-                       note="engine starts empty — first cycle will populate from live data")
+                       note="engine starts empty — new entries blocked until DB recovers")
+        from bahamut.execution.system_readiness import mark_reconciliation_failed
+        mark_reconciliation_failed(str(e))
