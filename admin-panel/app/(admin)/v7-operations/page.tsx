@@ -807,7 +807,21 @@ export default function DailyOperations() {
                         {fix && <div className="text-bah-muted mt-1">{"→ "}{fix}</div>}
                       </div>
                     </div>
-                    <button onClick={() => setHiddenAlerts(h => [...h, i])} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Dismiss">✕</button>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      {a.level === "CRITICAL" && a.key && (
+                        <button onClick={async () => {
+                          try {
+                            await fetch(`${apiBase()}/monitoring/alerts/acknowledge?key=${encodeURIComponent(a.key)}`, {
+                              method: "POST", headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                            });
+                            setAlerts(prev => prev.filter(al => al.key !== a.key));
+                          } catch {}
+                        }} className="text-[10px] font-medium text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-500/30 hover:bg-red-500/15 transition-colors" title="Acknowledge this alert">
+                          ACK
+                        </button>
+                      )}
+                      <button onClick={() => setHiddenAlerts(h => [...h, i])} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Hide">✕</button>
+                    </div>
                   </div>
                   <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
                 </div>

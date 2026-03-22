@@ -579,6 +579,16 @@ async def test_trade_status(user=Depends(get_current_user)):
 # PERFORMANCE ENDPOINT
 # ═══════════════════════════════════════════════════════
 
+@router.post("/alerts/acknowledge")
+async def acknowledge_alert(key: str = "", user=Depends(get_current_user)):
+    """Acknowledge (resolve) an alert by key. Removes it from active alerts."""
+    if not key:
+        return {"error": "alert key required"}
+    from bahamut.monitoring.alerts import resolve_alert
+    resolve_alert(key, reason=f"acknowledged by {getattr(user, 'email', 'operator')}")
+    return {"status": "acknowledged", "key": key}
+
+
 @router.get("/performance")
 async def get_performance(user=Depends(get_current_user)):
     """Get full performance breakdown: portfolio, per-strategy, per-asset."""
