@@ -15,6 +15,7 @@ export default function DailyOperations() {
   const [cycleHistory, setCycleHistory] = useState<any>(null);
   const [timing, setTiming] = useState<any>(null);
   const [stratConds, setStratConds] = useState<any>({});
+  const [performance, setPerformance] = useState<any>(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts">("cycle");
@@ -69,6 +70,7 @@ export default function DailyOperations() {
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
       if (d.timing) { setTiming(d.timing); setCountdown(d.timing.seconds_until_next_close || 0); }
       if (d.strategy_conditions) setStratConds(d.strategy_conditions);
+      if (d.performance) setPerformance(d.performance);
     }
     setLoading(false);
     setLastUpdated(new Date());
@@ -411,44 +413,143 @@ export default function DailyOperations() {
       )}
 
       {/* ═══ PERFORMANCE ═══ */}
-      {(tab === "strategies" || isMobile) && strategies && (
-        <div>
+      {(tab === "strategies" || isMobile) && (
+        <div className="space-y-3">
           {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">📊 Performance</div>}
-          {/* Desktop: table */}
-          <div className="hidden lg:block bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-            <table className="w-full text-xs">
-              <thead><tr className="text-left text-bah-muted border-b border-bah-border">
-                <th className="px-4 py-2.5">Strategy</th><th className="px-3 py-2.5 text-right">PnL</th><th className="px-3 py-2.5 text-right">Trades</th>
-                <th className="px-3 py-2.5 text-right">WR</th><th className="px-3 py-2.5 text-right">PF</th><th className="px-3 py-2.5 text-right">Open</th>
-              </tr></thead>
-              <tbody>{Object.entries(strategies).filter(([,v]: any) => v.trades > 0 || v.open_positions > 0).map(([n, s]: [string, any]) => (
-                <tr key={n} className="border-b border-bah-border/50">
-                  <td className="px-4 py-2.5 font-medium text-bah-heading">{n}</td>
-                  <td className={`px-3 py-2.5 text-right font-semibold font-mono ${s.pnl>=0?"text-green-400":"text-red-400"}`}>${s.pnl.toFixed(0)}</td>
-                  <td className="px-3 py-2.5 text-right">{s.trades}</td>
-                  <td className="px-3 py-2.5 text-right">{s.win_rate.toFixed(0)}%</td>
-                  <td className={`px-3 py-2.5 text-right ${s.profit_factor>=1.5?"text-green-400":s.profit_factor<1?"text-red-400":"text-bah-heading"}`}>{s.profit_factor.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right">{s.open_positions>0?<span className="text-bah-cyan font-semibold">{s.open_positions}</span>:"—"}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-          {/* Mobile: cards */}
-          <div className="lg:hidden space-y-2">
-            {Object.entries(strategies).filter(([,v]: any) => v.trades > 0 || v.open_positions > 0).map(([n, s]: [string, any]) => (
-              <div key={n} className="bg-bah-surface border border-bah-border rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-bah-heading">{n}</span>
-                  <span className={`text-sm font-bold font-mono ${s.pnl>=0?"text-green-400":"text-red-400"}`}>${s.pnl.toFixed(0)}</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-[10px]">
-                  <div><span className="text-bah-muted">Trades</span><div className="text-bah-heading font-semibold">{s.trades}</div></div>
-                  <div><span className="text-bah-muted">WR</span><div className="text-bah-heading font-semibold">{s.win_rate.toFixed(0)}%</div></div>
-                  <div><span className="text-bah-muted">PF</span><div className={`font-semibold ${s.profit_factor>=1.5?"text-green-400":s.profit_factor<1?"text-red-400":"text-bah-heading"}`}>{s.profit_factor.toFixed(2)}</div></div>
-                  <div><span className="text-bah-muted">Open</span><div className="font-semibold">{s.open_positions>0?<span className="text-bah-cyan">{s.open_positions}</span>:"—"}</div></div>
-                </div>
+
+          {/* Portfolio summary */}
+          {performance?.portfolio && performance.has_data ? (
+            <div className="bg-bah-surface border border-bah-border rounded-xl p-3 sm:p-4">
+              <div className="text-xs font-semibold text-bah-heading mb-2">Portfolio Summary</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-[11px]">
+                <div><span className="text-bah-muted">Closed Trades</span><div className="text-bah-heading font-bold text-sm">{performance.portfolio.total_trades}</div></div>
+                <div><span className="text-bah-muted">Total PnL</span><div className={`font-bold text-sm font-mono ${performance.portfolio.pnl>=0?"text-green-400":"text-red-400"}`}>${performance.portfolio.pnl?.toFixed(0)}</div></div>
+                <div><span className="text-bah-muted">Win Rate</span><div className="text-bah-heading font-bold text-sm">{performance.portfolio.win_rate?.toFixed(1)}%</div></div>
+                <div><span className="text-bah-muted">Profit Factor</span><div className={`font-bold text-sm ${performance.portfolio.profit_factor>=1.5?"text-green-400":performance.portfolio.profit_factor<1?"text-red-400":"text-bah-heading"}`}>{performance.portfolio.profit_factor?.toFixed(2)}</div></div>
+                <div><span className="text-bah-muted">Expectancy</span><div className={`font-mono font-bold text-sm ${performance.portfolio.expectancy>=0?"text-green-400":"text-red-400"}`}>${performance.portfolio.expectancy?.toFixed(0)}</div></div>
+                <div><span className="text-bah-muted">Max Drawdown</span><div className="text-red-400 font-bold text-sm font-mono">${performance.portfolio.max_drawdown?.toFixed(0)}</div></div>
               </div>
-            ))}
+            </div>
+          ) : null}
+
+          {/* Strategy table */}
+          {performance?.strategies && Object.keys(performance.strategies).length > 0 ? (
+            <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+              <div className="px-3 sm:px-4 py-2.5 border-b border-bah-border"><span className="text-xs font-semibold text-bah-heading">Strategy Breakdown</span></div>
+              <div className="hidden lg:block">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-bah-muted border-b border-bah-border">
+                    <th className="px-4 py-2.5">Strategy</th><th className="px-3 py-2.5 text-right">PnL</th><th className="px-3 py-2.5 text-right">Trades</th>
+                    <th className="px-3 py-2.5 text-right">WR</th><th className="px-3 py-2.5 text-right">PF</th><th className="px-3 py-2.5 text-right">Expect.</th><th className="px-3 py-2.5 text-right">Open</th>
+                  </tr></thead>
+                  <tbody>{Object.entries(performance.strategies).map(([n, s]: [string, any]) => (
+                    <tr key={n} className="border-b border-bah-border/50">
+                      <td className="px-4 py-2.5 font-medium text-bah-heading">{n}</td>
+                      <td className={`px-3 py-2.5 text-right font-semibold font-mono ${(s.pnl||0)>=0?"text-green-400":"text-red-400"}`}>${(s.pnl||0).toFixed(0)}</td>
+                      <td className="px-3 py-2.5 text-right">{s.total_trades || 0}</td>
+                      <td className="px-3 py-2.5 text-right">{(s.win_rate||0).toFixed(0)}%</td>
+                      <td className={`px-3 py-2.5 text-right ${(s.profit_factor||0)>=1.5?"text-green-400":(s.profit_factor||0)<1?"text-red-400":"text-bah-heading"}`}>{(s.profit_factor||0).toFixed(2)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono ${(s.expectancy||0)>=0?"text-green-400":"text-red-400"}`}>${(s.expectancy||0).toFixed(0)}</td>
+                      <td className="px-3 py-2.5 text-right">{(s.open_positions||0)>0?<span className="text-bah-cyan font-semibold">{s.open_positions}</span>:"—"}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <div className="lg:hidden space-y-2 p-2">
+                {Object.entries(performance.strategies).map(([n, s]: [string, any]) => (
+                  <div key={n} className="bg-bah-border/20 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-bah-heading">{n}</span>
+                      <span className={`text-sm font-bold font-mono ${(s.pnl||0)>=0?"text-green-400":"text-red-400"}`}>${(s.pnl||0).toFixed(0)}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-[10px]">
+                      <div><span className="text-bah-muted">Trades</span><div className="font-semibold">{s.total_trades||0}</div></div>
+                      <div><span className="text-bah-muted">WR</span><div className="font-semibold">{(s.win_rate||0).toFixed(0)}%</div></div>
+                      <div><span className="text-bah-muted">PF</span><div className="font-semibold">{(s.profit_factor||0).toFixed(2)}</div></div>
+                      <div><span className="text-bah-muted">Open</span><div className="font-semibold">{(s.open_positions||0)>0?s.open_positions:"—"}</div></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Asset breakdown */}
+          {performance?.assets && Object.keys(performance.assets).length > 0 ? (
+            <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+              <div className="px-3 sm:px-4 py-2.5 border-b border-bah-border"><span className="text-xs font-semibold text-bah-heading">Asset Breakdown</span></div>
+              <table className="w-full text-xs">
+                <thead><tr className="text-left text-bah-muted border-b border-bah-border">
+                  <th className="px-4 py-2">Asset</th><th className="px-3 py-2 text-right">PnL</th><th className="px-3 py-2 text-right">Trades</th><th className="px-3 py-2 text-right">WR</th><th className="px-3 py-2 text-right">Open</th>
+                </tr></thead>
+                <tbody>{Object.entries(performance.assets).map(([n, a]: [string, any]) => (
+                  <tr key={n} className="border-b border-bah-border/50">
+                    <td className="px-4 py-2 font-medium text-bah-heading">{n}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-semibold ${(a.pnl||0)>=0?"text-green-400":"text-red-400"}`}>${(a.pnl||0).toFixed(0)}</td>
+                    <td className="px-3 py-2 text-right">{a.total_trades||0}</td>
+                    <td className="px-3 py-2 text-right">{(a.win_rate||0).toFixed(0)}%</td>
+                    <td className="px-3 py-2 text-right">{(a.open_positions||0)>0?<span className="text-bah-cyan font-semibold">{a.open_positions}</span>:"—"}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {/* Empty state */}
+          {!performance?.has_data && (
+            <div className="bg-bah-surface border border-bah-border rounded-xl p-6 text-center">
+              <div className="text-sm text-bah-muted">No closed trades yet</div>
+              <div className="text-[11px] text-bah-muted mt-1">Engine is evaluating market conditions. Trades will appear when strategy conditions are met.</div>
+              <div className="text-[11px] text-bah-muted mt-2">Use <span className="text-bah-cyan">▶ Test Trade</span> below to verify the full lifecycle.</div>
+            </div>
+          )}
+
+          {/* Test Trade buttons */}
+          <div className="bg-bah-surface border border-bah-border rounded-xl p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-bah-heading">🧪 Test Trade Mode</span>
+              <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">PAPER ONLY</span>
+            </div>
+            <div className="text-[11px] text-bah-muted mb-3">Run a controlled test trade to verify the signal → order → position → close lifecycle.</div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={async () => {
+                const res = await v7("", { method: "POST", body: "{}" }).catch(() => null);
+                // Use monitoring endpoint instead
+                try {
+                  const r = await fetch(`${apiBase()}/monitoring/test-trade/open`, {
+                    method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                  });
+                  const data = await r.json();
+                  alert(JSON.stringify(data, null, 2));
+                  load();
+                } catch (e: any) { alert("Error: " + e.message); }
+              }} className="px-3 py-1.5 text-[11px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors">
+                ▶ Open Test Trade (BTCUSD LONG)
+              </button>
+              <button onClick={async () => {
+                try {
+                  const r = await fetch(`${apiBase()}/monitoring/test-trade/close`, {
+                    method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                  });
+                  const data = await r.json();
+                  alert(JSON.stringify(data, null, 2));
+                  load();
+                } catch (e: any) { alert("Error: " + e.message); }
+              }} className="px-3 py-1.5 text-[11px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors">
+                ■ Close Test Trade
+              </button>
+              <button onClick={async () => {
+                try {
+                  const r = await fetch(`${apiBase()}/monitoring/test-trade/status`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  });
+                  const data = await r.json();
+                  alert(JSON.stringify(data, null, 2));
+                } catch (e: any) { alert("Error: " + e.message); }
+              }} className="px-3 py-1.5 text-[11px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors">
+                ℹ Test Status
+              </button>
+            </div>
           </div>
         </div>
       )}

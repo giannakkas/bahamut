@@ -487,3 +487,50 @@ async def dashboard_all(user=Depends(get_current_user)):
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
         },
     }
+
+    # Add performance data
+    try:
+        from bahamut.monitoring.performance import compute_performance
+        result["performance"] = compute_performance()
+    except Exception:
+        result["performance"] = {"portfolio": {}, "strategies": {}, "assets": {}, "has_data": False}
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════
+# TEST TRADE ENDPOINTS
+# ═══════════════════════════════════════════════════════
+
+@router.post("/test-trade/open")
+async def open_test_trade(user=Depends(get_current_user)):
+    """Create a test trade to verify the full lifecycle. Super admin only."""
+    from bahamut.execution.test_trade_mode import create_test_trade
+    result = create_test_trade()
+    return result
+
+
+@router.post("/test-trade/close")
+async def close_test_trade_endpoint(user=Depends(get_current_user)):
+    """Close an open test trade. Super admin only."""
+    from bahamut.execution.test_trade_mode import close_test_trade
+    result = close_test_trade()
+    return result
+
+
+@router.get("/test-trade/status")
+async def test_trade_status(user=Depends(get_current_user)):
+    """Get current test trade state."""
+    from bahamut.execution.test_trade_mode import get_test_trade_status
+    return get_test_trade_status()
+
+
+# ═══════════════════════════════════════════════════════
+# PERFORMANCE ENDPOINT
+# ═══════════════════════════════════════════════════════
+
+@router.get("/performance")
+async def get_performance(user=Depends(get_current_user)):
+    """Get full performance breakdown: portfolio, per-strategy, per-asset."""
+    from bahamut.monitoring.performance import compute_performance
+    return compute_performance()
