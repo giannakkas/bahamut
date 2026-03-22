@@ -110,7 +110,8 @@ DEFAULTS = {
     "notify.email.smtp_host": "smtp-relay.brevo.com",
     "notify.email.smtp_port": 587,
     "notify.email.smtp_user": "",
-    "notify.email.smtp_pass": "",       # Brevo SMTP key
+    "notify.email.smtp_pass": "",       # Brevo API key (xkeysib-...)
+    "notify.email.smtp_key": "",        # Brevo SMTP key (for SMTP fallback)
     "notify.email.from_email": "",
     "notify.email.to_email": "",
 

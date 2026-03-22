@@ -108,42 +108,6 @@ class EmailTestRequest(BaseModel):
 
 @router.post("/settings/test/email")
 async def test_email(body: EmailTestRequest = None, user=Depends(get_current_user)):
-    """Send a test email via Brevo API."""
-    import json
-    import urllib.request
-
-    api_key = (body.api_key if body and body.api_key else None) or get_config("notify.email.smtp_pass", "")
-    from_email = (body.from_email if body and body.from_email else None) or get_config("notify.email.from_email", "") or "noreply@bahamut.ai"
-    to_email = (body.to_email if body and body.to_email else None) or get_config("notify.email.to_email", "")
-
-    if not api_key:
-        return {"ok": False, "error": "Brevo API key not set"}
-    if not to_email:
-        return {"ok": False, "error": "Recipient email not set"}
-
-    payload = {
-        "sender": {"name": "Bahamut Alerts", "email": from_email},
-        "to": [{"email": to_email}],
-        "subject": "✅ Bahamut Alert Test",
-        "textContent": "This is a test email from Bahamut.AI.\n\nEmail notifications are working!",
-    }
-
-    try:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=data, method="POST")
-        req.add_header("accept", "application/json")
-        req.add_header("content-type", "application/json")
-        req.add_header("api-key", api_key)
-
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read())
-            return {"ok": True, "message": f"Test email sent to {to_email}"}
-
-    except urllib.error.HTTPError as e:
-        try:
-            err = json.loads(e.read().decode())
-            return {"ok": False, "error": f"Brevo error ({e.code}): {err.get('message', str(err))}"}
-        except Exception:
-            return {"ok": False, "error": f"Brevo error ({e.code})"}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    """Send a test email — tries API then SMTP fallback."""
+    from bahamut.monitoring.email import test_connection
+    return test_connection()
