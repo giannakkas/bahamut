@@ -24,11 +24,8 @@ from dataclasses import dataclass
 def _fresh_readiness():
     """Reset readiness state for test isolation."""
     from bahamut.execution import system_readiness as sr
-    sr._state["reconciliation_complete"] = False
-    sr._state["reconciliation_error"] = ""
-    sr._state["db_last_ok"] = 0.0
-    sr._state["db_last_error"] = ""
-    sr._state["asset_data_health"] = {}
+    sr._test_override_allow = False
+    sr._clear_state()
 
 
 # ═══════════════════════════════════════════

@@ -136,6 +136,8 @@ async def kill_switch(user=Depends(get_current_user)):
         break
     closed = engine.activate_kill_switch(price or 0)
     pm.kill_switch_triggered = True
+    from bahamut.portfolio.manager import _redis_write
+    _redis_write("kill_switch", "active", True)
     return {"status": "kill_switch_activated", "positions_closed": closed}
 
 
@@ -145,6 +147,9 @@ async def resume_trading(user=Depends(get_current_user)):
     engine = get_execution_engine()
     engine.resume_trading()
     pm.kill_switch_triggered = False
+    # Clear cross-process kill switch state
+    from bahamut.portfolio.manager import _redis_write
+    _redis_write("kill_switch", "active", False)
     return {"status": "trading_resumed"}
 
 

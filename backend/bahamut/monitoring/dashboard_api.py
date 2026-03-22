@@ -16,7 +16,7 @@ import structlog
 from fastapi import APIRouter, Depends
 
 from bahamut.execution.engine import get_execution_engine
-from bahamut.portfolio.manager import get_portfolio_manager
+from bahamut.portfolio.manager import get_portfolio_manager, get_cross_process_regimes, get_cross_process_kill_switch
 from bahamut.auth.router import get_current_user
 
 logger = structlog.get_logger()
@@ -40,7 +40,7 @@ async def portfolio_summary(user=Depends(get_current_user)):
     open_risk_pct = round(open_risk / max(1, equity) * 100, 2)
 
     # Per-asset regimes
-    regimes = getattr(pm, 'asset_regimes', {})
+    regimes = get_cross_process_regimes() or getattr(pm, 'asset_regimes', {})
 
     return {
         "equity": round(equity, 2),
@@ -53,7 +53,7 @@ async def portfolio_summary(user=Depends(get_current_user)):
         "open_risk_pct": open_risk_pct,
         "open_positions": len([p for p in engine.open_positions if not p.strategy.startswith("TEST_")]),
         "total_trades": len([t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]),
-        "kill_switch": pm.kill_switch_triggered,
+        "kill_switch": pm.kill_switch_triggered or get_cross_process_kill_switch(),
         "regime": dict(regimes),
         "portfolio_mode": getattr(pm, 'current_portfolio_mode', 'unknown'),
     }
@@ -321,11 +321,11 @@ async def system_health(user=Depends(get_current_user)):
         "data_source": "LIVE" if live_data else "SYNTHETIC",
         "assets": assets,
         "active_strategies": active_strategies,
-        "regimes": dict(getattr(pm, 'asset_regimes', {})),
+        "regimes": get_cross_process_regimes() or dict(getattr(pm, 'asset_regimes', {})),
         "data": data_status_map,
         "portfolio": {
             "equity": round(pm.total_equity, 2),
-            "kill_switch": pm.kill_switch_triggered,
+            "kill_switch": pm.kill_switch_triggered or get_cross_process_kill_switch(),
             "open_positions": len([p for p in engine.open_positions if not p.strategy.startswith("TEST_")]),
             "total_trades": len([t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]),
         },
@@ -380,8 +380,8 @@ async def dashboard_all(user=Depends(get_current_user)):
         "open_risk_pct": round(open_risk / max(1, equity) * 100, 2),
         "open_positions": len(real_positions),
         "total_trades": len(real_trades),
-        "kill_switch": pm.kill_switch_triggered,
-        "regime": dict(getattr(pm, 'asset_regimes', {})),
+        "kill_switch": pm.kill_switch_triggered or get_cross_process_kill_switch(),
+        "regime": get_cross_process_regimes() or dict(getattr(pm, 'asset_regimes', {})),
     }
 
     # Strategies — sleeve names never start with TEST_, so this naturally excludes test trades

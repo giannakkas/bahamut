@@ -12,6 +12,8 @@ Risk controls:
   - Max open positions per sleeve (default 1)
   - Kill switch at portfolio drawdown threshold (default 10%)
 """
+import os
+import json
 import structlog
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -20,6 +22,69 @@ from typing import Optional
 from bahamut.execution.engine import get_execution_engine
 
 logger = structlog.get_logger()
+
+
+# ═══════════════════════════════════════════════════════
+# REDIS CROSS-PROCESS BRIDGE
+# Writes: worker process (orchestrator cycle)
+# Reads: API process (dashboard endpoints)
+# ═══════════════════════════════════════════════════════
+
+def _get_redis():
+    try:
+        import redis
+        return redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    except Exception:
+        return None
+
+
+def _redis_write(namespace: str, key: str, value):
+    """Write a value to Redis for cross-process reads."""
+    r = _get_redis()
+    if r:
+        try:
+            r.hset(f"bahamut:pm:{namespace}", key, json.dumps(value))
+        except Exception:
+            pass
+
+
+def _redis_read(namespace: str, key: str, default=None):
+    """Read a value from Redis (cross-process)."""
+    r = _get_redis()
+    if not r:
+        return default
+    try:
+        raw = r.hget(f"bahamut:pm:{namespace}", key)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return default
+
+
+def _redis_read_all(namespace: str) -> dict:
+    """Read all values from a Redis hash namespace."""
+    r = _get_redis()
+    if not r:
+        return {}
+    try:
+        raw = r.hgetall(f"bahamut:pm:{namespace}")
+        return {
+            (k.decode() if isinstance(k, bytes) else k): json.loads(v)
+            for k, v in raw.items()
+        }
+    except Exception:
+        return {}
+
+
+def get_cross_process_regimes() -> dict:
+    """Read asset regimes from Redis — safe for API process."""
+    return _redis_read_all("regime")
+
+
+def get_cross_process_kill_switch() -> bool:
+    """Read kill switch state from Redis — safe for API process."""
+    return _redis_read("kill_switch", "active", False)
 
 
 @dataclass
@@ -123,14 +188,14 @@ class PortfolioManager:
     def apply_routing(self, decision, asset: str = ""):
         """
         Record the regime decision per asset.
-        Does NOT toggle sleeve enabled/disabled — that would create cross-asset
-        interference (BTC=TREND enables v5, ETH=CRASH disables v5 → breaks BTC).
-        The orchestrator uses routing.active_strategies per asset directly.
+        Persists to Redis for cross-process visibility (worker → API).
         """
         self.current_regime = decision.regime
         self.current_portfolio_mode = decision.portfolio_mode
         if asset:
             self.asset_regimes[asset] = decision.regime
+            # Persist to Redis for cross-process reads
+            _redis_write("regime", asset, decision.regime)
 
         # Update target weights for display only
         for name, weight in decision.weights.items():
@@ -216,6 +281,7 @@ class PortfolioManager:
                 and dd >= self.max_drawdown_pct
                 and not self.kill_switch_triggered):
             self.kill_switch_triggered = True
+            _redis_write("kill_switch", "active", True)
             logger.warning("portfolio_kill_switch",
                            equity=round(self.total_capital, 2),
                            peak_equity=round(self.peak_equity, 2),
