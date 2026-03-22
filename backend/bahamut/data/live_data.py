@@ -224,7 +224,24 @@ def mark_bar_processed(asset: str, bar_timestamp: str):
 
 
 def get_last_bar_timestamp(asset: str) -> str:
-    """Get last processed bar timestamp for an asset."""
+    """Get last processed bar timestamp for an asset.
+
+    Always checks Redis first (written by worker process, read by API process).
+    Falls back to in-memory cache if Redis is unavailable.
+    """
+    # Redis is the cross-process source of truth (worker writes, API reads)
+    r = _get_redis()
+    if r:
+        try:
+            stored = r.get(f"bahamut:last_bar:{asset}")
+            if stored:
+                ts = stored.decode() if isinstance(stored, bytes) else stored
+                _last_bar_timestamps[asset] = ts  # Update local cache
+                return ts
+        except Exception:
+            pass
+
+    # Fallback: in-memory (may be stale in API process)
     _ensure_bar_state_loaded()
     return _last_bar_timestamps.get(asset, "")
 
