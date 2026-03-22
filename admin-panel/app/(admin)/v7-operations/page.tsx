@@ -568,6 +568,17 @@ export default function DailyOperations() {
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-bah-heading">{a.title}</div>
                           <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
+                          {a.action && (
+                            <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
+                              a.action.severity === "high" ? "bg-red-500/5 border-red-500/20" :
+                              a.action.severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
+                              a.action.severity === "low" ? "bg-bah-border/30 border-bah-border" :
+                              "bg-bah-cyan/5 border-bah-cyan/20"
+                            }`}>
+                              <div className="text-bah-heading font-medium">{a.action.severity === "info" ? "ℹ️" : a.action.severity === "low" ? "💤" : a.action.severity === "medium" ? "👁" : "⚡"} {a.action.advice}</div>
+                              {a.action.fix && <div className="text-bah-muted mt-1">→ {a.action.fix}</div>}
+                            </div>
+                          )}
                         </div>
                         <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
                           className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">

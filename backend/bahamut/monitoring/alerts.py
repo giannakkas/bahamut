@@ -63,6 +63,111 @@ def _mark_fired(alert_key: str):
     _last_fired[alert_key] = now
 
 
+_ACTION_ADVICE = {
+    # ── DATA ──
+    "Stale data": {
+        "advice": "Safe to ignore. System is using cached prices — not live market data.",
+        "fix": "Set TWELVE_DATA_KEY in Railway → backend → Variables to get live BTC/ETH prices.",
+        "severity": "low",
+    },
+    "Data error": {
+        "advice": "Data feed is down or returning errors. System will retry automatically.",
+        "fix": "Check Twelve Data API status. If persistent, verify TWELVE_DATA_KEY is valid.",
+        "severity": "medium",
+    },
+    # ── RISK ──
+    "Drawdown exceeded 8%": {
+        "advice": "Portfolio has lost more than 8% from peak. Review open positions immediately.",
+        "fix": "Consider closing losing positions or activating kill switch.",
+        "severity": "high",
+    },
+    "Drawdown elevated": {
+        "advice": "Drawdown is between 5-8%. Not critical yet but monitor closely.",
+        "fix": "No action needed unless it continues rising. Check open positions.",
+        "severity": "medium",
+    },
+    "Open risk exceeded 5%": {
+        "advice": "Total risk from open positions exceeds 5% of equity.",
+        "fix": "Reduce position sizes or close some positions to lower risk.",
+        "severity": "high",
+    },
+    "Open risk approaching limit": {
+        "advice": "Open risk is approaching the 5% limit. Monitor but no action needed yet.",
+        "fix": "Avoid opening new positions until risk decreases.",
+        "severity": "medium",
+    },
+    "Kill switch activated": {
+        "advice": "All trading has been halted. No new trades will be opened.",
+        "fix": "Review what triggered it. Resume trading via Dashboard → Resume when ready.",
+        "severity": "high",
+    },
+    # ── EXECUTION ──
+    "Execution errors detected": {
+        "advice": "Trade execution is failing. Orders may not be placed correctly.",
+        "fix": "Check Railway backend logs for error details.",
+        "severity": "high",
+    },
+    "Multiple cycle errors": {
+        "advice": "The trading engine is crashing repeatedly.",
+        "fix": "Check Railway backend logs. May need a redeploy.",
+        "severity": "high",
+    },
+    "High cycle skip rate": {
+        "advice": "Many cycles are being skipped — engine may be overloaded.",
+        "fix": "Check Redis connection and backend memory usage.",
+        "severity": "medium",
+    },
+    "High duplicate signal count": {
+        "advice": "Same signals being generated repeatedly — possible logic issue.",
+        "fix": "Safe to ignore unless trades are duplicated. Check position count.",
+        "severity": "low",
+    },
+    # ── STRATEGY ──
+    "win rate critically low": {
+        "advice": "Strategy performance is poor. May need review.",
+        "fix": "Check if market regime has changed. Consider disabling the strategy temporarily.",
+        "severity": "medium",
+    },
+    # ── TRADES ──
+    "Trade opened": {
+        "advice": "New position opened. Monitor entry and risk levels.",
+        "fix": "No action needed — system managing SL/TP automatically.",
+        "severity": "info",
+    },
+    "Trade closed": {
+        "advice": "Position closed. Review P&L and exit reason.",
+        "fix": "No action needed — this is informational.",
+        "severity": "info",
+    },
+    # ── REGIME ──
+    "Regime change": {
+        "advice": "Market regime shifted. Strategy behavior may change.",
+        "fix": "No action needed — strategies adapt automatically to regimes.",
+        "severity": "info",
+    },
+}
+
+
+def _get_action_advice(title: str, level: str, message: str) -> dict:
+    """Get actionable advice for an alert based on its title."""
+    # Try exact match first
+    if title in _ACTION_ADVICE:
+        return _ACTION_ADVICE[title]
+
+    # Try partial match
+    for pattern, advice in _ACTION_ADVICE.items():
+        if pattern.lower() in title.lower():
+            return advice
+
+    # Default advice by level
+    if level == "CRITICAL":
+        return {"advice": "Requires immediate attention.", "fix": "Review dashboard and check backend logs.", "severity": "high"}
+    elif level == "WARNING":
+        return {"advice": "Monitor this situation.", "fix": "Check dashboard for details.", "severity": "medium"}
+    else:
+        return {"advice": "Informational — no action needed.", "fix": "", "severity": "info"}
+
+
 def fire_alert(level: str, title: str, message: str, key: str = "",
                data: dict = None):
     """
@@ -86,6 +191,7 @@ def fire_alert(level: str, title: str, message: str, key: str = "",
         "message": message,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "data": data or {},
+        "action": _get_action_advice(title, level, message),
     }
 
     # Store in history
