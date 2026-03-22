@@ -88,7 +88,12 @@ export default function DailyOperations() {
       setStrategies(d.strategies);
       setPositions(d.positions);
       setTrades(d.trades);
-      setAlerts([]);  // TEMP: skip alerts to isolate crash
+      setAlerts((d.alerts || []).map((a: any) => ({
+        level: SafeStr(a?.level) || "INFO",
+        title: SafeStr(a?.title),
+        message: SafeStr(a?.message),
+        timestamp: SafeStr(a?.timestamp),
+      })));
       setHealth(d.health);
       setLastCycle(d.last_cycle);
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
@@ -320,8 +325,8 @@ export default function DailyOperations() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(p.regime).map(([asset, regime]: [string, any]) => {
             const assetData = health?.data?.[asset];
-            const dataStatus = assetData?.status || "—";
-            const dataDetail = assetData?.detail || "";
+            const dataStatus = SafeStr(assetData?.status) || "—";
+            const dataDetail = SafeStr(assetData?.detail);
             return (
               <div key={asset} className={`rounded-xl border p-3 ${
                 regime==="TREND"?"bg-green-500/5 border-green-500/20":regime==="CRASH"?"bg-red-500/5 border-red-500/20":"bg-amber-500/5 border-amber-500/20"}`}>
@@ -385,12 +390,12 @@ export default function DailyOperations() {
                               <span className={resultClr(s.result)}>{s.result}</span>
                             </span>
                           </div>
-                          <div className="text-[11px] text-bah-muted mt-1">{s.reason}</div>
+                          <div className="text-[11px] text-bah-muted mt-1">{SafeStr(s.reason)}</div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="px-3 py-3 text-xs text-bah-muted">{a.summary || "No strategies evaluated"}</div>
+                    <div className="px-3 py-3 text-xs text-bah-muted">{SafeStr(a.summary) || "No strategies evaluated"}</div>
                   )}
                 </div>
               ))}
@@ -416,7 +421,7 @@ export default function DailyOperations() {
                     <td className="px-3 py-2 text-right font-mono">{c.duration_ms ? fmtDur(c.duration_ms) : "—"}</td>
                     <td className="px-3 py-2 text-right">{c.signals_generated || 0}</td>
                     <td className="px-3 py-2 text-right">{c.orders_created || 0}</td>
-                    <td className="px-3 py-2 text-bah-muted truncate max-w-[300px]">{c.skip_reason || c.error || c.assets?.map((a: any) => `${a.asset}:${a.regime || "?"}`).join(", ") || "—"}</td>
+                    <td className="px-3 py-2 text-bah-muted truncate max-w-[300px]">{SafeStr(c.skip_reason) || SafeStr(c.error) || c.assets?.map((a: any) => `${a.asset}:${a.regime || "?"}`).join(", ") || "—"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -447,14 +452,14 @@ export default function DailyOperations() {
                           s.result==="BLOCKED"?"bg-amber-500/15 text-amber-400 border border-amber-500/30":
                           "bg-bah-border text-bah-muted border border-bah-border"}`}>{s.result}</span>
                       </div>
-                      <div className="text-[11px] text-bah-muted mb-2">{s.reason}</div>
+                      <div className="text-[11px] text-bah-muted mb-2">{SafeStr(s.reason)}</div>
                       <div className="space-y-1">
                         {(s.conditions || []).map((c: any, ci: number) => (
                           <div key={ci} className="text-[11px]">
                             <span className={`font-bold ${c.passed?"text-green-400":"text-red-400"}`}>{c.passed?"✓":"✗"}</span>
-                            {" "}<span className="text-bah-muted">{c.name}:</span>
-                            {" "}<span className="font-mono text-bah-heading">{c.actual}</span>
-                            {!c.passed && <span className="text-bah-muted"> → {c.target}</span>}
+                            {" "}<span className="text-bah-muted">{SafeStr(c.name)}:</span>
+                            {" "}<span className="font-mono text-bah-heading">{SafeStr(c.actual)}</span>
+                            {!c.passed && <span className="text-bah-muted"> → {SafeStr(c.target)}</span>}
                             {c.distance && c.distance !== "N/A" && <span className={`font-mono text-[10px] ${c.passed?"text-green-400/70":"text-amber-400"}`}> ({c.distance})</span>}
                           </div>
                         ))}
