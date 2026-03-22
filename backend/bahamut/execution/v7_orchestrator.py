@@ -186,8 +186,9 @@ def _run_v7_cycle_inner():
                 try:
                     from bahamut.monitoring.strategy_conditions import compute_conditions
                     compute_conditions(asset, candles, indicators, prev_indicators, current_regime)
-                except Exception:
-                    pass
+                    logger.info("compute_conditions_ok", asset=asset)
+                except Exception as e:
+                    logger.error("compute_conditions_FAILED", asset=asset, error=str(e))
 
             if not new_bar:
                 add_asset_evaluation(AssetEvaluation(

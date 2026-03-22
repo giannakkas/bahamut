@@ -144,27 +144,31 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         import redis, os, json
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         r.hset("bahamut:strategy_conditions", asset, json.dumps(_snapshots[asset]))
-    except Exception:
-        pass
+        logger.info("strategy_conds_redis_write_ok", asset=asset, n_strategies=len(results))
+    except Exception as e:
+        logger.error("strategy_conds_redis_write_FAILED", asset=asset, error=str(e))
 
     return results
 
 
 def get_latest_snapshots() -> dict:
     """Get most recent strategy condition snapshots for all assets."""
-    # In-memory first (same process — works with --workers 1)
-    if _snapshots:
-        return dict(_snapshots)
-    # Fallback: Redis (for when Celery worker wrote the data)
+    # Always try Redis first (Celery worker writes here)
     try:
         import redis, os, json
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         raw = r.hgetall("bahamut:strategy_conditions")
         if raw:
-            return {(k.decode() if isinstance(k, bytes) else k): json.loads(v) for k, v in raw.items()}
-    except Exception:
-        pass
-    return {}
+            result = {(k.decode() if isinstance(k, bytes) else k): json.loads(v) for k, v in raw.items()}
+            logger.info("strategy_conds_redis_read_ok", count=len(result))
+            return result
+        else:
+            logger.info("strategy_conds_redis_empty")
+    except Exception as e:
+        logger.error("strategy_conds_redis_read_FAILED", error=str(e))
+    # Fallback to in-memory (only works in same process)
+    logger.info("strategy_conds_fallback_memory", count=len(_snapshots))
+    return dict(_snapshots)
 
 
 def get_asset_snapshot(asset: str) -> dict:
