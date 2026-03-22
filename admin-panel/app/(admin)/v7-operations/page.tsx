@@ -9,6 +9,7 @@ export default function DailyOperations() {
   const [trades, setTrades] = useState<any>(null);
   
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [hiddenAlerts, setHiddenAlerts] = useState<number[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
@@ -292,7 +293,7 @@ export default function DailyOperations() {
         {(["cycle","conditions","strategies","positions","trades","alerts"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             tab===t?"border-bah-cyan text-bah-cyan":"border-transparent text-bah-muted hover:text-bah-heading"}`}>
-            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
+            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length - hiddenAlerts.length})`}
           </button>
         ))}
       </div>
@@ -541,10 +542,16 @@ export default function DailyOperations() {
       {/* ═══ ALERTS ═══ */}
       {(tab === "alerts" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length})</div>}
+          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length - hiddenAlerts.length})</div>}
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-            {alerts.length > 0 ? (
-              <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
+            {alerts.length > hiddenAlerts.length ? (
+              <>
+                <div className="px-3 py-2 border-b border-bah-border flex items-center justify-between">
+                  <span className="text-[10px] text-bah-muted">{alerts.length - hiddenAlerts.length} alert{alerts.length - hiddenAlerts.length !== 1 ? "s" : ""}</span>
+                  <button onClick={() => setHiddenAlerts(alerts.map((_, idx) => idx))} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">Archive All</button>
+                </div>
+                <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
+                if (hiddenAlerts.includes(i)) return null;
                 const t = String(a.title || "").toLowerCase();
                 let advice = "";
                 let fix = "";
@@ -574,12 +581,20 @@ export default function DailyOperations() {
                         {fix && <div className="text-bah-muted mt-1">{"→ "}{fix}</div>}
                       </div>
                     </div>
+                    <button onClick={() => setHiddenAlerts(h => [...h, i])} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Dismiss">✕</button>
                   </div>
                   <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
                 </div>
                 );
               })}</div>
-            ) : <div className="p-4 text-center text-bah-muted text-xs">No alerts</div>}
+              </>
+            ) : (
+              <div className="p-4 text-center text-bah-muted text-xs">
+                {hiddenAlerts.length > 0 ? (
+                  <><span>All alerts archived</span>{" "}<button onClick={() => setHiddenAlerts([])} className="text-bah-cyan hover:underline">Show all</button></>
+                ) : "No alerts"}
+              </div>
+            )}
           </div>
         </div>
       )}
