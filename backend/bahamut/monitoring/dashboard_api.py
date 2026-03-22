@@ -354,9 +354,10 @@ async def dashboard_all(user=Depends(get_current_user)):
     equity = pm.total_equity
     initial = pm.initial_capital
 
-    # Portfolio
-    dd_pct = round((1 - equity / pm.peak_equity) * 100 if pm.peak_equity > 0 else 0, 2)
-    open_risk = sum(p.risk_amount for p in engine.open_positions)
+    # Portfolio — use pm.total_drawdown as single source of truth (clamped to [0, 1])
+    dd_pct = round(pm.total_drawdown * 100, 2)
+    open_risk = sum(p.risk_amount for p in engine.open_positions
+                    if not p.strategy.startswith("TEST_"))
     portfolio = {
         "equity": round(equity, 2),
         "pnl_total": round(equity - initial, 2),
@@ -455,7 +456,7 @@ async def dashboard_all(user=Depends(get_current_user)):
         timing_assets = ["BTCUSD"]
     for a in timing_assets:
         lbt = get_last_bar_timestamp(a)
-        asset_timing[a] = get_asset_timing(lbt)
+        asset_timing[a] = get_asset_timing(lbt, last_processed_ts=lbt)
 
     timing = {
         "now_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -472,7 +473,8 @@ async def dashboard_all(user=Depends(get_current_user)):
     except Exception:
         pass
 
-    return {
+    # Build result dict (DO NOT return early — performance/health/trust must be added below)
+    result = {
         "portfolio": portfolio,
         "strategies": strats,
         "positions": {"positions": positions, "count": len(positions)},

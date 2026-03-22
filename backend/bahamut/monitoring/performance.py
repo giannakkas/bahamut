@@ -27,8 +27,9 @@ def compute_performance() -> dict:
     """
     engine = get_execution_engine()
     pm = get_portfolio_manager()
-    trades = engine.closed_trades
-    positions = engine.open_positions
+    # Exclude test trades from performance metrics — they are operator verification only
+    trades = [t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]
+    positions = [p for p in engine.open_positions if not p.strategy.startswith("TEST_")]
 
     has_data = len(trades) > 0 or len(positions) > 0
 

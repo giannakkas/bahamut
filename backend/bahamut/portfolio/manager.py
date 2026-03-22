@@ -229,8 +229,10 @@ class PortfolioManager:
 
     @property
     def total_drawdown(self) -> float:
-        return round(1 - self.total_equity / self.peak_equity
-                     if self.peak_equity > 0 else 0, 4)
+        if self.peak_equity <= 0:
+            return 0.0
+        dd = 1 - self.total_equity / self.peak_equity
+        return round(max(0.0, min(1.0, dd)), 4)
 
     # ═══════════════════════════════════════════════════════
     # REBALANCE

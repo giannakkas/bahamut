@@ -97,7 +97,11 @@ def run_v7_cycle(self=None):
             record_skip("orchestrator lock already held")
             return
     except Exception as e:
-        logger.debug("v7_cycle_lock_unavailable", error=str(e))
+        # Redis lock failed — skip cycle to prevent concurrent execution.
+        # This is safe: Celery will retry in 2 minutes.
+        logger.warning("v7_cycle_skipped_lock_error", error=str(e))
+        record_skip(f"lock acquisition failed: {str(e)[:80]}")
+        return
 
     cycle = start_cycle()
     try:

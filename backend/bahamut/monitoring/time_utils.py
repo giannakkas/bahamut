@@ -63,22 +63,37 @@ def is_data_stale(last_bar_ts: str, now_utc: datetime = None, tolerance_minutes:
         return True
 
 
-def get_asset_timing(last_bar_ts: str) -> dict:
-    """Get full timing info for an asset."""
+def get_asset_timing(last_bar_ts: str, last_processed_ts: str = "") -> dict:
+    """Get full timing info for an asset.
+
+    Args:
+        last_bar_ts: Timestamp of the most recent candle from the data provider.
+        last_processed_ts: Timestamp of the last bar the orchestrator actually processed.
+            Used to determine if a new unprocessed bar exists.
+    """
     now = datetime.now(timezone.utc)
     nxt = next_4h_close_utc(now)
     secs = seconds_until_next_4h_close(now)
     stale = is_data_stale(last_bar_ts, now) if last_bar_ts else True
 
+    # The most recently COMPLETED 4H bar boundary
+    last_completed = last_4h_close_utc(now).strftime("%Y-%m-%d %H:%M:%S")
+
     if stale:
         status = "STALE"
-    elif last_bar_ts and last_bar_ts >= current_4h_boundary(now).strftime("%Y-%m-%d %H:%M:%S"):
+    elif not last_processed_ts:
+        # No bar ever processed (fresh start) → new bar is available
+        status = "NEW_BAR_READY"
+    elif last_processed_ts < last_completed:
+        # Last processed bar is older than the most recent completed 4H boundary
+        # → a new completed bar exists that hasn't been processed
         status = "NEW_BAR_READY"
     else:
         status = "WAITING_FOR_NEW_BAR"
 
     return {
         "last_closed_bar": last_bar_ts or "unknown",
+        "last_processed_bar": last_processed_ts or "unknown",
         "next_close": nxt.strftime("%Y-%m-%d %H:%M:%S UTC"),
         "seconds_until_next_close": secs,
         "stale": stale,

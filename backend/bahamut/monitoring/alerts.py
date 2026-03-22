@@ -591,7 +591,7 @@ def send_cycle_report(cycle: dict):
             portfolio = {
                 "equity": round(pm.total_equity, 2),
                 "pnl_total": round(pm.total_equity - pm.initial_capital, 2),
-                "drawdown_pct": round((1 - pm.total_equity / pm.peak_equity) * 100 if pm.peak_equity > 0 else 0, 2),
+                "drawdown_pct": round(pm.total_drawdown * 100, 2),
                 "open_risk_pct": 0,
                 "open_positions": 0,
             }
