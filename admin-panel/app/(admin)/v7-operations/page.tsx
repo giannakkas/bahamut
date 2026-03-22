@@ -544,18 +544,41 @@ export default function DailyOperations() {
           {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length})</div>}
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
             {alerts.length > 0 ? (
-              <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => (
+              <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
+                const t = String(a.title || "").toLowerCase();
+                let advice = "";
+                let fix = "";
+                let icon = "ℹ️";
+                let advCls = "bg-bah-cyan/5 border-bah-cyan/20";
+                if (t.includes("stale data")) { advice = "Safe to ignore. System using cached prices."; fix = "Set TWELVE_DATA_KEY in Railway to get live prices."; icon = "💤"; advCls = "bg-bah-border/30 border-bah-border"; }
+                else if (t.includes("drawdown exceeded")) { advice = "Review positions immediately."; fix = "Consider closing losers or activating kill switch."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }
+                else if (t.includes("drawdown elevated")) { advice = "Monitor closely. Not critical yet."; fix = "Check open positions."; icon = "👁"; advCls = "bg-amber-500/5 border-amber-500/20"; }
+                else if (t.includes("risk exceeded")) { advice = "Total risk exceeds 5%."; fix = "Reduce positions."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }
+                else if (t.includes("kill switch")) { advice = "Trading halted."; fix = "Resume via Dashboard when ready."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }
+                else if (t.includes("trade opened")) { advice = "System managing SL/TP automatically."; icon = "ℹ️"; }
+                else if (t.includes("trade closed")) { advice = "Review P&L. No action needed."; icon = "ℹ️"; }
+                else if (t.includes("regime")) { advice = "Strategies adapt automatically."; icon = "ℹ️"; }
+                else if (t.includes("data error")) { advice = "Data feed error. Will retry."; fix = "Check Twelve Data API."; icon = "👁"; advCls = "bg-amber-500/5 border-amber-500/20"; }
+                else if (a.level === "CRITICAL") { advice = "Requires immediate attention."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }
+                else if (a.level === "WARNING") { advice = "Monitor this situation."; icon = "👁"; advCls = "bg-amber-500/5 border-amber-500/20"; }
+                else { advice = "Informational — no action needed."; }
+                return (
                 <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
                   <div className="flex items-start gap-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{String(a.level)}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-bah-heading">{a.title}</div>
-                      <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
+                      <div className="text-xs font-medium text-bah-heading">{String(a.title)}</div>
+                      <div className="text-[11px] text-bah-muted mt-0.5 break-words">{String(a.message)}</div>
+                      <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${advCls}`}>
+                        <div className="text-bah-heading font-medium">{icon} {advice}</div>
+                        {fix && <div className="text-bah-muted mt-1">{"→ "}{fix}</div>}
+                      </div>
                     </div>
                   </div>
                   <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
                 </div>
-              ))}</div>
+                );
+              })}</div>
             ) : <div className="p-4 text-center text-bah-muted text-xs">No alerts</div>}
           </div>
         </div>
