@@ -65,6 +65,7 @@ export default function DailyOperations() {
     const d = await api("/dashboard");
     if (d) {
       // Debug diagnostics
+      console.log("[DASH] _debug:", JSON.stringify(d._debug || {}));
       console.log("[DASH] error:", d.error || "none");
       console.log("[DASH] _traceback:", d._traceback || "none");
       console.log("[DASH] last_cycle:", JSON.stringify(d.last_cycle || {}).substring(0, 100));

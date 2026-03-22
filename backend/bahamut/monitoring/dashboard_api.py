@@ -12,6 +12,7 @@ Endpoints:
   GET /api/monitoring/alerts       — recent alerts
   GET /api/monitoring/health       — system health check
 """
+import os
 import structlog
 from fastapi import APIRouter, Depends
 
@@ -488,6 +489,22 @@ def _build_dashboard():
     except Exception:
         pass
 
+    # Debug diagnostics
+    _debug = {}
+    try:
+        import redis as _redis
+        _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        _r.ping()
+        _debug["redis"] = "OK"
+        _debug["redis_last_cycle"] = bool(_r.get("bahamut:last_cycle"))
+        _debug["redis_cycle_log_len"] = _r.llen("bahamut:cycle_log")
+        _debug["redis_strat_conds"] = {k.decode(): "exists" for k in _r.hkeys("bahamut:strategy_conditions")}
+    except Exception as e:
+        _debug["redis"] = f"FAIL: {str(e)}"
+    _debug["last_cycle_empty"] = not bool(last_cycle)
+    _debug["strategy_conds_count"] = len(strategy_conds)
+    _debug["cycle_hist_count"] = len(cycle_hist)
+
     return {
         "portfolio": portfolio,
         "strategies": strats,
@@ -499,6 +516,7 @@ def _build_dashboard():
         "cycle_stats": cycle_stats,
         "timing": timing,
         "strategy_conditions": strategy_conds,
+        "_debug": _debug,
         "health": {
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
         },
