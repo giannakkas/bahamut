@@ -9,7 +9,13 @@ export default function DailyOperations() {
   const [trades, setTrades] = useState<any>(null);
   
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const saved = sessionStorage.getItem("bah_dismissed_alerts");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
@@ -130,8 +136,16 @@ export default function DailyOperations() {
   const lc = lastCycle;
   const cStats = cycleHistory?.stats || {};
   const cList = cycleHistory?.cycles || [];
-  const alertKey = (a: any, i: number) => `${a.title}-${a.timestamp}-${i}`;
-  const visibleAlerts = alerts.filter((a, i) => !dismissedAlerts.has(alertKey(a, i)));
+  const alertKey = (a: any) => `${a.level}:${a.title}:${a.timestamp}`;
+
+  // Persist dismissed alerts to sessionStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("bah_dismissed_alerts", JSON.stringify([...dismissedAlerts]));
+    }
+  }, [dismissedAlerts]);
+
+  const visibleAlerts = alerts.filter(a => !dismissedAlerts.has(alertKey(a)));
   const critAlerts = visibleAlerts.filter(a => a.level === "CRITICAL").length;
 
   // Client-side advice for alerts (fallback when backend doesn't include action field)
@@ -317,7 +331,7 @@ export default function DailyOperations() {
         {(["cycle","conditions","strategies","positions","trades","alerts"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             tab===t?"border-bah-cyan text-bah-cyan":"border-transparent text-bah-muted hover:text-bah-heading"}`}>
-            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
+            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${visibleAlerts.length})`}
           </button>
         ))}
       </div>
@@ -574,14 +588,14 @@ export default function DailyOperations() {
                   <span className="text-[10px] text-bah-muted">{visibleAlerts.length} alert{visibleAlerts.length !== 1 ? "s" : ""}</span>
                   <button onClick={() => {
                     const all = new Set(dismissedAlerts);
-                    alerts.forEach((a, i) => all.add(alertKey(a, i)));
+                    alerts.forEach((a, i) => all.add(alertKey(a)));
                     setDismissedAlerts(all);
                   }} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">
                     Archive All
                   </button>
                 </div>
                 <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
-                  const key = alertKey(a, i);
+                  const key = alertKey(a);
                   if (dismissedAlerts.has(key)) return null;
                   return (
                     <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
