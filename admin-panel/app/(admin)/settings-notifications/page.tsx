@@ -277,7 +277,7 @@ export default function NotificationSettings() {
               className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
             <p className="text-[10px] text-bah-muted mt-1">Brevo → SMTP & API → API Keys → Generate</p>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-bah-muted mb-1 font-medium">From Email</label>
               <input type="email" value={form.email_from}

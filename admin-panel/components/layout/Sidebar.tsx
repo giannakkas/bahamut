@@ -2,16 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { EnvIndicator } from "@/components/ui";
 import { useAuthStore } from "@/store/auth";
 import { useAlerts } from "@/lib/hooks";
 import { useOverrides } from "@/lib/hooks";
 
-// ═══════════════════════════════════════════════
-// OPERATIONAL PAGES — the active trading system
-// ═══════════════════════════════════════════════
 const OPERATIONAL_NAV = [
   { href: "/v7-operations", label: "Daily Operations", icon: "📊" },
   { href: "/settings-notifications", label: "Notifications", icon: "🔔" },
@@ -21,10 +18,6 @@ const OPERATIONAL_NAV = [
   { href: "/overrides", label: "Overrides", icon: "🎛", minRole: "super_admin" },
 ];
 
-// ═══════════════════════════════════════════════
-// LEGACY PAGES — old multi-agent scanner system
-// Hidden by default, collapsible section
-// ═══════════════════════════════════════════════
 const LEGACY_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "◉" },
   { href: "/top-picks", label: "Top Picks", icon: "🔥" },
@@ -52,6 +45,7 @@ export function Sidebar() {
   const { data: alerts } = useAlerts();
   const { data: overrides } = useOverrides();
   const [showLegacy, setShowLegacy] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const activeAlerts = alerts?.filter((a) => !a.dismissed).length ?? 0;
   const activeOverrides = overrides?.length ?? 0;
@@ -59,6 +53,16 @@ export function Sidebar() {
   const userRole = typeof window !== "undefined" ? sessionStorage.getItem("bah_user_role") || "admin" : "admin";
   const isSuperAdmin = userRole === "super_admin";
   const userLevel = ROLE_LEVELS[userRole] ?? 0;
+
+  // Close mobile menu on navigation
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
 
   const canSee = (item: { minRole?: string }) =>
     userLevel >= (ROLE_LEVELS[item.minRole || "admin"] ?? 0);
@@ -68,6 +72,7 @@ export function Sidebar() {
     const active = pathname === item.href;
     return (
       <Link key={item.href} href={item.href}
+        onClick={() => setMobileOpen(false)}
         className={cn(
           "flex items-center gap-2.5 px-4 py-2.5 text-xs border-l-2 transition-all duration-200",
           active
@@ -86,8 +91,8 @@ export function Sidebar() {
     );
   };
 
-  return (
-    <nav className="flex flex-col w-[220px] shrink-0 sticky top-0 h-screen overflow-y-auto border-r border-bah-border bg-gradient-to-b from-bah-surface to-bah-bg">
+  const sidebarContent = (
+    <>
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-bah-border/60">
         <img src="/logo.png" alt="Bahamut.AI" className="h-12 w-auto object-contain" />
@@ -104,7 +109,7 @@ export function Sidebar() {
         </div>
         {OPERATIONAL_NAV.map(renderItem)}
 
-        {/* Legacy Section — collapsed by default */}
+        {/* Legacy Section */}
         <div className="mt-3 border-t border-bah-border/40">
           <button
             onClick={() => setShowLegacy(!showLegacy)}
@@ -146,6 +151,38 @@ export function Sidebar() {
           <button onClick={logout} className="text-bah-cyan hover:text-bah-cyan/80 transition-colors">Logout</button>
         </div>
       </div>
-    </nav>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile hamburger — fixed top-left */}
+      <button
+        onClick={() => setMobileOpen(!mobileOpen)}
+        className="lg:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-bah-surface border border-bah-border text-bah-heading shadow-lg"
+        aria-label="Toggle menu"
+      >
+        {mobileOpen ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        )}
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 bg-black/60 z-30 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <nav className={cn(
+        "flex flex-col w-[220px] shrink-0 h-screen overflow-y-auto border-r border-bah-border bg-gradient-to-b from-bah-surface to-bah-bg z-40 transition-transform duration-300",
+        "lg:sticky lg:top-0 lg:translate-x-0",
+        "fixed top-0 left-0",
+        mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}>
+        {sidebarContent}
+      </nav>
+    </>
   );
 }
