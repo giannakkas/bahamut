@@ -347,6 +347,16 @@ async def system_health(user=Depends(get_current_user)):
 @router.get("/dashboard")
 async def dashboard_all(user=Depends(get_current_user)):
     """Single endpoint returning all dashboard data. Reduces 9 calls to 1."""
+    try:
+        return _build_dashboard()
+    except Exception as e:
+        logger.error("dashboard_crashed", error=str(e))
+        return {"error": str(e), "portfolio": {}, "strategies": {}, "positions": {"positions": [], "count": 0},
+                "trades": {"trades": [], "count": 0}, "alerts": [], "last_cycle": {}, "cycle_history": [],
+                "cycle_stats": {}, "timing": {}, "strategy_conditions": {}, "health": {"engine": "v7/v8/v9", "data_source": "?", "data": {}}}
+
+
+def _build_dashboard():
     engine = get_execution_engine()
     pm = get_portfolio_manager()
     pm.update()
@@ -429,7 +439,13 @@ async def dashboard_all(user=Depends(get_current_user)):
     try:
         from bahamut.data.live_data import get_data_source, get_data_status
         data_src = get_data_source()
-        data_status = get_data_status()
+        raw_status = get_data_status()
+        # Sanitize — ensure all values are JSON-serializable primitives
+        for k, v in raw_status.items():
+            if isinstance(v, dict):
+                data_status[k] = {sk: str(sv) if not isinstance(sv, (str, int, float, bool, type(None))) else sv for sk, sv in v.items()}
+            else:
+                data_status[k] = str(v)
     except Exception:
         pass
 
