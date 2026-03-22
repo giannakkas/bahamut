@@ -52,13 +52,15 @@ class ExecutionEngine:
                 return None
 
             # System readiness gate — blocks when infrastructure is unhealthy
-            from bahamut.execution.system_readiness import can_system_trade
-            can_trade, reasons = can_system_trade(asset=signal.asset)
-            if not can_trade:
-                logger.warning("signal_rejected_system_not_ready",
-                               strategy=signal.strategy, asset=signal.asset,
-                               reasons=reasons)
-                return None
+            # TEST_ trades bypass this — they are operator verification tools
+            if not signal.strategy.startswith("TEST_"):
+                from bahamut.execution.system_readiness import can_system_trade
+                can_trade, reasons = can_system_trade(asset=signal.asset)
+                if not can_trade:
+                    logger.warning("signal_rejected_system_not_ready",
+                                   strategy=signal.strategy, asset=signal.asset,
+                                   reasons=reasons)
+                    return None
 
             # Idempotency: don't process same signal twice
             if signal.signal_id in self._processed_signals:
