@@ -2,6 +2,27 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiBase } from "@/lib/utils";
 
+function AlertAdvice({ alert, getAdvice }: { alert: any; getAdvice: (a: any) => any }) {
+  const adv = getAdvice(alert);
+  if (!adv || !adv.advice) return null;
+  const severity = String(adv.severity || "info");
+  const advice = String(adv.advice || "");
+  const fix = String(adv.fix || "");
+  return (
+    <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
+      severity === "high" ? "bg-red-500/5 border-red-500/20" :
+      severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
+      severity === "low" ? "bg-bah-border/30 border-bah-border" :
+      "bg-bah-cyan/5 border-bah-cyan/20"
+    }`}>
+      <div className="text-bah-heading font-medium">
+        {severity === "info" ? "ℹ️" : severity === "low" ? "💤" : severity === "medium" ? "👁" : "⚡"} {advice}
+      </div>
+      {fix && <div className="text-bah-muted mt-1">→ {fix}</div>}
+    </div>
+  );
+}
+
 export default function DailyOperations() {
   const [portfolio, setPortfolio] = useState<any>(null);
   const [strategies, setStrategies] = useState<any>(null);
@@ -605,18 +626,8 @@ export default function DailyOperations() {
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-bah-heading">{a.title}</div>
-                          <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
-                          {(() => { const adv = getAdvice(a); return adv && (
-                            <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
-                              adv.severity === "high" ? "bg-red-500/5 border-red-500/20" :
-                              adv.severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
-                              adv.severity === "low" ? "bg-bah-border/30 border-bah-border" :
-                              "bg-bah-cyan/5 border-bah-cyan/20"
-                            }`}>
-                              <div className="text-bah-heading font-medium">{adv.severity === "info" ? "ℹ️" : adv.severity === "low" ? "💤" : adv.severity === "medium" ? "👁" : "⚡"} {adv.advice}</div>
-                              {adv.fix && <div className="text-bah-muted mt-1">→ {adv.fix}</div>}
-                            </div>
-                          ); })()}
+                          <div className="text-[11px] text-bah-muted mt-0.5 break-words">{typeof a.message === "string" ? a.message : JSON.stringify(a.message)}</div>
+                          <AlertAdvice alert={a} getAdvice={getAdvice} />
                         </div>
                         <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
                           className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">
