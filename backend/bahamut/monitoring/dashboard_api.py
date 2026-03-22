@@ -495,6 +495,33 @@ async def dashboard_all(user=Depends(get_current_user)):
     except Exception:
         result["performance"] = {"portfolio": {}, "strategies": {}, "assets": {}, "has_data": False}
 
+    # Add data health
+    try:
+        from bahamut.monitoring.data_health import get_data_health
+        result["data_health"] = get_data_health()
+    except Exception:
+        result["data_health"] = {"status": "UNKNOWN", "source": "?", "assets": {}}
+
+    # Operator trust strip — last key events
+    trust = {}
+    try:
+        trust["last_successful_cycle"] = last_cycle.get("ended_at") if last_cycle and last_cycle.get("status") == "SUCCESS" else None
+        trust["last_signal"] = None
+        trust["last_order"] = None
+        trust["last_position_opened"] = None
+        trust["last_position_closed"] = None
+        # Check from engine
+        if engine.all_orders:
+            trust["last_order"] = engine.all_orders[-1].signal_time
+        if engine.closed_trades:
+            trust["last_position_closed"] = engine.closed_trades[-1].exit_time
+        # Check open positions for most recent open
+        if engine.open_positions:
+            trust["last_position_opened"] = max(p.entry_time for p in engine.open_positions if p.entry_time)
+    except Exception:
+        pass
+    result["operator_trust"] = trust
+
     return result
 
 
@@ -534,3 +561,10 @@ async def get_performance(user=Depends(get_current_user)):
     """Get full performance breakdown: portfolio, per-strategy, per-asset."""
     from bahamut.monitoring.performance import compute_performance
     return compute_performance()
+
+
+@router.get("/data-health")
+async def get_data_health_endpoint(user=Depends(get_current_user)):
+    """Get data health status for all assets."""
+    from bahamut.monitoring.data_health import get_data_health
+    return get_data_health()

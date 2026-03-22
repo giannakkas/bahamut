@@ -190,6 +190,31 @@ export default function DailyOperations() {
         </div>
       )}
 
+      {/* ═══ DATA HEALTH + OPERATOR TRUST ═══ */}
+      {health && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl p-2.5 flex flex-wrap items-center gap-3 text-[11px]">
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${
+              (health as any)?.data_source === "LIVE" ? "bg-green-400" : "bg-amber-400"
+            }`} />
+            <span className="text-bah-muted">Data:</span>
+            <span className="text-bah-heading font-semibold">{(health as any)?.data_source || "?"}</span>
+          </div>
+          {(portfolio as any)?.regime && Object.entries((portfolio as any).regime).map(([asset, regime]: [string, any]) => (
+            <div key={asset} className="flex items-center gap-1">
+              <span className="text-bah-muted">{asset}:</span>
+              <span className={`font-semibold ${String(regime)==="TREND"?"text-green-400":String(regime)==="CRASH"?"text-red-400":"text-amber-400"}`}>{String(regime)}</span>
+            </div>
+          ))}
+          {lastCycle?.ended_at && (
+            <div className="flex items-center gap-1">
+              <span className="text-bah-muted">Last cycle:</span>
+              <span className="text-bah-heading font-mono">{fmtTime(lastCycle.ended_at)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ═══ 4H COUNTDOWN TIMER ═══ */}
       {timing && (
         <div className="bg-bah-surface border border-bah-border rounded-xl p-2.5 flex flex-wrap items-center gap-2 sm:gap-4 text-xs">
