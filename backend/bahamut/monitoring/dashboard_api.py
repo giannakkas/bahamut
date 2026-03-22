@@ -463,9 +463,8 @@ async def dashboard_all(user=Depends(get_current_user)):
     try:
         from bahamut.monitoring.strategy_conditions import get_latest_snapshots
         strategy_conds = get_latest_snapshots()
-        logger.info("dashboard_strategy_conds", count=len(strategy_conds), assets=list(strategy_conds.keys()) if strategy_conds else [])
-    except Exception as e:
-        logger.error("dashboard_strategy_conds_error", error=str(e))
+    except Exception:
+        pass
 
     return {
         "portfolio": portfolio,
@@ -482,31 +481,3 @@ async def dashboard_all(user=Depends(get_current_user)):
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
         },
     }
-
-
-@router.get("/debug/strategy-conditions")
-async def debug_strategy_conditions(user=Depends(get_current_user)):
-    """Debug endpoint to check strategy conditions pipeline."""
-    import os, json
-    result = {"in_memory": {}, "redis": {}, "redis_error": None, "redis_url": "configured" if os.environ.get("REDIS_URL") else "MISSING"}
-
-    # Check in-memory
-    try:
-        from bahamut.monitoring.strategy_conditions import _snapshots
-        result["in_memory"] = {k: {"regime": v.get("regime"), "price": v.get("price"), "n_strategies": len(v.get("strategies", []))} for k, v in _snapshots.items()}
-    except Exception as e:
-        result["in_memory"] = {"error": str(e)}
-
-    # Check Redis directly
-    try:
-        import redis
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        raw = r.hgetall("bahamut:strategy_conditions")
-        for k, v in raw.items():
-            key = k.decode() if isinstance(k, bytes) else k
-            data = json.loads(v)
-            result["redis"][key] = {"regime": data.get("regime"), "price": data.get("price"), "n_strategies": len(data.get("strategies", []))}
-    except Exception as e:
-        result["redis_error"] = str(e)
-
-    return result
