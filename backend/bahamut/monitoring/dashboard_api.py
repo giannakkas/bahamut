@@ -463,8 +463,9 @@ async def dashboard_all(user=Depends(get_current_user)):
     try:
         from bahamut.monitoring.strategy_conditions import get_latest_snapshots
         strategy_conds = get_latest_snapshots()
-    except Exception:
-        pass
+        logger.info("dashboard_strategy_conds", count=len(strategy_conds), assets=list(strategy_conds.keys()) if strategy_conds else [])
+    except Exception as e:
+        logger.error("dashboard_strategy_conds_error", error=str(e))
 
     return {
         "portfolio": portfolio,

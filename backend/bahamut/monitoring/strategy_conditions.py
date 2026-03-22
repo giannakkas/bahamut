@@ -145,8 +145,9 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         r.hset("bahamut:strategy_conditions", asset, json.dumps(_snapshots[asset]))
         r.expire("bahamut:strategy_conditions", 3600)  # 1hr TTL
-    except Exception:
-        pass
+        logger.info("strategy_conditions_stored", asset=asset, regime=regime, price=close)
+    except Exception as e:
+        logger.error("strategy_conditions_redis_write_failed", asset=asset, error=str(e))
 
     return results
 
@@ -163,10 +164,14 @@ def get_latest_snapshots() -> dict:
             for k, v in raw.items():
                 key = k.decode() if isinstance(k, bytes) else k
                 result[key] = json.loads(v)
+            logger.info("strategy_conditions_from_redis", count=len(result))
             return result
-    except Exception:
-        pass
+        else:
+            logger.debug("strategy_conditions_redis_empty")
+    except Exception as e:
+        logger.error("strategy_conditions_redis_read_failed", error=str(e))
     # Fallback to in-memory (same process only)
+    logger.debug("strategy_conditions_from_memory", count=len(_snapshots))
     return dict(_snapshots)
 
 
