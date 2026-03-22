@@ -476,13 +476,11 @@ def run_v7_cycle_sync():
         end_cycle("ERROR", error=str(e))
         result = {"status": "ERROR", "error": str(e)}
 
-    # Send cycle report email
+    # Manual trigger ALWAYS sends cycle report (for testing/operator visibility)
     try:
         from bahamut.monitoring.alerts import send_cycle_report
         lc = get_last_cycle()
-        has_new_bar = any(a.get("new_bar") for a in lc.get("assets", []))
-        if has_new_bar or lc.get("status") == "ERROR":
-            send_cycle_report(lc)
+        send_cycle_report(lc)
     except Exception:
         pass
 
