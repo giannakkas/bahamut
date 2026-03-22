@@ -14,8 +14,20 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already authenticated
+  // Check for SSO token in URL (from frontend → admin handoff)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ssoToken = params.get("token");
+    if (ssoToken) {
+      // Store the token and redirect — no login needed
+      sessionStorage.setItem("bah_token", ssoToken);
+      sessionStorage.setItem("bah_user_role", "super_admin");
+      // Clean URL
+      window.history.replaceState({}, "", "/login");
+      router.replace("/v7-operations");
+      return;
+    }
     if (isAuthenticated()) {
       router.replace("/v7-operations");
     }

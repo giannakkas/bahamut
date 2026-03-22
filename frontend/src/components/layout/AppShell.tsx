@@ -28,6 +28,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
+    // Check for SSO token from admin panel
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ssoToken = params.get('token');
+      if (ssoToken) {
+        localStorage.setItem('bahamut_token', ssoToken);
+        localStorage.setItem('bahamut_user', JSON.stringify({ email: 'admin', role: 'super_admin', full_name: 'Admin' }));
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
     loadFromStorage();
     setMounted(true);
     setCurrentPath(window.location.pathname);
@@ -72,7 +82,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-t border-border-default p-2 space-y-0.5">
           {(userRole === 'super_admin' || userRole === 'admin') && (
-            <a href="https://admin.bahamut.ai" className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-accent-violet hover:bg-bg-tertiary font-semibold">
+            <a href="#" onClick={(e) => {
+              e.preventDefault();
+              const token = localStorage.getItem('bahamut_token') || '';
+              window.open(`https://admin.bahamut.ai/login?token=${encodeURIComponent(token)}`, '_blank');
+            }} className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-accent-violet hover:bg-bg-tertiary font-semibold">
               <span className="text-xs opacity-80 w-4 text-center">⚡</span> Admin Panel
             </a>
           )}

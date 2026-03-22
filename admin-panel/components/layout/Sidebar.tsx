@@ -126,7 +126,11 @@ export function Sidebar() {
         <EnvIndicator />
 
         {isSuperAdmin && (
-          <a href="https://bahamut.ai"
+          <a href="#" onClick={(e) => {
+            e.preventDefault();
+            const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") || "" : "";
+            window.location.href = `https://bahamut.ai?token=${encodeURIComponent(token)}`;
+          }}
             className="w-full mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-md border border-bah-border bg-white/[0.02] text-bah-muted hover:bg-white/[0.04] hover:text-bah-heading transition-all duration-200">
             <span className="text-[10px] font-semibold tracking-wide uppercase">👤 Switch to Frontend</span>
             <span className="text-[9px] opacity-60">→</span>
