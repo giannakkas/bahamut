@@ -2,13 +2,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiBase } from "@/lib/utils";
 
-function SafeStr(v: any): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  try { return JSON.stringify(v); } catch { return "[error]"; }
-}
-
 export default function DailyOperations() {
   const [portfolio, setPortfolio] = useState<any>(null);
   const [strategies, setStrategies] = useState<any>(null);
@@ -16,24 +9,6 @@ export default function DailyOperations() {
   const [trades, setTrades] = useState<any>(null);
   
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
-
-  // Load dismissed alerts from sessionStorage on mount
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("bah_dismissed_alerts");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setDismissedAlerts(new Set(parsed.filter((x: any) => typeof x === "string")));
-        } else {
-          sessionStorage.removeItem("bah_dismissed_alerts");
-        }
-      }
-    } catch {
-      sessionStorage.removeItem("bah_dismissed_alerts");
-    }
-  }, []);
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
@@ -83,17 +58,11 @@ export default function DailyOperations() {
   const load = useCallback(async () => {
     const d = await api("/dashboard");
     if (d) {
-      console.log("[DASHBOARD RAW]", JSON.stringify(d).substring(0, 500));
       setPortfolio(d.portfolio);
       setStrategies(d.strategies);
       setPositions(d.positions);
       setTrades(d.trades);
-      setAlerts((d.alerts || []).map((a: any) => ({
-        level: SafeStr(a?.level) || "INFO",
-        title: SafeStr(a?.title),
-        message: SafeStr(a?.message),
-        timestamp: SafeStr(a?.timestamp),
-      })));
+      setAlerts(d.alerts || []);
       setHealth(d.health);
       setLastCycle(d.last_cycle);
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
@@ -151,7 +120,7 @@ export default function DailyOperations() {
   const killSwitch = async () => { if (confirm("Kill switch?")) { await v7("/portfolio/kill-switch", { method: "POST" }); load(); } };
   const resume = async () => { await v7("/portfolio/resume", { method: "POST" }); load(); };
 
-  if (loading) return <div className="p-3 sm:p-8 text-bah-muted">Loading...</div>;
+  if (loading) return <div className="p-8 text-bah-muted">Loading...</div>;
 
   const p = portfolio;
   const dd = p?.drawdown_pct || 0;
@@ -160,40 +129,7 @@ export default function DailyOperations() {
   const lc = lastCycle;
   const cStats = cycleHistory?.stats || {};
   const cList = cycleHistory?.cycles || [];
-  const alertKey = (a: any) => `${a.level}:${a.title}:${a.timestamp}`;
-
-  // Persist dismissed alerts to sessionStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("bah_dismissed_alerts", JSON.stringify([...dismissedAlerts]));
-    }
-  }, [dismissedAlerts]);
-
-  const visibleAlerts = alerts.filter(a => !dismissedAlerts.has(alertKey(a)));
-  const critAlerts = visibleAlerts.filter(a => a.level === "CRITICAL").length;
-
-  // Client-side advice for alerts (fallback when backend doesn't include action field)
-  const getAdvice = (a: any): { advice: string; fix: string; severity: string } | null => {
-    try {
-      const t = String(a?.title || "").toLowerCase();
-    if (t.includes("stale data")) return { advice: "Safe to ignore. System is using cached prices — not live market data.", fix: "Set TWELVE_DATA_KEY in Railway → backend → Variables to get live prices.", severity: "low" };
-    if (t.includes("drawdown exceeded")) return { advice: "Portfolio lost more than 8% from peak. Review positions immediately.", fix: "Consider closing losing positions or activating kill switch.", severity: "high" };
-    if (t.includes("drawdown elevated")) return { advice: "Drawdown is between 5-8%. Monitor closely.", fix: "Check open positions.", severity: "medium" };
-    if (t.includes("risk exceeded")) return { advice: "Total risk exceeds 5% of equity.", fix: "Reduce position sizes or close some positions.", severity: "high" };
-    if (t.includes("risk approaching")) return { advice: "Risk approaching the 5% limit.", fix: "Avoid opening new positions until risk decreases.", severity: "medium" };
-    if (t.includes("kill switch")) return { advice: "All trading halted.", fix: "Review and resume via Dashboard when ready.", severity: "high" };
-    if (t.includes("execution error")) return { advice: "Trade execution failing.", fix: "Check Railway backend logs.", severity: "high" };
-    if (t.includes("data error")) return { advice: "Data feed error. System will retry.", fix: "Check Twelve Data API status.", severity: "medium" };
-    if (t.includes("trade opened")) return { advice: "New position opened. System managing SL/TP automatically.", fix: "", severity: "info" };
-    if (t.includes("trade closed")) return { advice: "Position closed. Review P&L.", fix: "", severity: "info" };
-    if (t.includes("regime change")) return { advice: "Market regime shifted. Strategies adapt automatically.", fix: "", severity: "info" };
-    if (t.includes("win rate")) return { advice: "Strategy performance poor.", fix: "Consider disabling the strategy temporarily.", severity: "medium" };
-    if (t.includes("cycle error")) return { advice: "Engine crashing repeatedly.", fix: "Check Railway backend logs.", severity: "high" };
-    if (a.level === "CRITICAL") return { advice: "Requires immediate attention.", fix: "Review dashboard and check logs.", severity: "high" };
-    if (a.level === "WARNING") return { advice: "Monitor this situation.", fix: "Check dashboard for details.", severity: "medium" };
-    return { advice: "Informational — no action needed.", fix: "", severity: "info" };
-    } catch { return null; }
-  };
+  const critAlerts = alerts.filter(a => a.level === "CRITICAL").length;
 
   // Format helpers
   const fmtTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleTimeString("en-GB", { hour12: false }); } catch { return iso; } };
@@ -205,7 +141,7 @@ export default function DailyOperations() {
   const resultClr = (r: string) => r === "EXECUTED" ? "text-green-400" : r === "BLOCKED" ? "text-amber-400" : r === "NO_SIGNAL" ? "text-bah-muted" : r === "SIGNAL" ? "text-bah-cyan" : "text-bah-muted";
 
   return (
-    <div className="p-2 sm:p-4 max-w-[1440px] space-y-3">
+    <div className="p-2 sm:p-4 max-w-[1440px] space-y-3 pt-12 lg:pt-4">
       {/* ═══ HEADER ═══ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -325,8 +261,8 @@ export default function DailyOperations() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(p.regime).map(([asset, regime]: [string, any]) => {
             const assetData = health?.data?.[asset];
-            const dataStatus = SafeStr(assetData?.status) || "—";
-            const dataDetail = SafeStr(assetData?.detail);
+            const dataStatus = typeof assetData?.status === "string" ? assetData.status : String(assetData?.status || "—");
+            const dataDetail = typeof assetData?.detail === "string" ? assetData.detail : (assetData?.detail ? JSON.stringify(assetData.detail) : "");
             return (
               <div key={asset} className={`rounded-xl border p-3 ${
                 regime==="TREND"?"bg-green-500/5 border-green-500/20":regime==="CRASH"?"bg-red-500/5 border-red-500/20":"bg-amber-500/5 border-amber-500/20"}`}>
@@ -356,7 +292,7 @@ export default function DailyOperations() {
         {(["cycle","conditions","strategies","positions","trades","alerts"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             tab===t?"border-bah-cyan text-bah-cyan":"border-transparent text-bah-muted hover:text-bah-heading"}`}>
-            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${visibleAlerts.length})`}
+            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length})`}
           </button>
         ))}
       </div>
@@ -390,12 +326,12 @@ export default function DailyOperations() {
                               <span className={resultClr(s.result)}>{s.result}</span>
                             </span>
                           </div>
-                          <div className="text-[11px] text-bah-muted mt-1">{SafeStr(s.reason)}</div>
+                          <div className="text-[11px] text-bah-muted mt-1">{s.reason}</div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="px-3 py-3 text-xs text-bah-muted">{SafeStr(a.summary) || "No strategies evaluated"}</div>
+                    <div className="px-3 py-3 text-xs text-bah-muted">{a.summary || "No strategies evaluated"}</div>
                   )}
                 </div>
               ))}
@@ -421,7 +357,7 @@ export default function DailyOperations() {
                     <td className="px-3 py-2 text-right font-mono">{c.duration_ms ? fmtDur(c.duration_ms) : "—"}</td>
                     <td className="px-3 py-2 text-right">{c.signals_generated || 0}</td>
                     <td className="px-3 py-2 text-right">{c.orders_created || 0}</td>
-                    <td className="px-3 py-2 text-bah-muted truncate max-w-[300px]">{SafeStr(c.skip_reason) || SafeStr(c.error) || c.assets?.map((a: any) => `${a.asset}:${a.regime || "?"}`).join(", ") || "—"}</td>
+                    <td className="px-3 py-2 text-bah-muted truncate max-w-[300px]">{c.skip_reason || c.error || c.assets?.map((a: any) => `${a.asset}:${a.regime || "?"}`).join(", ") || "—"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -452,14 +388,14 @@ export default function DailyOperations() {
                           s.result==="BLOCKED"?"bg-amber-500/15 text-amber-400 border border-amber-500/30":
                           "bg-bah-border text-bah-muted border border-bah-border"}`}>{s.result}</span>
                       </div>
-                      <div className="text-[11px] text-bah-muted mb-2">{SafeStr(s.reason)}</div>
+                      <div className="text-[11px] text-bah-muted mb-2">{s.reason}</div>
                       <div className="space-y-1">
                         {(s.conditions || []).map((c: any, ci: number) => (
                           <div key={ci} className="text-[11px]">
                             <span className={`font-bold ${c.passed?"text-green-400":"text-red-400"}`}>{c.passed?"✓":"✗"}</span>
-                            {" "}<span className="text-bah-muted">{SafeStr(c.name)}:</span>
-                            {" "}<span className="font-mono text-bah-heading">{SafeStr(c.actual)}</span>
-                            {!c.passed && <span className="text-bah-muted"> → {SafeStr(c.target)}</span>}
+                            {" "}<span className="text-bah-muted">{c.name}:</span>
+                            {" "}<span className="font-mono text-bah-heading">{c.actual}</span>
+                            {!c.passed && <span className="text-bah-muted"> → {c.target}</span>}
                             {c.distance && c.distance !== "N/A" && <span className={`font-mono text-[10px] ${c.passed?"text-green-400/70":"text-amber-400"}`}> ({c.distance})</span>}
                           </div>
                         ))}
@@ -605,68 +541,22 @@ export default function DailyOperations() {
       {/* ═══ ALERTS ═══ */}
       {(tab === "alerts" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({visibleAlerts.length})</div>}
+          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length})</div>}
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-            {visibleAlerts.length > 0 ? (
-              <>
-                <div className="px-3 py-2 border-b border-bah-border flex items-center justify-between">
-                  <span className="text-[10px] text-bah-muted">{visibleAlerts.length} alert{visibleAlerts.length !== 1 ? "s" : ""}</span>
-                  <button onClick={() => {
-                    const all = new Set(dismissedAlerts);
-                    alerts.forEach((a, i) => all.add(alertKey(a)));
-                    setDismissedAlerts(all);
-                  }} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">
-                    Archive All
-                  </button>
-                </div>
-                <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
-                  const key = alertKey(a);
-                  if (dismissedAlerts.has(key)) return null;
-                  return (
-                    <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
-                      <div className="flex items-start gap-2">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{String(a.level)}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-bah-heading">{SafeStr(a.title)}</div>
-                          <div className="text-[11px] text-bah-muted mt-0.5 break-words">{SafeStr(a.message)}</div>
-                          {(() => { try {
-                            const adv = getAdvice(a);
-                            if (!adv) return null;
-                            const sev = SafeStr(adv.severity);
-                            return (
-                              <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
-                                sev === "high" ? "bg-red-500/5 border-red-500/20" :
-                                sev === "medium" ? "bg-amber-500/5 border-amber-500/20" :
-                                sev === "low" ? "bg-bah-border/30 border-bah-border" :
-                                "bg-bah-cyan/5 border-bah-cyan/20"
-                              }`}>
-                                <div className="text-bah-heading font-medium">
-                                  {sev === "info" ? "ℹ️" : sev === "low" ? "💤" : sev === "medium" ? "👁" : "⚡"}{" "}{SafeStr(adv.advice)}
-                                </div>
-                                {adv.fix ? <div className="text-bah-muted mt-1">{"→ "}{SafeStr(adv.fix)}</div> : null}
-                              </div>
-                            );
-                          } catch { return null; } })()}
-                        </div>
-                        <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
-                          className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">
-                          ✕
-                        </button>
-                      </div>
-                      <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
+            {alerts.length > 0 ? (
+              <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => (
+                <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
+                  <div className="flex items-start gap-2">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-bah-heading">{a.title}</div>
+                      <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
                     </div>
-                  );
-                })}</div>
-              </>
-            ) : <div className="p-4 text-center text-bah-muted text-xs">{dismissedAlerts.size > 0 ? "All alerts archived" : "No alerts"}</div>}
-            {dismissedAlerts.size > 0 && (
-              <div className="px-3 py-2 border-t border-bah-border">
-                <button onClick={() => setDismissedAlerts(new Set())}
-                  className="text-[10px] text-bah-cyan hover:text-bah-cyan/80 transition-colors">
-                  Show {dismissedAlerts.size} archived alert{dismissedAlerts.size !== 1 ? "s" : ""}
-                </button>
-              </div>
-            )}
+                  </div>
+                  <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
+                </div>
+              ))}</div>
+            ) : <div className="p-4 text-center text-bah-muted text-xs">No alerts</div>}
           </div>
         </div>
       )}
