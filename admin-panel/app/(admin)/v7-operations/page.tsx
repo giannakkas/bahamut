@@ -134,6 +134,28 @@ export default function DailyOperations() {
   const visibleAlerts = alerts.filter((a, i) => !dismissedAlerts.has(alertKey(a, i)));
   const critAlerts = visibleAlerts.filter(a => a.level === "CRITICAL").length;
 
+  // Client-side advice for alerts (fallback when backend doesn't include action field)
+  const getAdvice = (a: any) => {
+    if (a.action) return a.action;
+    const t = (a.title || "").toLowerCase();
+    if (t.includes("stale data")) return { advice: "Safe to ignore. System is using cached prices — not live market data.", fix: "Set TWELVE_DATA_KEY in Railway → backend → Variables to get live prices.", severity: "low" };
+    if (t.includes("drawdown exceeded")) return { advice: "Portfolio lost more than 8% from peak. Review positions immediately.", fix: "Consider closing losing positions or activating kill switch.", severity: "high" };
+    if (t.includes("drawdown elevated")) return { advice: "Drawdown is between 5-8%. Monitor closely.", fix: "Check open positions.", severity: "medium" };
+    if (t.includes("risk exceeded")) return { advice: "Total risk exceeds 5% of equity.", fix: "Reduce position sizes or close some positions.", severity: "high" };
+    if (t.includes("risk approaching")) return { advice: "Risk approaching the 5% limit.", fix: "Avoid opening new positions until risk decreases.", severity: "medium" };
+    if (t.includes("kill switch")) return { advice: "All trading halted.", fix: "Review and resume via Dashboard when ready.", severity: "high" };
+    if (t.includes("execution error")) return { advice: "Trade execution failing.", fix: "Check Railway backend logs.", severity: "high" };
+    if (t.includes("data error")) return { advice: "Data feed error. System will retry.", fix: "Check Twelve Data API status.", severity: "medium" };
+    if (t.includes("trade opened")) return { advice: "New position opened. System managing SL/TP automatically.", fix: "", severity: "info" };
+    if (t.includes("trade closed")) return { advice: "Position closed. Review P&L.", fix: "", severity: "info" };
+    if (t.includes("regime change")) return { advice: "Market regime shifted. Strategies adapt automatically.", fix: "", severity: "info" };
+    if (t.includes("win rate")) return { advice: "Strategy performance poor.", fix: "Consider disabling the strategy temporarily.", severity: "medium" };
+    if (t.includes("cycle error")) return { advice: "Engine crashing repeatedly.", fix: "Check Railway backend logs.", severity: "high" };
+    if (a.level === "CRITICAL") return { advice: "Requires immediate attention.", fix: "Review dashboard and check logs.", severity: "high" };
+    if (a.level === "WARNING") return { advice: "Monitor this situation.", fix: "Check dashboard for details.", severity: "medium" };
+    return { advice: "Informational — no action needed.", fix: "", severity: "info" };
+  };
+
   // Format helpers
   const fmtTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleTimeString("en-GB", { hour12: false }); } catch { return iso; } };
   const fmtDateTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return iso; } };
@@ -568,17 +590,17 @@ export default function DailyOperations() {
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-bah-heading">{a.title}</div>
                           <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
-                          {a.action && (
+                          {(() => { const adv = getAdvice(a); return adv && (
                             <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
-                              a.action.severity === "high" ? "bg-red-500/5 border-red-500/20" :
-                              a.action.severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
-                              a.action.severity === "low" ? "bg-bah-border/30 border-bah-border" :
+                              adv.severity === "high" ? "bg-red-500/5 border-red-500/20" :
+                              adv.severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
+                              adv.severity === "low" ? "bg-bah-border/30 border-bah-border" :
                               "bg-bah-cyan/5 border-bah-cyan/20"
                             }`}>
-                              <div className="text-bah-heading font-medium">{a.action.severity === "info" ? "ℹ️" : a.action.severity === "low" ? "💤" : a.action.severity === "medium" ? "👁" : "⚡"} {a.action.advice}</div>
-                              {a.action.fix && <div className="text-bah-muted mt-1">→ {a.action.fix}</div>}
+                              <div className="text-bah-heading font-medium">{adv.severity === "info" ? "ℹ️" : adv.severity === "low" ? "💤" : adv.severity === "medium" ? "👁" : "⚡"} {adv.advice}</div>
+                              {adv.fix && <div className="text-bah-muted mt-1">→ {adv.fix}</div>}
                             </div>
-                          )}
+                          ); })()}
                         </div>
                         <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
                           className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">
