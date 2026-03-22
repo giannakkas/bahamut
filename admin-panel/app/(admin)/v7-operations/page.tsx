@@ -9,6 +9,7 @@ export default function DailyOperations() {
   const [trades, setTrades] = useState<any>(null);
   
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
   const [health, setHealth] = useState<any>(null);
   const [lastCycle, setLastCycle] = useState<any>(null);
   const [cycleHistory, setCycleHistory] = useState<any>(null);
@@ -129,7 +130,9 @@ export default function DailyOperations() {
   const lc = lastCycle;
   const cStats = cycleHistory?.stats || {};
   const cList = cycleHistory?.cycles || [];
-  const critAlerts = alerts.filter(a => a.level === "CRITICAL").length;
+  const alertKey = (a: any, i: number) => `${a.title}-${a.timestamp}-${i}`;
+  const visibleAlerts = alerts.filter((a, i) => !dismissedAlerts.has(alertKey(a, i)));
+  const critAlerts = visibleAlerts.filter(a => a.level === "CRITICAL").length;
 
   // Format helpers
   const fmtTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleTimeString("en-GB", { hour12: false }); } catch { return iso; } };
@@ -541,22 +544,50 @@ export default function DailyOperations() {
       {/* ═══ ALERTS ═══ */}
       {(tab === "alerts" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length})</div>}
+          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({visibleAlerts.length})</div>}
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-            {alerts.length > 0 ? (
-              <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => (
-                <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
-                  <div className="flex items-start gap-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-bah-heading">{a.title}</div>
-                      <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
+            {visibleAlerts.length > 0 ? (
+              <>
+                <div className="px-3 py-2 border-b border-bah-border flex items-center justify-between">
+                  <span className="text-[10px] text-bah-muted">{visibleAlerts.length} alert{visibleAlerts.length !== 1 ? "s" : ""}</span>
+                  <button onClick={() => {
+                    const all = new Set(dismissedAlerts);
+                    alerts.forEach((a, i) => all.add(alertKey(a, i)));
+                    setDismissedAlerts(all);
+                  }} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">
+                    Archive All
+                  </button>
                 </div>
-              ))}</div>
-            ) : <div className="p-4 text-center text-bah-muted text-xs">No alerts</div>}
+                <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
+                  const key = alertKey(a, i);
+                  if (dismissedAlerts.has(key)) return null;
+                  return (
+                    <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
+                      <div className="flex items-start gap-2">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-bah-heading">{a.title}</div>
+                          <div className="text-[11px] text-bah-muted mt-0.5 break-words">{a.message}</div>
+                        </div>
+                        <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
+                          className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">
+                          ✕
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
+                    </div>
+                  );
+                })}</div>
+              </>
+            ) : <div className="p-4 text-center text-bah-muted text-xs">{dismissedAlerts.size > 0 ? "All alerts archived" : "No alerts"}</div>}
+            {dismissedAlerts.size > 0 && (
+              <div className="px-3 py-2 border-t border-bah-border">
+                <button onClick={() => setDismissedAlerts(new Set())}
+                  className="text-[10px] text-bah-cyan hover:text-bah-cyan/80 transition-colors">
+                  Show {dismissedAlerts.size} archived alert{dismissedAlerts.size !== 1 ? "s" : ""}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
