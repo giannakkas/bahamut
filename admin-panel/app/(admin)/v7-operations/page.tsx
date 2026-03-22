@@ -52,8 +52,12 @@ export default function DailyOperations() {
         signal: controller.signal, ...opts,
       });
       clearTimeout(timeout);
+      console.log(`[V7] ${path} → ${r.status}`);
       if (r.ok) return r.json();
-    } catch {} return null;
+      const text = await r.text().catch(() => "");
+      console.error(`[V7] ${path} failed: ${r.status} ${text}`);
+      return { status: "error", error: `HTTP ${r.status}: ${text.substring(0, 100)}` };
+    } catch (e: any) { console.error("[V7] error:", e); return { status: "error", error: e.message }; }
   }, [token]);
 
   const load = useCallback(async () => {
@@ -108,7 +112,9 @@ export default function DailyOperations() {
 
     try {
       const res = await v7("/orchestrator/run-cycle", { method: "POST" });
-      if (res?.status === "error") setCycleError(res.error || "Unknown error");
+      console.log("[RUN CYCLE] result:", JSON.stringify(res));
+      if (!res) setCycleError("No response from backend — is it running?");
+      else if (res?.status === "error" || res?.status === "ERROR") setCycleError(res.error || "Unknown error");
     } catch (e: any) { setCycleError(e.message || "Network error"); }
 
     // Complete progress bar
