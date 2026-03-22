@@ -90,6 +90,7 @@ export default function DailyOperations() {
 
   // ── Run Cycle with progress bar ──
   const [cycleRunning, setCycleRunning] = useState(false);
+  const [testTradeResult, setTestTradeResult] = useState<any>(null);
   const [cycleProgress, setCycleProgress] = useState(0);
   const [cycleError, setCycleError] = useState("");
   const progressRef = useRef<NodeJS.Timeout | null>(null);
@@ -538,28 +539,28 @@ export default function DailyOperations() {
             <div className="text-[11px] text-bah-muted mb-3">Run a controlled test trade to verify the signal → order → position → close lifecycle.</div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={async () => {
-                const res = await v7("", { method: "POST", body: "{}" }).catch(() => null);
-                // Use monitoring endpoint instead
+                setTestTradeResult(null);
                 try {
                   const r = await fetch(`${apiBase()}/monitoring/test-trade/open`, {
                     method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   });
                   const data = await r.json();
-                  alert(JSON.stringify(data, null, 2));
+                  setTestTradeResult({ type: "open", ...data });
                   load();
-                } catch (e: any) { alert("Error: " + e.message); }
+                } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
               }} className="px-3 py-1.5 text-[11px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors">
                 ▶ Open Test Trade (BTCUSD LONG)
               </button>
               <button onClick={async () => {
+                setTestTradeResult(null);
                 try {
                   const r = await fetch(`${apiBase()}/monitoring/test-trade/close`, {
                     method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   });
                   const data = await r.json();
-                  alert(JSON.stringify(data, null, 2));
+                  setTestTradeResult({ type: "close", ...data });
                   load();
-                } catch (e: any) { alert("Error: " + e.message); }
+                } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
               }} className="px-3 py-1.5 text-[11px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors">
                 ■ Close Test Trade
               </button>
@@ -569,12 +570,92 @@ export default function DailyOperations() {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                   });
                   const data = await r.json();
-                  alert(JSON.stringify(data, null, 2));
-                } catch (e: any) { alert("Error: " + e.message); }
+                  setTestTradeResult({ type: "status", ...data });
+                } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
               }} className="px-3 py-1.5 text-[11px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors">
                 ℹ Test Status
               </button>
             </div>
+
+            {/* Test Trade Result Card */}
+            {testTradeResult && (
+              <div className={`mt-3 rounded-lg border p-3 text-xs ${
+                testTradeResult.status === "OPENED" ? "bg-green-500/5 border-green-500/20" :
+                testTradeResult.status === "CLOSED" ? "bg-bah-cyan/5 border-bah-cyan/20" :
+                testTradeResult.status === "REJECTED" || testTradeResult.status === "FAILED" || testTradeResult.type === "error" ? "bg-red-500/5 border-red-500/20" :
+                "bg-bah-border/30 border-bah-border"
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-bah-heading">
+                    {testTradeResult.status === "OPENED" ? "✅ Test Trade Opened" :
+                     testTradeResult.status === "CLOSED" ? "🔒 Test Trade Closed" :
+                     testTradeResult.status === "REJECTED" ? "⚠️ Trade Rejected" :
+                     testTradeResult.status === "NOT_FOUND" ? "ℹ️ No Test Position" :
+                     testTradeResult.type === "status" ? "📊 Test Trade Status" :
+                     testTradeResult.type === "error" ? "❌ Error" :
+                     "ℹ️ Result"}
+                  </span>
+                  <button onClick={() => setTestTradeResult(null)} className="text-bah-muted hover:text-bah-heading">✕</button>
+                </div>
+
+                {/* OPENED */}
+                {testTradeResult.status === "OPENED" && testTradeResult.position && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div><span className="text-bah-muted">Asset</span><div className="font-semibold text-bah-heading">{testTradeResult.position.asset}</div></div>
+                    <div><span className="text-bah-muted">Direction</span><div className="font-semibold text-green-400">{testTradeResult.position.direction}</div></div>
+                    <div><span className="text-bah-muted">Entry</span><div className="font-mono font-semibold text-bah-heading">${testTradeResult.position.entry_price?.toLocaleString()}</div></div>
+                    <div><span className="text-bah-muted">Size</span><div className="font-mono text-bah-heading">{testTradeResult.position.size?.toFixed(6)}</div></div>
+                    <div><span className="text-red-400">Stop Loss</span><div className="font-mono text-red-400">${testTradeResult.position.stop_loss?.toLocaleString()}</div></div>
+                    <div><span className="text-green-400">Take Profit</span><div className="font-mono text-green-400">${testTradeResult.position.take_profit?.toLocaleString()}</div></div>
+                    <div><span className="text-bah-muted">Strategy</span><div className="text-bah-heading">{testTradeResult.position.strategy}</div></div>
+                    <div><span className="text-bah-muted">Order ID</span><div className="font-mono text-bah-muted text-[10px]">{testTradeResult.order_id}</div></div>
+                  </div>
+                )}
+
+                {/* CLOSED */}
+                {testTradeResult.status === "CLOSED" && testTradeResult.trade && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div><span className="text-bah-muted">Asset</span><div className="font-semibold text-bah-heading">{testTradeResult.trade.asset}</div></div>
+                    <div><span className="text-bah-muted">PnL</span><div className={`font-bold font-mono text-sm ${testTradeResult.trade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${testTradeResult.trade.pnl?.toFixed(2)}</div></div>
+                    <div><span className="text-bah-muted">PnL %</span><div className={`font-semibold ${testTradeResult.trade.pnl_pct >= 0 ? "text-green-400" : "text-red-400"}`}>{testTradeResult.trade.pnl_pct?.toFixed(2)}%</div></div>
+                    <div><span className="text-bah-muted">Exit Reason</span><div className="text-bah-heading">{testTradeResult.trade.exit_reason}</div></div>
+                    <div><span className="text-bah-muted">Entry</span><div className="font-mono text-bah-heading">${testTradeResult.trade.entry_price?.toLocaleString()}</div></div>
+                    <div><span className="text-bah-muted">Exit</span><div className="font-mono text-bah-heading">${testTradeResult.trade.exit_price?.toLocaleString()}</div></div>
+                    <div><span className="text-bah-muted">Bars Held</span><div className="text-bah-heading">{testTradeResult.trade.bars_held}</div></div>
+                    <div><span className="text-bah-muted">Direction</span><div className="text-bah-heading">{testTradeResult.trade.direction}</div></div>
+                  </div>
+                )}
+
+                {/* STATUS */}
+                {testTradeResult.type === "status" && (
+                  <div className="text-[11px]">
+                    <div className="flex gap-4 mb-2">
+                      <span className="text-bah-muted">Open positions: <span className="text-bah-heading font-semibold">{testTradeResult.open_test_positions || 0}</span></span>
+                      <span className="text-bah-muted">Closed trades: <span className="text-bah-heading font-semibold">{testTradeResult.closed_test_trades || 0}</span></span>
+                    </div>
+                    {testTradeResult.positions?.length > 0 && (
+                      <div className="space-y-1">{testTradeResult.positions.map((p: any, i: number) => (
+                        <div key={i} className="flex items-center gap-3 text-[10px] bg-bah-border/20 rounded px-2 py-1">
+                          <span className="font-semibold text-bah-heading">{p.asset}</span>
+                          <span className="font-mono">${p.entry_price?.toLocaleString()}</span>
+                          <span className={p.unrealized_pnl >= 0 ? "text-green-400" : "text-red-400"}>${p.unrealized_pnl?.toFixed(2)}</span>
+                        </div>
+                      ))}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* REJECTED/FAILED/ERROR */}
+                {(testTradeResult.status === "REJECTED" || testTradeResult.status === "FAILED" || testTradeResult.type === "error") && (
+                  <div className="text-[11px] text-red-400">{testTradeResult.reason || testTradeResult.error || "Unknown error"}</div>
+                )}
+
+                {/* NOT_FOUND */}
+                {testTradeResult.status === "NOT_FOUND" && (
+                  <div className="text-[11px] text-bah-muted">{testTradeResult.reason || "No open test position to close."}</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
