@@ -195,6 +195,7 @@ export default function DailyOperations() {
     if (a.level === "CRITICAL") return { advice: "Requires immediate attention.", fix: "Review dashboard and check logs.", severity: "high" };
     if (a.level === "WARNING") return { advice: "Monitor this situation.", fix: "Check dashboard for details.", severity: "medium" };
     return { advice: "Informational — no action needed.", fix: "", severity: "info" };
+    } catch { return null; }
   };
 
   // Format helpers
