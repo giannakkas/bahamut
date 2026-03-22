@@ -319,7 +319,7 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
 
 
 def fire_trade_alert(trade: dict, action: str = "closed"):
-    """Fire INFO alert for trade open/close events."""
+    """Fire alert + send rich HTML email for trade open/close events."""
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", trade.get("dir", "?"))
@@ -329,6 +329,14 @@ def fire_trade_alert(trade: dict, action: str = "closed"):
         fire_alert("INFO", f"Trade opened: {asset}",
                    f"{strategy} {direction} {asset} @ ${entry:,.2f}",
                    key=f"trade_open_{asset}_{strategy}")
+
+        # Send rich HTML trade opened email
+        try:
+            from bahamut.monitoring.email_templates import trade_opened_template
+            subject, html = trade_opened_template(trade)
+            _send_email_html(subject, html)
+        except Exception as e:
+            logger.debug("trade_open_email_failed", error=str(e))
     else:
         pnl = trade.get("pnl", 0)
         reason = trade.get("exit_reason", trade.get("reason", "?"))
@@ -337,6 +345,14 @@ def fire_trade_alert(trade: dict, action: str = "closed"):
                    f"{strategy} {direction} {asset}\n"
                    f"PnL: ${pnl:+,.2f} | Reason: {reason}",
                    key=f"trade_close_{asset}_{strategy}_{time.time():.0f}")
+
+        # Send rich HTML trade closed email
+        try:
+            from bahamut.monitoring.email_templates import trade_closed_template
+            subject, html = trade_closed_template(trade)
+            _send_email_html(subject, html)
+        except Exception as e:
+            logger.debug("trade_close_email_failed", error=str(e))
 
 
 def fire_regime_change(asset: str, old_regime: str, new_regime: str):

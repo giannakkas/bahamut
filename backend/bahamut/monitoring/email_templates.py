@@ -261,3 +261,174 @@ def cycle_report_template(cycle: dict, portfolio: dict = None,
 
     html = _base_template("4H Cycle Report", "#22d3ee", "📊", body)
     return subject, html
+
+
+# ═══════════════════════════════════════════════════════
+# TRADE TEMPLATES
+# ═══════════════════════════════════════════════════════
+
+def trade_opened_template(trade: dict) -> tuple[str, str]:
+    """Email for when a new trade is opened."""
+    asset = trade.get("asset", "?")
+    strategy = trade.get("strategy", "?")
+    direction = trade.get("direction", "LONG")
+    entry = trade.get("entry_price", trade.get("entry", 0))
+    sl = trade.get("stop_loss", trade.get("sl_price", 0))
+    tp = trade.get("take_profit", trade.get("tp_price", 0))
+    risk = trade.get("risk_amount", 0)
+    risk_pct = trade.get("risk_pct", 0)
+    size = trade.get("size", 0)
+    regime = trade.get("regime", "?")
+
+    dir_color = "#34d399" if direction == "LONG" else "#f87171"
+    dir_emoji = "📈" if direction == "LONG" else "📉"
+
+    body = f"""
+    <!-- Trade Card -->
+    <div style="background:#1a2235;border:1px solid #2d3a4f;border-radius:8px;padding:20px;margin-bottom:20px">
+      <div style="margin-bottom:16px">
+        <span style="font-size:22px;font-weight:800;color:#e2e8f0">{asset}</span>
+        <span style="color:{dir_color};font-size:16px;font-weight:700;margin-left:12px;background:{'#052e16' if direction == 'LONG' else '#450a0a'};padding:4px 12px;border-radius:6px">{dir_emoji} {direction}</span>
+        <span style="color:#94a3b8;font-size:12px;margin-left:12px">{regime}</span>
+      </div>
+
+      <table width="100%" style="border-collapse:collapse">
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b">
+            <span style="color:#94a3b8;font-size:12px">Strategy</span><br>
+            <span style="color:#22d3ee;font-size:15px;font-weight:600">{strategy}</span>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b;text-align:right">
+            <span style="color:#94a3b8;font-size:12px">Entry Price</span><br>
+            <span style="color:#e2e8f0;font-size:15px;font-weight:700;font-family:monospace">${entry:,.2f}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b">
+            <span style="color:#94a3b8;font-size:12px">Stop Loss</span><br>
+            <span style="color:#f87171;font-size:14px;font-weight:600;font-family:monospace">${sl:,.2f}</span>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b;text-align:right">
+            <span style="color:#94a3b8;font-size:12px">Take Profit</span><br>
+            <span style="color:#34d399;font-size:14px;font-weight:600;font-family:monospace">${tp:,.2f}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0">
+            <span style="color:#94a3b8;font-size:12px">Position Size</span><br>
+            <span style="color:#e2e8f0;font-size:14px;font-family:monospace">{size:.6f}</span>
+          </td>
+          <td style="padding:8px 0;text-align:right">
+            <span style="color:#94a3b8;font-size:12px">Risk</span><br>
+            <span style="color:#fbbf24;font-size:14px;font-weight:600;font-family:monospace">${risk:,.0f} ({risk_pct:.1f}%)</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- SL/TP Visual Bar -->
+    <div style="background:#1a2235;border:1px solid #2d3a4f;border-radius:8px;padding:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:#f87171;font-size:10px;font-weight:600">SL ${sl:,.0f}</span>
+        <span style="color:#22d3ee;font-size:10px;font-weight:600">ENTRY ${entry:,.0f}</span>
+        <span style="color:#34d399;font-size:10px;font-weight:600">TP ${tp:,.0f}</span>
+      </div>
+      <div style="background:#0f172a;border-radius:4px;height:8px;position:relative;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;height:100%;width:50%;background:linear-gradient(90deg,#f87171 0%,#22d3ee 100%);border-radius:4px 0 0 4px"></div>
+        <div style="position:absolute;left:50%;top:0;height:100%;width:50%;background:linear-gradient(90deg,#22d3ee 0%,#34d399 100%);border-radius:0 4px 4px 0"></div>
+      </div>
+    </div>
+    """
+
+    subject = f"{dir_emoji} Trade Opened: {direction} {asset} @ ${entry:,.2f}"
+    html = _base_template(f"Trade Opened: {direction} {asset}", dir_color, dir_emoji, body)
+    return subject, html
+
+
+def trade_closed_template(trade: dict) -> tuple[str, str]:
+    """Email for when a trade is closed."""
+    asset = trade.get("asset", "?")
+    strategy = trade.get("strategy", "?")
+    direction = trade.get("direction", "LONG")
+    entry = trade.get("entry_price", trade.get("entry", 0))
+    exit_price = trade.get("exit_price", trade.get("exit", 0))
+    pnl = trade.get("pnl", 0)
+    pnl_pct = trade.get("pnl_pct", 0)
+    reason = trade.get("exit_reason", trade.get("reason", "?"))
+    bars_held = trade.get("bars_held", trade.get("duration", 0))
+    risk_amount = trade.get("risk_amount", 0)
+
+    is_win = pnl > 0
+    pnl_color = "#34d399" if is_win else "#f87171"
+    result_emoji = "✅" if is_win else "❌"
+    result_text = "WIN" if is_win else "LOSS"
+    result_bg = "#052e16" if is_win else "#450a0a"
+    result_border = "#166534" if is_win else "#991b1b"
+
+    # Calculate R multiple
+    r_multiple = abs(pnl / risk_amount) if risk_amount > 0 else 0
+    r_sign = "+" if is_win else "-"
+
+    # Reason mapping
+    reason_emoji = "🎯" if "TP" in reason.upper() else "🛑" if "SL" in reason.upper() else "⏰" if "HOLD" in reason.upper() or "MAX" in reason.upper() else "📋"
+
+    body = f"""
+    <!-- Result Banner -->
+    <div style="background:{result_bg};border:1px solid {result_border};border-radius:12px;padding:24px;text-align:center;margin-bottom:20px">
+      <div style="font-size:36px;margin-bottom:8px">{result_emoji}</div>
+      <div style="color:{pnl_color};font-size:28px;font-weight:800;font-family:monospace">${pnl:+,.2f}</div>
+      <div style="color:{pnl_color};font-size:14px;font-weight:600;margin-top:4px">{result_text} &bull; {r_sign}{r_multiple:.1f}R</div>
+    </div>
+
+    <!-- Trade Details -->
+    <div style="background:#1a2235;border:1px solid #2d3a4f;border-radius:8px;padding:20px;margin-bottom:12px">
+      <div style="margin-bottom:14px">
+        <span style="font-size:20px;font-weight:800;color:#e2e8f0">{asset}</span>
+        <span style="color:{'#34d399' if direction == 'LONG' else '#f87171'};font-size:13px;font-weight:600;margin-left:10px">{direction}</span>
+        <span style="color:#94a3b8;font-size:12px;margin-left:10px">{strategy}</span>
+      </div>
+
+      <table width="100%" style="border-collapse:collapse">
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b">
+            <span style="color:#94a3b8;font-size:11px">Entry</span><br>
+            <span style="color:#e2e8f0;font-size:15px;font-weight:700;font-family:monospace">${entry:,.2f}</span>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b;text-align:center">
+            <span style="color:#64748b;font-size:18px">→</span>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid #1e293b;text-align:right">
+            <span style="color:#94a3b8;font-size:11px">Exit</span><br>
+            <span style="color:{pnl_color};font-size:15px;font-weight:700;font-family:monospace">${exit_price:,.2f}</span>
+          </td>
+        </tr>
+      </table>
+
+      <table width="100%" style="border-collapse:collapse;margin-top:12px">
+        <tr>
+          <td style="padding:6px 0">
+            <span style="color:#94a3b8;font-size:11px">Exit Reason</span><br>
+            <span style="color:#e2e8f0;font-size:13px;font-weight:600">{reason_emoji} {reason}</span>
+          </td>
+          <td style="padding:6px 0;text-align:right">
+            <span style="color:#94a3b8;font-size:11px">Duration</span><br>
+            <span style="color:#e2e8f0;font-size:13px;font-weight:600;font-family:monospace">{bars_held} bars</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0">
+            <span style="color:#94a3b8;font-size:11px">P&L</span><br>
+            <span style="color:{pnl_color};font-size:16px;font-weight:800;font-family:monospace">${pnl:+,.2f}</span>
+          </td>
+          <td style="padding:6px 0;text-align:right">
+            <span style="color:#94a3b8;font-size:11px">R-Multiple</span><br>
+            <span style="color:{pnl_color};font-size:16px;font-weight:800;font-family:monospace">{r_sign}{r_multiple:.1f}R</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+    """
+
+    subject = f"{result_emoji} Trade Closed: {asset} {direction} — ${pnl:+,.0f} ({reason})"
+    html = _base_template(f"Trade Closed: {asset} {direction}", pnl_color, result_emoji, body)
+    return subject, html
