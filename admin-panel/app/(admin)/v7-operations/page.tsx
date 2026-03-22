@@ -2,36 +2,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiBase } from "@/lib/utils";
 
-function AlertAdvice({ alert, getAdvice }: { alert: any; getAdvice: (a: any) => any }) {
-  try {
-    const adv = getAdvice(alert);
-    if (!adv || !adv.advice) return null;
-    const severity = String(adv.severity || "info");
-    const advice = String(adv.advice || "");
-    const fix = String(adv.fix || "");
-    return (
-      <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
-        severity === "high" ? "bg-red-500/5 border-red-500/20" :
-        severity === "medium" ? "bg-amber-500/5 border-amber-500/20" :
-        severity === "low" ? "bg-bah-border/30 border-bah-border" :
-        "bg-bah-cyan/5 border-bah-cyan/20"
-      }`}>
-        <div className="text-bah-heading font-medium">
-          {severity === "info" ? "ℹ️" : severity === "low" ? "💤" : severity === "medium" ? "👁" : "⚡"} {advice}
-        </div>
-        {fix ? <div className="text-bah-muted mt-1">{"→ "}{fix}</div> : null}
-      </div>
-    );
-  } catch {
-    return null;
-  }
-}
-
-function SafeText({ value }: { value: any }) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "string") return <>{value}</>;
-  if (typeof value === "number" || typeof value === "boolean") return <>{String(value)}</>;
-  try { return <>{JSON.stringify(value)}</>; } catch { return <>{"[error]"}</>; }
+function SafeStr(v: any): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try { return JSON.stringify(v); } catch { return "[error]"; }
 }
 
 export default function DailyOperations() {
@@ -112,7 +87,16 @@ export default function DailyOperations() {
       setStrategies(d.strategies);
       setPositions(d.positions);
       setTrades(d.trades);
-      setAlerts(d.alerts || []);
+      setAlerts((d.alerts || []).map((a: any) => {
+        try {
+          return {
+            level: String(a?.level || "INFO"),
+            title: String(a?.title || ""),
+            message: typeof a?.message === "string" ? a.message : JSON.stringify(a?.message || ""),
+            timestamp: String(a?.timestamp || ""),
+          };
+        } catch { return { level: "INFO", title: "Alert", message: "", timestamp: "" }; }
+      }));
       setHealth(d.health);
       setLastCycle(d.last_cycle);
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
@@ -192,9 +176,9 @@ export default function DailyOperations() {
   const critAlerts = visibleAlerts.filter(a => a.level === "CRITICAL").length;
 
   // Client-side advice for alerts (fallback when backend doesn't include action field)
-  const getAdvice = (a: any) => {
-    if (a.action) return a.action;
-    const t = (a.title || "").toLowerCase();
+  const getAdvice = (a: any): { advice: string; fix: string; severity: string } | null => {
+    try {
+      const t = String(a?.title || "").toLowerCase();
     if (t.includes("stale data")) return { advice: "Safe to ignore. System is using cached prices — not live market data.", fix: "Set TWELVE_DATA_KEY in Railway → backend → Variables to get live prices.", severity: "low" };
     if (t.includes("drawdown exceeded")) return { advice: "Portfolio lost more than 8% from peak. Review positions immediately.", fix: "Consider closing losing positions or activating kill switch.", severity: "high" };
     if (t.includes("drawdown elevated")) return { advice: "Drawdown is between 5-8%. Monitor closely.", fix: "Check open positions.", severity: "medium" };
@@ -643,11 +627,28 @@ export default function DailyOperations() {
                   return (
                     <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
                       <div className="flex items-start gap-2">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{a.level}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{String(a.level)}</span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-bah-heading"><SafeText value={a.title} /></div>
-                          <div className="text-[11px] text-bah-muted mt-0.5 break-words"><SafeText value={a.message} /></div>
-                          <AlertAdvice alert={a} getAdvice={getAdvice} />
+                          <div className="text-xs font-medium text-bah-heading">{SafeStr(a.title)}</div>
+                          <div className="text-[11px] text-bah-muted mt-0.5 break-words">{SafeStr(a.message)}</div>
+                          {(() => { try {
+                            const adv = getAdvice(a);
+                            if (!adv) return null;
+                            const sev = SafeStr(adv.severity);
+                            return (
+                              <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${
+                                sev === "high" ? "bg-red-500/5 border-red-500/20" :
+                                sev === "medium" ? "bg-amber-500/5 border-amber-500/20" :
+                                sev === "low" ? "bg-bah-border/30 border-bah-border" :
+                                "bg-bah-cyan/5 border-bah-cyan/20"
+                              }`}>
+                                <div className="text-bah-heading font-medium">
+                                  {sev === "info" ? "ℹ️" : sev === "low" ? "💤" : sev === "medium" ? "👁" : "⚡"}{" "}{SafeStr(adv.advice)}
+                                </div>
+                                {adv.fix ? <div className="text-bah-muted mt-1">{"→ "}{SafeStr(adv.fix)}</div> : null}
+                              </div>
+                            );
+                          } catch { return null; } })()}
                         </div>
                         <button onClick={() => setDismissedAlerts(prev => new Set(prev).add(key))}
                           className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors" title="Dismiss">
