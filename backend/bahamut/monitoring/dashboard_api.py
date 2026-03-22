@@ -406,8 +406,9 @@ async def dashboard_all(user=Depends(get_current_user)):
             "equity": round(sleeve.current_equity, 2),
         }
 
-    # Positions
+    # Positions (in-memory for this process)
     positions = []
+    known_order_ids = set()
     for pos in engine.open_positions:
         unreal = (pos.current_price - pos.entry_price) * pos.size if pos.direction == "LONG" else (pos.entry_price - pos.current_price) * pos.size
         positions.append({
@@ -418,6 +419,25 @@ async def dashboard_all(user=Depends(get_current_user)):
             "risk_pct": round(pos.risk_amount / max(1, equity) * 100, 2),
             "bars_held": pos.bars_held,
         })
+        known_order_ids.add(pos.order_id)
+
+    # Supplement with Redis test positions (cross-process)
+    try:
+        from bahamut.execution.test_trade_mode import get_test_positions_from_redis
+        for rp in get_test_positions_from_redis():
+            if rp.get("order_id") not in known_order_ids:
+                positions.append({
+                    "asset": rp.get("asset", ""), "strategy": rp.get("strategy", ""),
+                    "direction": rp.get("direction", ""),
+                    "entry_price": rp.get("entry_price", 0),
+                    "current_price": rp.get("current_price", rp.get("entry_price", 0)),
+                    "stop_loss": rp.get("stop_loss", 0), "take_profit": rp.get("take_profit", 0),
+                    "unrealized_pnl": rp.get("unrealized_pnl", 0),
+                    "risk_pct": round(rp.get("risk_amount", 0) / max(1, equity) * 100, 2),
+                    "bars_held": rp.get("bars_held", 0),
+                })
+    except Exception:
+        pass
 
     # Recent trades
     recent_trades = []
