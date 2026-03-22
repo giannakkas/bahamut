@@ -16,7 +16,7 @@ export default function AgentCouncilPage() {
     ]).then(([c, ts]) => { setCycles(c); setTrustScores(ts); setLoading(false); });
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading agent council...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading agent council...</div>;
 
   // Parse trust scores — extract global score from nested object
   const agents = Object.entries(trustScores).map(([name, data]: [string, any]) => {
@@ -37,7 +37,7 @@ export default function AgentCouncilPage() {
   const assets = Object.keys(cycles);
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Agent Council</h1>
       <p className="text-xs text-bah-muted">Latest consensus cycles and agent trust scores</p>
 
@@ -45,7 +45,7 @@ export default function AgentCouncilPage() {
       {agents.length > 0 && (
         <div className="bg-bah-surface border border-bah-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-bah-heading mb-3">Agent Trust Scores</h2>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {agents.map((a) => (
               <div key={a.name} className="bg-white/[0.02] rounded-lg p-4 text-center border border-bah-border/30">
                 <div className="text-xs text-bah-muted mb-2">

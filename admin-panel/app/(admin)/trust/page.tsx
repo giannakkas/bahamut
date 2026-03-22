@@ -25,10 +25,10 @@ export default function TrustPage() {
     load();
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading trust data...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading trust data...</div>;
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-4xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Trust & Intelligence</h1>
       <p className="text-xs text-bah-muted">Super admin view — system intelligence overview</p>
 
@@ -48,7 +48,7 @@ export default function TrustPage() {
             <div className="h-2 bg-white/[0.04] rounded-full overflow-hidden">
               <div className="h-full bg-bah-cyan rounded-full transition-all" style={{ width: `${learning.progress}%` }} />
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-center">
               <div className="bg-white/[0.02] rounded-lg p-3">
                 <div className="text-lg font-bold text-bah-heading">{learning.samples_collected}</div>
                 <div className="text-[10px] text-bah-muted">Samples</div>

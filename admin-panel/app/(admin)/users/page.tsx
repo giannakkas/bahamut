@@ -97,15 +97,15 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-3 sm:p-6 max-w-4xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl font-bold text-bah-heading">User Management</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-bah-heading">User Management</h1>
           <p className="text-xs text-bah-muted mt-1">Create and manage admin panel users</p>
         </div>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="px-4 py-2 bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30 rounded-lg text-sm font-semibold hover:bg-bah-cyan/30 transition-colors"
+          className="px-4 py-2 bg-bah-cyan/20 text-bah-cyan border border-bah-cyan/30 rounded-lg text-sm font-semibold hover:bg-bah-cyan/30 transition-colors w-fit"
         >
           {showCreate ? "Cancel" : "+ New User"}
         </button>
@@ -115,7 +115,7 @@ export default function UsersPage() {
       {showCreate && (
         <div className="bg-bah-surface border border-bah-border rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold text-bah-heading mb-4">Create New User</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-bah-muted mb-1">Email</label>
               <input
@@ -181,14 +181,15 @@ export default function UsersPage() {
         <div className="text-sm text-red-400 text-center py-10">{error}</div>
       ) : (
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
             <thead>
               <tr className="border-b border-bah-border text-left text-xs text-bah-muted uppercase tracking-wider">
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Last Login</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="px-3 sm:px-4 py-3">User</th>
+                <th className="px-3 sm:px-4 py-3">Role</th>
+                <th className="px-3 sm:px-4 py-3">Status</th>
+                <th className="px-3 sm:px-4 py-3 hidden sm:table-cell">Last Login</th>
+                <th className="px-3 sm:px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -229,6 +230,7 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {users.length === 0 && (
             <div className="text-sm text-bah-muted text-center py-8">No users found</div>
           )}

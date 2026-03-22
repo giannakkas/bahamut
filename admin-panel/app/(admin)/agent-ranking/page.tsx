@@ -14,7 +14,7 @@ export default function AgentRankingPage() {
     }).then(r => r.json()).then(d => setAgents(Array.isArray(d) ? d : [])).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading agent rankings...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading agent rankings...</div>;
 
   const tierColors: Record<string, string> = {
     A: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -24,7 +24,7 @@ export default function AgentRankingPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-4xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Agent Leaderboard</h1>
       <p className="text-xs text-bah-muted">Super admin view — AI agent performance ranking</p>
 

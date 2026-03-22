@@ -16,10 +16,10 @@ export default function LearningLabPage() {
     ]).then(([p, c]) => { setProgress(p); setCalibration(Array.isArray(c) ? c : []); setLoading(false); });
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading learning lab...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading learning lab...</div>;
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Learning Lab</h1>
       <p className="text-xs text-bah-muted">System calibration, learning progress, and training data</p>
 

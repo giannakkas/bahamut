@@ -46,7 +46,7 @@ export default function DashboardPage() {
     return (
       <div>
         <TopBar title="System Overview" />
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <CardSkeleton /><CardSkeleton /><CardSkeleton /><CardSkeleton /><CardSkeleton />
         </div>
       </div>
@@ -70,7 +70,7 @@ export default function DashboardPage() {
       </TopBar>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatusCard label="Portfolio Value" value={fmtMoney(summary.portfolio_value)} color="#06b6d4" />
         <StatusCard label="Daily P&L" value={`${summary.daily_pnl >= 0 ? "+" : ""}${fmtMoney(summary.daily_pnl)}`} color={summary.daily_pnl >= 0 ? "#10b981" : "#ef4444"} subtitle={`${summary.daily_pnl_pct >= 0 ? "+" : ""}${summary.daily_pnl_pct}%`} />
         <StatusCard label="Open Positions" value={summary.open_positions} color="#8b5cf6" />
@@ -80,7 +80,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-4 gap-3 mt-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {/* Kill Switch — detailed */}
         <Card glowColor={summary.kill_switch.active ? "#ef4444" : "#10b981"}>
           <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">Kill Switch</div>

@@ -13,14 +13,14 @@ export default function TradeJournalPage() {
       .catch(() => setTrades([])).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading trade journal...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading trade journal...</div>;
 
   const totalPnl = trades.reduce((s, t) => s + (t.realized_pnl || 0), 0);
   const wins = trades.filter(t => (t.realized_pnl || 0) > 0).length;
   const winRate = trades.length > 0 ? (wins / trades.length * 100).toFixed(1) : "0.0";
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Trade Journal</h1>
 
       <div className="grid grid-cols-4 gap-3">

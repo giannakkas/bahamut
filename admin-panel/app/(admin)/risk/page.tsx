@@ -42,7 +42,7 @@ export default function RiskPage() {
         <div className="space-y-3">
           <CardSkeleton />
           <CardSkeleton />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <CardSkeleton />
             <CardSkeleton />
             <CardSkeleton />
@@ -93,7 +93,7 @@ export default function RiskPage() {
       />
 
       {/* Risk Metrics */}
-      <div className="grid grid-cols-3 gap-3 mt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
         <Card glowColor="#ef4444">
           <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">
             Total Marginal Risk

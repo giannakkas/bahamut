@@ -43,3 +43,11 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Mobile: make all data tables horizontally scrollable */
+@media (max-width: 1023px) {
+
+/* Mobile responsive helpers */
+@media (max-width: 1023px) {
+  .overflow-hidden:has(> table) { overflow-x: auto; }
+}

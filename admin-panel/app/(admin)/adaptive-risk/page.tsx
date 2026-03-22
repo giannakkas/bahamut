@@ -14,13 +14,13 @@ export default function AdaptiveRiskPage() {
     }).then(r => r.json()).then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading adaptive risk...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading adaptive risk...</div>;
 
   const conditions = data?.conditions || {};
   const adjustments = data?.adjustments || {};
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-4xl space-y-6">
       <h1 className="text-xl font-bold text-bah-heading">Adaptive Risk Engine</h1>
       <p className="text-xs text-bah-muted">Super admin view — dynamic threshold adjustments</p>
 

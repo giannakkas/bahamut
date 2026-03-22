@@ -30,7 +30,7 @@ export default function PaperTradingPage() {
 
   useEffect(() => { load(); }, []);
 
-  if (loading) return <div className="p-6 text-bah-muted">Loading paper trading...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-bah-muted">Loading paper trading...</div>;
 
   const p = portfolio;
   const openPositions = p?.open_positions || [];
@@ -38,7 +38,7 @@ export default function PaperTradingPage() {
   const totalAtRisk = openPositions.reduce((s: number, pos: any) => s + (pos.risk_amount || 0), 0);
 
   return (
-    <div className="p-6 max-w-6xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-bah-heading flex items-center gap-3">

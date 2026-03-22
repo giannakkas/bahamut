@@ -213,10 +213,10 @@ export default function ExecutionPage() {
     } catch (e) { console.error(e); }
   };
 
-  if (loading) return <div className="p-6 text-[#555570]">Loading execution engine...</div>;
+  if (loading) return <div className="p-3 sm:p-6 text-[#555570]">Loading execution engine...</div>;
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#E8E8F0]">Execution Engine</h1>

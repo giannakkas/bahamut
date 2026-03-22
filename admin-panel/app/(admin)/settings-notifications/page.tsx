@@ -191,10 +191,10 @@ export default function NotificationSettings() {
     setTesting(null);
   };
 
-  if (loading) return <div className="p-8 text-bah-muted">Loading settings...</div>;
+  if (loading) return <div className="p-3 sm:p-8 text-bah-muted">Loading settings...</div>;
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-3 sm:p-6 max-w-3xl space-y-6">
       <div>
         <h1 className="text-xl font-bold text-bah-heading">Notification Settings</h1>
         <p className="text-xs text-bah-muted mt-1">Configure Telegram and Email alerts for trading events</p>

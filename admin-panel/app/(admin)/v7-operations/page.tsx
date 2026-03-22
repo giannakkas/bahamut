@@ -120,7 +120,7 @@ export default function DailyOperations() {
   const killSwitch = async () => { if (confirm("Kill switch?")) { await v7("/portfolio/kill-switch", { method: "POST" }); load(); } };
   const resume = async () => { await v7("/portfolio/resume", { method: "POST" }); load(); };
 
-  if (loading) return <div className="p-8 text-bah-muted">Loading...</div>;
+  if (loading) return <div className="p-3 sm:p-8 text-bah-muted">Loading...</div>;
 
   const p = portfolio;
   const dd = p?.drawdown_pct || 0;
@@ -141,7 +141,7 @@ export default function DailyOperations() {
   const resultClr = (r: string) => r === "EXECUTED" ? "text-green-400" : r === "BLOCKED" ? "text-amber-400" : r === "NO_SIGNAL" ? "text-bah-muted" : r === "SIGNAL" ? "text-bah-cyan" : "text-bah-muted";
 
   return (
-    <div className="p-2 sm:p-4 max-w-[1440px] space-y-3 pt-12 lg:pt-4">
+    <div className="p-2 sm:p-4 max-w-[1440px] space-y-3">
       {/* ═══ HEADER ═══ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
