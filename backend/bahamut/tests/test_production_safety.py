@@ -207,12 +207,15 @@ def test_new_bar_no_processed_shows_ready():
 
 def test_new_bar_detection_isolates_assets():
     """is_new_bar must be per-asset isolated."""
-    from bahamut.data.live_data import is_new_bar, _last_bar_timestamps
+    from bahamut.data.live_data import is_new_bar, mark_bar_processed, _last_bar_timestamps
     # Clear state
     _last_bar_timestamps.clear()
 
     assert is_new_bar("BTCUSD", "2025-01-01 04:00:00") is True
     assert is_new_bar("ETHUSD", "2025-01-01 04:00:00") is True
+    # Commit both as processed
+    mark_bar_processed("BTCUSD", "2025-01-01 04:00:00")
+    mark_bar_processed("ETHUSD", "2025-01-01 04:00:00")
     # Same bar again → not new
     assert is_new_bar("BTCUSD", "2025-01-01 04:00:00") is False
     assert is_new_bar("ETHUSD", "2025-01-01 04:00:00") is False
@@ -223,11 +226,13 @@ def test_new_bar_detection_isolates_assets():
 
 def test_same_bar_no_signal_generation():
     """Orchestrator must NOT generate signals on same bar."""
-    from bahamut.data.live_data import is_new_bar, _last_bar_timestamps
+    from bahamut.data.live_data import is_new_bar, mark_bar_processed, _last_bar_timestamps
     _last_bar_timestamps.clear()
 
     # First time → new bar
     assert is_new_bar("BTCUSD", "2025-06-01 12:00:00") is True
+    # Simulate successful processing
+    mark_bar_processed("BTCUSD", "2025-06-01 12:00:00")
     # Second time same bar → not new (orchestrator should skip signal generation)
     assert is_new_bar("BTCUSD", "2025-06-01 12:00:00") is False
 
@@ -406,3 +411,177 @@ def test_alert_key_generation():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ═══════════════════════════════════════════
+# 6. AUDIT: BAR STATE DURABILITY & ATOMICITY
+# ═══════════════════════════════════════════
+
+def test_is_new_bar_read_only():
+    """is_new_bar must NOT modify state — it's a check, not a commit."""
+    from bahamut.data.live_data import is_new_bar, _last_bar_timestamps
+    _last_bar_timestamps.clear()
+    _last_bar_timestamps["BTCUSD"] = "2025-01-01 04:00:00"
+
+    result = is_new_bar("BTCUSD", "2025-01-01 08:00:00")
+    assert result is True
+    # State must NOT have changed — is_new_bar is read-only now
+    assert _last_bar_timestamps["BTCUSD"] == "2025-01-01 04:00:00", \
+        "is_new_bar modified state! It must be read-only."
+
+
+def test_mark_bar_processed_advances_state():
+    """mark_bar_processed must advance the in-memory state."""
+    from bahamut.data.live_data import mark_bar_processed, is_new_bar, _last_bar_timestamps
+    _last_bar_timestamps.clear()
+    _last_bar_timestamps["BTCUSD"] = "2025-01-01 04:00:00"
+
+    mark_bar_processed("BTCUSD", "2025-01-01 08:00:00")
+    assert _last_bar_timestamps["BTCUSD"] == "2025-01-01 08:00:00"
+    # Same bar should no longer be new
+    assert is_new_bar("BTCUSD", "2025-01-01 08:00:00") is False
+
+
+def test_partial_asset_failure_atomicity():
+    """If BTC succeeds but ETH fails, only BTC should advance."""
+    from bahamut.data.live_data import is_new_bar, mark_bar_processed, _last_bar_timestamps
+    _last_bar_timestamps.clear()
+    _last_bar_timestamps["BTCUSD"] = "old"
+    _last_bar_timestamps["ETHUSD"] = "old"
+
+    # Both assets have a new bar
+    assert is_new_bar("BTCUSD", "new") is True
+    assert is_new_bar("ETHUSD", "new") is True
+
+    # BTC processes successfully → commit
+    mark_bar_processed("BTCUSD", "new")
+    # ETH crashes → no mark_bar_processed called
+
+    # Next cycle: BTC should NOT reprocess, ETH SHOULD retry
+    assert is_new_bar("BTCUSD", "new") is False, "BTC should not reprocess"
+    assert is_new_bar("ETHUSD", "new") is True, "ETH should retry after failure"
+
+
+def test_redis_flush_recovery():
+    """After Redis flush, bar state should still be loadable from DB or start fresh."""
+    from bahamut.data.live_data import _last_bar_timestamps, _bar_state_initialized
+    import bahamut.data.live_data as live_data_module
+
+    # Simulate cold start after Redis flush
+    _last_bar_timestamps.clear()
+    live_data_module._bar_state_initialized = False
+
+    # _ensure_bar_state_loaded will try DB then Redis — both may fail in test env
+    # but it must not crash
+    try:
+        live_data_module._ensure_bar_state_loaded()
+    except Exception as e:
+        pytest.fail(f"_ensure_bar_state_loaded crashed: {e}")
+
+    # After loading, should be initialized (even if empty)
+    assert live_data_module._bar_state_initialized is True
+
+
+def test_startup_no_duplicate_evaluation():
+    """After restart, same bar must not be re-evaluated."""
+    from bahamut.data.live_data import is_new_bar, mark_bar_processed, _last_bar_timestamps
+    import bahamut.data.live_data as live_data_module
+
+    _last_bar_timestamps.clear()
+    live_data_module._bar_state_initialized = True  # skip DB load in test
+
+    # Simulate: bar was processed in previous run
+    mark_bar_processed("BTCUSD", "2025-06-01 12:00:00")
+
+    # New cycle sees the same bar
+    assert is_new_bar("BTCUSD", "2025-06-01 12:00:00") is False, \
+        "Same bar evaluated twice after restart!"
+
+
+# ═══════════════════════════════════════════
+# 7. AUDIT: LOCK OWNERSHIP SAFETY
+# ═══════════════════════════════════════════
+
+def test_redis_lock_uses_token():
+    """redis-py Lock uses token-based ownership by default. Verify release is safe."""
+    import redis, inspect
+    # redis-py 5.x Lock stores a random token on acquire via threading.local().
+    # Lock.release() reads self.local.token and passes it to a Lua script that
+    # only deletes the key if the stored value matches — preventing one worker
+    # from releasing another worker's lock.
+    src = inspect.getsource(redis.lock.Lock.release)
+    assert "expected_token" in src or "self.local.token" in src, \
+        "redis-py Lock.release does not check token — unsafe release possible"
+
+
+# ═══════════════════════════════════════════
+# 8. AUDIT: TEST TRADE ISOLATION COMPLETENESS
+# ═══════════════════════════════════════════
+
+@patch("bahamut.portfolio.manager.get_execution_engine")
+def test_test_trade_excluded_from_portfolio_equity(mock_eng):
+    """TEST_ trades must not affect sleeve equity (they don't match any sleeve name)."""
+    eng = MockEngine()
+    eng.closed_trades.append(FakeTrade(strategy="TEST_test", pnl=-50000))
+    eng.open_positions.append(FakePosition(strategy="TEST_test", unrealized_pnl=-30000))
+    mock_eng.return_value = eng
+
+    pm = _make_manager(0.10)
+    pm.update()
+
+    # Sleeves don't include TEST_ so equity should be unaffected
+    assert pm.total_equity == pm.initial_capital, \
+        f"Test trade affected equity: {pm.total_equity} != {pm.initial_capital}"
+    assert pm.total_drawdown == 0.0
+
+
+@patch("bahamut.portfolio.manager.get_execution_engine")
+def test_test_trade_excluded_from_kill_switch_drawdown(mock_eng):
+    """TEST_ trades must never trigger kill switch."""
+    eng = MockEngine()
+    eng.closed_trades.append(FakeTrade(strategy="TEST_huge_loss", pnl=-99000))
+    mock_eng.return_value = eng
+
+    pm = _make_manager(0.05)
+    pm.update()
+
+    assert pm.kill_switch_triggered is False
+    assert pm.total_drawdown == 0.0
+
+
+@patch("bahamut.portfolio.manager.get_execution_engine")
+def test_test_position_excluded_from_open_risk(mock_eng):
+    """TEST_ positions must not count toward open risk in can_trade()."""
+    eng = MockEngine()
+    eng.open_positions.append(FakePosition(strategy="TEST_test", risk_amount=999999))
+    mock_eng.return_value = eng
+
+    pm = _make_manager(0.10)
+    can, reason = pm.can_trade("v5_base", "BTCUSD")
+    assert can is True, f"Test position blocked real trade: {reason}"
+
+
+@patch("bahamut.monitoring.performance.get_portfolio_manager")
+@patch("bahamut.monitoring.performance.get_execution_engine")
+def test_performance_and_trades_use_same_exclusion(mock_eng, mock_pm):
+    """Performance and Trades tabs must use consistent TEST_ exclusion rules."""
+    eng = MockEngine()
+    eng.closed_trades = [
+        FakeTrade(strategy="v5_base", pnl=500),
+        FakeTrade(strategy="TEST_lifecycle", pnl=-1000),
+        FakeTrade(strategy="v9_breakout", pnl=200),
+    ]
+    mock_eng.return_value = eng
+    mock_pm.return_value = MagicMock(total_equity=100000)
+
+    from bahamut.monitoring.performance import compute_performance
+    perf = compute_performance()
+
+    # Performance should have 2 trades (excluding TEST_)
+    assert perf["portfolio"]["total_trades"] == 2
+    assert perf["portfolio"]["pnl"] == 700.0
+
+    # Verify consistency: the same trades that performance counts
+    # should be the same ones the dashboard count would report
+    real_trades = [t for t in eng.closed_trades if not t.strategy.startswith("TEST_")]
+    assert len(real_trades) == perf["portfolio"]["total_trades"]

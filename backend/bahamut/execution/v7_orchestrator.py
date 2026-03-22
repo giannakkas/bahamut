@@ -126,8 +126,12 @@ def run_v7_cycle(self=None):
         if lock:
             try:
                 lock.release()
-            except Exception:
-                pass
+            except Exception as e:
+                # redis-py Lock.release() uses token comparison — if the lock
+                # expired and another worker acquired it, release raises LockNotOwnedError.
+                # This is safe: we just log and move on.
+                logger.warning("v7_cycle_lock_release_failed", error=str(e),
+                               note="lock may have expired or been acquired by another worker")
         try:
             import redis, os, time as _t
             r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
@@ -316,6 +320,11 @@ def _run_v7_cycle_inner():
             pm.update()
             _persist_new_trades(engine)
             _persist_sleeves(pm)
+
+            # Commit bar as processed ONLY after full success for this asset.
+            # If processing crashed above, bar stays unprocessed → retried next cycle.
+            from bahamut.data.live_data import mark_bar_processed
+            mark_bar_processed(asset, latest_time)
 
         except Exception as e:
             logger.error("v7_cycle_error", asset=asset, error=str(e))

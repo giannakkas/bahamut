@@ -176,51 +176,111 @@ def _parse_timestamp(ts: str) -> datetime:
 # ═══════════════════════════════════════════════════════
 
 _last_bar_timestamps: dict[str, str] = {}
+_bar_state_initialized: bool = False
 
 
 def is_new_bar(asset: str, current_timestamp: str) -> bool:
-    """Check if this is a new 4H bar for this asset."""
+    """Check if this is a new 4H bar for this asset. READ-ONLY — does NOT advance state.
+    Call mark_bar_processed() after successful processing."""
+    _ensure_bar_state_loaded()
     last = _last_bar_timestamps.get(asset, "")
 
-    # Also check Redis for persistence across restarts
-    if not last:
-        r = _get_redis()
-        if r:
-            try:
-                stored = r.get(f"bahamut:last_bar:{asset}")
-                if stored:
-                    last = stored.decode() if isinstance(stored, bytes) else stored
-            except Exception:
-                pass
+    if current_timestamp and current_timestamp != last:
+        return True
+    return False
 
-    if current_timestamp == last:
-        return False
 
-    # New bar — update tracking
-    _last_bar_timestamps[asset] = current_timestamp
+def mark_bar_processed(asset: str, bar_timestamp: str):
+    """Commit: mark a bar as successfully processed for this asset.
+    Writes to: memory → Redis (cache) → DB (durable).
+    Call ONLY after the asset's processing completes successfully."""
+    _last_bar_timestamps[asset] = bar_timestamp
+
+    # Redis (fast cache, survives worker restarts within same deploy)
     r = _get_redis()
     if r:
         try:
-            r.set(f"bahamut:last_bar:{asset}", current_timestamp)
+            r.set(f"bahamut:last_bar:{asset}", bar_timestamp)
         except Exception:
             pass
 
-    return True
+    # DB (durable, survives Redis flush and full restart)
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO bar_processing_state (asset, last_processed_bar, updated_at)
+                VALUES (:asset, :ts, NOW())
+                ON CONFLICT (asset) DO UPDATE SET
+                    last_processed_bar = EXCLUDED.last_processed_bar,
+                    updated_at = NOW()
+            """), {"asset": asset, "ts": bar_timestamp})
+            conn.commit()
+    except Exception as e:
+        logger.warning("bar_state_db_write_failed", asset=asset, error=str(e))
+
+    logger.info("bar_processed_committed", asset=asset, bar=bar_timestamp)
 
 
 def get_last_bar_timestamp(asset: str) -> str:
     """Get last processed bar timestamp for an asset."""
-    last = _last_bar_timestamps.get(asset, "")
-    if not last:
-        r = _get_redis()
-        if r:
-            try:
+    _ensure_bar_state_loaded()
+    return _last_bar_timestamps.get(asset, "")
+
+
+def _ensure_bar_state_loaded():
+    """On first access, load bar state from DB → Redis → memory.
+    DB is canonical. Redis is cache. Memory is hot path."""
+    global _bar_state_initialized
+    if _bar_state_initialized:
+        return
+
+    _bar_state_initialized = True
+
+    # 1. Try DB (canonical durable source)
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT asset, last_processed_bar FROM bar_processing_state"
+            )).mappings().all()
+            for row in rows:
+                asset = row["asset"]
+                ts = row["last_processed_bar"]
+                if ts:
+                    _last_bar_timestamps[asset] = ts
+                    # Backfill Redis cache
+                    r = _get_redis()
+                    if r:
+                        try:
+                            r.set(f"bahamut:last_bar:{asset}", ts)
+                        except Exception:
+                            pass
+            if rows:
+                logger.info("bar_state_loaded_from_db",
+                            assets={row["asset"]: row["last_processed_bar"] for row in rows})
+                return
+    except Exception as e:
+        logger.warning("bar_state_db_load_failed", error=str(e))
+
+    # 2. Fallback: try Redis (survives worker restart but not Redis flush)
+    r = _get_redis()
+    if r:
+        try:
+            for asset in ["BTCUSD", "ETHUSD"]:
                 stored = r.get(f"bahamut:last_bar:{asset}")
                 if stored:
-                    return stored.decode() if isinstance(stored, bytes) else stored
-            except Exception:
-                pass
-    return last
+                    ts = stored.decode() if isinstance(stored, bytes) else stored
+                    _last_bar_timestamps[asset] = ts
+            if _last_bar_timestamps:
+                logger.info("bar_state_loaded_from_redis", assets=dict(_last_bar_timestamps))
+                return
+        except Exception as e:
+            logger.warning("bar_state_redis_load_failed", error=str(e))
+
+    logger.info("bar_state_cold_start", note="no previous bar state found")
 
 
 # ═══════════════════════════════════════════════════════

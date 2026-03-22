@@ -328,6 +328,13 @@ TABLES = [
         created_at TIMESTAMP DEFAULT NOW()
     )""",
 
+    # ── Bar Processing State (durable last-processed tracking) ──
+    """CREATE TABLE IF NOT EXISTS bar_processing_state (
+        asset VARCHAR(20) PRIMARY KEY,
+        last_processed_bar VARCHAR(30) NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW()
+    )""",
+
     # ── Stress Testing ──
     """CREATE TABLE IF NOT EXISTS stress_test_runs (
         id SERIAL PRIMARY KEY,

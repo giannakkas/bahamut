@@ -33,9 +33,10 @@ async def portfolio_summary(user=Depends(get_current_user)):
     equity = pm.total_equity
     initial = pm.initial_capital
     pnl_total = equity - initial
-    dd_pct = round((1 - equity / pm.peak_equity) * 100 if pm.peak_equity > 0 else 0, 2)
+    dd_pct = round(pm.total_drawdown * 100, 2)
     max_dd = round(max(dd_pct, getattr(pm, '_max_dd_seen', dd_pct)), 2)
-    open_risk = sum(p.risk_amount for p in engine.open_positions)
+    open_risk = sum(p.risk_amount for p in engine.open_positions
+                    if not p.strategy.startswith("TEST_"))
     open_risk_pct = round(open_risk / max(1, equity) * 100, 2)
 
     # Per-asset regimes
@@ -50,8 +51,8 @@ async def portfolio_summary(user=Depends(get_current_user)):
         "max_drawdown_pct": max_dd,
         "open_risk": round(open_risk, 2),
         "open_risk_pct": open_risk_pct,
-        "open_positions": len(engine.open_positions),
-        "total_trades": len(engine.closed_trades),
+        "open_positions": len([p for p in engine.open_positions if not p.strategy.startswith("TEST_")]),
+        "total_trades": len([t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]),
         "kill_switch": pm.kill_switch_triggered,
         "regime": dict(regimes),
         "portfolio_mode": getattr(pm, 'current_portfolio_mode', 'unknown'),
@@ -171,7 +172,7 @@ async def trade_history(user=Depends(get_current_user)):
             "exit_time": getattr(t, 'exit_time', ''),
         })
 
-    return {"trades": trades, "count": len(engine.closed_trades)}
+    return {"trades": trades, "count": len([t for t in engine.closed_trades if not t.strategy.startswith("TEST_")])}
 
 
 @router.get("/execution")
@@ -325,8 +326,8 @@ async def system_health(user=Depends(get_current_user)):
         "portfolio": {
             "equity": round(pm.total_equity, 2),
             "kill_switch": pm.kill_switch_triggered,
-            "open_positions": len(engine.open_positions),
-            "total_trades": len(engine.closed_trades),
+            "open_positions": len([p for p in engine.open_positions if not p.strategy.startswith("TEST_")]),
+            "total_trades": len([t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]),
         },
         "infrastructure": {
             "db_connected": db_ok,
@@ -358,22 +359,26 @@ async def dashboard_all(user=Depends(get_current_user)):
     dd_pct = round(pm.total_drawdown * 100, 2)
     open_risk = sum(p.risk_amount for p in engine.open_positions
                     if not p.strategy.startswith("TEST_"))
+    # Exclude TEST_ from aggregate counts (operator sees them in positions/trades tabs)
+    real_positions = [p for p in engine.open_positions if not p.strategy.startswith("TEST_")]
+    real_trades = [t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]
+
     portfolio = {
         "equity": round(equity, 2),
         "pnl_total": round(equity - initial, 2),
         "return_pct": round((equity - initial) / max(1, initial) * 100, 2),
         "drawdown_pct": dd_pct,
         "open_risk_pct": round(open_risk / max(1, equity) * 100, 2),
-        "open_positions": len(engine.open_positions),
-        "total_trades": len(engine.closed_trades),
+        "open_positions": len(real_positions),
+        "total_trades": len(real_trades),
         "kill_switch": pm.kill_switch_triggered,
         "regime": dict(getattr(pm, 'asset_regimes', {})),
     }
 
-    # Strategies
+    # Strategies — sleeve names never start with TEST_, so this naturally excludes test trades
     strats = {}
     for name, sleeve in pm.sleeves.items():
-        trades = [t for t in engine.closed_trades if t.strategy == name]
+        trades = [t for t in real_trades if t.strategy == name]
         wins = [t for t in trades if t.pnl > 0]
         losses = [t for t in trades if t.pnl <= 0]
         total_pnl = sum(t.pnl for t in trades)
@@ -478,7 +483,7 @@ async def dashboard_all(user=Depends(get_current_user)):
         "portfolio": portfolio,
         "strategies": strats,
         "positions": {"positions": positions, "count": len(positions)},
-        "trades": {"trades": recent_trades, "count": len(engine.closed_trades)},
+        "trades": {"trades": recent_trades, "count": len(real_trades)},
         "alerts": alerts,
         "last_cycle": last_cycle,
         "cycle_history": cycle_hist,
