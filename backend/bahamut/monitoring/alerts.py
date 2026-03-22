@@ -171,50 +171,47 @@ def _get_action_advice(title: str, level: str, message: str) -> dict:
 def fire_alert(level: str, title: str, message: str, key: str = "",
                data: dict = None):
     """
-    Fire an alert if not throttled.
+    Fire an alert with deduplication.
 
-    level: CRITICAL / WARNING / INFO
-    title: short summary
-    message: detailed text
-    key: throttle key (same key = throttled together)
-    data: optional structured data
+    Same key = update existing alert (increment count, update timestamp).
+    Different key = new alert.
     """
     alert_key = key or f"{level}:{title}"
+    now = datetime.now(timezone.utc).isoformat()
 
     if level != "INFO" and _is_throttled(alert_key):
-        logger.debug("alert_throttled", key=alert_key)
+        # Still update the occurrence count even if throttled
+        _update_occurrence(alert_key, now)
         return
 
     alert = {
         "level": level,
         "title": title,
         "message": message,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now,
+        "first_seen": now,
+        "last_seen": now,
+        "occurrences": 1,
+        "status": "ACTIVE",
+        "key": alert_key,
         "data": data or {},
         "action": _get_action_advice(title, level, message),
     }
 
-    # Store in history
-    _alert_history.append(alert)
-    if len(_alert_history) > 200:
-        _alert_history.pop(0)
+    # Store/update in-memory
+    _upsert_alert(alert_key, alert)
 
     # Log
     log_fn = logger.critical if level == "CRITICAL" else (
         logger.warning if level == "WARNING" else logger.info)
     log_fn("alert_fired", level=level, title=title)
 
-    # Dispatch
-    if level == "CRITICAL":
-        _send_telegram(alert)
-        _send_email_templated(alert)
-        _mark_fired(alert_key)
-    elif level == "WARNING":
+    # Dispatch notifications (only on first occurrence or after throttle expires)
+    if level in ("CRITICAL", "WARNING"):
         _send_telegram(alert)
         _send_email_templated(alert)
         _mark_fired(alert_key)
     elif level == "INFO":
-        # INFO: only send email if notify.level.info is enabled
         try:
             from bahamut.admin.config import get_config
             if get_config("notify.level.info", False):
@@ -222,8 +219,8 @@ def fire_alert(level: str, title: str, message: str, key: str = "",
         except Exception:
             pass
 
-    # Store in Redis for dashboard
-    _store_alert(alert)
+    # Store in Redis
+    _store_alert_dedup(alert_key, alert)
 
 
 def _send_telegram(alert: dict):
@@ -296,27 +293,114 @@ def _send_email(alert: dict):
         logger.error("email_send_failed", error=str(e))
 
 
-def _store_alert(alert: dict):
-    """Store in Redis for dashboard retrieval."""
+def _upsert_alert(alert_key: str, alert: dict):
+    """Update existing alert in memory or add new one."""
+    for i, existing in enumerate(_alert_history):
+        if existing.get("key") == alert_key and existing.get("status") == "ACTIVE":
+            # Update existing
+            _alert_history[i]["last_seen"] = alert["last_seen"]
+            _alert_history[i]["occurrences"] = existing.get("occurrences", 1) + 1
+            _alert_history[i]["message"] = alert["message"]
+            return
+    # New alert
+    _alert_history.append(alert)
+    if len(_alert_history) > 200:
+        _alert_history.pop(0)
+
+
+def _update_occurrence(alert_key: str, timestamp: str):
+    """Update occurrence count for a throttled alert."""
+    for alert in _alert_history:
+        if alert.get("key") == alert_key and alert.get("status") == "ACTIVE":
+            alert["last_seen"] = timestamp
+            alert["occurrences"] = alert.get("occurrences", 1) + 1
+            break
+    # Also update in Redis
     r = _get_redis()
     if r:
         try:
-            r.lpush("bahamut:alerts", json.dumps(alert))
-            r.ltrim("bahamut:alerts", 0, 199)
+            raw = r.hget("bahamut:active_alerts", alert_key)
+            if raw:
+                existing = json.loads(raw)
+                existing["last_seen"] = timestamp
+                existing["occurrences"] = existing.get("occurrences", 1) + 1
+                r.hset("bahamut:active_alerts", alert_key, json.dumps(existing))
+        except Exception:
+            pass
+
+
+def _store_alert_dedup(alert_key: str, alert: dict):
+    """Store/update alert in Redis with deduplication."""
+    r = _get_redis()
+    if r:
+        try:
+            existing_raw = r.hget("bahamut:active_alerts", alert_key)
+            if existing_raw:
+                existing = json.loads(existing_raw)
+                alert["first_seen"] = existing.get("first_seen", alert["first_seen"])
+                alert["occurrences"] = existing.get("occurrences", 0) + 1
+            r.hset("bahamut:active_alerts", alert_key, json.dumps(alert))
+        except Exception:
+            pass
+
+
+def resolve_alert(alert_key: str, reason: str = "condition cleared"):
+    """Mark an alert as RESOLVED. Called when the condition that triggered it clears."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Update in-memory
+    for alert in _alert_history:
+        if alert.get("key") == alert_key and alert.get("status") == "ACTIVE":
+            alert["status"] = "RESOLVED"
+            alert["resolved_at"] = now
+            alert["resolve_reason"] = reason
+
+    # Update in Redis
+    r = _get_redis()
+    if r:
+        try:
+            raw = r.hget("bahamut:active_alerts", alert_key)
+            if raw:
+                alert = json.loads(raw)
+                alert["status"] = "RESOLVED"
+                alert["resolved_at"] = now
+                alert["resolve_reason"] = reason
+                # Move from active to resolved
+                r.hset("bahamut:active_alerts", alert_key, json.dumps(alert))
         except Exception:
             pass
 
 
 def get_recent_alerts(limit: int = 50) -> list[dict]:
-    """Get recent alerts for dashboard."""
+    """Get recent alerts for dashboard — deduped, sorted by last_seen."""
     r = _get_redis()
     if r:
         try:
-            raw = r.lrange("bahamut:alerts", 0, limit - 1)
-            return [json.loads(x) for x in raw]
+            raw = r.hgetall("bahamut:active_alerts")
+            if raw:
+                alerts = []
+                for k, v in raw.items():
+                    try:
+                        alert = json.loads(v)
+                        alerts.append(alert)
+                    except Exception:
+                        pass
+                # Sort by last_seen descending
+                alerts.sort(key=lambda a: a.get("last_seen", ""), reverse=True)
+                return alerts[:limit]
         except Exception:
             pass
-    return list(reversed(_alert_history[-limit:]))
+    # Fallback: in-memory, deduped by key
+    seen = set()
+    result = []
+    for alert in reversed(_alert_history):
+        key = alert.get("key", alert.get("title", ""))
+        if key not in seen:
+            seen.add(key)
+            result.append(alert)
+        if len(result) >= limit:
+            break
+    return result
 
 
 # ═══════════════════════════════════════════════════════
@@ -392,19 +476,24 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
                        f"{dupes} duplicate signals rejected",
                        key="dupes_high")
 
-    # Data health checks
+    # Data health checks — auto-resolve when data recovers
     try:
         from bahamut.data.live_data import get_data_status
         for asset, info in get_data_status().items():
-            status = info.get("status", "")
+            status = info.get("status", "") if isinstance(info, dict) else str(info)
+            detail = info.get("detail", "") if isinstance(info, dict) else ""
             if status == "ERROR":
                 fire_alert("CRITICAL", f"Data error: {asset}",
-                           f"Live data fetch failed for {asset}.\n{info.get('detail', '')}",
+                           f"Live data fetch failed for {asset}.\n{detail}",
                            key=f"data_error_{asset}")
             elif status == "STALE":
                 fire_alert("WARNING", f"Stale data: {asset}",
-                           f"Using cached/stale data for {asset}.\n{info.get('detail', '')}",
+                           f"Using cached/stale data for {asset}.\n{detail}",
                            key=f"data_stale_{asset}")
+            elif status == "OK":
+                # Auto-resolve stale/error alerts when data recovers
+                resolve_alert(f"data_stale_{asset}", reason=f"{asset} data recovered")
+                resolve_alert(f"data_error_{asset}", reason=f"{asset} data recovered")
     except Exception:
         pass
 

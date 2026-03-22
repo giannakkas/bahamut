@@ -216,12 +216,77 @@ class TestHealthEndpoint:
         """Health must be a simple dict, no DB/Redis calls."""
         import time
         start = time.monotonic()
-        # Simulate what the endpoint returns
         result = {
             "status": "healthy",
             "service": "bahamut-api",
             "version": "1.0.0",
         }
         elapsed = time.monotonic() - start
-        assert elapsed < 0.01  # Must be < 10ms
+        assert elapsed < 0.01
         assert result["status"] == "healthy"
+
+
+class TestAlertDedup:
+    """Test alert deduplication logic."""
+
+    def test_fire_alert_creates_with_key(self):
+        """Alert should have key, first_seen, occurrences fields."""
+        from bahamut.monitoring.alerts import fire_alert, _alert_history
+        # Clear history
+        _alert_history.clear()
+        fire_alert("INFO", "Test alert", "test message", key="test_dedup_1")
+        assert len(_alert_history) >= 1
+        last = _alert_history[-1]
+        assert last.get("key") == "test_dedup_1"
+        assert last.get("status") == "ACTIVE"
+        assert last.get("occurrences", 0) >= 1
+        assert "first_seen" in last
+
+    def test_duplicate_alert_updates_not_adds(self):
+        """Same key should update existing, not create new."""
+        from bahamut.monitoring.alerts import fire_alert, _alert_history
+        _alert_history.clear()
+        fire_alert("INFO", "Dup test", "msg1", key="test_dedup_2")
+        count_after_first = len(_alert_history)
+        fire_alert("INFO", "Dup test", "msg2", key="test_dedup_2")
+        # Should NOT have added a new entry
+        assert len(_alert_history) == count_after_first
+        # Occurrences should be 2
+        found = [a for a in _alert_history if a.get("key") == "test_dedup_2"]
+        assert len(found) == 1
+        assert found[0]["occurrences"] == 2
+
+    def test_resolve_alert(self):
+        """Resolved alert should have RESOLVED status."""
+        from bahamut.monitoring.alerts import fire_alert, resolve_alert, _alert_history
+        _alert_history.clear()
+        fire_alert("WARNING", "Resolve test", "msg", key="test_resolve")
+        resolve_alert("test_resolve", reason="fixed")
+        found = [a for a in _alert_history if a.get("key") == "test_resolve"]
+        assert len(found) == 1
+        assert found[0]["status"] == "RESOLVED"
+        assert found[0].get("resolve_reason") == "fixed"
+
+    def test_get_recent_alerts_deduped(self):
+        """get_recent_alerts should return deduped results."""
+        from bahamut.monitoring.alerts import fire_alert, get_recent_alerts, _alert_history
+        _alert_history.clear()
+        fire_alert("INFO", "Alert A", "msg", key="dedup_a")
+        fire_alert("INFO", "Alert B", "msg", key="dedup_b")
+        fire_alert("INFO", "Alert A again", "msg", key="dedup_a")
+        alerts = get_recent_alerts(50)
+        keys = [a.get("key") for a in alerts]
+        # Should only have 2 unique keys
+        assert keys.count("dedup_a") <= 1
+        assert keys.count("dedup_b") <= 1
+
+
+class TestTradeAudit:
+    """Test trade lifecycle audit logging."""
+
+    def test_log_trade_event_no_crash(self):
+        """Trade audit should not crash even without DB."""
+        from bahamut.monitoring.trade_audit import log_trade_event
+        # Should not raise even if DB is unavailable
+        log_trade_event("test.event", "test details", actor="test")
+

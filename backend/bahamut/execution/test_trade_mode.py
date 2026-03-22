@@ -88,6 +88,14 @@ def create_test_trade(
         logger.info("test_trade_opened",
                      asset=asset, strategy=f"TEST_{strategy}",
                      entry=pos.entry_price, sl=pos.stop_price, tp=pos.tp_price)
+        # Audit log
+        try:
+            from bahamut.monitoring.trade_audit import log_trade_event
+            log_trade_event("test_trade.opened",
+                           f"TEST {direction} {asset} @ ${pos.entry_price:,.2f}, SL ${pos.stop_price:,.2f}, TP ${pos.tp_price:,.2f}",
+                           actor="operator")
+        except Exception:
+            pass
         return {
             "status": "OPENED",
             "order_id": order.order_id,
@@ -148,6 +156,15 @@ def close_test_trade(order_id: str = "", close_price: float = 0.0) -> dict:
     logger.info("test_trade_closed",
                  order_id=test_pos.order_id, pnl=trade.pnl,
                  exit_reason="TEST_MANUAL_CLOSE")
+
+    # Audit log
+    try:
+        from bahamut.monitoring.trade_audit import log_trade_event
+        log_trade_event("test_trade.closed",
+                       f"TEST {trade.asset} closed @ ${trade.exit_price:,.2f}, PnL ${trade.pnl:,.2f} ({trade.exit_reason})",
+                       actor="operator")
+    except Exception:
+        pass
 
     return {
         "status": "CLOSED",
