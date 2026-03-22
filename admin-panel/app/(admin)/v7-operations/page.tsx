@@ -134,7 +134,7 @@ export default function DailyOperations() {
   const lc = lastCycle;
   const cStats = cycleHistory?.stats || {};
   const cList = cycleHistory?.cycles || [];
-  const critAlerts = alerts.filter(a => a.level === "CRITICAL").length;
+  const critAlerts = alerts.filter(a => a.level === "CRITICAL" && a.status !== "RESOLVED").length;
 
   // Format helpers
   const fmtTime = (iso: string) => { if (!iso) return "—"; try { const d = new Date(iso); return d.toLocaleTimeString("en-GB", { hour12: false }); } catch { return iso; } };
@@ -159,7 +159,7 @@ export default function DailyOperations() {
             </span>
           )}
           {health?.engine && <span className="px-2 py-0.5 text-[10px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
-          {critAlerts > 0 && <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">{critAlerts} CRITICAL</span>}
+          {critAlerts > 0 && <button onClick={() => setTab("alerts")} className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse cursor-pointer hover:bg-red-500/30 transition-colors">{critAlerts} CRITICAL</button>}
         </div>
         <div className="flex gap-2 items-center">
           <span className="text-[10px] text-bah-muted font-mono flex items-center gap-1.5">

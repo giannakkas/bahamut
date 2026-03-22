@@ -372,7 +372,7 @@ def resolve_alert(alert_key: str, reason: str = "condition cleared"):
 
 
 def get_recent_alerts(limit: int = 50) -> list[dict]:
-    """Get recent alerts for dashboard — deduped, sorted by last_seen."""
+    """Get recent ACTIVE alerts for dashboard — deduped, sorted by last_seen."""
     r = _get_redis()
     if r:
         try:
@@ -382,7 +382,9 @@ def get_recent_alerts(limit: int = 50) -> list[dict]:
                 for k, v in raw.items():
                     try:
                         alert = json.loads(v)
-                        alerts.append(alert)
+                        # Only return ACTIVE alerts — resolved ones are kept for history only
+                        if alert.get("status") == "ACTIVE":
+                            alerts.append(alert)
                     except Exception:
                         pass
                 # Sort by last_seen descending
@@ -390,10 +392,12 @@ def get_recent_alerts(limit: int = 50) -> list[dict]:
                 return alerts[:limit]
         except Exception:
             pass
-    # Fallback: in-memory, deduped by key
+    # Fallback: in-memory, deduped by key, active only
     seen = set()
     result = []
     for alert in reversed(_alert_history):
+        if alert.get("status") != "ACTIVE":
+            continue
         key = alert.get("key", alert.get("title", ""))
         if key not in seen:
             seen.add(key)
@@ -438,6 +442,18 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
                    f"Portfolio drawdown triggered kill switch.\n"
                    f"Drawdown: {dd_pct:.1f}%\nAll trading halted.",
                    key="kill_switch")
+    else:
+        resolve_alert("kill_switch", reason="Kill switch not active")
+
+    # Auto-resolve drawdown/risk alerts when conditions clear
+    if dd_pct <= 8:
+        resolve_alert("dd_critical", reason=f"Drawdown recovered to {dd_pct:.1f}%")
+    if dd_pct <= 5:
+        resolve_alert("dd_warning", reason=f"Drawdown recovered to {dd_pct:.1f}%")
+    if open_risk_pct <= 5:
+        resolve_alert("risk_critical", reason=f"Risk recovered to {open_risk_pct:.1f}%")
+    if open_risk_pct <= 4:
+        resolve_alert("risk_warning", reason=f"Risk recovered to {open_risk_pct:.1f}%")
 
     # ── WARNING ──
 
