@@ -91,6 +91,7 @@ export default function DailyOperations() {
   // ── Run Cycle with progress bar ──
   const [cycleRunning, setCycleRunning] = useState(false);
   const [testTradeResult, setTestTradeResult] = useState<any>(null);
+  const [testTradeLoading, setTestTradeLoading] = useState(false);
   const [cycleProgress, setCycleProgress] = useState(0);
   const [cycleError, setCycleError] = useState("");
   const progressRef = useRef<NodeJS.Timeout | null>(null);
@@ -538,41 +539,59 @@ export default function DailyOperations() {
             </div>
             <div className="text-[11px] text-bah-muted mb-3">Run a controlled test trade to verify the signal → order → position → close lifecycle.</div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={async () => {
+              <button disabled={testTradeLoading} onClick={async () => {
                 setTestTradeResult(null);
+                setTestTradeLoading(true);
                 try {
                   const r = await fetch(`${apiBase()}/monitoring/test-trade/open`, {
                     method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   });
-                  const data = await r.json();
-                  setTestTradeResult({ type: "open", ...data });
-                  load();
+                  if (!r.ok) {
+                    setTestTradeResult({ type: "error", error: `HTTP ${r.status}: ${await r.text().catch(() => "")}` });
+                  } else {
+                    const data = await r.json();
+                    setTestTradeResult({ type: "open", ...data });
+                    load();
+                  }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
-              }} className="px-3 py-1.5 text-[11px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors">
-                ▶ Open Test Trade (BTCUSD LONG)
+                setTestTradeLoading(false);
+              }} className="px-3 py-1.5 text-[11px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors disabled:opacity-50">
+                {testTradeLoading ? "⟳ Opening..." : "▶ Open Test Trade (BTCUSD LONG)"}
               </button>
-              <button onClick={async () => {
+              <button disabled={testTradeLoading} onClick={async () => {
                 setTestTradeResult(null);
+                setTestTradeLoading(true);
                 try {
                   const r = await fetch(`${apiBase()}/monitoring/test-trade/close`, {
                     method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   });
-                  const data = await r.json();
-                  setTestTradeResult({ type: "close", ...data });
-                  load();
+                  if (!r.ok) {
+                    setTestTradeResult({ type: "error", error: `HTTP ${r.status}: ${await r.text().catch(() => "")}` });
+                  } else {
+                    const data = await r.json();
+                    setTestTradeResult({ type: "close", ...data });
+                    load();
+                  }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
-              }} className="px-3 py-1.5 text-[11px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors">
-                ■ Close Test Trade
+                setTestTradeLoading(false);
+              }} className="px-3 py-1.5 text-[11px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors disabled:opacity-50">
+                {testTradeLoading ? "⟳ Closing..." : "■ Close Test Trade"}
               </button>
-              <button onClick={async () => {
+              <button disabled={testTradeLoading} onClick={async () => {
+                setTestTradeLoading(true);
                 try {
                   const r = await fetch(`${apiBase()}/monitoring/test-trade/status`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                   });
-                  const data = await r.json();
-                  setTestTradeResult({ type: "status", ...data });
+                  if (!r.ok) {
+                    setTestTradeResult({ type: "error", error: `HTTP ${r.status}: ${await r.text().catch(() => "")}` });
+                  } else {
+                    const data = await r.json();
+                    setTestTradeResult({ type: "status", ...data });
+                  }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
-              }} className="px-3 py-1.5 text-[11px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors">
+                setTestTradeLoading(false);
+              }} className="px-3 py-1.5 text-[11px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors disabled:opacity-50">
                 ℹ Test Status
               </button>
             </div>
