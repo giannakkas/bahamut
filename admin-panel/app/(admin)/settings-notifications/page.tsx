@@ -7,6 +7,7 @@ export default function NotificationSettings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
+  const [emailResult, setEmailResult] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   // Form state
@@ -139,6 +140,60 @@ export default function NotificationSettings() {
 
   const set = (key: string, value: any) => setForm((p) => ({ ...p, [key]: value }));
 
+  const testEmail = async () => {
+    setTesting("email");
+    setEmailResult("⏳ Sending test email...");
+
+    const apiKey = form.email_smtp_pass;
+    const fromEmail = form.email_from || "info@bahamut.ai";
+    const toEmail = form.email_to;
+
+    if (!apiKey) {
+      setEmailResult("❌ Brevo API Key is empty — paste your key and try again");
+      setTesting(null);
+      return;
+    }
+    if (!toEmail) {
+      setEmailResult("❌ 'Send Alerts To' is empty — enter recipient email");
+      setTesting(null);
+      return;
+    }
+
+    try {
+      const url = `${apiBase()}/monitoring/settings/test/email`;
+      const body = JSON.stringify({ api_key: apiKey, from_email: fromEmail, to_email: toEmail });
+
+      console.log("[EMAIL TEST] POST", url, { api_key: apiKey.slice(0, 10) + "...", from_email: fromEmail, to_email: toEmail });
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body,
+      });
+
+      console.log("[EMAIL TEST] Status:", r.status);
+      const text = await r.text();
+      console.log("[EMAIL TEST] Response:", text);
+
+      let res: any;
+      try { res = JSON.parse(text); } catch { res = { error: text }; }
+
+      if (res?.ok) {
+        setEmailResult(`✅ ${res.message || "Email sent!"}`);
+      } else {
+        setEmailResult(`❌ ${res?.error || res?.detail || `HTTP ${r.status}: ${text.slice(0, 200)}`}`);
+      }
+    } catch (e: any) {
+      console.error("[EMAIL TEST] Error:", e);
+      setEmailResult(`❌ Network error: ${e.message}`);
+    }
+
+    setTesting(null);
+  };
+
   if (loading) return <div className="p-8 text-bah-muted">Loading settings...</div>;
 
   return (
@@ -242,10 +297,19 @@ export default function NotificationSettings() {
                 className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
             </div>
           </div>
-          <button onClick={() => test("email")} disabled={testing === "email"}
-            className="px-4 py-2 bg-bah-cyan/10 border border-bah-cyan/30 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/20 disabled:opacity-50">
-            {testing === "email" ? "Sending..." : "Send Test Email"}
-          </button>
+          <div className="space-y-2">
+            <button onClick={() => testEmail()} disabled={testing === "email"}
+              className="px-4 py-2 bg-bah-cyan/10 border border-bah-cyan/30 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/20 disabled:opacity-50">
+              {testing === "email" ? "⟳ Sending..." : "Send Test Email"}
+            </button>
+            {emailResult && (
+              <div className={`px-3 py-2 rounded-lg text-xs font-mono ${
+                emailResult.startsWith("✅") ? "bg-green-500/10 text-green-400 border border-green-500/30" :
+                emailResult.startsWith("⏳") ? "bg-bah-cyan/10 text-bah-cyan border border-bah-cyan/30" :
+                "bg-red-500/10 text-red-400 border border-red-500/30"
+              }`}>{emailResult}</div>
+            )}
+          </div>
         </div>
       </div>
 
