@@ -176,15 +176,26 @@ def evaluate_trade_for_portfolio(
             verdict.warnings.append(f"SAFE_MODE: {'; '.join(ks_state.triggers[:1])}")
             verdict.requires_approval = True
     except Exception as e:
-        # SAFETY: Kill switch failure = assume unsafe, block trade
-        logger.error("kill_switch_evaluation_failed", error=str(e), asset=proposed_asset)
+        # Kill switch evaluation failed. Apply proportional response:
+        # - If no open positions → safe mode only (no real risk exists)
+        # - If positions exist → block for safety (real risk may be unquantified)
+        logger.error("kill_switch_evaluation_failed", error=str(e), asset=proposed_asset,
+                     position_count=snapshot.position_count)
         from bahamut.shared.degraded import mark_degraded
         mark_degraded("portfolio.kill_switch", str(e))
-        verdict.blockers.append("KILL_SWITCH_UNAVAILABLE: defaulting to BLOCK for safety")
-        verdict.allowed = False
-        verdict.size_multiplier = 0.0
-        verdict.warnings.append(f"Kill switch subsystem error: {str(e)[:100]}")
-        return verdict
+
+        if snapshot.position_count == 0:
+            # No open positions = no portfolio risk. Safe mode, don't block.
+            verdict.warnings.append(f"Kill switch subsystem error (no positions, safe mode): {str(e)[:100]}")
+            verdict.requires_approval = True
+            verdict.size_multiplier *= 0.5
+        else:
+            # Positions exist but we can't evaluate risk. Block for safety.
+            verdict.blockers.append("KILL_SWITCH_UNAVAILABLE: defaulting to BLOCK (open positions exist)")
+            verdict.allowed = False
+            verdict.size_multiplier = 0.0
+            verdict.warnings.append(f"Kill switch subsystem error: {str(e)[:100]}")
+            return verdict
 
     # ═══════════════════════════════════
     # 1. EXPOSURE ENGINE

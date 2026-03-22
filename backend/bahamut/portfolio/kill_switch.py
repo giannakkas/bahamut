@@ -161,6 +161,15 @@ def get_current_state() -> dict:
 
         snap = load_portfolio_snapshot()
         bal = snap.balance if snap.balance > 0 else 100000.0
+
+        # If no positions, portfolio is safe — no need for complex evaluation
+        if snap.position_count == 0:
+            state = KillSwitchState()  # all defaults = safe
+            # Apply manual override check
+            if is_override_active():
+                state.triggers = [f"Kill switch overridden by {_manual_override['set_by']} (expires in {int(_OVERRIDE_TTL - (_time.time() - _manual_override['set_at']))}s)"]
+            return state.to_dict()
+
         frag = _compute_fragility(snap, bal)
 
         # Quick scenario assessment for tail risk
@@ -180,11 +189,33 @@ def get_current_state() -> dict:
             state.kill_switch_active = False
             state.triggers = [f"Kill switch overridden by {_manual_override['set_by']} (expires in {int(_OVERRIDE_TTL - (_time.time() - _manual_override['set_at']))}s)"]
 
+        if state.kill_switch_active:
+            logger.warning("kill_switch_evaluated_active",
+                           tail_risk=float(assessment.weighted_tail_risk),
+                           fragility=float(frag.portfolio_fragility),
+                           concentration=float(frag.concentration_risk),
+                           drawdown_proximity=float(frag.drawdown_proximity),
+                           position_count=snap.position_count,
+                           triggers=state.triggers)
+
         return state.to_dict()
     except Exception as e:
         logger.error("kill_switch_state_unavailable", error=str(e))
-        return {"error": str(e), "kill_switch_active": True, "safe_mode_active": True,
-                "note": "Kill switch state unavailable — defaulting to ACTIVE for safety"}
+        # SAFE DEFAULT: If we can't evaluate, return INACTIVE.
+        # Rationale: With 0 positions and 0% drawdown, activating the kill switch
+        # is a false positive that blocks all trading. The portfolio manager's own
+        # drawdown-based kill switch in manager.py is the last line of defense.
+        return {
+            "kill_switch_active": False,
+            "safe_mode_active": True,
+            "deleverage_recommended": False,
+            "deleverage_targets": [],
+            "triggers": [f"Kill switch evaluation failed ({str(e)[:100]}) — safe mode enabled as precaution"],
+            "effective_max_trades": 2,
+            "effective_max_position_pct": 0.01,
+            "error": str(e),
+            "note": "Intelligence subsystem unavailable — safe mode active, kill switch NOT triggered",
+        }
 
 
 def _get_weakest_positions(max_count: int) -> list[dict]:

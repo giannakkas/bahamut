@@ -166,8 +166,9 @@ class PortfolioManager:
         if len(open_for_strat) >= sleeve.max_open_positions:
             return False, f"max_positions_reached ({sleeve.max_open_positions})"
 
-        # Check total open risk
-        total_risk = sum(p.risk_amount for p in engine.open_positions)
+        # Check total open risk (exclude test positions)
+        total_risk = sum(p.risk_amount for p in engine.open_positions
+                         if not p.strategy.startswith("TEST_"))
         if total_risk / max(1, self.total_equity) > self.max_total_risk_pct:
             return False, f"total_risk_exceeded ({self.max_total_risk_pct*100:.0f}%)"
 
@@ -193,22 +194,34 @@ class PortfolioManager:
                 1 - sleeve.current_equity / sleeve.peak_equity
                 if sleeve.peak_equity > 0 else 0, 4)
 
-            # Trade count
-            sleeve.trade_count = len([t for t in engine.closed_trades if t.strategy == name])
+            # Trade count — exclude test trades
+            sleeve.trade_count = len([t for t in engine.closed_trades
+                                       if t.strategy == name and not t.strategy.startswith("TEST_")])
             sleeve.win_count = len([t for t in engine.closed_trades
-                                     if t.strategy == name and t.pnl > 0])
+                                     if t.strategy == name and t.pnl > 0
+                                     and not t.strategy.startswith("TEST_")])
 
         # Portfolio-level
+        # NOTE: Test trades (strategy starting with TEST_) are already excluded
+        # because no sleeve is named TEST_*, so sleeve equity is unaffected.
         self.total_capital = sum(s.current_equity for s in self.sleeves.values())
         self.peak_equity = max(self.peak_equity, self.total_capital)
 
         # Kill switch on drawdown
         dd = 1 - self.total_capital / self.peak_equity if self.peak_equity > 0 else 0
-        if dd >= self.max_drawdown_pct and not self.kill_switch_triggered:
+
+        # GUARD: threshold must be > 0 to trigger. A zero threshold would fire at 0% drawdown.
+        if (self.max_drawdown_pct > 0
+                and dd > 0
+                and dd >= self.max_drawdown_pct
+                and not self.kill_switch_triggered):
             self.kill_switch_triggered = True
             logger.warning("portfolio_kill_switch",
-                           drawdown=f"{dd*100:.1f}%",
-                           threshold=f"{self.max_drawdown_pct*100:.0f}%")
+                           equity=round(self.total_capital, 2),
+                           peak_equity=round(self.peak_equity, 2),
+                           drawdown=round(dd * 100, 2),
+                           threshold=round(self.max_drawdown_pct * 100, 2),
+                           reason="drawdown_exceeded_threshold")
 
     @property
     def total_equity(self) -> float:
