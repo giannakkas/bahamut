@@ -144,15 +144,7 @@ export default function NotificationSettings() {
     setTesting("email");
     setEmailResult("⏳ Sending test email...");
 
-    const apiKey = form.email_smtp_pass;
-    const fromEmail = form.email_from || "info@bahamut.ai";
     const toEmail = form.email_to;
-
-    if (!apiKey) {
-      setEmailResult("❌ Brevo API Key is empty — paste your key and try again");
-      setTesting(null);
-      return;
-    }
     if (!toEmail) {
       setEmailResult("❌ 'Send Alerts To' is empty — enter recipient email");
       setTesting(null);
@@ -161,9 +153,14 @@ export default function NotificationSettings() {
 
     try {
       const url = `${apiBase()}/monitoring/settings/test/email`;
-      const body = JSON.stringify({ api_key: apiKey, from_email: fromEmail, to_email: toEmail });
+      // Only send api_key if user typed a new one (not the masked placeholder)
+      const body: any = { from_email: form.email_from || "info@bahamut.ai", to_email: toEmail };
+      if (form.email_smtp_pass && !form.email_smtp_pass.includes("●")) {
+        body.api_key = form.email_smtp_pass;
+      }
+      // If no key in form, backend will use the saved one from DB
 
-      console.log("[EMAIL TEST] POST", url, { api_key: apiKey.slice(0, 10) + "...", from_email: fromEmail, to_email: toEmail });
+      console.log("[EMAIL TEST] POST", url, { ...body, api_key: body.api_key ? body.api_key.slice(0, 10) + "..." : "(using saved key)" });
 
       const r = await fetch(url, {
         method: "POST",
@@ -171,7 +168,7 @@ export default function NotificationSettings() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body,
+        body: JSON.stringify(body),
       });
 
       console.log("[EMAIL TEST] Status:", r.status);
