@@ -83,20 +83,12 @@ export default function DailyOperations() {
   const load = useCallback(async () => {
     const d = await api("/dashboard");
     if (d) {
+      console.log("[DASHBOARD RAW]", JSON.stringify(d).substring(0, 500));
       setPortfolio(d.portfolio);
       setStrategies(d.strategies);
       setPositions(d.positions);
       setTrades(d.trades);
-      setAlerts((d.alerts || []).map((a: any) => {
-        try {
-          return {
-            level: String(a?.level || "INFO"),
-            title: String(a?.title || ""),
-            message: typeof a?.message === "string" ? a.message : JSON.stringify(a?.message || ""),
-            timestamp: String(a?.timestamp || ""),
-          };
-        } catch { return { level: "INFO", title: "Alert", message: "", timestamp: "" }; }
-      }));
+      setAlerts([]);  // TEMP: skip alerts to isolate crash
       setHealth(d.health);
       setLastCycle(d.last_cycle);
       setCycleHistory({ cycles: d.cycle_history, stats: d.cycle_stats });
