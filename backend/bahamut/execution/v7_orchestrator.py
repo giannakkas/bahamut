@@ -184,9 +184,20 @@ def _run_v7_cycle_inner():
             # Always compute strategy conditions for observability
             if indicators:
                 try:
-                    from bahamut.monitoring.strategy_conditions import compute_conditions
+                    from bahamut.monitoring.strategy_conditions import compute_conditions, _snapshots
                     compute_conditions(asset, candles, indicators, prev_indicators, current_regime)
                     logger.info("compute_conditions_ok", asset=asset)
+                    # Write to Redis DIRECTLY here (bypass strategy_conditions.py Redis code)
+                    import json as _json
+                    snapshot = _snapshots.get(asset)
+                    if snapshot:
+                        try:
+                            import redis as _redis, os as _os
+                            _r = _redis.from_url(_os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+                            _r.hset("bahamut:strategy_conditions", asset, _json.dumps(snapshot))
+                            logger.info("strategy_conds_redis_DIRECT_write_ok", asset=asset)
+                        except Exception as re:
+                            logger.error("strategy_conds_redis_DIRECT_write_FAILED", asset=asset, error=str(re))
                 except Exception as e:
                     logger.error("compute_conditions_FAILED", asset=asset, error=str(e))
 
