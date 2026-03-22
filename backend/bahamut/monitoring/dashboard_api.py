@@ -429,7 +429,13 @@ async def dashboard_all(user=Depends(get_current_user)):
     try:
         from bahamut.data.live_data import get_data_source, get_data_status
         data_src = get_data_source()
-        data_status = get_data_status()
+        raw_status = get_data_status()
+        # Sanitize nested values to ensure they're all JSON-safe primitives
+        for k, v in raw_status.items():
+            if isinstance(v, dict):
+                data_status[k] = {sk: (str(sv) if not isinstance(sv, (str, int, float, bool, type(None))) else sv) for sk, sv in v.items()}
+            else:
+                data_status[k] = str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
     except Exception:
         pass
 

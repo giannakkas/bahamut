@@ -5,6 +5,8 @@ Computes and exposes the exact conditions each strategy checks,
 with actual vs target values, for observability.
 Does NOT change strategy logic — reads the same indicators.
 """
+import json
+import os
 import structlog
 
 logger = structlog.get_logger()
@@ -13,25 +15,36 @@ logger = structlog.get_logger()
 _snapshots: dict[str, dict] = {}
 
 
+def _to_native(v):
+    """Convert numpy types to native Python types for JSON serialization."""
+    if hasattr(v, 'item'):  # numpy scalar
+        return v.item()
+    if isinstance(v, dict):
+        return {k: _to_native(val) for k, val in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_to_native(x) for x in v]
+    return v
+
+
 def compute_conditions(asset: str, candles: list[dict], indicators: dict,
                        prev_indicators: dict, regime: str) -> list[dict]:
     """Compute condition snapshots for all strategies on an asset."""
     results = []
 
-    close = indicators.get("close", 0)
-    ema20 = indicators.get("ema_20", 0)
-    ema50 = indicators.get("ema_50", 0)
-    ema200 = indicators.get("ema_200", 0)
+    close = float(indicators.get("close", 0))
+    ema20 = float(indicators.get("ema_20", 0))
+    ema50 = float(indicators.get("ema_50", 0))
+    ema200 = float(indicators.get("ema_200", 0))
 
-    prev_ema20 = prev_indicators.get("ema_20", 0) if prev_indicators else 0
-    prev_ema50 = prev_indicators.get("ema_50", 0) if prev_indicators else 0
+    prev_ema20 = float(prev_indicators.get("ema_20", 0)) if prev_indicators else 0.0
+    prev_ema50 = float(prev_indicators.get("ema_50", 0)) if prev_indicators else 0.0
 
     # ── v5_base / v5_tuned ──
     for strat in ["v5_base", "v5_tuned"]:
-        regime_ok = regime == "TREND"
-        above_ema200 = close > ema200 if ema200 > 0 else False
-        cross = ema20 > ema50 and prev_ema20 <= prev_ema50 if (ema20 and ema50 and prev_ema20 and prev_ema50) else False
-        ema20_above = ema20 > ema50
+        regime_ok = bool(regime == "TREND")
+        above_ema200 = bool(close > ema200) if ema200 > 0 else False
+        cross = bool(ema20 > ema50 and prev_ema20 <= prev_ema50) if (ema20 and ema50 and prev_ema20 and prev_ema50) else False
+        ema20_above = bool(ema20 > ema50)
 
         conditions = [
             {
@@ -56,7 +69,7 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
             },
         ]
 
-        all_pass = regime_ok and above_ema200 and cross
+        all_pass = bool(regime_ok and above_ema200 and cross)
         if not regime_ok:
             reason = f"regime is {regime}, need TREND"
         elif not above_ema200:
@@ -78,8 +91,8 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         })
 
     # ── v9_breakout ──
-    high_20 = max(c.get("high", 0) for c in candles[-21:-1]) if len(candles) > 21 else 0
-    above_breakout = close > high_20 if high_20 > 0 else False
+    high_20 = float(max(c.get("high", 0) for c in candles[-21:-1])) if len(candles) > 21 else 0.0
+    above_breakout = bool(close > high_20) if high_20 > 0 else False
 
     # Count confirmation bars
     confirm_count = 0
@@ -88,8 +101,8 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
             if candles[i].get("close", 0) > high_20:
                 confirm_count += 1
 
-    confirmed = confirm_count >= 3
-    regime_allows = regime in ("TREND",)
+    confirmed = bool(confirm_count >= 3)
+    regime_allows = bool(regime in ("TREND",))
 
     v9_conditions = [
         {
@@ -113,7 +126,7 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         },
     ]
 
-    all_v9 = regime_allows and above_breakout and confirmed
+    all_v9 = bool(regime_allows and above_breakout and confirmed)
     if not regime_allows:
         v9_reason = f"regime is {regime}, need TREND"
     elif not above_breakout:
@@ -131,43 +144,38 @@ def compute_conditions(asset: str, candles: list[dict], indicators: dict,
         "conditions": v9_conditions,
     })
 
-    # Store snapshot
-    _snapshots[asset] = {
+    # Store snapshot (convert numpy types to native Python)
+    snapshot = _to_native({
         "asset": asset,
         "regime": regime,
         "price": close,
         "strategies": results,
-    }
+    })
+    _snapshots[asset] = snapshot
 
-    # Also persist to Redis for Celery worker → FastAPI cross-process reads
+    # Persist to Redis for cross-process reads (Celery → FastAPI)
     try:
-        import redis, os, json
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        r.hset("bahamut:strategy_conditions", asset, json.dumps(_snapshots[asset]))
-        logger.info("strategy_conds_redis_write_ok", asset=asset, n_strategies=len(results))
+        import redis as _redis
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.hset("bahamut:strategy_conditions", asset, json.dumps(snapshot))
     except Exception as e:
-        logger.error("strategy_conds_redis_write_FAILED", asset=asset, error=str(e))
+        logger.error("strategy_conds_redis_write_failed", asset=asset, error=str(e))
 
     return results
 
 
 def get_latest_snapshots() -> dict:
     """Get most recent strategy condition snapshots for all assets."""
-    # Always try Redis first (Celery worker writes here)
+    # Try Redis first (cross-process: Celery writes, FastAPI reads)
     try:
-        import redis, os, json
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        import redis as _redis
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         raw = r.hgetall("bahamut:strategy_conditions")
         if raw:
-            result = {(k.decode() if isinstance(k, bytes) else k): json.loads(v) for k, v in raw.items()}
-            logger.info("strategy_conds_redis_read_ok", count=len(result))
-            return result
-        else:
-            logger.info("strategy_conds_redis_empty")
-    except Exception as e:
-        logger.error("strategy_conds_redis_read_FAILED", error=str(e))
-    # Fallback to in-memory (only works in same process)
-    logger.info("strategy_conds_fallback_memory", count=len(_snapshots))
+            return {(k.decode() if isinstance(k, bytes) else k): json.loads(v) for k, v in raw.items()}
+    except Exception:
+        pass
+    # Fallback: in-memory (same process only)
     return dict(_snapshots)
 
 
