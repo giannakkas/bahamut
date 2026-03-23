@@ -335,6 +335,17 @@ TABLES = [
         updated_at TIMESTAMP DEFAULT NOW()
     )""",
 
+    # ── Waitlist ──
+    """CREATE TABLE IF NOT EXISTS waitlist (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        workspace_name VARCHAR(255) DEFAULT '',
+        status VARCHAR(20) DEFAULT 'PENDING',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    )""",
+
     # ── Stress Testing ──
     """CREATE TABLE IF NOT EXISTS stress_test_runs (
         id SERIAL PRIMARY KEY,

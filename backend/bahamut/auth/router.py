@@ -88,6 +88,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class WaitlistRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    workspace_name: str = ""
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -223,6 +229,59 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error("login_failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+
+@router.post("/waitlist")
+async def join_waitlist(req: WaitlistRequest):
+    """Add a trader to the waitlist. Notifies admin via email + Telegram."""
+    logger.info("waitlist_signup", email=req.email, name=req.full_name, workspace=req.workspace_name)
+
+    # Persist to DB
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO waitlist (email, full_name, workspace_name, created_at)
+                VALUES (:e, :n, :w, NOW())
+                ON CONFLICT (email) DO UPDATE SET
+                    full_name = EXCLUDED.full_name,
+                    workspace_name = EXCLUDED.workspace_name,
+                    updated_at = NOW()
+            """), {"e": req.email, "n": req.full_name, "w": req.workspace_name})
+            conn.commit()
+    except Exception as e:
+        logger.warning("waitlist_db_failed", error=str(e))
+
+    # Notify admin via Telegram
+    try:
+        from bahamut.monitoring.telegram import send_telegram_alert
+        send_telegram_alert(
+            f"🆕 New waitlist signup!\n\n"
+            f"Name: {req.full_name}\n"
+            f"Email: {req.email}\n"
+            f"Workspace: {req.workspace_name or 'N/A'}\n\n"
+            f"Total interest growing. System still in learning phase.",
+            level="INFO", title="Waitlist Signup"
+        )
+    except Exception as e:
+        logger.warning("waitlist_telegram_failed", error=str(e))
+
+    # Notify admin via email
+    try:
+        from bahamut.monitoring.email import send_email_alert
+        send_email_alert(
+            f"[Bahamut] New Waitlist Signup: {req.full_name}",
+            f"New trader joined the Bahamut.AI waitlist:\n\n"
+            f"Name: {req.full_name}\n"
+            f"Email: {req.email}\n"
+            f"Workspace: {req.workspace_name or 'N/A'}\n\n"
+            f"System is in learning phase. No action needed yet."
+        )
+    except Exception as e:
+        logger.warning("waitlist_email_failed", error=str(e))
+
+    return {"status": "waitlisted", "message": "You've been added to the waitlist"}
 
 
 @router.get("/me")
