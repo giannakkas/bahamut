@@ -127,6 +127,54 @@ def is_configured() -> bool:
     return bool(cfg["enabled"] and cfg["api_key"] and cfg["to_email"])
 
 
+def send_html_to(to_email: str, subject: str, html: str) -> bool:
+    """Send an HTML email to a specific recipient (not the admin default).
+    Used for user-facing emails like approval notifications."""
+    cfg = _get_config()
+    if not cfg["api_key"]:
+        logger.warning("send_html_to_no_api_key")
+        return False
+
+    from_email = cfg["from_email"] or "noreply@bahamut.ai"
+    payload = {
+        "sender": {"name": "Bahamut.AI", "email": from_email},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html,
+    }
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(BREVO_API_URL, data=data, method="POST")
+        req.add_header("accept", "application/json")
+        req.add_header("content-type", "application/json")
+        req.add_header("api-key", cfg["api_key"])
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            logger.info("html_email_sent", subject=subject, to=to_email)
+            return True
+    except Exception as e:
+        logger.error("html_email_failed", to=to_email, error=str(e))
+
+    # SMTP fallback
+    try:
+        from_addr = cfg["from_email"] or cfg["smtp_user"]
+        if not cfg["smtp_user"]:
+            return False
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"Bahamut.AI <{from_addr}>"
+        msg["To"] = to_email
+        msg.attach(MIMEText(html, "html"))
+        with smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"]), timeout=15) as server:
+            server.starttls()
+            server.login(cfg["smtp_user"], cfg["smtp_key"])
+            server.sendmail(from_addr, to_email, msg.as_string())
+        logger.info("html_email_sent_smtp", subject=subject, to=to_email)
+        return True
+    except Exception as e:
+        logger.error("html_email_smtp_failed", to=to_email, error=str(e))
+    return False
+
+
 def test_connection() -> dict:
     """Test email sending — tries API then SMTP."""
     cfg = _get_config()

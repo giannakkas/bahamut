@@ -325,7 +325,176 @@ async def remove_from_waitlist(waitlist_id: int, user=Depends(get_current_user))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"status": "created", "email": req.email, "role": req.role}
+
+@router.post("/waitlist/{waitlist_id}/approve")
+async def approve_waitlist(
+    waitlist_id: int,
+    role: str = "trader",
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Approve a waitlist entry: create user account + send welcome email."""
+    if not is_admin_or_above(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    if role not in ("viewer", "trader", "admin"):
+        raise HTTPException(status_code=400, detail="Role must be viewer, trader, or admin")
+
+    # Load waitlist entry
+    from bahamut.database import sync_engine
+    from sqlalchemy import text as stext
+    entry = None
+    try:
+        with sync_engine.connect() as conn:
+            rows = conn.execute(stext(
+                "SELECT id, email, full_name, workspace_name FROM waitlist WHERE id = :id"
+            ), {"id": waitlist_id}).mappings().all()
+            if rows:
+                entry = dict(rows[0])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Waitlist entry not found")
+
+    # Check if user already exists
+    from sqlalchemy import select
+    from bahamut.models import User, Workspace
+    existing = await db.execute(select(User).where(User.email == entry["email"]))
+    if existing.scalar_one_or_none():
+        # Mark as approved in waitlist
+        with sync_engine.connect() as conn:
+            conn.execute(stext("UPDATE waitlist SET status = 'APPROVED' WHERE id = :id"), {"id": waitlist_id})
+            conn.commit()
+        raise HTTPException(status_code=409, detail="User already exists with this email")
+
+    # Generate temporary password
+    import secrets
+    temp_password = secrets.token_urlsafe(12)
+
+    # Create workspace
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    slug = (entry.get("workspace_name") or entry["full_name"]).lower().replace(" ", "-")[:50]
+    workspace = Workspace(name=entry.get("workspace_name") or f"{entry['full_name']}'s Workspace", slug=slug)
+    db.add(workspace)
+    await db.flush()
+
+    # Create user
+    new_user = User(
+        email=entry["email"],
+        password_hash=pwd_context.hash(temp_password[:72]),
+        full_name=entry["full_name"],
+        role=role,
+        workspace_id=workspace.id,
+    )
+    db.add(new_user)
+    await db.commit()
+
+    # Mark waitlist entry as approved
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(stext("UPDATE waitlist SET status = 'APPROVED' WHERE id = :id"), {"id": waitlist_id})
+            conn.commit()
+    except Exception:
+        pass
+
+    # Send welcome email
+    try:
+        _send_approval_email(entry["email"], entry["full_name"], temp_password, role)
+    except Exception as e:
+        logger.warning("approval_email_failed", email=entry["email"], error=str(e))
+
+    # Notify admin via Telegram
+    try:
+        from bahamut.monitoring.telegram import send_telegram_alert
+        send_telegram_alert(
+            f"✅ Trader approved!\n\n"
+            f"Name: {entry['full_name']}\n"
+            f"Email: {entry['email']}\n"
+            f"Role: {role}\n"
+            f"Temp password sent via email.",
+            level="WARNING", title="Trader Approved"
+        )
+    except Exception:
+        pass
+
+    logger.info("waitlist_approved", email=entry["email"], role=role)
+    return {"status": "approved", "email": entry["email"], "role": role}
+
+
+def _send_approval_email(email: str, name: str, temp_password: str, role: str):
+    """Send branded welcome email to approved trader."""
+    first_name = name.split()[0] if name else "Trader"
+
+    html = f"""
+    <div style="max-width:600px;margin:0 auto;background:#0a0a0a;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#1a1a1a,#0d0d0d);padding:32px;text-align:center;border-bottom:1px solid #222;">
+        <h1 style="color:#c9a84c;font-size:28px;margin:0 0 4px 0;letter-spacing:2px;">BAHAMUT</h1>
+        <p style="color:#888;font-size:11px;margin:0;letter-spacing:3px;">TRADE · ANALYZE · CONQUER</p>
+      </div>
+
+      <div style="padding:32px;">
+        <h2 style="color:#fff;font-size:22px;margin:0 0 16px 0;">
+          Welcome aboard, {first_name}. 🐉
+        </h2>
+
+        <p style="color:#bbb;font-size:14px;line-height:1.7;margin:0 0 20px 0;">
+          Your spot is confirmed. You now have access to Bahamut.AI — an AI-powered
+          trading intelligence platform that analyzes markets, detects opportunities,
+          and helps you trade with conviction.
+        </p>
+
+        <div style="background:#111;border:1px solid #222;border-radius:8px;padding:20px;margin:0 0 24px 0;">
+          <p style="color:#c9a84c;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin:0 0 12px 0;font-weight:600;">
+            Your Login Credentials
+          </p>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="color:#888;font-size:13px;padding:6px 0;width:100px;">Email</td>
+              <td style="color:#fff;font-size:13px;padding:6px 0;font-family:monospace;">{email}</td>
+            </tr>
+            <tr>
+              <td style="color:#888;font-size:13px;padding:6px 0;">Password</td>
+              <td style="color:#c9a84c;font-size:13px;padding:6px 0;font-family:monospace;font-weight:600;">{temp_password}</td>
+            </tr>
+            <tr>
+              <td style="color:#888;font-size:13px;padding:6px 0;">Role</td>
+              <td style="color:#fff;font-size:13px;padding:6px 0;text-transform:capitalize;">{role}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="text-align:center;margin:0 0 24px 0;">
+          <a href="https://bahamut.ai/login"
+             style="display:inline-block;background:#c9a84c;color:#000;padding:14px 40px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.5px;">
+            Sign In to Bahamut.AI →
+          </a>
+        </div>
+
+        <p style="color:#666;font-size:12px;line-height:1.6;margin:0 0 8px 0;">
+          🔐 Please change your password after your first login.<br>
+          📧 If you didn't request this, please ignore this email.
+        </p>
+      </div>
+
+      <div style="background:#0d0d0d;padding:20px;text-align:center;border-top:1px solid #222;">
+        <p style="color:#555;font-size:11px;margin:0;">
+          Bahamut.AI — Institutional-Grade Trading Intelligence<br>
+          <span style="color:#444;">This is an automated message. Do not reply.</span>
+        </p>
+      </div>
+    </div>
+    """
+
+    # Send via Brevo
+    try:
+        from bahamut.monitoring.email import send_html_to
+        send_html_to(email, "Welcome to Bahamut.AI — Your Spot is Confirmed", html)
+    except Exception as e:
+        logger.error("approval_email_send_failed", email=email, error=str(e))
+        raise
 
 
 @router.delete("/users/{user_id}")

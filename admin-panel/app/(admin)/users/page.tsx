@@ -277,15 +277,15 @@ export default function UsersPage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-base font-bold text-bah-heading">Registered Interest</h2>
-              <p className="text-xs text-bah-muted mt-0.5">{waitlist.length} trader{waitlist.length !== 1 ? "s" : ""} waiting for access</p>
+              <p className="text-xs text-bah-muted mt-0.5">{waitlist.filter(w => w.status === "PENDING").length} pending, {waitlist.filter(w => w.status === "APPROVED").length} approved</p>
             </div>
             <span className="px-2.5 py-1 text-[10px] font-semibold rounded-full bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
-              {waitlist.length} PENDING
+              {waitlist.length} TOTAL
             </span>
           </div>
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[480px]">
+              <table className="w-full text-sm min-w-[580px]">
                 <thead>
                   <tr className="border-b border-bah-border text-left text-xs text-bah-muted uppercase tracking-wider">
                     <th className="px-4 py-3">Trader</th>
@@ -306,7 +306,11 @@ export default function UsersPage() {
                         {w.workspace_name || "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          w.status === "APPROVED"
+                            ? "bg-green-500/15 text-green-400 border border-green-500/30"
+                            : "bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30"
+                        }`}>
                           {w.status || "PENDING"}
                         </span>
                       </td>
@@ -314,12 +318,48 @@ export default function UsersPage() {
                         {w.created_at ? new Date(w.created_at).toLocaleDateString() : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => removeFromWaitlist(w.id, w.email)}
-                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          Remove
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {(!w.status || w.status === "PENDING") && (
+                            <>
+                              <select
+                                id={`role-${w.id}`}
+                                defaultValue="trader"
+                                className="bg-white/[0.04] border border-bah-border rounded px-1.5 py-1 text-[10px] text-bah-heading outline-none"
+                              >
+                                <option value="trader">Trader</option>
+                                <option value="viewer">Viewer</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <button
+                                onClick={async () => {
+                                  const role = (document.getElementById(`role-${w.id}`) as HTMLSelectElement)?.value || "trader";
+                                  if (!confirm(`Approve ${w.full_name} as ${role}? They will receive a welcome email with login credentials.`)) return;
+                                  try {
+                                    const res = await fetch(`${apiBase()}/admin/waitlist/${w.id}/approve?role=${role}`, {
+                                      method: "POST",
+                                      headers: { Authorization: `Bearer ${token}` },
+                                    });
+                                    const data = await res.json();
+                                    if (!res.ok) throw new Error(data.detail || "Failed");
+                                    loadWaitlist();
+                                    loadUsers();
+                                  } catch (e: any) {
+                                    alert(e.message);
+                                  }
+                                }}
+                                className="px-2.5 py-1 text-[10px] font-semibold text-green-400 border border-green-500/30 rounded hover:bg-green-500/15 transition-colors"
+                              >
+                                ✓ Approve
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => removeFromWaitlist(w.id, w.email)}
+                            className="text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
