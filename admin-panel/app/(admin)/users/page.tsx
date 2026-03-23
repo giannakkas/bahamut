@@ -13,8 +13,18 @@ interface User {
   created_at: string | null;
 }
 
+interface WaitlistEntry {
+  id: number;
+  email: string;
+  full_name: string;
+  workspace_name: string;
+  status: string;
+  created_at: string;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -42,8 +52,32 @@ export default function UsersPage() {
     }
   };
 
+  const loadWaitlist = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/admin/waitlist`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWaitlist(data);
+      }
+    } catch {}
+  };
+
+  const removeFromWaitlist = async (id: number, email: string) => {
+    if (!confirm(`Remove ${email} from waitlist?`)) return;
+    try {
+      await fetch(`${apiBase()}/admin/waitlist/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      loadWaitlist();
+    } catch {}
+  };
+
   useEffect(() => {
     loadUsers();
+    loadWaitlist();
   }, []);
 
   const handleCreate = async () => {
@@ -234,6 +268,65 @@ export default function UsersPage() {
           {users.length === 0 && (
             <div className="text-sm text-bah-muted text-center py-8">No users found</div>
           )}
+        </div>
+      )}
+
+      {/* ═══ REGISTERED INTEREST (Waitlist) ═══ */}
+      {waitlist.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-base font-bold text-bah-heading">Registered Interest</h2>
+              <p className="text-xs text-bah-muted mt-0.5">{waitlist.length} trader{waitlist.length !== 1 ? "s" : ""} waiting for access</p>
+            </div>
+            <span className="px-2.5 py-1 text-[10px] font-semibold rounded-full bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
+              {waitlist.length} PENDING
+            </span>
+          </div>
+          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
+                <thead>
+                  <tr className="border-b border-bah-border text-left text-xs text-bah-muted uppercase tracking-wider">
+                    <th className="px-4 py-3">Trader</th>
+                    <th className="px-4 py-3">Workspace</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 hidden sm:table-cell">Registered</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waitlist.map((w) => (
+                    <tr key={w.id} className="border-b border-bah-border/50 hover:bg-white/[0.02]">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-bah-heading">{w.full_name}</div>
+                        <div className="text-xs text-bah-muted">{w.email}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-bah-muted">
+                        {w.workspace_name || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
+                          {w.status || "PENDING"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-bah-muted hidden sm:table-cell">
+                        {w.created_at ? new Date(w.created_at).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => removeFromWaitlist(w.id, w.email)}
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>

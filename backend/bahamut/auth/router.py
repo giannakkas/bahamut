@@ -262,7 +262,7 @@ async def join_waitlist(req: WaitlistRequest):
             f"Email: {req.email}\n"
             f"Workspace: {req.workspace_name or 'N/A'}\n\n"
             f"Added to waitlist. All spots currently full.",
-            level="INFO", title="New Signup"
+            level="WARNING", title="New Signup"
         )
     except Exception as e:
         logger.warning("waitlist_telegram_failed", error=str(e))

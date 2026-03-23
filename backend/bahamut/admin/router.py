@@ -289,6 +289,42 @@ async def create_user(req: CreateUserRequest, user=Depends(get_current_user), db
     db.add(new_user)
     await db.commit()
 
+    return {"id": str(new_user.id), "email": new_user.email, "role": new_user.role}
+
+
+@router.get("/waitlist")
+async def list_waitlist(user=Depends(get_current_user)):
+    """List all waitlist signups (admin only)."""
+    if not is_admin_or_above(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT id, email, full_name, workspace_name, status, created_at "
+                "FROM waitlist ORDER BY created_at DESC LIMIT 200"
+            )).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        return []
+
+
+@router.delete("/waitlist/{waitlist_id}")
+async def remove_from_waitlist(waitlist_id: int, user=Depends(get_current_user)):
+    """Remove a waitlist entry (admin only)."""
+    if not is_admin_or_above(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("DELETE FROM waitlist WHERE id = :id"), {"id": waitlist_id})
+            conn.commit()
+        return {"status": "removed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     return {"status": "created", "email": req.email, "role": req.role}
 
 
