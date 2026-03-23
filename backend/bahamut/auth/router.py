@@ -257,12 +257,12 @@ async def join_waitlist(req: WaitlistRequest):
     try:
         from bahamut.monitoring.telegram import send_telegram_alert
         send_telegram_alert(
-            f"🆕 New waitlist signup!\n\n"
+            f"🆕 New signup!\n\n"
             f"Name: {req.full_name}\n"
             f"Email: {req.email}\n"
             f"Workspace: {req.workspace_name or 'N/A'}\n\n"
-            f"Total interest growing. System still in learning phase.",
-            level="INFO", title="Waitlist Signup"
+            f"Added to waitlist. All spots currently full.",
+            level="INFO", title="New Signup"
         )
     except Exception as e:
         logger.warning("waitlist_telegram_failed", error=str(e))
@@ -271,12 +271,12 @@ async def join_waitlist(req: WaitlistRequest):
     try:
         from bahamut.monitoring.email import send_email_alert
         send_email_alert(
-            f"[Bahamut] New Waitlist Signup: {req.full_name}",
-            f"New trader joined the Bahamut.AI waitlist:\n\n"
+            f"[Bahamut] New Signup: {req.full_name}",
+            f"New trader registered on Bahamut.AI:\n\n"
             f"Name: {req.full_name}\n"
             f"Email: {req.email}\n"
             f"Workspace: {req.workspace_name or 'N/A'}\n\n"
-            f"System is in learning phase. No action needed yet."
+            f"Added to waitlist — all spots currently full."
         )
     except Exception as e:
         logger.warning("waitlist_email_failed", error=str(e))
