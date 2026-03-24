@@ -56,6 +56,7 @@ async def get_training_operations(user=Depends(get_current_user)):
 def _build_cycle_status(r, now) -> dict:
     """Live cycle status with timing data for countdown timers."""
     from bahamut.config_assets import TRAINING_ASSETS
+    from datetime import timedelta
 
     CYCLE_INTERVAL = 600  # 10 minutes
 
@@ -70,10 +71,11 @@ def _build_cycle_status(r, now) -> dict:
         "seconds_until_next_cycle": None,
         "next_4h_bar_time": None,
         "seconds_until_4h_bar": None,
-        "cycle_status": "unknown",
+        "cycle_status": "waiting",  # waiting = never ran, OK/DEGRADED/FAILED = after first cycle
     }
 
     if not r:
+        status["auto_enabled"] = False  # No Redis = can't run
         return status
 
     # Running state
@@ -83,6 +85,7 @@ def _build_cycle_status(r, now) -> dict:
             running = json.loads(raw)
             status["is_running"] = running.get("is_running", False)
             if status["is_running"]:
+                status["cycle_status"] = "running"
                 prog_raw = r.get("bahamut:training:progress")
                 if prog_raw:
                     status["running_progress"] = json.loads(prog_raw)
@@ -96,11 +99,12 @@ def _build_cycle_status(r, now) -> dict:
             lc = json.loads(raw)
             last_time_str = lc.get("last_cycle")
             status["last_cycle_time"] = last_time_str
-            status["cycle_status"] = lc.get("status", "OK")
+            if not status["is_running"]:
+                status["cycle_status"] = lc.get("status", "OK")
 
             if last_time_str:
                 last_dt = datetime.fromisoformat(last_time_str.replace("Z", "+00:00"))
-                next_dt = last_dt + __import__("datetime").timedelta(seconds=CYCLE_INTERVAL)
+                next_dt = last_dt + timedelta(seconds=CYCLE_INTERVAL)
                 status["next_cycle_time"] = next_dt.isoformat()
                 secs = (next_dt - now).total_seconds()
                 status["seconds_until_next_cycle"] = max(0, int(secs))

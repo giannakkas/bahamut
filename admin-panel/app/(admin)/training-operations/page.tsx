@@ -171,60 +171,73 @@ function CycleStatusStrip({ cs }: { cs: any }) {
   const nextCycle = useCountdown(cs.next_cycle_time);
   const next4H = useCountdown(cs.next_4h_bar_time);
 
-  const statusClr = cs.cycle_status === "OK" ? "text-emerald-400" : cs.cycle_status === "DEGRADED" ? "text-amber-400" : cs.cycle_status === "FAILED" ? "text-red-400" : "text-white/40";
-  const statusDot = cs.is_running ? "bg-bah-cyan" : cs.cycle_status === "OK" ? "bg-emerald-400" : cs.cycle_status === "DEGRADED" ? "bg-amber-400" : "bg-white/20";
+  // Derive auto training label: ON (has run successfully), WARMING UP (never ran), OFF (no Redis)
+  const hasRun = !!cs.last_cycle_time;
+  const autoLabel = !cs.auto_enabled ? "OFF" : cs.is_running ? "SCANNING" : hasRun ? "ON" : "WARMING UP";
+  const autoClr = !cs.auto_enabled ? "text-red-400" : cs.is_running ? "text-bah-cyan" : hasRun ? "text-emerald-400" : "text-amber-300";
+  const autoDot = !cs.auto_enabled ? "bg-red-400" : cs.is_running ? "bg-bah-cyan" : hasRun ? "bg-emerald-400" : "bg-amber-400";
+
+  // System status: RUNNING > OK/DEGRADED/FAILED > IDLE > WAITING
+  const sysStatus = cs.is_running ? "RUNNING" :
+    cs.cycle_status === "OK" ? "SUCCESS" :
+    cs.cycle_status === "DEGRADED" ? "DEGRADED" :
+    cs.cycle_status === "FAILED" ? "ERROR" :
+    cs.cycle_status === "waiting" ? "IDLE" : "IDLE";
+  const sysClr = sysStatus === "SUCCESS" ? "text-emerald-400" : sysStatus === "RUNNING" ? "text-bah-cyan" : sysStatus === "DEGRADED" ? "text-amber-300" : sysStatus === "ERROR" ? "text-red-400" : "text-white/40";
 
   return (
-    <div className={`rounded-xl border p-3 flex flex-wrap items-center gap-x-5 gap-y-2 anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/20" : "bg-white/[0.02] border-white/[0.06]"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
-      {/* Status dot + label */}
+    <div className={`rounded-xl border p-3 flex flex-wrap items-center gap-x-5 gap-y-2 anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-white/[0.025] border-white/[0.08]"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
+
+      {/* Auto Training ON/OFF/WARMING */}
       <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${statusDot} ${cs.is_running ? "animate-pulse" : ""}`} />
-        <span className="text-[11px] font-bold text-white/80 uppercase tracking-wider">
-          {cs.is_running ? "SCANNING" : "Auto Training"}
-        </span>
-        <span className={`text-[10px] font-bold ${cs.is_running ? "text-bah-cyan" : statusClr}`}>
-          {cs.is_running ? `${cs.running_progress?.current || 0} / ${cs.running_progress?.total || cs.universe_size || 40}` : cs.cycle_status?.toUpperCase() || "IDLE"}
-        </span>
+        <span className={`w-2.5 h-2.5 rounded-full ${autoDot} ${cs.is_running ? "animate-pulse" : ""}`} />
+        <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider">Auto Training</span>
+        <span className={`text-[11px] font-extrabold ${autoClr}`}>{autoLabel}</span>
       </div>
 
-      {/* Running progress bar */}
-      {cs.is_running && cs.running_progress && (
-        <div className="w-24 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-          <div className="h-full bg-bah-cyan rounded-full transition-all duration-500" style={{ width: `${(cs.running_progress.current / Math.max(1, cs.running_progress.total)) * 100}%` }} />
+      {/* Running progress */}
+      {cs.is_running && (
+        <div className="flex items-center gap-2">
+          <div className="w-20 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+            <div className="h-full bg-bah-cyan rounded-full transition-all duration-500" style={{ width: `${cs.running_progress ? (cs.running_progress.current / Math.max(1, cs.running_progress.total)) * 100 : 0}%` }} />
+          </div>
+          <span className="text-[10px] text-bah-cyan font-bold font-mono">{cs.running_progress?.current || 0}/{cs.running_progress?.total || cs.universe_size || 40}</span>
         </div>
       )}
 
-      {/* Divider */}
-      <div className="hidden sm:block w-px h-4 bg-white/10" />
+      <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
+
+      {/* System status */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-white/30 uppercase tracking-wider">Status</span>
+        <span className={`text-[11px] font-bold ${sysClr}`}>{sysStatus}</span>
+      </div>
+
+      <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
       {/* Next cycle countdown */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Next cycle</span>
-        <span className={`text-[12px] font-bold font-mono tabular-nums ${nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" : "text-white/70"}`}>
+        <span className={`text-[13px] font-bold font-mono tabular-nums ${cs.is_running ? "text-bah-cyan" : nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" : "text-white/80"}`}>
           {cs.is_running ? "NOW" : fmtCountdown(nextCycle)}
         </span>
       </div>
 
-      <div className="hidden sm:block w-px h-4 bg-white/10" />
+      <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
       {/* Next 4H bar countdown */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Next 4H bar</span>
-        <span className="text-[12px] font-bold font-mono tabular-nums text-white/70">{fmtCountdown(next4H)}</span>
+        <span className="text-[13px] font-bold font-mono tabular-nums text-white/80">{fmtCountdown(next4H)}</span>
       </div>
 
-      <div className="hidden sm:block w-px h-4 bg-white/10" />
+      <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
-      {/* Interval */}
-      <span className="text-[10px] text-white/25 font-mono">every {(cs.cycle_interval_seconds || 600) / 60}m</span>
-
-      {/* Last run */}
-      {cs.last_cycle_time && (
-        <>
-          <div className="hidden lg:block w-px h-4 bg-white/10" />
-          <span className="text-[10px] text-white/25 font-mono">last: {new Date(cs.last_cycle_time).toLocaleTimeString("en-GB", { hour12: false })}</span>
-        </>
-      )}
+      {/* Interval + last run */}
+      <div className="flex items-center gap-3 text-[10px] text-white/25 font-mono">
+        <span>every {(cs.cycle_interval_seconds || 600) / 60}m</span>
+        {cs.last_cycle_time && <span>last: {new Date(cs.last_cycle_time).toLocaleTimeString("en-GB", { hour12: false })}</span>}
+      </div>
     </div>
   );
 }
@@ -234,32 +247,44 @@ function CycleStatusStrip({ cs }: { cs: any }) {
    ═══════════════════════════════════════════ */
 function CandidatesSection({ candidates }: { candidates: any[] }) {
   const [expanded, setExpanded] = useState(true);
+  const THRESHOLD = 80;
 
-  const urgency = (s: number) => s >= 85 ? { label: "VERY CLOSE", cls: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" } :
-    s >= 65 ? { label: "APPROACHING", cls: "bg-amber-500/15 text-amber-300 border-amber-500/35" } :
+  const urgency = (s: number) => s >= THRESHOLD ? { label: "READY", cls: "bg-emerald-500/25 text-emerald-300 border-emerald-500/40" } :
+    s >= 60 ? { label: "APPROACHING", cls: "bg-amber-500/20 text-amber-300 border-amber-500/40" } :
     { label: "WEAK", cls: "bg-white/[0.04] text-white/35 border-white/10" };
 
-  const scoreBg = (s: number) => s >= 85 ? "bg-emerald-400" : s >= 65 ? "bg-amber-400" : s >= 45 ? "bg-white/30" : "bg-white/15";
+  const scoreBg = (s: number) => s >= THRESHOLD ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : s >= 40 ? "bg-white/30" : "bg-white/15";
+
+  const aboveThreshold = candidates.filter(c => c.score >= THRESHOLD).length;
 
   if (!candidates || candidates.length === 0) {
     return (
-      <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-5">
-        <div className="flex items-center gap-3 mb-2">
+      <div className="bg-white/[0.025] border border-white/[0.08] rounded-xl p-5">
+        <div className="flex items-center gap-3 mb-3">
           <span className="text-sm font-bold text-white tracking-tight">🔥 Trade Candidates</span>
-          <span className="text-[10px] text-white/25">read-only intelligence layer</span>
+          <span className="text-[10px] text-white/25">read-only intelligence</span>
         </div>
-        <p className="text-xs text-white/40">No high-probability setups detected. The scanner evaluates all 40+ assets against v5 and v9 strategies every cycle. Candidates appear when price action approaches trigger conditions (EMA cross, breakout confirmation).</p>
+        <div className="flex items-start gap-3">
+          <span className="text-xl mt-0.5">📡</span>
+          <div>
+            <p className="text-xs text-white/50 font-medium mb-1">All candidates below execution threshold (score ≥ {THRESHOLD})</p>
+            <p className="text-[11px] text-white/30">The scanner evaluates 40+ assets against EMA cross and breakout strategies every 10 minutes. Candidates appear when price action converges on trigger conditions. The next opportunity may come at the next 4H bar boundary.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl overflow-hidden">
+    <div className="bg-white/[0.025] border border-white/[0.08] rounded-xl overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-white/[0.015] transition-all">
         <div className="flex items-center gap-3">
           <span className="text-sm font-bold text-white tracking-tight">🔥 Trade Candidates</span>
           <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30" style={{ animation: "scanPulse 3s ease-in-out infinite" }}>{candidates.length}</span>
-          <span className="text-[10px] text-white/30 hidden sm:inline">ranked by readiness score</span>
+          {aboveThreshold > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">{aboveThreshold} READY (≥{THRESHOLD})</span>
+          )}
+          <span className="text-[10px] text-white/25 hidden sm:inline">execution threshold: {THRESHOLD}</span>
         </div>
         <span className="text-xs text-white/25">{expanded ? "▾" : "▸"}</span>
       </button>
@@ -269,7 +294,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
           <table className="w-full text-[11px] min-w-[1000px]">
             <thead>
               <tr className="border-b border-white/[0.08] text-left text-[9px] text-white/25 uppercase tracking-[0.1em]">
-                <th className="px-3 py-2.5 w-[120px]">Score</th><th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th>
+                <th className="px-3 py-2.5 w-[130px]">Score</th><th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th>
                 <th className="px-3 py-2.5">Dir</th><th className="px-3 py-2.5">Regime</th><th className="px-3 py-2.5">Distance</th>
                 <th className="px-3 py-2.5">RSI</th><th className="px-3 py-2.5">EMAs</th><th className="px-3 py-2.5">Setup</th>
               </tr>
@@ -277,24 +302,25 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
             <tbody>
               {candidates.map((c: any, i: number) => {
                 const u = urgency(c.score);
-                const isTop3 = i < 3;
+                const isTop = i === 0;
+                const isAbove = c.score >= THRESHOLD;
                 return (
-                  <tr key={i} className={`border-b border-white/[0.03] hover-row anim-slide ${isTop3 ? "bg-white/[0.01]" : ""}`} style={{ animationDelay: `${i * 0.035}s` }}>
+                  <tr key={i} className={`border-b border-white/[0.03] hover-row anim-slide ${isTop ? "bg-bah-cyan/[0.03]" : isAbove ? "bg-white/[0.015]" : ""}`} style={{ animationDelay: `${i * 0.035}s` }}>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <div className="w-12 h-2 bg-white/[0.04] rounded-full overflow-hidden">
                           <div className={`h-full rounded-full anim-bar ${scoreBg(c.score)}`} style={{ width: `${c.score}%`, animationDelay: `${0.2 + i * 0.04}s` }} />
                         </div>
                         <span className={`text-xs font-bold px-2 py-0.5 rounded border min-w-[32px] text-center ${
-                          c.score >= 85 ? "text-emerald-300 bg-emerald-500/20 border-emerald-500/40" :
-                          c.score >= 65 ? "text-amber-300 bg-amber-500/15 border-amber-500/35" :
+                          c.score >= THRESHOLD ? "text-emerald-300 bg-emerald-500/25 border-emerald-500/45" :
+                          c.score >= 60 ? "text-amber-300 bg-amber-500/20 border-amber-500/40" :
                           "text-white/50 bg-white/[0.04] border-white/10"
                         }`}>{c.score}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-bold">{c.asset}</span>
+                        <span className={`font-bold ${isTop ? "text-bah-cyan" : "text-white"}`}>{c.asset}</span>
                         <span className={`px-1.5 py-0 text-[8px] font-bold rounded border tracking-wider ${u.cls}`}>{u.label}</span>
                       </div>
                       <div className="text-[9px] text-white/30 mt-0.5">{c.asset_class}</div>
