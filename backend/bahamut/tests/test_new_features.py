@@ -135,7 +135,7 @@ class TestDataHealth:
         assert "status" in result
         assert "source" in result
         assert "assets" in result
-        assert result["status"] in ("OK", "DELAYED", "STALE", "FALLBACK", "UNKNOWN")
+        assert result["status"] in ("HEALTHY", "DEGRADED", "STALE", "MISSING", "OK", "DELAYED", "FALLBACK", "UNKNOWN")
 
     def test_assets_structure(self):
         """Each asset entry must have required fields."""
@@ -143,8 +143,9 @@ class TestDataHealth:
         result = get_data_health()
 
         for asset_name, asset_data in result["assets"].items():
-            assert "last_update" in asset_data
             assert "status" in asset_data
+            assert "can_trade" in asset_data
+            assert "last_candle_ts" in asset_data
 
 
 class TestStrategyConditions:

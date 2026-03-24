@@ -474,23 +474,38 @@ async def dashboard_all(user=Depends(get_current_user)):
     except Exception:
         pass
 
-    # Timing
+    # Timing — use canonical data health module
     from bahamut.monitoring.time_utils import (
         next_4h_close_utc, seconds_until_next_4h_close, get_asset_timing
     )
-    from bahamut.data.live_data import get_last_bar_timestamp
+    from bahamut.data.live_data import get_last_bar_timestamp, get_data_status
     from datetime import datetime as _dt, timezone as _tz
 
     now_utc = _dt.now(_tz.utc)
     asset_timing = {}
+    data_provider_status = get_data_status()  # last candle info from provider
     try:
         from bahamut.config_assets import ACTIVE_TREND_ASSETS
         timing_assets = ACTIVE_TREND_ASSETS
     except ImportError:
         timing_assets = ["BTCUSD"]
     for a in timing_assets:
-        lbt = get_last_bar_timestamp(a)
-        asset_timing[a] = get_asset_timing(lbt, last_processed_ts=lbt)
+        last_processed = get_last_bar_timestamp(a)
+
+        # Get last candle from provider (distinct from last processed bar)
+        provider_info = data_provider_status.get(a, {})
+        last_candle = ""
+        if isinstance(provider_info, dict):
+            detail = provider_info.get("detail", "")
+            # detail is a timestamp if it starts with digits
+            if detail and len(detail) >= 10 and detail[:4].isdigit():
+                last_candle = detail
+
+        # If no provider timestamp, fall back to last processed
+        if not last_candle:
+            last_candle = last_processed
+
+        asset_timing[a] = get_asset_timing(last_candle, last_processed_ts=last_processed)
 
     timing = {
         "now_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),

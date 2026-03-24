@@ -230,11 +230,13 @@ export default function DailyOperations() {
               <div key={asset} className="flex items-center gap-2">
                 <span className="font-semibold text-bah-heading">{asset}</span>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  (t.data_health || t.status) === "HEALTHY" ? "bg-green-500/15 text-green-400" :
+                  (t.data_health || t.status) === "DEGRADED" ? "bg-amber-500/15 text-amber-400" :
+                  (t.data_health || t.status) === "STALE" || t.status === "STALE" ? "bg-red-500/15 text-red-400" :
                   t.status === "NEW_BAR_READY" ? "bg-green-500/15 text-green-400" :
-                  t.status === "STALE" ? "bg-red-500/15 text-red-400" :
                   "bg-bah-border text-bah-muted"
-                }`}>{t.status === "WAITING_FOR_NEW_BAR" ? "WAITING" : t.status}</span>
-                <span className="text-[10px] text-bah-muted font-mono">bar: {t.last_closed_bar?.slice(11, 16) || "?"}</span>
+                }`}>{t.data_health === "HEALTHY" ? (t.status === "NEW_BAR_READY" ? "NEW BAR" : "WAITING") : (t.data_health || t.status)}</span>
+                <span className="text-[10px] text-bah-muted font-mono">bar: {t.last_processed_bar?.slice(11, 16) || t.last_closed_bar?.slice(11, 16) || "?"}</span>
               </div>
             ))}
           </div>

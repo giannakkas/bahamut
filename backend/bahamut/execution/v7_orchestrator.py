@@ -197,19 +197,19 @@ def _run_v7_cycle_inner():
 
             latest_time = candles[-1].get("datetime", "")
 
-            # Track data freshness for system readiness gate
+            # Track data freshness via canonical module
             try:
-                from datetime import datetime as _dt, timezone as _tz
-                bar_dt = _dt.fromisoformat(latest_time.replace("Z", "+00:00"))
-                age_s = int((_dt.now(_tz.utc) - bar_dt).total_seconds())
-                if age_s > 21600:  # > 6 hours
-                    update_asset_data_health(asset, "STALE", age_s)
-                elif age_s > 900:  # > 15 minutes
-                    update_asset_data_health(asset, "DEGRADED", age_s)
+                from bahamut.monitoring.data_health import evaluate_asset_health
+                health = evaluate_asset_health(latest_time)
+                dh_status = health["status"]
+                if dh_status == "STALE":
+                    update_asset_data_health(asset, "STALE", health.get("lag_seconds", 0))
+                elif dh_status == "DEGRADED":
+                    update_asset_data_health(asset, "DEGRADED", health.get("lag_seconds", 0))
                 else:
-                    update_asset_data_health(asset, "HEALTHY", age_s)
+                    update_asset_data_health(asset, "HEALTHY", health.get("lag_seconds", 0))
             except Exception:
-                update_asset_data_health(asset, "HEALTHY")  # can't parse → assume OK
+                update_asset_data_health(asset, "HEALTHY")  # can't evaluate → assume OK
 
             new_bar = is_new_bar(asset, latest_time)
 
