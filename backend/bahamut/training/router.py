@@ -67,15 +67,17 @@ def _build_cycle_status(r, now) -> dict:
         "is_running": False,
         "running_progress": None,
         "last_cycle_time": None,
+        "last_cycle_status": None,
+        "last_cycle_duration_ms": None,
         "next_cycle_time": None,
         "seconds_until_next_cycle": None,
         "next_4h_bar_time": None,
         "seconds_until_4h_bar": None,
-        "cycle_status": "waiting",  # waiting = never ran, OK/DEGRADED/FAILED = after first cycle
+        "cycle_status": "waiting",
     }
 
     if not r:
-        status["auto_enabled"] = False  # No Redis = can't run
+        status["auto_enabled"] = False
         return status
 
     # Running state
@@ -89,27 +91,57 @@ def _build_cycle_status(r, now) -> dict:
                 prog_raw = r.get("bahamut:training:progress")
                 if prog_raw:
                     status["running_progress"] = json.loads(prog_raw)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("cycle_status_running_check_failed", error=str(e))
 
     # Last cycle + compute next
+    last_dt = None
     try:
         raw = r.get("bahamut:training:last_cycle")
         if raw:
             lc = json.loads(raw)
-            last_time_str = lc.get("last_cycle")
+            last_time_str = lc.get("last_cycle", "")
             status["last_cycle_time"] = last_time_str
+            status["last_cycle_status"] = lc.get("status")
+            status["last_cycle_duration_ms"] = lc.get("duration_ms")
+
             if not status["is_running"]:
                 status["cycle_status"] = lc.get("status", "OK")
 
             if last_time_str:
-                last_dt = datetime.fromisoformat(last_time_str.replace("Z", "+00:00"))
-                next_dt = last_dt + timedelta(seconds=CYCLE_INTERVAL)
-                status["next_cycle_time"] = next_dt.isoformat()
-                secs = (next_dt - now).total_seconds()
-                status["seconds_until_next_cycle"] = max(0, int(secs))
-    except Exception:
-        pass
+                # Parse — handle both Z and +00:00 suffixes
+                ts = last_time_str.replace("Z", "+00:00")
+                if "+" not in ts and ts.endswith("00"):
+                    ts += "+00:00"
+                last_dt = datetime.fromisoformat(ts)
+    except Exception as e:
+        logger.warning("cycle_status_parse_failed", error=str(e))
+
+    # Compute next cycle time
+    try:
+        if last_dt:
+            next_dt = last_dt + timedelta(seconds=CYCLE_INTERVAL)
+        else:
+            # No last cycle known — estimate: next cycle within one interval from now
+            # Celery beat fires at fixed intervals from worker start.
+            # Best estimate: round up to next 10-min boundary
+            minutes_now = now.minute
+            next_min = ((minutes_now // 10) + 1) * 10
+            if next_min >= 60:
+                next_dt = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            else:
+                next_dt = now.replace(minute=next_min, second=0, microsecond=0)
+
+        status["next_cycle_time"] = next_dt.isoformat()
+        secs = (next_dt - now).total_seconds()
+        status["seconds_until_next_cycle"] = max(0, int(secs))
+
+        # If the computed next is in the past (cycle overdue), show 0
+        if secs < -30:
+            status["seconds_until_next_cycle"] = 0
+            status["next_cycle_time"] = now.isoformat()
+    except Exception as e:
+        logger.warning("cycle_status_next_compute_failed", error=str(e))
 
     # Next 4H bar
     try:

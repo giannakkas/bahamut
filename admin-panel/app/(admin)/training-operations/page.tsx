@@ -188,31 +188,33 @@ function CycleStatusStrip({ cs }: { cs: any }) {
   const nextCycle = useCountdown(cs.next_cycle_time);
   const next4H = useCountdown(cs.next_4h_bar_time);
 
-  // Derive auto training label: ON (has run successfully), WARMING UP (never ran), OFF (no Redis)
   const hasRun = !!cs.last_cycle_time;
-  const autoLabel = !cs.auto_enabled ? "OFF" : cs.is_running ? "SCANNING" : hasRun ? "ON" : "WARMING UP";
-  const autoClr = !cs.auto_enabled ? "text-red-400" : cs.is_running ? "text-bah-cyan" : hasRun ? "text-emerald-400" : "text-amber-300";
-  const autoDot = !cs.auto_enabled ? "bg-red-400" : cs.is_running ? "bg-bah-cyan" : hasRun ? "bg-emerald-400" : "bg-amber-400";
+  const autoLabel = !cs.auto_enabled ? "OFF" : cs.is_running ? "SCANNING" : "ON";
+  const autoClr = !cs.auto_enabled ? "text-red-400" : cs.is_running ? "text-bah-cyan" : "text-emerald-400";
+  const autoDot = !cs.auto_enabled ? "bg-red-400" : cs.is_running ? "bg-bah-cyan" : "bg-emerald-400";
 
-  // System status: RUNNING > OK/DEGRADED/FAILED > IDLE > WAITING
+  const lastStatus = cs.last_cycle_status || cs.cycle_status;
   const sysStatus = cs.is_running ? "RUNNING" :
-    cs.cycle_status === "OK" ? "SUCCESS" :
-    cs.cycle_status === "DEGRADED" ? "DEGRADED" :
-    cs.cycle_status === "FAILED" ? "ERROR" :
-    cs.cycle_status === "waiting" ? "IDLE" : "IDLE";
-  const sysClr = sysStatus === "SUCCESS" ? "text-emerald-400" : sysStatus === "RUNNING" ? "text-bah-cyan" : sysStatus === "DEGRADED" ? "text-amber-300" : sysStatus === "ERROR" ? "text-red-400" : "text-white/40";
+    lastStatus === "OK" ? "WAITING" :
+    lastStatus === "DEGRADED" ? "DEGRADED" :
+    lastStatus === "FAILED" ? "ERROR" : "WAITING";
+  const sysClr = sysStatus === "WAITING" ? "text-emerald-400" :
+    sysStatus === "RUNNING" ? "text-bah-cyan" :
+    sysStatus === "DEGRADED" ? "text-amber-300" :
+    sysStatus === "ERROR" ? "text-red-400" : "text-white/50";
+
+  const nextCycleTime = cs.next_cycle_time ? new Date(cs.next_cycle_time).toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 
   return (
     <div className={`rounded-xl border p-3 flex flex-wrap items-center gap-x-5 gap-y-2 anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-white/[0.025] border-white/[0.08]"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
 
-      {/* Auto Training ON/OFF/WARMING */}
+      {/* Auto Training */}
       <div className="flex items-center gap-2">
         <span className={`w-2.5 h-2.5 rounded-full ${autoDot} ${cs.is_running ? "animate-pulse" : ""}`} />
         <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider">Auto Training</span>
         <span className={`text-[11px] font-extrabold ${autoClr}`}>{autoLabel}</span>
       </div>
 
-      {/* Running progress */}
       {cs.is_running && (
         <div className="flex items-center gap-2">
           <div className="w-20 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
@@ -224,7 +226,6 @@ function CycleStatusStrip({ cs }: { cs: any }) {
 
       <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
-      {/* System status */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Status</span>
         <span className={`text-[11px] font-bold ${sysClr}`}>{sysStatus}</span>
@@ -232,17 +233,18 @@ function CycleStatusStrip({ cs }: { cs: any }) {
 
       <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
-      {/* Next cycle countdown */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Next cycle</span>
         <span className={`text-[13px] font-bold font-mono tabular-nums ${cs.is_running ? "text-bah-cyan" : nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" : "text-white/80"}`}>
           {cs.is_running ? "NOW" : fmtCountdown(nextCycle)}
         </span>
+        {nextCycleTime && !cs.is_running && (
+          <span className="text-[10px] text-white/25 font-mono">({nextCycleTime})</span>
+        )}
       </div>
 
       <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
-      {/* Next 4H bar countdown */}
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Next 4H bar</span>
         <span className="text-[13px] font-bold font-mono tabular-nums text-white/80">{fmtCountdown(next4H)}</span>
@@ -250,10 +252,23 @@ function CycleStatusStrip({ cs }: { cs: any }) {
 
       <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
 
-      {/* Interval + last run */}
-      <div className="flex items-center gap-3 text-[10px] text-white/25 font-mono">
+      <div className="flex items-center gap-2 text-[10px] text-white/30 font-mono">
         <span>every {(cs.cycle_interval_seconds || 600) / 60}m</span>
-        {cs.last_cycle_time && <span>last: {new Date(cs.last_cycle_time).toLocaleTimeString("en-GB", { hour12: false })}</span>}
+        {cs.last_cycle_time && (
+          <>
+            <span className="text-white/15">·</span>
+            <span>last: {new Date(cs.last_cycle_time).toLocaleTimeString("en-GB", { hour12: false })}</span>
+            {cs.last_cycle_status && (
+              <span className={cs.last_cycle_status === "OK" ? "text-emerald-400/60" : cs.last_cycle_status === "DEGRADED" ? "text-amber-300/60" : "text-red-400/60"}>
+                {cs.last_cycle_status}
+              </span>
+            )}
+            {cs.last_cycle_duration_ms != null && (
+              <span className="text-white/20">{cs.last_cycle_duration_ms}ms</span>
+            )}
+          </>
+        )}
+        {!cs.last_cycle_time && <span className="text-white/20">awaiting first cycle</span>}
       </div>
     </div>
   );
