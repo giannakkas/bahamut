@@ -20,7 +20,54 @@ logger = structlog.get_logger()
 SUPPORTED_ASSETS = {"BTCUSD": "BTC/USD", "ETHUSD": "ETH/USD"}
 CANDLE_COUNT = 260          # Need 260 for EMA200 + buffer
 CACHE_TTL = 180             # 3 minutes — plenty for 4H bars
-STALE_THRESHOLD = 6 * 3600  # 6 hours — more than one 4H bar
+STALE_THRESHOLD = 6 * 3600  # 6 hours — default for 24/7 assets (crypto)
+
+
+def _get_stale_threshold(asset: str = "") -> int:
+    """Get stale threshold in seconds, adjusted for market hours.
+
+    Crypto: 6h (24/7)
+    Forex: 8h (nearly 24/5)
+    Stock/Index: 6h during US market hours, 66h outside (covers weekend)
+    Commodity: 8h
+    """
+    try:
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        asset_class = ASSET_CLASS_MAP.get(asset, "")
+    except Exception:
+        asset_class = ""
+
+    if asset_class in ("stock", "index"):
+        if _is_us_market_open():
+            return 6 * 3600      # 6h during market hours
+        else:
+            return 66 * 3600     # 66h covers Fri 4pm → Mon 9:30am ET
+    elif asset_class == "forex":
+        return 8 * 3600          # Forex is nearly 24h on weekdays
+    elif asset_class == "commodity":
+        return 8 * 3600
+    else:
+        return 6 * 3600          # Crypto is 24/7
+
+
+def _is_us_market_open() -> bool:
+    """Check if US stock market is currently open (approx)."""
+    from datetime import datetime, timezone, timedelta
+    now_utc = datetime.now(timezone.utc)
+    # Convert to ET (UTC-5 standard, UTC-4 DST)
+    # Approximate: use UTC-4 Mar-Nov, UTC-5 Nov-Mar
+    month = now_utc.month
+    et_offset = timedelta(hours=-4) if 3 <= month <= 10 else timedelta(hours=-5)
+    now_et = now_utc + et_offset
+
+    # Weekend check (Sat=5, Sun=6)
+    if now_et.weekday() >= 5:
+        return False
+
+    # Market hours: 9:30 - 16:00 ET
+    market_open = now_et.replace(hour=9, minute=30, second=0)
+    market_close = now_et.replace(hour=16, minute=0, second=0)
+    return market_open <= now_et <= market_close
 
 
 def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
@@ -50,7 +97,7 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
             candles = _fetch_from_twelvedata(td_symbol, count)
             if candles and len(candles) >= 50:
                 # Validate
-                valid, reason = validate_candles(candles)
+                valid, reason = validate_candles(candles, asset=asset)
                 if valid:
                     _cache_set(asset, candles)
                     _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
@@ -121,7 +168,7 @@ def _synthetic_fallback(asset: str) -> list[dict]:
 # VALIDATION
 # ═══════════════════════════════════════════════════════
 
-def validate_candles(candles: list[dict]) -> tuple[bool, str]:
+def validate_candles(candles: list[dict], asset: str = "") -> tuple[bool, str]:
     """
     Validate candle data integrity.
     Returns (is_valid, reason).
@@ -148,7 +195,8 @@ def validate_candles(candles: list[dict]) -> tuple[bool, str]:
         last_dt = _parse_timestamp(last_ts)
         now = datetime.now(timezone.utc)
         age = (now - last_dt).total_seconds()
-        if age > STALE_THRESHOLD:
+        threshold = _get_stale_threshold(asset)
+        if age > threshold:
             return False, f"last candle is {age/3600:.1f}h old (stale)"
         if last_dt > now + timedelta(hours=1):
             return False, f"last candle is in the future: {last_ts}"

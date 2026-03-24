@@ -494,10 +494,21 @@ def check_alerts(portfolio_state: dict, engine_state: dict = None):
 
     # Data health checks — auto-resolve when data recovers
     try:
-        from bahamut.data.live_data import get_data_status
+        from bahamut.data.live_data import get_data_status, _is_us_market_open
+        market_open = _is_us_market_open()
         for asset, info in get_data_status().items():
             status = info.get("status", "") if isinstance(info, dict) else str(info)
             detail = info.get("detail", "") if isinstance(info, dict) else ""
+
+            # Skip stale alerts for stocks/indices when US market is closed
+            if status == "STALE" and not market_open:
+                try:
+                    from bahamut.config_assets import ASSET_CLASS_MAP
+                    if ASSET_CLASS_MAP.get(asset, "") in ("stock", "index"):
+                        continue  # Expected — market is closed
+                except Exception:
+                    pass
+
             if status == "ERROR":
                 fire_alert("CRITICAL", f"Data error: {asset}",
                            f"Live data fetch failed for {asset}.\n{detail}",
