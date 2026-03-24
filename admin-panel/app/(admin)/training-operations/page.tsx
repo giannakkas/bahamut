@@ -627,20 +627,24 @@ function AssetsTab({ data }: { data: any }) {
     </Section>
   );
 
-  const counts = data.counts || {};
-  const assets = data.assets || [];
+  const counts: Record<string, number> = data.counts || {};
+  const assets: Array<Record<string, any>> = data.assets || [];
 
   // Filter
-  let filtered = assets;
-  if (filterStatus !== "all") filtered = filtered.filter((a: any) => a.status === filterStatus);
-  if (filterClass !== "all") filtered = filtered.filter((a: any) => a.asset_class === filterClass);
+  let filtered: Array<Record<string, any>> = assets;
+  if (filterStatus !== "all") filtered = filtered.filter(a => a.status === filterStatus);
+  if (filterClass !== "all") filtered = filtered.filter(a => a.asset_class === filterClass);
 
   // Sort
-  filtered = [...filtered].sort((a: any, b: any) => {
-    const va = sortBy === "score" ? a.score : a.asset;
-    const vb = sortBy === "score" ? b.score : b.asset;
-    if (typeof va === "number") return sortDir === "desc" ? vb - va : va - vb;
-    return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  filtered = [...filtered].sort((a, b) => {
+    if (sortBy === "score") {
+      const va = Number(a.score) || 0;
+      const vb = Number(b.score) || 0;
+      return sortDir === "desc" ? vb - va : va - vb;
+    }
+    const va = String(a.asset || "");
+    const vb = String(b.asset || "");
+    return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
   });
 
   const toggleSort = (col: "score" | "asset") => {
@@ -657,8 +661,10 @@ function AssetsTab({ data }: { data: any }) {
     error: { label: "ERROR", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
   };
 
-  const scoreBg = (s: number) => s >= 80 ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : s >= 20 ? "bg-white/30" : "bg-white/10";
-  const uniqueClasses: string[] = [...new Set(assets.map((a: any) => a.asset_class as string))].sort();
+  const scoreBg = (s: number): string => s >= 80 ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : s >= 20 ? "bg-white/30" : "bg-white/10";
+  const classSet = new Set<string>();
+  assets.forEach(a => { if (a.asset_class) classSet.add(String(a.asset_class)); });
+  const uniqueClasses: string[] = Array.from(classSet).sort();
 
   return (
     <div className="space-y-3">
