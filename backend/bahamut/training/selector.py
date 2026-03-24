@@ -118,8 +118,15 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
 
 def select_candidates(signals: list[PendingSignal]) -> dict:
     """
-    Main selection function. Takes all pending signals from a cycle,
-    returns classified decisions: EXECUTE / WATCHLIST / REJECT.
+    Main selection function with portfolio optimization.
+
+    Pipeline:
+      1. Score with composite priority
+      2. Hard threshold → REJECT
+      3. Regime check → WATCHLIST
+      4. Portfolio optimizer (correlation/direction/cluster) → BLOCK/PENALIZE
+      5. Caps (cycle/class/duplicate) → WATCHLIST
+      6. Remaining → EXECUTE (updates portfolio snapshot for next candidate)
     """
     config = _get_config()
     threshold = config["execution_threshold"]
@@ -129,14 +136,23 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
 
     # Load current portfolio state
     from bahamut.training.engine import _load_positions
+    positions_raw = _load_positions()
     open_positions = [
-        {"asset": p.asset, "asset_class": p.asset_class, "strategy": p.strategy}
-        for p in _load_positions()
+        {"asset": p.asset, "asset_class": p.asset_class,
+         "strategy": p.strategy, "direction": p.direction}
+        for p in positions_raw
     ]
     current_count = len(open_positions)
 
     # Load strategy stats
     strategy_stats = _load_strategy_stats()
+
+    # Build mutable portfolio snapshot for optimizer
+    from bahamut.training.portfolio_optimizer import (
+        evaluate_candidate, _build_portfolio_snapshot,
+        get_portfolio_constraints_summary, _ASSET_CLUSTERS,
+    )
+    portfolio_snap = _build_portfolio_snapshot(open_positions)
 
     # Score all signals
     scored = []
@@ -148,13 +164,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             "readiness": sig.readiness_score,
         })
 
-    # Sort by priority descending
     scored.sort(key=lambda x: x["priority"]["total"], reverse=True)
 
-    # Classify
     execute = []
     watchlist = []
     rejected = []
+    optimizer_blocked = []
     class_counts: dict[str, int] = {}
     selected_assets: set[str] = set()
 
@@ -163,44 +178,63 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         pri = item["priority"]
         reasons: list[str] = []
 
-        # Hard threshold
+        # 1. Hard threshold
         if sig.readiness_score < threshold:
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
             continue
 
-        # Regime check
+        # 2. Regime check
         if config["require_regime_alignment"] and sig.regime not in ("TREND", "BREAKOUT"):
             reasons.append(f"Regime {sig.regime} not aligned (need TREND or BREAKOUT)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # Position cap
+        # 3. Portfolio optimizer check
+        opt = evaluate_candidate(
+            asset=sig.asset, asset_class=sig.asset_class,
+            strategy=sig.strategy, direction=sig.direction,
+            portfolio_snap=portfolio_snap,
+        )
+        if opt["decision"] == "BLOCK":
+            reasons.extend(opt["reasons"])
+            dec = _fmt_decision(sig, pri, "WATCHLIST", reasons)
+            dec["optimizer"] = opt
+            optimizer_blocked.append(dec)
+            watchlist.append(dec)
+            continue
+
+        effective_priority = pri["total"]
+        if opt["decision"] == "PENALIZE":
+            effective_priority -= opt["penalty"]
+            reasons.extend(opt["reasons"])
+
+        # 4. Position cap
         if current_count + len(execute) >= max_total:
             reasons.append(f"Portfolio full ({current_count + len(execute)}/{max_total})")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # Per-cycle cap
+        # 5. Per-cycle cap
         if len(execute) >= max_new:
             reasons.append(f"Cycle cap reached ({max_new} max per cycle)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # Per-class cap
+        # 6. Per-class cap (per cycle)
         cls = sig.asset_class
         if class_counts.get(cls, 0) >= max_per_class:
-            reasons.append(f"Class cap reached ({cls}: {max_per_class} max)")
+            reasons.append(f"Class cap reached ({cls}: {max_per_class} max per cycle)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # Duplicate asset check
+        # 7. Duplicate asset
         if sig.asset in selected_assets:
             reasons.append(f"Already selected {sig.asset} this cycle")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # Check for near-duplicate (same class + same strategy already selected)
+        # 8. Near-duplicate
         same_class_same_strat = any(
             e["asset_class"] == cls and e["strategy"] == sig.strategy
             for e in execute
@@ -210,21 +244,45 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue
 
-        # SELECTED
+        # SELECTED — update portfolio snapshot for next candidates
         reason_text = _build_selection_reason(sig, pri, open_positions)
-        execute.append(_fmt_decision(sig, pri, "EXECUTE", [reason_text]))
+        if opt["decision"] == "PENALIZE":
+            reason_text += f" (priority -{opt['penalty']}pts for overlap)"
+        dec = _fmt_decision(sig, pri, "EXECUTE", [reason_text])
+        dec["optimizer"] = opt
+        dec["effective_priority"] = effective_priority
+        execute.append(dec)
         class_counts[cls] = class_counts.get(cls, 0) + 1
         selected_assets.add(sig.asset)
+
+        # Update snapshot so next candidates see this selection
+        portfolio_snap["total"] += 1
+        if sig.direction == "LONG":
+            portfolio_snap["longs"] += 1
+        else:
+            portfolio_snap["shorts"] += 1
+        portfolio_snap["by_class"][cls] = portfolio_snap["by_class"].get(cls, 0) + 1
+        portfolio_snap["by_strategy"][sig.strategy] = portfolio_snap["by_strategy"].get(sig.strategy, 0) + 1
+        portfolio_snap["assets"].add(sig.asset)
+        dir_cls = f"{sig.direction}:{cls}"
+        portfolio_snap["by_direction_class"][dir_cls] = portfolio_snap["by_direction_class"].get(dir_cls, 0) + 1
+        for cid in _ASSET_CLUSTERS.get(sig.asset, []):
+            portfolio_snap["by_cluster"][cid] = portfolio_snap["by_cluster"].get(cid, 0) + 1
+
+    constraints = get_portfolio_constraints_summary(open_positions)
 
     return {
         "execute": execute,
         "watchlist": watchlist,
         "rejected": rejected,
+        "optimizer_blocked": optimizer_blocked,
+        "portfolio_constraints": constraints,
         "summary": {
             "total_signals": len(signals),
             "selected": len(execute),
             "watchlisted": len(watchlist),
             "rejected": len(rejected),
+            "optimizer_blocked": len(optimizer_blocked),
             "config": config,
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
