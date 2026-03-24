@@ -346,6 +346,40 @@ TABLES = [
         updated_at TIMESTAMP DEFAULT NOW()
     )""",
 
+    # ── Training Trades (paper-only, feeds learning) ──
+    """CREATE TABLE IF NOT EXISTS training_trades (
+        id SERIAL PRIMARY KEY,
+        trade_id VARCHAR(20) UNIQUE NOT NULL,
+        position_id VARCHAR(20),
+        asset VARCHAR(30) NOT NULL,
+        asset_class VARCHAR(20) DEFAULT 'unknown',
+        strategy VARCHAR(50) NOT NULL,
+        direction VARCHAR(10) NOT NULL,
+        entry_price DOUBLE PRECISION,
+        exit_price DOUBLE PRECISION,
+        stop_price DOUBLE PRECISION,
+        tp_price DOUBLE PRECISION,
+        size DOUBLE PRECISION,
+        risk_amount DOUBLE PRECISION,
+        pnl DOUBLE PRECISION,
+        pnl_pct DOUBLE PRECISION,
+        entry_time VARCHAR(50),
+        exit_time VARCHAR(50),
+        exit_reason VARCHAR(20),
+        bars_held INTEGER DEFAULT 0,
+        regime VARCHAR(30) DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW()
+    )""",
+
+    """CREATE INDEX IF NOT EXISTS idx_training_trades_asset
+       ON training_trades(asset)""",
+
+    """CREATE INDEX IF NOT EXISTS idx_training_trades_strategy
+       ON training_trades(strategy)""",
+
+    """CREATE INDEX IF NOT EXISTS idx_training_trades_created
+       ON training_trades(created_at DESC)""",
+
     # ── Stress Testing ──
     """CREATE TABLE IF NOT EXISTS stress_test_runs (
         id SERIAL PRIMARY KEY,

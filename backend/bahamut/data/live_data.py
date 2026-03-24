@@ -38,6 +38,13 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
 
     # 2. Try Twelve Data API
     td_symbol = SUPPORTED_ASSETS.get(asset)
+    if not td_symbol:
+        # Training assets: fall through to the full symbol map
+        try:
+            from bahamut.ingestion.adapters.twelvedata import TWELVE_SYMBOL_MAP
+            td_symbol = TWELVE_SYMBOL_MAP.get(asset)
+        except ImportError:
+            pass
     if td_symbol:
         try:
             candles = _fetch_from_twelvedata(td_symbol, count)

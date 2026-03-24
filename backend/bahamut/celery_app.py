@@ -17,6 +17,7 @@ celery_app = Celery(
     include=[
         # ── OPERATIONAL (active) ──
         "bahamut.execution.v7_orchestrator",
+        "bahamut.training.orchestrator",
 
         # ── LEGACY (loaded but not scheduled) ──
         # Kept importable for manual research use, but no beat tasks.
@@ -47,6 +48,15 @@ celery_app.conf.update(
         "v7-trading-cycle": {
             "task": "bahamut.execution.v7_orchestrator.run_v7_cycle",
             "schedule": 120.0,  # Every 2 min — only acts on new 4H bars
+        },
+
+        # ══════════════════════════════════════════════
+        # TRAINING UNIVERSE — paper trading 50 assets
+        # Feeds the learning engine. Isolated from production.
+        # ══════════════════════════════════════════════
+        "training-cycle": {
+            "task": "bahamut.training.orchestrator.run_training_cycle",
+            "schedule": 600.0,  # Every 10 min — batched to respect API rate limits
         },
 
         # ══════════════════════════════════════════════

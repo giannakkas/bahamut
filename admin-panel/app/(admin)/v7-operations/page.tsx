@@ -18,7 +18,7 @@ export default function DailyOperations() {
   const [performance, setPerformance] = useState<any>(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts">("cycle");
+  const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts" | "training">("cycle");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
@@ -321,10 +321,10 @@ export default function DailyOperations() {
 
       {/* ═══ TABS (desktop only) ═══ */}
       <div className="hidden lg:flex gap-1 border-b border-bah-border">
-        {(["cycle","conditions","strategies","positions","trades","alerts"] as const).map(t => (
+        {(["cycle","conditions","strategies","positions","trades","alerts","training"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             tab===t?"border-bah-cyan text-bah-cyan":"border-transparent text-bah-muted hover:text-bah-heading"}`}>
-            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":`⚠️ Alerts (${alerts.length - hiddenAlerts.length})`}
+            {t==="cycle"?"🔍 Cycle Inspector":t==="conditions"?"🎯 Strategy Conditions":t==="strategies"?"📊 Performance":t==="positions"?"📦 Positions":t==="trades"?"🔁 Trades":t==="training"?"🧪 Training":`⚠️ Alerts (${alerts.length - hiddenAlerts.length})`}
           </button>
         ))}
       </div>
@@ -838,6 +838,149 @@ export default function DailyOperations() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ═══ TRAINING UNIVERSE ═══ */}
+      {(tab === "training" || isMobile) && (
+        <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2 px-3">🧪 Training Universe</div>}
+          <TrainingPanel token={token} apiBase={apiBase} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () => string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const r = await fetch(`${apiBase()}/monitoring/training`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (r.ok) setData(await r.json());
+      } catch {}
+      setLoading(false);
+    };
+    load();
+    const iv = setInterval(load, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  if (loading) return <div className="p-6 text-center text-bah-muted text-sm">Loading training data...</div>;
+  if (!data) return <div className="p-6 text-center text-bah-muted text-sm">Training module not active yet. Deploy and wait for the first 10-min cycle.</div>;
+
+  const d = data;
+  return (
+    <div className="p-4 space-y-4">
+      {/* Header stats */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">PAPER ONLY</span>
+          <span className="text-xs text-bah-muted">{d.universe_size || 0} assets in training universe</span>
+        </div>
+        {d.last_cycle && <span className="text-[10px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-bah-heading">{d.open_positions || 0}</div>
+          <div className="text-[10px] text-bah-muted uppercase">Open Positions</div>
+        </div>
+        <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-bah-heading">{d.total_closed_trades || 0}</div>
+          <div className="text-[10px] text-bah-muted uppercase">Closed Trades</div>
+        </div>
+        <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
+          <div className={`text-lg font-bold ${(d.total_pnl||0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+            ${(d.total_pnl||0).toLocaleString(undefined,{minimumFractionDigits:0})}
+          </div>
+          <div className="text-[10px] text-bah-muted uppercase">Total PnL (Paper)</div>
+        </div>
+        <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-bah-heading">{((d.win_rate||0)*100).toFixed(1)}%</div>
+          <div className="text-[10px] text-bah-muted uppercase">Win Rate</div>
+        </div>
+      </div>
+
+      {/* Asset class breakdown */}
+      {d.class_stats && Object.keys(d.class_stats).length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-bah-heading mb-2">By Asset Class</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {Object.entries(d.class_stats).map(([cls, s]: [string, any]) => (
+              <div key={cls} className="bg-bah-bg border border-bah-border rounded-lg p-2.5">
+                <div className="text-[10px] text-bah-muted uppercase mb-1">{cls}</div>
+                <div className="text-xs text-bah-heading font-semibold">{s.trades} trades</div>
+                <div className={`text-[10px] ${s.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  ${s.total_pnl?.toFixed(0)} · {((s.win_rate||0)*100).toFixed(0)}% WR
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Strategy breakdown */}
+      {d.strategy_stats && Object.keys(d.strategy_stats).length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-bah-heading mb-2">By Strategy</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase">
+                <th className="py-2 pr-3">Strategy</th><th className="py-2 pr-3">Trades</th><th className="py-2 pr-3">Win Rate</th><th className="py-2 pr-3">PnL</th>
+              </tr></thead>
+              <tbody>
+                {Object.entries(d.strategy_stats).map(([name, s]: [string, any]) => (
+                  <tr key={name} className="border-b border-bah-border/30">
+                    <td className="py-2 pr-3 text-bah-heading font-medium">{name}</td>
+                    <td className="py-2 pr-3 text-bah-muted">{s.trades}</td>
+                    <td className="py-2 pr-3">{((s.win_rate||0)*100).toFixed(1)}%</td>
+                    <td className={`py-2 pr-3 ${s.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${s.total_pnl?.toFixed(0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Recent trades */}
+      {d.recent_trades && d.recent_trades.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-bah-heading mb-2">Recent Closed Trades</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase">
+                <th className="py-1.5 pr-2">Asset</th><th className="py-1.5 pr-2">Strategy</th><th className="py-1.5 pr-2">Dir</th>
+                <th className="py-1.5 pr-2">PnL</th><th className="py-1.5 pr-2">Exit</th><th className="py-1.5 pr-2">Bars</th>
+              </tr></thead>
+              <tbody>
+                {d.recent_trades.slice(0, 10).map((t: any, i: number) => (
+                  <tr key={i} className="border-b border-bah-border/20">
+                    <td className="py-1.5 pr-2 text-bah-heading">{t.asset}</td>
+                    <td className="py-1.5 pr-2 text-bah-muted">{t.strategy}</td>
+                    <td className="py-1.5 pr-2">{t.direction}</td>
+                    <td className={`py-1.5 pr-2 font-medium ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${t.pnl?.toFixed(2)}</td>
+                    <td className="py-1.5 pr-2 text-bah-muted">{t.exit_reason}</td>
+                    <td className="py-1.5 pr-2 text-bah-muted">{t.bars_held}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {d.total_closed_trades === 0 && (
+        <div className="text-center py-8 text-bah-muted text-sm">
+          <p>No training trades yet.</p>
+          <p className="text-xs mt-1">The training cycle runs every 10 minutes across {d.universe_size || 50} assets. Trades will appear after the first 4H bar boundary.</p>
         </div>
       )}
     </div>

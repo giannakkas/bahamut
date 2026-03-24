@@ -12,6 +12,8 @@ Endpoints:
   GET /api/monitoring/alerts       — recent alerts
   GET /api/monitoring/health       — system health check
 """
+import os
+import json
 import structlog
 from fastapi import APIRouter, Depends
 
@@ -580,6 +582,22 @@ async def dashboard_all(user=Depends(get_current_user)):
         pass
     result["operator_trust"] = trust
 
+    # Training universe summary (lightweight — just counts)
+    try:
+        from bahamut.training.engine import get_open_position_count
+        import redis as _redis
+        _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        last_cycle_raw = _r.get("bahamut:training:last_cycle")
+        training_lc = json.loads(last_cycle_raw) if last_cycle_raw else {}
+        result["training"] = {
+            "open_positions": get_open_position_count(),
+            "last_cycle": training_lc.get("last_cycle"),
+            "total_signals": training_lc.get("signals", 0),
+            "total_trades_closed": training_lc.get("trades_closed", 0),
+        }
+    except Exception:
+        result["training"] = {"open_positions": 0}
+
     return result
 
 
@@ -636,3 +654,34 @@ async def get_data_health_endpoint(user=Depends(get_current_user)):
     """Get data health status for all assets."""
     from bahamut.monitoring.data_health import get_data_health
     return get_data_health()
+
+
+@router.get("/training")
+async def get_training_dashboard(user=Depends(get_current_user)):
+    """Get training universe stats: positions, closed trades, strategy performance, learning progress."""
+    try:
+        from bahamut.training.engine import get_training_stats
+        stats = get_training_stats()
+
+        # Add last cycle info
+        import os, json
+        try:
+            import redis
+            r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            raw = r.get("bahamut:training:last_cycle")
+            if raw:
+                stats["last_cycle"] = json.loads(raw)
+        except Exception:
+            pass
+
+        # Add asset universe info
+        from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+        stats["universe_size"] = len(TRAINING_ASSETS)
+        stats["asset_classes"] = {}
+        for a in TRAINING_ASSETS:
+            ac = ASSET_CLASS_MAP.get(a, "unknown")
+            stats["asset_classes"][ac] = stats["asset_classes"].get(ac, 0) + 1
+
+        return stats
+    except Exception as e:
+        return {"error": str(e), "open_positions": 0, "total_closed_trades": 0}
