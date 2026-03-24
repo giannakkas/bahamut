@@ -527,7 +527,26 @@ def evaluate_early_execution(
         confidence: float (0-100)
         risk_multiplier: float
     """
-    cfg = EARLY_CONFIG
+    # Load adaptive profile if available, else defaults
+    cfg = dict(EARLY_CONFIG)
+    try:
+        from bahamut.training.adaptive_thresholds import get_current_profile
+        profile = get_current_profile()
+        if profile.mode != "WARMING_UP":
+            cfg["min_score"] = profile.early_threshold
+            cfg["max_early_per_cycle"] = profile.max_early_per_cycle
+            cfg["risk_multiplier"] = profile.early_risk_multiplier
+            if not profile.early_execution_enabled:
+                return {
+                    "eligible": False,
+                    "reasons": [f"Early execution disabled (mode: {profile.mode})"],
+                    "confidence": 0,
+                    "risk_multiplier": 1.0,
+                    "failed_conditions": [f"Early execution disabled by adaptive controller"],
+                    "passed_conditions": [],
+                }
+    except Exception:
+        pass
     reasons = []
     failed = []
 

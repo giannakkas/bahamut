@@ -37,17 +37,32 @@ DEFAULT_CONFIG = {
 
 
 def _get_config() -> dict:
-    """Load selector config — from Redis override or defaults."""
+    """Load selector config — adaptive thresholds override defaults."""
+    config = dict(DEFAULT_CONFIG)
+
+    # Apply adaptive thresholds if available
+    try:
+        from bahamut.training.adaptive_thresholds import get_current_profile
+        profile = get_current_profile()
+        if profile.mode != "WARMING_UP":
+            config["execution_threshold"] = profile.standard_threshold
+            config["max_new_per_cycle"] = max(config["max_new_per_cycle"],
+                                               profile.max_early_per_cycle)
+    except Exception:
+        pass
+
+    # Manual Redis override takes highest priority
     try:
         import redis
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         raw = r.get("bahamut:training:selector_config")
         if raw:
             override = json.loads(raw)
-            return {**DEFAULT_CONFIG, **override}
+            config.update(override)
     except Exception:
         pass
-    return dict(DEFAULT_CONFIG)
+
+    return config
 
 
 # ═══════════════════════════════════════════

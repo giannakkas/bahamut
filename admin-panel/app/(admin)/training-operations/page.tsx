@@ -33,6 +33,7 @@ export default function TrainingOperationsPage() {
   const [data, setData] = useState<any>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [decisions, setDecisions] = useState<any>(null);
+  const [adaptive, setAdaptive] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [allAssets, setAllAssets] = useState<any>(null);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk" | "assets">("overview");
@@ -41,16 +42,18 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
-      const [opsRes, candRes, decRes, assetsRes] = await Promise.all([
+      const [opsRes, candRes, decRes, assetsRes, adaptRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/candidates`, { headers: h }),
         fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
         fetch(`${apiBase()}/training/assets`, { headers: h }),
+        fetch(`${apiBase()}/training/adaptive`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (candRes.ok) setCandidates(await candRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
       if (assetsRes.ok) setAllAssets(await assetsRes.json());
+      if (adaptRes.ok) setAdaptive(await adaptRes.json());
     } catch {}
     setLoading(false);
   };
@@ -172,7 +175,7 @@ export default function TrainingOperationsPage() {
         {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
         {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
         {tab === "assets" && <AssetsTab data={allAssets} />}
-        {tab === "learning" && <LearningTab learn={learn} />}
+        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} />}
         {tab === "risk" && <RiskTab expo={expo} />}
       </div>
     </div>
@@ -552,9 +555,82 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
 /* ═══════════════════════════════════════════
    LEARNING TAB
    ═══════════════════════════════════════════ */
-function LearningTab({ learn }: { learn: any }) {
+function LearningTab({ learn, adaptive }: { learn: any; adaptive: any }) {
+  const ap = adaptive?.profile || {};
+  const am = adaptive?.metrics || {};
+  const ah = adaptive?.history || [];
+
+  const modeClr = (m: string): string => m === "AGGRESSIVE" ? "text-bah-cyan" : m === "CONSERVATIVE" ? "text-amber-300" : m === "BALANCED" ? "text-emerald-400" : "text-white/40";
+  const modeBg = (m: string): string => m === "AGGRESSIVE" ? "bg-bah-cyan/15 border-bah-cyan/30" : m === "CONSERVATIVE" ? "bg-amber-500/15 border-amber-500/30" : m === "BALANCED" ? "bg-emerald-500/15 border-emerald-500/30" : "bg-white/[0.04] border-white/10";
+
   return (
     <div className="space-y-4">
+      {/* Adaptive Thresholds */}
+      <Section title="Adaptive Thresholds">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+          <div className="text-center">
+            <span className={`text-sm font-bold px-2.5 py-1 rounded border ${modeBg(ap.mode)}`}>
+              <span className={modeClr(ap.mode)}>{ap.mode || "—"}</span>
+            </span>
+            <div className="text-[8px] text-white/25 uppercase tracking-wider font-semibold mt-1">Mode</div>
+          </div>
+          <Stat l="Std Threshold" v={ap.standard_threshold ?? "—"} />
+          <Stat l="Early Threshold" v={ap.early_threshold ?? "—"} />
+          <Stat l="Early/Cycle" v={ap.max_early_per_cycle ?? "—"} />
+          <Stat l="Early Risk" v={ap.early_risk_multiplier ? `${(ap.early_risk_multiplier * 100).toFixed(0)}%` : "—"} />
+        </div>
+        <div className="flex flex-wrap gap-3 text-[10px] mb-3">
+          <span className={`px-2 py-0.5 rounded border ${ap.early_execution_enabled ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25" : "bg-red-500/10 text-red-300/60 border-red-500/20"}`}>
+            Early Exec: {ap.early_execution_enabled ? "ON" : "OFF"}
+          </span>
+          <span className="text-white/30">Samples: {ap.total_samples || 0}</span>
+          {ap.last_adjustment_reason && <span className="text-white/25 max-w-[400px] truncate">{ap.last_adjustment_reason}</span>}
+        </div>
+
+        {/* Rolling metrics */}
+        {am.total_trades > 0 && (
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-3 border-t border-white/[0.06]">
+            <Stat l="Win Rate" v={`${((am.win_rate || 0) * 100).toFixed(0)}%`} c={(am.win_rate || 0) >= 0.5 ? "text-emerald-400" : "text-red-400"} />
+            <Stat l="Profit Factor" v={(am.profit_factor || 0).toFixed(1)} c={(am.profit_factor || 0) >= 1.0 ? "text-emerald-400" : "text-red-400"} />
+            <Stat l="Expectancy" v={`$${(am.expectancy || 0).toFixed(0)}`} c={(am.expectancy || 0) >= 0 ? "text-emerald-400" : "text-red-400"} />
+            <Stat l="Drawdown" v={`${(am.drawdown_pct || 0).toFixed(1)}%`} c={(am.drawdown_pct || 0) < 3 ? "text-emerald-400" : "text-amber-300"} />
+            <Stat l="Stop-Out" v={`${((am.stop_out_rate || 0) * 100).toFixed(0)}%`} />
+            <Stat l="Trades" v={am.total_trades || 0} />
+          </div>
+        )}
+
+        {/* Early vs Standard comparison */}
+        {(am.early_count > 0 || am.standard_count > 0) && (
+          <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-white/[0.06]">
+            <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-2.5">
+              <div className="text-[9px] text-white/30 uppercase tracking-wider font-bold mb-1">Standard</div>
+              <div className="text-xs text-white">{am.standard_count || 0} trades · {((am.standard_win_rate || 0) * 100).toFixed(0)}% WR</div>
+            </div>
+            <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-2.5">
+              <div className="text-[9px] text-amber-300/60 uppercase tracking-wider font-bold mb-1">⚡ Early</div>
+              <div className="text-xs text-white">{am.early_count || 0} trades · {((am.early_win_rate || 0) * 100).toFixed(0)}% WR</div>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Adjustment History */}
+      {ah.length > 0 && (
+        <Section title="Adjustment History">
+          <div className="space-y-1.5">
+            {ah.slice(0, 8).map((h: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 text-[10px] py-1.5 border-b border-white/[0.04]">
+                <span className="text-white/25 font-mono w-[130px] shrink-0">{h.timestamp ? new Date(h.timestamp).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                <span className={`px-1.5 py-0.5 rounded border font-bold ${modeBg(h.new_mode)} ${modeClr(h.new_mode)}`}>{h.new_mode}</span>
+                <span className="text-white/35">std:{h.new_standard_threshold} early:{h.new_early_threshold}</span>
+                <span className="text-white/25 flex-1 truncate">{h.reason}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Learning Progress (existing) */}
       <Section title="Learning Progress">
         <div className="flex items-center gap-4 mb-4">
           <div className="flex-1 bg-white/[0.04] rounded-full h-3.5 overflow-hidden">
@@ -566,7 +642,7 @@ function LearningTab({ learn }: { learn: any }) {
           <Stat l="Samples" v={learn.total_samples} />
           <Stat l="Status" v={learn.status?.toUpperCase() || "—"} c={learn.status === "ready" ? "text-emerald-400" : learn.status === "learning" ? "text-bah-cyan" : "text-amber-300"} />
           <Stat l="Trust" v={learn.trust_ready ? "READY" : "WARMING"} c={learn.trust_ready ? "text-emerald-400" : "text-white/30"} />
-          <Stat l="Adaptive" v={learn.adaptive_ready ? "READY" : "WARMING"} c={learn.adaptive_ready ? "text-emerald-400" : "text-white/30"} />
+          <Stat l="Adaptive" v={ap.mode && ap.mode !== "WARMING_UP" ? "ACTIVE" : "WARMING"} c={ap.mode && ap.mode !== "WARMING_UP" ? "text-emerald-400" : "text-white/30"} />
         </div>
         <div className="space-y-2">
           {(learn.milestones || []).map((m: any, i: number) => (

@@ -153,6 +153,14 @@ def run_training_cycle():
     except Exception as e:
         logger.debug("training_cache_failed", error=str(e))
 
+    # Phase 5: Adaptive threshold update
+    try:
+        from bahamut.training.adaptive_thresholds import run_adaptive_update
+        profile = run_adaptive_update()
+        logger.info("training_adaptive_updated", mode=profile.mode)
+    except Exception as e:
+        logger.debug("training_adaptive_failed", error=str(e))
+
     return {
         "status": "OK",
         "processed": processed,

@@ -745,3 +745,25 @@ async def get_execution_decisions(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("execution_decisions_failed", error=str(e))
         return {"execute": [], "watchlist": [], "rejected": [], "summary": {"total_signals": 0}}
+
+
+@router.get("/adaptive")
+async def get_adaptive_state(user=Depends(get_current_user)):
+    """Get current adaptive threshold state, metrics, and adjustment history."""
+    try:
+        from bahamut.training.adaptive_thresholds import (
+            get_current_profile, get_last_metrics, get_adjustment_history,
+            BOUNDS, POLICY,
+        )
+        from dataclasses import asdict
+        profile = get_current_profile()
+        return {
+            "profile": asdict(profile),
+            "metrics": get_last_metrics(),
+            "history": get_adjustment_history(),
+            "bounds": BOUNDS,
+            "policy": {k: v for k, v in POLICY.items() if k not in ("conservative_triggers", "aggressive_triggers")},
+        }
+    except Exception as e:
+        logger.error("adaptive_state_failed", error=str(e))
+        return {"profile": {}, "metrics": {}, "history": []}
