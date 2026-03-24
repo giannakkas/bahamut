@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { apiBase } from "@/lib/utils";
 
 /* ═══════════════════════════════════════════
@@ -620,6 +620,7 @@ function AssetsTab({ data }: { data: any }) {
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterClass, setFilterClass] = useState<string>("all");
+  const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
 
   if (!data || !data.assets) return (
     <Section title="All Assets">
@@ -734,8 +735,11 @@ function AssetsTab({ data }: { data: any }) {
             <tbody>
               {filtered.map((a: any, i: number) => {
                 const st = statusCfg[a.status] || statusCfg.no_signal;
+                const isExpanded = expandedAsset === a.asset;
                 return (
-                  <tr key={i} className={`border-b border-white/[0.03] hover-row ${a.status === "ready" ? "bg-emerald-500/[0.02]" : ""}`}>
+                  <React.Fragment key={i}>
+                  <tr onClick={() => setExpandedAsset(isExpanded ? null : a.asset)}
+                      className={`border-b border-white/[0.03] hover-row cursor-pointer ${a.status === "ready" ? "bg-emerald-500/[0.02]" : ""} ${isExpanded ? "bg-white/[0.02]" : ""}`}>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-2">
                         <div className="w-10 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
@@ -744,7 +748,12 @@ function AssetsTab({ data }: { data: any }) {
                         <span className={`text-xs font-bold min-w-[24px] text-center ${a.score >= 80 ? "text-emerald-300" : a.score >= 60 ? "text-amber-300" : a.score > 0 ? "text-white/50" : "text-white/20"}`}>{a.score}</span>
                       </div>
                     </td>
-                    <td className="py-2 px-3 text-white font-semibold">{a.asset}</td>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-white/25">{isExpanded ? "▾" : "▸"}</span>
+                        <span className="text-white font-semibold">{a.asset}</span>
+                      </div>
+                    </td>
                     <td className="py-2 px-3 text-white/40">{a.asset_class}</td>
                     <td className="py-2 px-3">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${st.cls}`}>{st.label}</span>
@@ -770,12 +779,115 @@ function AssetsTab({ data }: { data: any }) {
                     </td>
                     <td className="py-2 px-3 text-[10px] text-white/45 max-w-[220px] truncate">{a.reason}</td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="bg-white/[0.015]">
+                      <td colSpan={10} className="px-4 py-3">
+                        <AssetBreakdown asset={a} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       </Section>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   ASSET SCORE BREAKDOWN (expandable row)
+   ═══════════════════════════════════════════ */
+function AssetBreakdown({ asset: a }: { asset: any }) {
+  const bd = a.score_breakdown || {};
+  const missing = a.missing_conditions || [];
+  const explanation = a.explanation || "";
+  const reasons = a.reasons || [];
+
+  // Compute max component value for bar scaling
+  const components = Object.entries(bd).filter(([_, v]) => typeof v === "number") as Array<[string, number]>;
+  const maxVal = Math.max(35, ...components.map(([_, v]) => Math.abs(v)));
+
+  const labelMap: Record<string, string> = {
+    regime: "Regime", ema_proximity: "EMA Proximity", ema_convergence: "EMA Convergence",
+    rsi: "RSI", volume: "Volume", breakout_proximity: "Breakout Proximity",
+    confirmation: "Confirmation", volatility: "Volatility", crash_penalty: "Crash Penalty",
+  };
+
+  const barClr = (v: number): string => v >= 20 ? "bg-emerald-400" : v >= 10 ? "bg-emerald-400/60" : v > 0 ? "bg-white/30" : v < 0 ? "bg-red-400" : "bg-white/10";
+
+  if (!components.length && !explanation) {
+    return <div className="text-xs text-white/30">No breakdown available for this asset.</div>;
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Score Breakdown */}
+      <div>
+        <div className="text-[10px] text-white/40 uppercase tracking-wider font-bold mb-2">Score Breakdown</div>
+        <div className="space-y-1.5">
+          {components.map(([key, val]) => (
+            <div key={key} className="flex items-center gap-2">
+              <span className="text-[10px] text-white/50 w-[100px] truncate">{labelMap[key] || key}</span>
+              <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+                {val >= 0 ? (
+                  <div className={`h-full rounded-full ${barClr(val)}`} style={{ width: `${(val / maxVal) * 100}%` }} />
+                ) : (
+                  <div className="h-full flex justify-end">
+                    <div className="bg-red-400 rounded-full h-full" style={{ width: `${(Math.abs(val) / maxVal) * 100}%` }} />
+                  </div>
+                )}
+              </div>
+              <span className={`text-[10px] font-bold w-[28px] text-right ${val > 0 ? "text-emerald-300" : val < 0 ? "text-red-300" : "text-white/20"}`}>
+                {val > 0 ? `+${val}` : val}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
+            <span className="text-[10px] text-white/70 w-[100px] font-bold">Total</span>
+            <div className="flex-1" />
+            <span className="text-xs font-bold text-white">{a.score}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Explanation */}
+      <div>
+        <div className="text-[10px] text-white/40 uppercase tracking-wider font-bold mb-2">AI Explanation</div>
+        <p className="text-[11px] text-white/60 leading-relaxed mb-3">{explanation || "No explanation available."}</p>
+        {reasons.length > 0 && (
+          <>
+            <div className="text-[10px] text-white/30 uppercase tracking-wider font-bold mb-1.5">Factors</div>
+            <div className="space-y-1">
+              {reasons.slice(0, 5).map((r: string, i: number) => (
+                <div key={i} className="text-[10px] text-white/45 flex items-start gap-1.5">
+                  <span className="text-white/20 mt-0.5">•</span>
+                  <span>{r}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Missing Conditions */}
+      <div>
+        <div className="text-[10px] text-white/40 uppercase tracking-wider font-bold mb-2">Missing to Trigger</div>
+        {missing.length > 0 ? (
+          <div className="space-y-1.5">
+            {missing.map((m: string, i: number) => (
+              <div key={i} className="flex items-start gap-2 text-[11px]">
+                <span className="text-amber-400/70 mt-0.5 shrink-0">⚡</span>
+                <span className="text-white/55">{m}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[11px] text-emerald-400/60">All conditions met — signal may fire on next bar evaluation.</div>
+        )}
+      </div>
     </div>
   );
 }
