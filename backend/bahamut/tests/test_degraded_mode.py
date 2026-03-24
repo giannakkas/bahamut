@@ -179,8 +179,8 @@ def test_fresh_data_allows_asset():
     assert can is True, f"Fresh data should allow trading. Reasons: {reasons}"
 
 
-def test_degraded_data_allows_asset():
-    """Degraded data (15min-6h) should still allow trading."""
+def test_degraded_data_blocks_asset():
+    """Degraded data (1 bar behind) should block new entries per spec."""
     _fresh_readiness()
     from bahamut.execution.system_readiness import (
         can_system_trade, mark_reconciliation_success, update_asset_data_health,
@@ -190,7 +190,7 @@ def test_degraded_data_allows_asset():
     update_asset_data_health("BTCUSD", "DEGRADED", age_seconds=3000)
 
     can, reasons = can_system_trade(asset="BTCUSD")
-    assert can is True, "Degraded data should still allow trading"
+    assert can is False, "DEGRADED data should block entries"
 
 
 def test_per_asset_isolation():

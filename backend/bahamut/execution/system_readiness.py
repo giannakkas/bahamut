@@ -122,7 +122,7 @@ def is_asset_data_fresh(asset: str) -> bool:
     health = _read_state().get(f"data:{asset}")
     if not health:
         return False
-    if health["status"] in ("STALE", "MISSING"):
+    if health["status"] in ("STALE", "MISSING", "DEGRADED"):
         return False
     if health.get("age_seconds") is not None and health["age_seconds"] > MAX_DATA_AGE_SECONDS:
         return False
@@ -149,7 +149,7 @@ def can_system_trade(asset: str = "") -> tuple[bool, list[str]]:
         health = state.get(f"data:{asset}")
         if not health:
             reasons.append(f"DATA_NOT_FRESH: {asset} status=UNKNOWN (no data recorded)")
-        elif health.get("status") in ("STALE", "MISSING"):
+        elif health.get("status") in ("STALE", "MISSING", "DEGRADED"):
             reasons.append(f"DATA_NOT_FRESH: {asset} status={health['status']} age={health.get('age_seconds', '?')}s")
         elif health.get("age_seconds") is not None and health["age_seconds"] > MAX_DATA_AGE_SECONDS:
             reasons.append(f"DATA_NOT_FRESH: {asset} age={health['age_seconds']}s > {MAX_DATA_AGE_SECONDS}s")

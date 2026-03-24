@@ -65,9 +65,9 @@ def is_data_stale(last_bar_ts: str, now_utc: datetime = None, tolerance_minutes:
         return True
 
 
-def get_asset_timing(last_bar_ts: str, last_processed_ts: str = "") -> dict:
+def get_asset_timing(last_bar_ts: str, last_processed_ts: str = "", now_utc: datetime = None) -> dict:
     """Get full timing info for an asset. Delegates freshness to canonical module."""
-    now = datetime.now(timezone.utc)
+    now = now_utc or datetime.now(timezone.utc)
     nxt = next_4h_close_utc(now)
     secs = seconds_until_next_4h_close(now)
 
