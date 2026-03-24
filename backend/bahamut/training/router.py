@@ -37,8 +37,10 @@ async def get_training_operations(user=Depends(get_current_user)):
 
     result = {
         "generated_at": now.isoformat(),
+        "cycle_status": _build_cycle_status(r, now),
         "kpi": _build_kpi(r),
         "cycle_health": _build_cycle_health(r),
+        "recent_cycles": _build_recent_cycles(r),
         "positions": _build_positions(r),
         "closed_trades": _build_closed_trades(),
         "strategy_breakdown": _build_strategy_breakdown(r),
@@ -49,6 +51,83 @@ async def get_training_operations(user=Depends(get_current_user)):
         "alerts": _build_alerts(r),
     }
     return result
+
+
+def _build_cycle_status(r, now) -> dict:
+    """Live cycle status with timing data for countdown timers."""
+    from bahamut.config_assets import TRAINING_ASSETS
+
+    CYCLE_INTERVAL = 600  # 10 minutes
+
+    status = {
+        "auto_enabled": True,
+        "cycle_interval_seconds": CYCLE_INTERVAL,
+        "universe_size": len(TRAINING_ASSETS),
+        "is_running": False,
+        "running_progress": None,
+        "last_cycle_time": None,
+        "next_cycle_time": None,
+        "seconds_until_next_cycle": None,
+        "next_4h_bar_time": None,
+        "seconds_until_4h_bar": None,
+        "cycle_status": "unknown",
+    }
+
+    if not r:
+        return status
+
+    # Running state
+    try:
+        raw = r.get("bahamut:training:running")
+        if raw:
+            running = json.loads(raw)
+            status["is_running"] = running.get("is_running", False)
+            if status["is_running"]:
+                prog_raw = r.get("bahamut:training:progress")
+                if prog_raw:
+                    status["running_progress"] = json.loads(prog_raw)
+    except Exception:
+        pass
+
+    # Last cycle + compute next
+    try:
+        raw = r.get("bahamut:training:last_cycle")
+        if raw:
+            lc = json.loads(raw)
+            last_time_str = lc.get("last_cycle")
+            status["last_cycle_time"] = last_time_str
+            status["cycle_status"] = lc.get("status", "OK")
+
+            if last_time_str:
+                last_dt = datetime.fromisoformat(last_time_str.replace("Z", "+00:00"))
+                next_dt = last_dt + __import__("datetime").timedelta(seconds=CYCLE_INTERVAL)
+                status["next_cycle_time"] = next_dt.isoformat()
+                secs = (next_dt - now).total_seconds()
+                status["seconds_until_next_cycle"] = max(0, int(secs))
+    except Exception:
+        pass
+
+    # Next 4H bar
+    try:
+        from bahamut.monitoring.data_health import next_4h_close
+        next_4h = next_4h_close(now)
+        status["next_4h_bar_time"] = next_4h.isoformat()
+        status["seconds_until_4h_bar"] = max(0, int((next_4h - now).total_seconds()))
+    except Exception:
+        pass
+
+    return status
+
+
+def _build_recent_cycles(r) -> list[dict]:
+    """Last 10 cycle history entries."""
+    if not r:
+        return []
+    try:
+        raw_list = r.lrange("bahamut:training:cycle_history", 0, 9)
+        return [json.loads(x) for x in raw_list] if raw_list else []
+    except Exception:
+        return []
 
 
 def _build_kpi(r) -> dict:

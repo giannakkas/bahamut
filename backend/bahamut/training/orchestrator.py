@@ -48,16 +48,17 @@ def run_training_cycle():
     from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
     from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_RISK_PER_TRADE_PCT
 
+    # Mark cycle as running (visible to dashboard)
+    _set_running(True, len(TRAINING_ASSETS))
+
     start = time.time()
     logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
 
-    # Track last processed bars per asset (Redis-backed)
     processed = 0
     errors = 0
     signals_generated = 0
     trades_closed = 0
 
-    # Process in batches to respect API rate limits
     batch_size = 8
     for i in range(0, len(TRAINING_ASSETS), batch_size):
         batch = TRAINING_ASSETS[i:i + batch_size]
@@ -78,7 +79,9 @@ def run_training_cycle():
                 errors += 1
                 logger.debug("training_asset_error", asset=asset, error=str(e))
 
-        # Rate limit gap between batches
+            # Update progress counter for live dashboard
+            _set_progress(processed + errors, len(TRAINING_ASSETS))
+
         if i + batch_size < len(TRAINING_ASSETS):
             time.sleep(3)
 
@@ -88,8 +91,8 @@ def run_training_cycle():
                 signals=signals_generated, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
-    # Store cycle stats in Redis for dashboard
     _record_cycle_stats(processed, errors, signals_generated, trades_closed, duration_ms)
+    _set_running(False, 0)
 
     return {
         "status": "OK",
@@ -285,14 +288,48 @@ def _record_cycle_stats(processed: int, errors: int, signals: int, trades_closed
     import os, json, redis as _redis
     try:
         r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        now_iso = datetime.now(timezone.utc).isoformat()
+        status = "OK" if processed > 0 and errors == 0 else "DEGRADED" if processed > 0 else "FAILED"
+
         stats = {
-            "last_cycle": datetime.now(timezone.utc).isoformat(),
+            "last_cycle": now_iso,
             "processed": processed,
             "errors": errors,
             "signals": signals,
             "trades_closed": trades_closed,
             "duration_ms": duration_ms,
+            "status": status,
         }
         r.set("bahamut:training:last_cycle", json.dumps(stats))
+
+        # Append to cycle history (keep last 20)
+        r.lpush("bahamut:training:cycle_history", json.dumps(stats))
+        r.ltrim("bahamut:training:cycle_history", 0, 19)
+    except Exception:
+        pass
+
+
+def _set_running(is_running: bool, total_assets: int):
+    """Set running flag visible to dashboard."""
+    import os, json, redis as _redis
+    try:
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.set("bahamut:training:running", json.dumps({
+            "is_running": is_running,
+            "total_assets": total_assets,
+            "started_at": datetime.now(timezone.utc).isoformat() if is_running else None,
+        }), ex=120)  # Auto-expire in 2min (safety)
+    except Exception:
+        pass
+
+
+def _set_progress(current: int, total: int):
+    """Update scan progress for live dashboard."""
+    import os, json, redis as _redis
+    try:
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.set("bahamut:training:progress", json.dumps({
+            "current": current, "total": total,
+        }), ex=120)
     except Exception:
         pass
