@@ -32,6 +32,7 @@ function fmtCountdown(s: number | null): string {
 export default function TrainingOperationsPage() {
   const [data, setData] = useState<any>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
+  const [decisions, setDecisions] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [allAssets, setAllAssets] = useState<any>(null);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk" | "assets">("overview");
@@ -40,12 +41,14 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
-      const [opsRes, candRes] = await Promise.all([
+      const [opsRes, candRes, decRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/candidates`, { headers: h }),
+        fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (candRes.ok) setCandidates(await candRes.json());
+      if (decRes.ok) setDecisions(await decRes.json());
     } catch {}
     try {
       const r = await fetch(`${apiBase()}/training/assets`, { headers: h });
@@ -148,6 +151,13 @@ export default function TrainingOperationsPage() {
       <div className="anim-slide" style={{ animationDelay: "0.12s" }}>
         <CandidatesSection candidates={candidates} />
       </div>
+
+      {/* ═══ EXECUTION DECISIONS ═══ */}
+      {decisions && (decisions.execute?.length > 0 || decisions.watchlist?.length > 0) && (
+        <div className="anim-slide" style={{ animationDelay: "0.15s" }}>
+          <ExecutionDecisions decisions={decisions} />
+        </div>
+      )}
 
       {/* ═══ TABS ═══ */}
       <div className="flex border-b border-white/[0.08] overflow-x-auto">
@@ -793,6 +803,74 @@ function AssetsTab({ data }: { data: any }) {
           </table>
         </div>
       </Section>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   EXECUTION DECISIONS
+   ═══════════════════════════════════════════ */
+function ExecutionDecisions({ decisions }: { decisions: any }) {
+  const exec = decisions.execute || [];
+  const watch = decisions.watchlist || [];
+  const rej = decisions.rejected || [];
+  const summary = decisions.summary || {};
+
+  const decClr: Record<string, string> = {
+    EXECUTE: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+    WATCHLIST: "bg-amber-500/15 text-amber-300 border-amber-500/35",
+    REJECT: "bg-white/[0.03] text-white/30 border-white/[0.06]",
+  };
+
+  const allItems = [
+    ...exec.map((d: any) => ({ ...d, _group: "EXECUTE" })),
+    ...watch.map((d: any) => ({ ...d, _group: "WATCHLIST" })),
+  ];
+
+  if (allItems.length === 0) return null;
+
+  return (
+    <div className="bg-white/[0.025] border border-white/[0.08] rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-white tracking-tight">⚡ Execution Decisions</span>
+          {exec.length > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">{exec.length} EXECUTE</span>
+          )}
+          {watch.length > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{watch.length} WATCH</span>
+          )}
+        </div>
+        <span className="text-[10px] text-white/25 font-mono">
+          {summary.total_signals || 0} signals → {summary.selected || 0} selected · threshold ≥{summary.config?.execution_threshold || 80}
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        {allItems.map((d: any, i: number) => (
+          <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${d._group === "EXECUTE" ? "bg-emerald-500/[0.03] border-emerald-500/15" : "bg-white/[0.01] border-white/[0.04]"}`}>
+            <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
+            <span className="text-xs text-white font-bold w-[70px] shrink-0">{d.asset}</span>
+            <span className="text-[10px] text-white/40 w-[50px] shrink-0">{d.strategy}</span>
+            <span className={`text-[10px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{d.direction}</span>
+            <span className="text-[10px] text-white/50 w-[30px] shrink-0 text-center">{d.readiness_score}</span>
+            <span className="text-[10px] text-white/35 w-[30px] shrink-0 text-center font-mono">{d.priority_score}</span>
+
+            {/* Priority breakdown mini-bars */}
+            {d.priority_breakdown && (
+              <div className="flex gap-0.5 shrink-0">
+                {Object.entries(d.priority_breakdown as Record<string, number>).slice(0, 5).map(([k, v]) => (
+                  <div key={k} title={`${k}: ${v}`} className="w-3 bg-white/[0.06] rounded-sm overflow-hidden" style={{ height: "12px" }}>
+                    <div className={`w-full rounded-sm ${Number(v) > 10 ? "bg-emerald-400/60" : Number(v) > 0 ? "bg-white/20" : "bg-transparent"}`} style={{ height: `${Math.min(100, (Number(v) / 20) * 100)}%`, marginTop: "auto" }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <span className="text-[10px] text-white/45 flex-1 truncate">{(d.reasons || []).join(" · ")}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

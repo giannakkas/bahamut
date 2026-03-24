@@ -584,3 +584,15 @@ async def get_all_assets(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))
         return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
+
+
+@router.get("/execution-decisions")
+async def get_execution_decisions(user=Depends(get_current_user)):
+    """Get last execution selection decisions from the most recent training cycle.
+    Shows which signals were selected, watchlisted, or rejected with reasons."""
+    try:
+        from bahamut.training.selector import get_last_decisions
+        return get_last_decisions()
+    except Exception as e:
+        logger.error("execution_decisions_failed", error=str(e))
+        return {"execute": [], "watchlist": [], "rejected": [], "summary": {"total_signals": 0}}

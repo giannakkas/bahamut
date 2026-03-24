@@ -42,13 +42,12 @@ def _celery_task(func):
 def run_training_cycle():
     """
     Main training cycle. Runs every 10 minutes.
-    Fetches data for all training assets, evaluates strategies,
-    opens/closes paper positions.
+    Pipeline: fetch data → evaluate strategies → SELECTOR picks best → execute selected only.
     """
     from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
     from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_RISK_PER_TRADE_PCT
+    from bahamut.training.selector import PendingSignal, select_candidates, save_last_decisions
 
-    # Mark cycle as running (visible to dashboard)
     _set_running(True, len(TRAINING_ASSETS))
 
     start = time.time()
@@ -56,39 +55,81 @@ def run_training_cycle():
 
     processed = 0
     errors = 0
-    signals_generated = 0
     trades_closed = 0
+    pending_signals: list[PendingSignal] = []
 
+    # Phase 1: Scan all assets — collect signals, update positions, DO NOT execute yet
     batch_size = 8
     for i in range(0, len(TRAINING_ASSETS), batch_size):
         batch = TRAINING_ASSETS[i:i + batch_size]
 
         for asset in batch:
             try:
-                result = _process_training_asset(
+                result = _scan_training_asset(
                     asset,
                     asset_class=ASSET_CLASS_MAP.get(asset, "unknown"),
-                    virtual_capital=TRAINING_VIRTUAL_CAPITAL,
-                    risk_pct=TRAINING_RISK_PER_TRADE_PCT,
                 )
-                if result.get("signal"):
-                    signals_generated += 1
                 trades_closed += result.get("trades_closed", 0)
+                pending_signals.extend(result.get("signals", []))
                 processed += 1
             except Exception as e:
                 errors += 1
                 logger.debug("training_asset_error", asset=asset, error=str(e))
 
-            # Update progress counter for live dashboard
             _set_progress(processed + errors, len(TRAINING_ASSETS))
 
         if i + batch_size < len(TRAINING_ASSETS):
             time.sleep(3)
 
+    # Phase 2: Selector picks which signals to execute
+    decisions = select_candidates(pending_signals)
+    save_last_decisions(decisions)
+    signals_generated = len(pending_signals)
+    selected = decisions.get("execute", [])
+
+    logger.info("training_selector_result",
+                signals=signals_generated, selected=len(selected),
+                watchlisted=len(decisions.get("watchlist", [])),
+                rejected=len(decisions.get("rejected", [])))
+
+    # Phase 3: Execute only selected signals
+    trades_opened = 0
+    from bahamut.training.engine import open_training_position
+    risk_amount = TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT
+
+    for dec in selected:
+        try:
+            # Find the original PendingSignal
+            sig = next((s for s in pending_signals
+                        if s.asset == dec["asset"] and s.strategy == dec["strategy"]), None)
+            if not sig:
+                continue
+
+            pos = open_training_position(
+                asset=sig.asset,
+                asset_class=sig.asset_class,
+                strategy=sig.strategy,
+                direction=sig.direction,
+                entry_price=sig.entry_price,
+                sl_pct=sig.sl_pct,
+                tp_pct=sig.tp_pct,
+                risk_amount=risk_amount,
+                regime=sig.regime,
+                max_hold_bars=sig.max_hold_bars,
+            )
+            if pos:
+                trades_opened += 1
+                logger.info("training_selected_trade",
+                            asset=sig.asset, strategy=sig.strategy,
+                            direction=sig.direction, priority=dec.get("priority_score", 0))
+        except Exception as e:
+            logger.warning("training_execute_failed", asset=dec["asset"], error=str(e))
+
     duration_ms = int((time.time() - start) * 1000)
     logger.info("training_cycle_complete",
                 processed=processed, errors=errors,
-                signals=signals_generated, trades_closed=trades_closed,
+                signals=signals_generated, selected=len(selected),
+                trades_opened=trades_opened, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
     _record_cycle_stats(processed, errors, signals_generated, trades_closed, duration_ms)
@@ -99,39 +140,37 @@ def run_training_cycle():
         "processed": processed,
         "errors": errors,
         "signals": signals_generated,
+        "selected": len(selected),
+        "trades_opened": trades_opened,
         "trades_closed": trades_closed,
         "duration_ms": duration_ms,
     }
 
 
-def _process_training_asset(
-    asset: str,
-    asset_class: str,
-    virtual_capital: float,
-    risk_pct: float,
-) -> dict:
-    """Process a single training asset: fetch data → evaluate → paper trade."""
-    from bahamut.training.engine import (
-        open_training_position, update_positions_for_asset,
-    )
+def _scan_training_asset(asset: str, asset_class: str) -> dict:
+    """Scan a single asset: fetch data → evaluate strategies → collect signals.
+    Does NOT execute — returns PendingSignal objects for the selector."""
+    from bahamut.training.engine import update_positions_for_asset
+    from bahamut.training.selector import PendingSignal
+    from bahamut.training.candidates import score_ema_cross, score_breakout
 
-    result = {"signal": False, "trades_closed": 0}
+    result: dict = {"signals": [], "trades_closed": 0}
 
-    # 1. Fetch candles
     candles = _fetch_training_candles(asset)
     if not candles or len(candles) < 50:
         return result
 
-    # 2. Check if new bar (compare to last known)
     latest_time = candles[-1].get("datetime", "")
+
+    # Always update existing positions with latest price
+    bar = _make_bar(candles[-1])
+    closed = update_positions_for_asset(asset, bar)
+    result["trades_closed"] = len(closed)
+
+    # Only evaluate strategies on new bars
     if not _is_training_new_bar(asset, latest_time):
-        # Still update existing positions with latest price
-        bar = _make_bar(candles[-1])
-        closed = update_positions_for_asset(asset, bar)
-        result["trades_closed"] = len(closed)
         return result
 
-    # 3. Compute indicators
     try:
         from bahamut.features.indicators import compute_indicators
         indicators = compute_indicators(candles)
@@ -142,7 +181,6 @@ def _process_training_asset(
     if not indicators:
         return result
 
-    # 4. Detect regime
     regime = "RANGE"
     try:
         from bahamut.regime.v8_detector import detect_regime
@@ -151,15 +189,8 @@ def _process_training_asset(
     except Exception:
         pass
 
-    # 5. Update existing positions with this bar
-    bar = _make_bar(candles[-1])
-    closed = update_positions_for_asset(asset, bar)
-    result["trades_closed"] = len(closed)
-
-    # 6. Evaluate strategies (same ones as production)
+    # Evaluate strategies and collect as PendingSignals (don't execute)
     strategies = _get_strategies()
-    risk_amount = virtual_capital * risk_pct
-
     for strat_name, strategy in strategies.items():
         try:
             signal = strategy.evaluate(candles, indicators, prev_indicators, asset=asset)
@@ -172,26 +203,34 @@ def _process_training_asset(
             continue
 
         if signal:
-            signal.asset = asset
-            pos = open_training_position(
+            # Get readiness score from candidates scorer
+            readiness = 50  # default
+            try:
+                if "v5" in strat_name:
+                    c = score_ema_cross(asset, asset_class, strat_name, candles, indicators, prev_indicators)
+                    if c:
+                        readiness = c.score
+                elif "v9" in strat_name or "breakout" in strat_name:
+                    c = score_breakout(asset, asset_class, candles, indicators)
+                    if c:
+                        readiness = c.score
+            except Exception:
+                pass
+
+            result["signals"].append(PendingSignal(
                 asset=asset,
                 asset_class=asset_class,
                 strategy=strat_name,
                 direction=signal.direction,
+                readiness_score=readiness,
+                regime=regime,
                 entry_price=bar["close"],
                 sl_pct=signal.sl_pct or 0.03,
                 tp_pct=signal.tp_pct or 0.06,
-                risk_amount=risk_amount,
-                regime=regime,
                 max_hold_bars=signal.max_hold_bars or 30,
-            )
-            if pos:
-                result["signal"] = True
-                logger.info("training_signal",
-                            asset=asset, strategy=strat_name,
-                            direction=signal.direction, regime=regime)
+                reasons=signal.reason.split(", ") if signal.reason else [],
+            ))
 
-    # Mark bar as processed
     _mark_training_bar(asset, latest_time)
     return result
 
