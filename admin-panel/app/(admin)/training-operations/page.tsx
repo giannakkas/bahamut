@@ -5,6 +5,7 @@ import { apiBase } from "@/lib/utils";
 
 export default function TrainingOperationsPage() {
   const [data, setData] = useState<any>(null);
+  const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk">("overview");
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
@@ -15,6 +16,12 @@ export default function TrainingOperationsPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (r.ok) setData(await r.json());
+    } catch {}
+    try {
+      const r = await fetch(`${apiBase()}/training/candidates`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (r.ok) setCandidates(await r.json());
     } catch {}
     setLoading(false);
   };
@@ -74,6 +81,9 @@ export default function TrainingOperationsPage() {
           ))}
         </div>
       )}
+
+      {/* ═══ TRADE CANDIDATES ═══ */}
+      <CandidatesPanel candidates={candidates} />
 
       {/* ═══ KPI ROW ═══ */}
       <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-2">
@@ -385,6 +395,112 @@ function Stat({ label, value, cls }: { label: string; value: any; cls?: string }
     <div className="text-center">
       <div className={`text-sm font-bold ${cls || "text-bah-heading"}`}>{value}</div>
       <div className="text-[9px] text-bah-muted uppercase">{label}</div>
+    </div>
+  );
+}
+
+function CandidatesPanel({ candidates }: { candidates: any[] }) {
+  const [expanded, setExpanded] = useState(true);
+  if (!candidates || candidates.length === 0) {
+    return (
+      <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
+        <h3 className="text-xs font-semibold text-bah-heading uppercase tracking-wide flex items-center gap-2">
+          🔥 Trade Candidates
+          <span className="text-[10px] font-normal text-bah-muted">— read-only intelligence</span>
+        </h3>
+        <p className="text-xs text-bah-muted mt-2">No high-probability setups yet. Candidates appear when assets approach trigger conditions.</p>
+      </div>
+    );
+  }
+
+  const scoreClr = (s: number) => s >= 90 ? "text-green-400 bg-green-500/15 border-green-500/30" : s >= 70 ? "text-amber-400 bg-amber-500/15 border-amber-500/30" : "text-bah-muted bg-bah-border/50 border-bah-border";
+  const scoreBg = (s: number) => s >= 90 ? "bg-green-500" : s >= 70 ? "bg-amber-500" : "bg-bah-border";
+
+  return (
+    <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-bah-heading uppercase tracking-wide">🔥 Trade Candidates</span>
+          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{candidates.length}</span>
+          <span className="text-[10px] text-bah-muted">sorted by readiness score</span>
+        </div>
+        <span className="text-[10px] text-bah-muted">{expanded ? "▾" : "▸"}</span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-bah-border">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] min-w-[900px]">
+              <thead>
+                <tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase tracking-wider">
+                  <th className="px-3 py-2">Score</th>
+                  <th className="px-3 py-2">Asset</th>
+                  <th className="px-3 py-2">Class</th>
+                  <th className="px-3 py-2">Strategy</th>
+                  <th className="px-3 py-2">Dir</th>
+                  <th className="px-3 py-2">Regime</th>
+                  <th className="px-3 py-2">Distance</th>
+                  <th className="px-3 py-2">RSI</th>
+                  <th className="px-3 py-2">EMAs</th>
+                  <th className="px-3 py-2">Setup</th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.map((c: any, i: number) => (
+                  <tr key={i} className="border-b border-bah-border/20 hover:bg-white/[0.015]">
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-8 h-1.5 bg-bah-bg rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${scoreBg(c.score)}`} style={{ width: `${c.score}%` }} />
+                        </div>
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${scoreClr(c.score)}`}>{c.score}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-bah-heading font-semibold">{c.asset}</td>
+                    <td className="px-3 py-2 text-bah-muted">{c.asset_class}</td>
+                    <td className="px-3 py-2 text-bah-muted">{c.strategy}</td>
+                    <td className="px-3 py-2">
+                      <span className={c.direction === "LONG" ? "text-green-400" : "text-red-400"}>{c.direction}</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
+                        c.regime === "TREND" || c.regime === "BREAKOUT" ? "bg-green-500/10 text-green-400" :
+                        c.regime === "BEAR" ? "bg-red-500/10 text-red-400" :
+                        "bg-bah-border/50 text-bah-muted"
+                      }`}>{c.regime}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[10px] text-bah-muted font-mono">{c.distance_to_trigger}</td>
+                    <td className="px-3 py-2 text-[10px] font-mono">
+                      <span className={
+                        c.indicators?.rsi < 30 ? "text-green-400" :
+                        c.indicators?.rsi > 70 ? "text-red-400" :
+                        "text-bah-muted"
+                      }>{c.indicators?.rsi?.toFixed(0) || "—"}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[10px]">
+                      <span className={`px-1 py-0.5 rounded ${
+                        c.indicators?.ema_alignment === "bullish_stack" ? "bg-green-500/10 text-green-400" :
+                        c.indicators?.ema_alignment === "bullish" ? "bg-green-500/5 text-green-400/70" :
+                        c.indicators?.ema_alignment === "bearish_stack" ? "bg-red-500/10 text-red-400" :
+                        c.indicators?.ema_alignment === "bearish" ? "bg-red-500/5 text-red-400/70" :
+                        "text-bah-muted"
+                      }`}>{c.indicators?.ema_alignment?.replace("_", " ") || "—"}</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="space-y-0.5">
+                        {(c.reasons || []).slice(0, 3).map((r: string, j: number) => (
+                          <div key={j} className="text-[10px] text-bah-muted leading-tight">{r}</div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

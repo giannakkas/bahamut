@@ -477,3 +477,15 @@ def _build_alerts(r) -> list[dict]:
         alerts.append({"level": "INFO", "message": "No open training positions"})
 
     return alerts
+
+
+@router.get("/candidates")
+async def get_candidates(user=Depends(get_current_user)):
+    """Get top 20 trade candidates ranked by readiness score.
+    Read-only — does NOT execute trades."""
+    try:
+        from bahamut.training.candidates import get_training_candidates
+        return get_training_candidates(max_results=20)
+    except Exception as e:
+        logger.error("candidates_failed", error=str(e))
+        return []
