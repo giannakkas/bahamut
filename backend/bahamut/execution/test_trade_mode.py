@@ -90,6 +90,38 @@ def create_test_trade(
     direction: str = "LONG",
     entry_price: float = 0.0,
 ) -> dict:
+    # ── Cross-process guard: check Redis for existing open test position ──
+    existing = get_test_positions_from_redis()
+    if existing:
+        return {"status": "REJECTED", "reason": "Test position already open — close it first"}
+
+    # ── Redis lock: prevent concurrent creation across workers ──
+    r = _get_redis()
+    lock_acquired = False
+    if r:
+        try:
+            # SET NX with 10s TTL — only one worker wins
+            lock_acquired = r.set("bahamut:test_trade_lock", "1", nx=True, ex=10)
+            if not lock_acquired:
+                return {"status": "REJECTED", "reason": "Another test trade creation in progress"}
+        except Exception:
+            pass  # Redis down — proceed with in-memory guard only
+
+    try:
+        return _create_test_trade_inner(asset, strategy, direction, entry_price)
+    finally:
+        # Release lock
+        if lock_acquired and r:
+            try:
+                r.delete("bahamut:test_trade_lock")
+            except Exception:
+                pass
+
+
+def _create_test_trade_inner(
+    asset: str, strategy: str, direction: str, entry_price: float
+) -> dict:
+    """Actual creation logic — called under lock."""
     engine = get_execution_engine()
     pm = get_portfolio_manager()
 
@@ -104,10 +136,14 @@ def create_test_trade(
         if entry_price <= 0:
             entry_price = 68000.0 if "BTC" in asset else 2000.0
 
+    # Deterministic signal_id — engine dedup catches retries
+    signal_id = f"TEST:{asset}:{direction}:{strategy}"
+
     signal = Signal(
         strategy=f"TEST_{strategy}", asset=asset, direction=direction,
         sl_pct=0.03, tp_pct=0.06, max_hold_bars=10,
         quality=1.0, reason="TEST TRADE - operator verification",
+        signal_id=signal_id,
     )
 
     order = engine.submit_signal(signal, pm.total_equity)
@@ -240,6 +276,7 @@ def close_test_trade(order_id: str = "", close_price: float = 0.0) -> dict:
                 logger.warning("test_trade_db_close_failed", error=str(e))
 
             logger.info("test_trade_closed_cross_process", order_id=target["order_id"], pnl=round(pnl, 2))
+            _clear_test_signal_ids()
             return {"status": "CLOSED", "trade": trade_data}
 
     if not test_pos:
@@ -296,7 +333,19 @@ def close_test_trade(order_id: str = "", close_price: float = 0.0) -> dict:
     except Exception:
         pass
 
+    _clear_test_signal_ids()
     return {"status": "CLOSED", "trade": trade_data}
+
+
+def _clear_test_signal_ids():
+    """Clear TEST_ signal IDs from engine dedup set so test trades can be reopened."""
+    try:
+        engine = get_execution_engine()
+        to_remove = [sid for sid in engine._processed_signals if sid.startswith("TEST:")]
+        for sid in to_remove:
+            engine._processed_signals.discard(sid)
+    except Exception:
+        pass
 
 
 def get_test_trade_status() -> dict:
