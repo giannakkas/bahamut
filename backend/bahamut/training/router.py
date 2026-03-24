@@ -35,21 +35,92 @@ async def get_training_operations(user=Depends(get_current_user)):
     r = _get_redis()
     now = datetime.now(timezone.utc)
 
+    # Load shared data once (not per-section)
+    from bahamut.training.engine import _load_positions
+    from dataclasses import asdict
+    positions = _load_positions()
+    pos_dicts = [
+        {**asdict(p), "unrealized_pnl": round(p.unrealized_pnl, 2), "duration_bars": p.bars_held}
+        for p in positions
+    ]
+
+    # Single aggregate DB query for all strategy+class breakdowns
+    db_agg = _aggregate_training_trades()
+
     result = {
         "generated_at": now.isoformat(),
         "cycle_status": _build_cycle_status(r, now),
-        "kpi": _build_kpi(r),
+        "kpi": _build_kpi(r, db_agg),
         "cycle_health": _build_cycle_health(r),
         "recent_cycles": _build_recent_cycles(r),
-        "positions": _build_positions(r),
+        "positions": pos_dicts,
         "closed_trades": _build_closed_trades(),
-        "strategy_breakdown": _build_strategy_breakdown(r),
-        "class_breakdown": _build_class_breakdown(r),
+        "strategy_breakdown": _build_strategy_breakdown_fast(r, db_agg, positions),
+        "class_breakdown": _build_class_breakdown_fast(r, db_agg, positions),
         "asset_rankings": _build_asset_rankings(),
         "learning": _build_learning_feed(),
-        "exposure": _build_exposure(r),
+        "exposure": _build_exposure_fast(positions),
         "alerts": _build_alerts(r),
     }
+    return result
+
+
+def _aggregate_training_trades() -> dict:
+    """One DB query for all strategy + class aggregates."""
+    result = {"by_strategy": {}, "by_class": {}, "total": {}}
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT strategy, asset_class,
+                   COUNT(*) as cnt,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                   COALESCE(SUM(pnl), 0) as total_pnl,
+                   COALESCE(AVG(pnl), 0) as avg_pnl,
+                   COALESCE(AVG(bars_held), 0) as avg_bars,
+                   COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) as gp,
+                   COALESCE(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0) as gl
+            FROM training_trades GROUP BY strategy, asset_class
+        """)
+        if rows:
+            total_cnt = 0
+            total_pnl = 0.0
+            total_wins = 0
+            total_bars = 0.0
+            for row in rows:
+                s = row.get("strategy", "")
+                c = row.get("asset_class", "")
+                cnt = int(row.get("cnt", 0))
+                wins = int(row.get("wins", 0))
+                pnl = float(row.get("total_pnl", 0) or 0)
+                avg_pnl = float(row.get("avg_pnl", 0) or 0)
+                avg_bars = float(row.get("avg_bars", 0) or 0)
+                gp = float(row.get("gp", 0) or 0)
+                gl = float(row.get("gl", 0) or 0)
+
+                total_cnt += cnt
+                total_pnl += pnl
+                total_wins += wins
+                total_bars += avg_bars * cnt
+
+                if s not in result["by_strategy"]:
+                    result["by_strategy"][s] = {"cnt": 0, "wins": 0, "pnl": 0, "avg_pnl": 0, "avg_bars": 0, "gp": 0, "gl": 0}
+                bs = result["by_strategy"][s]
+                bs["cnt"] += cnt; bs["wins"] += wins; bs["pnl"] += pnl; bs["gp"] += gp; bs["gl"] += gl
+
+                if c not in result["by_class"]:
+                    result["by_class"][c] = {"cnt": 0, "wins": 0, "pnl": 0}
+                bc = result["by_class"][c]
+                bc["cnt"] += cnt; bc["wins"] += wins; bc["pnl"] += pnl
+
+            # Compute averages for strategies
+            for s, bs in result["by_strategy"].items():
+                bs["avg_pnl"] = bs["pnl"] / max(1, bs["cnt"])
+                bs["avg_bars"] = total_bars / max(1, total_cnt) if total_cnt else 0
+
+            result["total"] = {"cnt": total_cnt, "pnl": total_pnl, "wins": total_wins,
+                               "avg_bars": total_bars / max(1, total_cnt)}
+    except Exception:
+        pass
     return result
 
 
@@ -166,25 +237,27 @@ def _build_recent_cycles(r) -> list[dict]:
         return []
 
 
-def _build_kpi(r) -> dict:
-    """Top KPI row data."""
+def _build_kpi(r, db_agg: dict) -> dict:
+    """Top KPI row data — uses pre-aggregated DB data."""
     from bahamut.config_assets import TRAINING_ASSETS, TRAINING_VIRTUAL_CAPITAL
+    from bahamut.training.engine import get_open_position_count
+
+    totals = db_agg.get("total", {})
 
     kpi = {
         "universe_size": len(TRAINING_ASSETS),
         "virtual_capital": TRAINING_VIRTUAL_CAPITAL,
         "assets_scanned": 0,
-        "open_positions": 0,
-        "closed_trades": 0,
-        "net_pnl": 0,
-        "win_rate": 0,
-        "avg_duration_bars": 0,
+        "open_positions": get_open_position_count(),
+        "closed_trades": totals.get("cnt", 0),
+        "net_pnl": round(totals.get("pnl", 0), 2),
+        "win_rate": round(totals.get("wins", 0) / max(1, totals.get("cnt", 1)), 4),
+        "avg_duration_bars": round(totals.get("avg_bars", 0), 1),
         "last_cycle": None,
         "cycle_status": "unknown",
-        "learning_samples": 0,
+        "learning_samples": totals.get("cnt", 0),
     }
 
-    # From Redis cycle stats
     if r:
         try:
             raw = r.get("bahamut:training:last_cycle")
@@ -193,45 +266,6 @@ def _build_kpi(r) -> dict:
                 kpi["assets_scanned"] = lc.get("processed", 0)
                 kpi["last_cycle"] = lc.get("last_cycle")
                 kpi["cycle_status"] = "OK" if lc.get("processed", 0) > 0 else "IDLE"
-        except Exception:
-            pass
-
-    # From Redis positions
-    from bahamut.training.engine import get_open_position_count
-    kpi["open_positions"] = get_open_position_count()
-
-    # From DB aggregate
-    try:
-        from bahamut.db.query import run_query_one
-        row = run_query_one("""
-            SELECT COUNT(*) as cnt,
-                   COALESCE(SUM(pnl), 0) as total_pnl,
-                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
-                   COALESCE(AVG(bars_held), 0) as avg_bars
-            FROM training_trades
-        """)
-        if row:
-            kpi["closed_trades"] = int(row.get("cnt", 0))
-            kpi["net_pnl"] = round(float(row.get("total_pnl", 0) or 0), 2)
-            wins = int(row.get("wins", 0))
-            kpi["win_rate"] = round(wins / max(1, kpi["closed_trades"]), 4)
-            kpi["avg_duration_bars"] = round(float(row.get("avg_bars", 0) or 0), 1)
-            kpi["learning_samples"] = kpi["closed_trades"]
-    except Exception:
-        pass
-
-    # Fallback: Redis stats
-    if kpi["closed_trades"] == 0 and r:
-        try:
-            total = 0
-            for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
-                raw = r.get(f"bahamut:training:strategy_stats:{strat}")
-                if raw:
-                    s = json.loads(raw)
-                    total += s.get("trades", 0)
-                    kpi["net_pnl"] += s.get("total_pnl", 0)
-            kpi["closed_trades"] = total
-            kpi["learning_samples"] = total
         except Exception:
             pass
 
@@ -316,6 +350,73 @@ def _build_closed_trades() -> list[dict]:
         except Exception:
             pass
     return []
+
+
+def _build_strategy_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
+    """Per-strategy breakdown using pre-aggregated data. Zero DB queries."""
+    strategies = {}
+    for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
+        bs = db_agg.get("by_strategy", {}).get(strat, {})
+        cnt = bs.get("cnt", 0)
+        wins = bs.get("wins", 0)
+        gp = bs.get("gp", 0)
+        gl = bs.get("gl", 0)
+        strategies[strat] = {
+            "open_trades": sum(1 for p in positions if p.strategy == strat),
+            "closed_trades": cnt,
+            "win_rate": round(wins / max(1, cnt), 4) if cnt else 0,
+            "profit_factor": round(gp / max(gl, 0.01), 2) if cnt else 0,
+            "avg_pnl": round(bs.get("avg_pnl", 0), 2),
+            "total_pnl": round(bs.get("pnl", 0), 2),
+            "avg_hold_bars": round(bs.get("avg_bars", 0), 1),
+            "provisional": cnt < 10,
+        }
+    return strategies
+
+
+def _build_class_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
+    """Per-class breakdown using pre-aggregated data. Zero DB queries."""
+    from bahamut.config_assets import ASSET_CLASS_MAP
+    classes = {}
+    for cls in ["crypto", "forex", "index", "commodity", "stock"]:
+        bc = db_agg.get("by_class", {}).get(cls, {})
+        cnt = bc.get("cnt", 0)
+        wins = bc.get("wins", 0)
+        classes[cls] = {
+            "open_trades": sum(1 for p in positions if ASSET_CLASS_MAP.get(p.asset) == cls),
+            "closed_trades": cnt,
+            "pnl": round(bc.get("pnl", 0), 2),
+            "win_rate": round(wins / max(1, cnt), 4) if cnt else 0,
+            "signals": cnt,
+        }
+    return classes
+
+
+def _build_exposure_fast(positions: list) -> dict:
+    """Exposure using pre-loaded positions. Zero DB/Redis queries."""
+    from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_MAX_POSITIONS, ASSET_CLASS_MAP
+
+    long_exposure = sum(p.entry_price * p.size for p in positions if p.direction == "LONG")
+    short_exposure = sum(p.entry_price * p.size for p in positions if p.direction == "SHORT")
+    total_risk = sum(p.risk_amount for p in positions)
+
+    class_exposure: dict[str, float] = {}
+    for p in positions:
+        cls = ASSET_CLASS_MAP.get(p.asset, "unknown")
+        class_exposure[cls] = class_exposure.get(cls, 0) + p.entry_price * p.size
+
+    return {
+        "gross_exposure": round(long_exposure + short_exposure, 2),
+        "net_exposure": round(long_exposure - short_exposure, 2),
+        "long_exposure": round(long_exposure, 2),
+        "short_exposure": round(short_exposure, 2),
+        "total_risk": round(total_risk, 2),
+        "risk_pct": round(total_risk / max(1, TRAINING_VIRTUAL_CAPITAL) * 100, 2),
+        "max_positions": TRAINING_MAX_POSITIONS,
+        "current_positions": len(positions),
+        "utilization_pct": round(len(positions) / max(1, TRAINING_MAX_POSITIONS) * 100, 1),
+        "per_class": {k: round(v, 2) for k, v in class_exposure.items()},
+    }
 
 
 def _build_strategy_breakdown(r) -> dict:
@@ -596,34 +697,28 @@ def _build_alerts(r) -> list[dict]:
 
 @router.get("/candidates")
 async def get_candidates(user=Depends(get_current_user)):
-    """Get top 20 trade candidates ranked by readiness score.
-    Read-only — does NOT execute trades. Reads from cache (updated every training cycle)."""
+    """Get top 20 trade candidates. Reads from Redis cache (populated by training cycle)."""
     try:
-        from bahamut.training.candidates import get_cached_candidates, get_training_candidates
+        from bahamut.training.candidates import get_cached_candidates
         cached = get_cached_candidates()
         if cached is not None:
             return cached
-        # First-ever call before any cycle has run — do a live scan (slow, one-time)
-        return get_training_candidates(max_results=20)
     except Exception as e:
         logger.error("candidates_failed", error=str(e))
-        return []
+    return []
 
 
 @router.get("/assets")
 async def get_all_assets(user=Depends(get_current_user)):
-    """Get ALL training assets with scores, status, and indicators.
-    Reads from cache (updated every training cycle)."""
+    """Get ALL training assets. Reads from Redis cache (populated by training cycle)."""
     try:
-        from bahamut.training.candidates import get_cached_all_assets, get_all_training_assets
+        from bahamut.training.candidates import get_cached_all_assets
         cached = get_cached_all_assets()
         if cached is not None:
             return cached
-        # First-ever call — live scan (slow, one-time)
-        return get_all_training_assets()
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))
-        return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
+    return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
 
 
 @router.get("/execution-decisions")

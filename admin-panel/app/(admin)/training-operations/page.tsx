@@ -41,18 +41,16 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
-      const [opsRes, candRes, decRes] = await Promise.all([
+      const [opsRes, candRes, decRes, assetsRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/candidates`, { headers: h }),
         fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
+        fetch(`${apiBase()}/training/assets`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (candRes.ok) setCandidates(await candRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
-    } catch {}
-    try {
-      const r = await fetch(`${apiBase()}/training/assets`, { headers: h });
-      if (r.ok) setAllAssets(await r.json());
+      if (assetsRes.ok) setAllAssets(await assetsRes.json());
     } catch {}
     setLoading(false);
   };
