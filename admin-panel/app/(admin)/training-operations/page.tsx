@@ -658,7 +658,7 @@ function AssetsTab({ data }: { data: any }) {
   };
 
   const scoreBg = (s: number) => s >= 80 ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : s >= 20 ? "bg-white/30" : "bg-white/10";
-  const uniqueClasses = [...new Set(assets.map((a: any) => a.asset_class))].sort();
+  const uniqueClasses: string[] = [...new Set(assets.map((a: any) => a.asset_class as string))].sort();
 
   return (
     <div className="space-y-3">
