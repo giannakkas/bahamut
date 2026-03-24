@@ -565,9 +565,13 @@ def _build_alerts(r) -> list[dict]:
 @router.get("/candidates")
 async def get_candidates(user=Depends(get_current_user)):
     """Get top 20 trade candidates ranked by readiness score.
-    Read-only — does NOT execute trades."""
+    Read-only — does NOT execute trades. Reads from cache (updated every training cycle)."""
     try:
-        from bahamut.training.candidates import get_training_candidates
+        from bahamut.training.candidates import get_cached_candidates, get_training_candidates
+        cached = get_cached_candidates()
+        if cached is not None:
+            return cached
+        # First-ever call before any cycle has run — do a live scan (slow, one-time)
         return get_training_candidates(max_results=20)
     except Exception as e:
         logger.error("candidates_failed", error=str(e))
@@ -577,9 +581,13 @@ async def get_candidates(user=Depends(get_current_user)):
 @router.get("/assets")
 async def get_all_assets(user=Depends(get_current_user)):
     """Get ALL training assets with scores, status, and indicators.
-    Returns the full ~50 asset universe — not filtered."""
+    Reads from cache (updated every training cycle)."""
     try:
-        from bahamut.training.candidates import get_all_training_assets
+        from bahamut.training.candidates import get_cached_all_assets, get_all_training_assets
+        cached = get_cached_all_assets()
+        if cached is not None:
+            return cached
+        # First-ever call — live scan (slow, one-time)
         return get_all_training_assets()
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))

@@ -135,6 +135,19 @@ def run_training_cycle():
     _record_cycle_stats(processed, errors, signals_generated, trades_closed, duration_ms)
     _set_running(False, 0)
 
+    # Phase 4: Cache candidates + all-assets for instant API responses
+    # (candles are already in data layer cache from Phase 1, so this is fast)
+    try:
+        from bahamut.training.candidates import (
+            get_training_candidates, get_all_training_assets,
+            cache_candidates, cache_all_assets,
+        )
+        cache_candidates(get_training_candidates(max_results=20))
+        cache_all_assets(get_all_training_assets())
+        logger.info("training_cache_updated")
+    except Exception as e:
+        logger.debug("training_cache_failed", error=str(e))
+
     return {
         "status": "OK",
         "processed": processed,

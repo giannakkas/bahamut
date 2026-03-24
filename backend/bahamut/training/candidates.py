@@ -552,3 +552,73 @@ def get_all_training_assets() -> dict:
         "counts": counts,
         "duration_ms": duration_ms,
     }
+
+
+# ═══════════════════════════════════════════
+# REDIS CACHE — avoids re-scanning 40 assets on every API call
+# Written by training cycle, read by API endpoints.
+# ═══════════════════════════════════════════
+
+_CACHE_CANDIDATES_KEY = "bahamut:training:cache:candidates"
+_CACHE_ASSETS_KEY = "bahamut:training:cache:all_assets"
+_CACHE_TTL = 900  # 15 min (cycle runs every 10 min, so always fresh)
+
+
+def _get_cache_redis():
+    try:
+        import os, redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.ping()
+        return r
+    except Exception:
+        return None
+
+
+def cache_candidates(data: list[dict]):
+    """Save candidates scan results to Redis (called by orchestrator)."""
+    r = _get_cache_redis()
+    if r:
+        try:
+            import json
+            r.set(_CACHE_CANDIDATES_KEY, json.dumps(data), ex=_CACHE_TTL)
+        except Exception:
+            pass
+
+
+def cache_all_assets(data: dict):
+    """Save all-assets scan results to Redis (called by orchestrator)."""
+    r = _get_cache_redis()
+    if r:
+        try:
+            import json
+            r.set(_CACHE_ASSETS_KEY, json.dumps(data), ex=_CACHE_TTL)
+        except Exception:
+            pass
+
+
+def get_cached_candidates() -> list[dict] | None:
+    """Read candidates from cache. Returns None if cache miss."""
+    r = _get_cache_redis()
+    if r:
+        try:
+            import json
+            raw = r.get(_CACHE_CANDIDATES_KEY)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    return None
+
+
+def get_cached_all_assets() -> dict | None:
+    """Read all-assets from cache. Returns None if cache miss."""
+    r = _get_cache_redis()
+    if r:
+        try:
+            import json
+            raw = r.get(_CACHE_ASSETS_KEY)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    return None
