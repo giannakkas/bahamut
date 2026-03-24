@@ -883,7 +883,10 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
           <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">PAPER ONLY</span>
           <span className="text-xs text-bah-muted">{d.universe_size || 0} assets in training universe</span>
         </div>
-        {d.last_cycle && <span className="text-[10px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
+        <div className="flex items-center gap-2">
+          {d.last_cycle && <span className="text-[10px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
+          <a href="/training-operations" className="px-2.5 py-1 text-[10px] font-semibold text-bah-cyan border border-bah-cyan/30 rounded hover:bg-bah-cyan/10 transition-colors">Full Dashboard →</a>
+        </div>
       </div>
 
       {/* KPI cards */}

@@ -214,6 +214,11 @@ try:
     app.include_router(settings_router, prefix="/api/v1/monitoring", tags=["monitoring"])
 except Exception:
     pass
+try:
+    from bahamut.training.router import router as training_router
+    app.include_router(training_router, prefix="/api/v1/training", tags=["training"])
+except Exception:
+    pass
 
 
 @app.get("/health")
