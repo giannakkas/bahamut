@@ -38,7 +38,7 @@ export default function TrainingOperationsPage() {
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
 
   const load = async () => {
-    const h = token ? { Authorization: `Bearer ${token}` } : {};
+    const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
       const [opsRes, candRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
@@ -47,13 +47,10 @@ export default function TrainingOperationsPage() {
       if (opsRes.ok) setData(await opsRes.json());
       if (candRes.ok) setCandidates(await candRes.json());
     } catch {}
-    // Lazy-load assets tab data only when tab is active (heavy endpoint)
-    if (tab === "assets" || !allAssets) {
-      try {
-        const r = await fetch(`${apiBase()}/training/assets`, { headers: h });
-        if (r.ok) setAllAssets(await r.json());
-      } catch {}
-    }
+    try {
+      const r = await fetch(`${apiBase()}/training/assets`, { headers: h });
+      if (r.ok) setAllAssets(await r.json());
+    } catch {}
     setLoading(false);
   };
 
