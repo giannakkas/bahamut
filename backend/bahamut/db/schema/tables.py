@@ -380,6 +380,13 @@ TABLES = [
     """CREATE INDEX IF NOT EXISTS idx_training_trades_created
        ON training_trades(created_at DESC)""",
 
+    # ── Training Trades: hybrid execution columns ──
+    """DO $$ BEGIN
+        ALTER TABLE training_trades ADD COLUMN IF NOT EXISTS execution_type VARCHAR(20) DEFAULT 'standard';
+        ALTER TABLE training_trades ADD COLUMN IF NOT EXISTS confidence_score DOUBLE PRECISION DEFAULT 0;
+        ALTER TABLE training_trades ADD COLUMN IF NOT EXISTS trigger_reason VARCHAR(50) DEFAULT '4h_close';
+    EXCEPTION WHEN others THEN NULL; END $$""",
+
     # ── Stress Testing ──
     """CREATE TABLE IF NOT EXISTS stress_test_runs (
         id SERIAL PRIMARY KEY,

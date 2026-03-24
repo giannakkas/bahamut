@@ -113,15 +113,20 @@ def run_training_cycle():
                 entry_price=sig.entry_price,
                 sl_pct=sig.sl_pct,
                 tp_pct=sig.tp_pct,
-                risk_amount=risk_amount,
+                risk_amount=risk_amount * sig.risk_multiplier,
                 regime=sig.regime,
                 max_hold_bars=sig.max_hold_bars,
+                execution_type=sig.execution_type,
+                confidence_score=sig.confidence_score,
+                trigger_reason=sig.trigger_reason,
             )
             if pos:
                 trades_opened += 1
                 logger.info("training_selected_trade",
                             asset=sig.asset, strategy=sig.strategy,
-                            direction=sig.direction, priority=dec.get("priority_score", 0))
+                            direction=sig.direction, priority=dec.get("priority_score", 0),
+                            execution_type=sig.execution_type,
+                            confidence=sig.confidence_score)
         except Exception as e:
             logger.warning("training_execute_failed", asset=dec["asset"], error=str(e))
 
@@ -174,16 +179,14 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         return result
 
     latest_time = candles[-1].get("datetime", "")
+    is_new_bar = _is_training_new_bar(asset, latest_time)
 
     # Always update existing positions with latest price
     bar = _make_bar(candles[-1])
     closed = update_positions_for_asset(asset, bar)
     result["trades_closed"] = len(closed)
 
-    # Only evaluate strategies on new bars
-    if not _is_training_new_bar(asset, latest_time):
-        return result
-
+    # Always compute indicators (needed for both standard and early eval)
     try:
         from bahamut.features.indicators import compute_indicators
         indicators = compute_indicators(candles)
@@ -216,19 +219,57 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             continue
 
         if signal:
-            # Get readiness score from candidates scorer
-            readiness = 50  # default
+            # Get readiness score + indicators from candidates scorer
+            readiness = 50
+            candidate_indicators = {}
+            distance_str = ""
             try:
                 if "v5" in strat_name:
                     c = score_ema_cross(asset, asset_class, strat_name, candles, indicators, prev_indicators)
                     if c:
                         readiness = c.score
+                        candidate_indicators = c.indicators
+                        distance_str = c.distance_to_trigger
                 elif "v9" in strat_name or "breakout" in strat_name:
                     c = score_breakout(asset, asset_class, candles, indicators)
                     if c:
                         readiness = c.score
+                        candidate_indicators = c.indicators
+                        distance_str = c.distance_to_trigger
             except Exception:
                 pass
+
+            # Record scan direction for consistency checking
+            from bahamut.training.engine import record_scan_direction, evaluate_early_execution
+            record_scan_direction(asset, signal.direction)
+
+            # Determine execution type
+            exec_type = "standard"
+            confidence = float(readiness)
+            trigger = "4h_close"
+            risk_mult = 1.0
+
+
+            if not is_new_bar and readiness >= 90:
+                # Not a new 4H bar — evaluate for early execution
+                early = evaluate_early_execution(
+                    asset=asset,
+                    readiness_score=readiness,
+                    regime=regime,
+                    direction=signal.direction,
+                    indicators=candidate_indicators,
+                    distance_to_trigger=distance_str,
+                )
+                if early["eligible"]:
+                    exec_type = "early"
+                    confidence = early["confidence"]
+                    trigger = "early_signal"
+                    risk_mult = early["risk_multiplier"]
+                    logger.info("training_early_eligible",
+                                asset=asset, score=readiness, confidence=confidence)
+            elif not is_new_bar:
+                # Not a new bar and not early-eligible — skip (wait for 4H close)
+                continue
 
             result["signals"].append(PendingSignal(
                 asset=asset,
@@ -242,9 +283,15 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 tp_pct=signal.tp_pct or 0.06,
                 max_hold_bars=signal.max_hold_bars or 30,
                 reasons=signal.reason.split(", ") if signal.reason else [],
+                execution_type=exec_type,
+                confidence_score=confidence,
+                trigger_reason=trigger,
+                risk_multiplier=risk_mult,
+                indicators=candidate_indicators,
             ))
 
-    _mark_training_bar(asset, latest_time)
+    if is_new_bar:
+        _mark_training_bar(asset, latest_time)
     return result
 
 

@@ -68,6 +68,15 @@ class PendingSignal:
     tp_pct: float
     max_hold_bars: int
     reasons: list
+    execution_type: str = "standard"       # "standard" | "early"
+    confidence_score: float = 0.0
+    trigger_reason: str = "4h_close"       # "4h_close" | "early_signal"
+    risk_multiplier: float = 1.0           # 0.5 for early trades
+    indicators: dict = None
+
+    def __post_init__(self):
+        if self.indicators is None:
+            self.indicators = {}
 
 
 # ═══════════════════════════════════════════
@@ -301,6 +310,9 @@ def _fmt_decision(sig: PendingSignal, priority: dict, decision: str, reasons: li
         "regime": sig.regime,
         "decision": decision,
         "reasons": reasons,
+        "execution_type": sig.execution_type,
+        "confidence_score": sig.confidence_score,
+        "trigger_reason": sig.trigger_reason,
     }
 
 

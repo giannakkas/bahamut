@@ -52,6 +52,9 @@ class TrainingPosition:
     bars_held: int = 0
     max_hold_bars: int = 30
     current_price: float = 0.0
+    execution_type: str = "standard"      # "standard" | "early"
+    confidence_score: float = 0.0
+    trigger_reason: str = "4h_close"      # "4h_close" | "early_signal"
 
     @property
     def unrealized_pnl(self):
@@ -81,6 +84,9 @@ class TrainingTrade:
     exit_reason: str     # SL / TP / TIMEOUT / MANUAL
     bars_held: int
     regime: str = ""
+    execution_type: str = "standard"
+    confidence_score: float = 0.0
+    trigger_reason: str = "4h_close"
 
 
 # ═══════════════════════════════════════════
@@ -149,6 +155,9 @@ def open_training_position(
     risk_amount: float,
     regime: str = "",
     max_hold_bars: int = 30,
+    execution_type: str = "standard",
+    confidence_score: float = 0.0,
+    trigger_reason: str = "4h_close",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
@@ -187,12 +196,16 @@ def open_training_position(
         entry_time=datetime.now(timezone.utc).isoformat(),
         max_hold_bars=max_hold_bars,
         current_price=entry_price,
+        execution_type=execution_type,
+        confidence_score=confidence_score,
+        trigger_reason=trigger_reason,
     )
 
     _save_position(pos)
     logger.info("training_position_opened",
                 asset=asset, strategy=strategy, direction=direction,
-                entry=entry_price, sl=stop_price, tp=tp_price)
+                entry=entry_price, sl=stop_price, tp=tp_price,
+                execution_type=execution_type, confidence=confidence_score)
     return pos
 
 
@@ -268,6 +281,9 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 exit_time=datetime.now(timezone.utc).isoformat(),
                 exit_reason=exit_reason,
                 bars_held=pos.bars_held,
+                execution_type=pos.execution_type,
+                confidence_score=pos.confidence_score,
+                trigger_reason=pos.trigger_reason,
             )
 
             _remove_position(pos.position_id)
@@ -300,9 +316,11 @@ def _persist_trade(trade: TrainingTrade):
                 INSERT INTO training_trades
                 (trade_id, position_id, asset, asset_class, strategy, direction,
                  entry_price, exit_price, stop_price, tp_price, size, risk_amount,
-                 pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime)
+                 pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime,
+                 execution_type, confidence_score, trigger_reason)
                 VALUES (:tid, :pid, :a, :ac, :s, :d, :ep, :xp, :sp, :tp, :sz, :ra,
-                        :pnl, :pp, :et, :xt, :xr, :bh, :reg)
+                        :pnl, :pp, :et, :xt, :xr, :bh, :reg,
+                        :exec_type, :conf, :trig)
             """), {
                 "tid": trade.trade_id, "pid": trade.position_id,
                 "a": trade.asset, "ac": trade.asset_class,
@@ -314,6 +332,9 @@ def _persist_trade(trade: TrainingTrade):
                 "et": trade.entry_time, "xt": trade.exit_time,
                 "xr": trade.exit_reason, "bh": trade.bars_held,
                 "reg": trade.regime,
+                "exec_type": trade.execution_type,
+                "conf": trade.confidence_score,
+                "trig": trade.trigger_reason,
             })
             conn.commit()
     except Exception as e:
@@ -470,3 +491,143 @@ def get_training_stats() -> dict:
         "class_stats": class_stats,
         "assets_in_universe": len(set(p.asset for p in positions)),
     }
+
+
+# ═══════════════════════════════════════════
+# EARLY EXECUTION EVALUATOR
+# ═══════════════════════════════════════════
+
+EARLY_CONFIG = {
+    "min_score": 90,
+    "max_early_per_cycle": 2,
+    "max_early_pct": 0.20,          # Max 20% of open positions can be early
+    "risk_multiplier": 0.5,          # 50% of normal risk
+    "rsi_min": 25,
+    "rsi_max": 75,
+    "max_distance_pct": 1.0,
+    "min_consistent_scans": 2,
+    "blocked_regimes": {"transition", "crash"},
+}
+
+
+def evaluate_early_execution(
+    asset: str,
+    readiness_score: int,
+    regime: str,
+    direction: str,
+    indicators: dict,
+    distance_to_trigger: str,
+) -> dict:
+    """
+    Evaluate whether an asset qualifies for early execution (before 4H close).
+
+    Returns:
+        eligible: bool
+        reasons: list[str]
+        confidence: float (0-100)
+        risk_multiplier: float
+    """
+    cfg = EARLY_CONFIG
+    reasons = []
+    failed = []
+
+    # 1. Score threshold
+    if readiness_score < cfg["min_score"]:
+        failed.append(f"Score {readiness_score} < {cfg['min_score']}")
+    else:
+        reasons.append(f"High readiness ({readiness_score})")
+
+    # 2. Regime stability
+    regime_lower = regime.lower() if regime else ""
+    if regime_lower in cfg["blocked_regimes"]:
+        failed.append(f"Regime '{regime}' is unstable")
+    elif regime_lower in ("trend", "breakout"):
+        reasons.append(f"Strong regime: {regime}")
+    else:
+        failed.append(f"Regime '{regime}' not strong enough for early entry")
+
+    # 3. RSI bounds
+    rsi = indicators.get("rsi_14", indicators.get("rsi", 50))
+    if rsi < cfg["rsi_min"] or rsi > cfg["rsi_max"]:
+        failed.append(f"RSI extreme ({rsi:.0f}), outside {cfg['rsi_min']}-{cfg['rsi_max']}")
+    else:
+        reasons.append(f"RSI healthy ({rsi:.0f})")
+
+    # 4. Distance to trigger
+    try:
+        dist_val = float(str(distance_to_trigger).replace("%", "").split()[0])
+    except (ValueError, IndexError):
+        dist_val = 99.0
+    if abs(dist_val) > cfg["max_distance_pct"]:
+        failed.append(f"Distance {abs(dist_val):.1f}% > max {cfg['max_distance_pct']}%")
+    else:
+        reasons.append(f"Very close to trigger ({abs(dist_val):.1f}%)")
+
+    # 5. EMA alignment
+    ema_align = indicators.get("ema_alignment", "")
+    if direction == "LONG" and "bullish" in str(ema_align).lower():
+        reasons.append("EMA alignment confirms direction")
+    elif direction == "SHORT" and "bearish" in str(ema_align).lower():
+        reasons.append("EMA alignment confirms direction")
+    else:
+        failed.append(f"EMA alignment weak ({ema_align})")
+
+    # 6. Portfolio early trade cap
+    positions = _load_positions()
+    early_count = sum(1 for p in positions if p.execution_type == "early")
+    total_count = len(positions)
+    max_early = max(1, int(total_count * cfg["max_early_pct"])) if total_count > 0 else cfg["max_early_per_cycle"]
+    if early_count >= max_early:
+        failed.append(f"Early trade cap reached ({early_count}/{max_early})")
+
+    # 7. No existing position for this asset
+    if any(p.asset == asset for p in positions):
+        failed.append(f"Already holding {asset}")
+
+    # 8. Signal consistency (check Redis for last scan direction)
+    consistent = _check_scan_consistency(asset, direction)
+    if not consistent:
+        failed.append("Direction not consistent across last 2 scans")
+    else:
+        reasons.append("Direction consistent across scans")
+
+    eligible = len(failed) == 0
+    confidence = readiness_score if eligible else 0
+
+    return {
+        "eligible": eligible,
+        "reasons": reasons if eligible else failed,
+        "confidence": confidence,
+        "risk_multiplier": cfg["risk_multiplier"] if eligible else 1.0,
+        "failed_conditions": failed,
+        "passed_conditions": reasons,
+    }
+
+
+def _check_scan_consistency(asset: str, direction: str) -> bool:
+    """Check if the same direction was seen in the last 2 scans."""
+    r = _get_redis()
+    if not r:
+        return False
+    try:
+        key = f"bahamut:training:scan_direction:{asset}"
+        history = r.lrange(key, 0, 1)
+        if len(history) < 2:
+            return False
+        return all(d.decode() == direction for d in history)
+    except Exception:
+        return False
+
+
+def record_scan_direction(asset: str, direction: str):
+    """Record the direction seen in this scan for consistency checking."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        key = f"bahamut:training:scan_direction:{asset}"
+        r.lpush(key, direction)
+        r.ltrim(key, 0, 4)  # Keep last 5
+        r.expire(key, 7200)  # 2h TTL
+    except Exception:
+        pass

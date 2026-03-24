@@ -492,7 +492,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
         <div className="overflow-x-auto"><table className="w-full text-[11px] min-w-[800px]">
           <thead><tr className="border-b border-white/[0.08] text-[9px] text-white/25 uppercase tracking-wider text-left">
             <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Class</th><th className="py-2.5 pr-2">Strategy</th>
-            <th className="py-2.5 pr-2">Dir</th><th className="py-2.5 pr-2">Entry</th><th className="py-2.5 pr-2">Current</th>
+            <th className="py-2.5 pr-2">Dir</th><th className="py-2.5 pr-2">Type</th><th className="py-2.5 pr-2">Entry</th><th className="py-2.5 pr-2">Current</th>
             <th className="py-2.5 pr-2">SL</th><th className="py-2.5 pr-2">TP</th><th className="py-2.5 pr-2">Unreal PnL</th><th className="py-2.5">Bars</th>
           </tr></thead>
           <tbody>{positions.map((p: any, i: number) => (
@@ -501,6 +501,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
               <td className="py-2 pr-2 text-white/40">{p.asset_class}</td>
               <td className="py-2 pr-2 text-white/55">{p.strategy}</td>
               <td className="py-2 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{p.direction}</span></td>
+              <td className="py-2 pr-2"><ExecBadge type={p.execution_type} /></td>
               <td className="py-2 pr-2 font-mono text-white/65">{p.entry_price}</td>
               <td className="py-2 pr-2 font-mono text-white/65">{p.current_price}</td>
               <td className="py-2 pr-2 font-mono text-red-400/50">{p.stop_price || p.stop_loss}</td>
@@ -525,7 +526,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
         <div className="overflow-x-auto"><table className="w-full text-[11px] min-w-[900px]">
           <thead><tr className="border-b border-white/[0.08] text-[9px] text-white/25 uppercase tracking-wider text-left">
             <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th><th className="py-2.5 pr-2">Dir</th>
-            <th className="py-2.5 pr-2">Entry</th><th className="py-2.5 pr-2">Exit</th><th className="py-2.5 pr-2">PnL</th>
+            <th className="py-2.5 pr-2">Type</th><th className="py-2.5 pr-2">Entry</th><th className="py-2.5 pr-2">Exit</th><th className="py-2.5 pr-2">PnL</th>
             <th className="py-2.5 pr-2">Exit</th><th className="py-2.5 pr-2">Bars</th><th className="py-2.5">Closed</th>
           </tr></thead>
           <tbody>{trades.map((t: any, i: number) => (
@@ -533,6 +534,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
               <td className="py-2 pr-2 text-white font-bold">{t.asset}</td>
               <td className="py-2 pr-2 text-white/55">{t.strategy}</td>
               <td className="py-2 pr-2"><span className={`font-bold ${t.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{t.direction}</span></td>
+              <td className="py-2 pr-2"><ExecBadge type={t.execution_type} /></td>
               <td className="py-2 pr-2 font-mono text-white/65">{typeof t.entry_price === "number" ? t.entry_price.toFixed(2) : t.entry_price}</td>
               <td className="py-2 pr-2 font-mono text-white/65">{typeof t.exit_price === "number" ? t.exit_price.toFixed(2) : t.exit_price}</td>
               <td className={`py-2 pr-2 font-bold ${pnlC(t.pnl || 0)}`}>${(t.pnl || 0).toFixed(2)}</td>
@@ -866,6 +868,7 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
             <span className="text-xs text-white font-bold w-[70px] shrink-0">{d.asset}</span>
             <span className="text-[10px] text-white/40 w-[50px] shrink-0">{d.strategy}</span>
             <span className={`text-[10px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{d.direction}</span>
+            <ExecBadge type={d.execution_type} />
             <span className="text-[10px] text-white/50 w-[30px] shrink-0 text-center">{d.readiness_score}</span>
             <span className="text-[10px] text-white/35 w-[30px] shrink-0 text-center font-mono">{d.priority_score}</span>
 
@@ -993,6 +996,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </div>
   );
+}
+
+function ExecBadge({ type }: { type: string | undefined }) {
+  if (type === "early") return <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">⚡ EARLY</span>;
+  return <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-500/10 text-emerald-300/60 border border-emerald-500/15">STD</span>;
 }
 
 function Stat({ l, v, c }: { l: string; v: any; c?: string }) {
