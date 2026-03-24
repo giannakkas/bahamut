@@ -33,18 +33,27 @@ export default function TrainingOperationsPage() {
   const [data, setData] = useState<any>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk">("overview");
+  const [allAssets, setAllAssets] = useState<any>(null);
+  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk" | "assets">("overview");
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
 
   const load = async () => {
+    const h = token ? { Authorization: `Bearer ${token}` } : {};
     try {
       const [opsRes, candRes] = await Promise.all([
-        fetch(`${apiBase()}/training/operations`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
-        fetch(`${apiBase()}/training/candidates`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
+        fetch(`${apiBase()}/training/operations`, { headers: h }),
+        fetch(`${apiBase()}/training/candidates`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (candRes.ok) setCandidates(await candRes.json());
     } catch {}
+    // Lazy-load assets tab data only when tab is active (heavy endpoint)
+    if (tab === "assets" || !allAssets) {
+      try {
+        const r = await fetch(`${apiBase()}/training/assets`, { headers: h });
+        if (r.ok) setAllAssets(await r.json());
+      } catch {}
+    }
     setLoading(false);
   };
 
@@ -145,9 +154,9 @@ export default function TrainingOperationsPage() {
 
       {/* ═══ TABS ═══ */}
       <div className="flex border-b border-white/[0.08] overflow-x-auto">
-        {(["overview", "positions", "trades", "learning", "risk"] as const).map(t => (
+        {(["overview", "positions", "trades", "assets", "learning", "risk"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-white/30 hover:text-white/60"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
           </button>
         ))}
       </div>
@@ -157,6 +166,7 @@ export default function TrainingOperationsPage() {
         {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
         {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
         {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
+        {tab === "assets" && <AssetsTab data={allAssets} />}
         {tab === "learning" && <LearningTab learn={learn} />}
         {tab === "risk" && <RiskTab expo={expo} />}
       </div>
@@ -601,6 +611,168 @@ function RiskTab({ expo }: { expo: any }) {
           </div>
         </Section>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   ALL ASSETS TAB
+   ═══════════════════════════════════════════ */
+function AssetsTab({ data }: { data: any }) {
+  const [sortBy, setSortBy] = useState<"score" | "asset">("score");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterClass, setFilterClass] = useState<string>("all");
+
+  if (!data || !data.assets) return (
+    <Section title="All Assets">
+      <div className="text-center py-10 text-white/35 text-sm">Loading asset universe... The first scan may take up to 60 seconds.</div>
+    </Section>
+  );
+
+  const counts = data.counts || {};
+  const assets = data.assets || [];
+
+  // Filter
+  let filtered = assets;
+  if (filterStatus !== "all") filtered = filtered.filter((a: any) => a.status === filterStatus);
+  if (filterClass !== "all") filtered = filtered.filter((a: any) => a.asset_class === filterClass);
+
+  // Sort
+  filtered = [...filtered].sort((a: any, b: any) => {
+    const va = sortBy === "score" ? a.score : a.asset;
+    const vb = sortBy === "score" ? b.score : b.asset;
+    if (typeof va === "number") return sortDir === "desc" ? vb - va : va - vb;
+    return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+
+  const toggleSort = (col: "score" | "asset") => {
+    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortBy(col); setSortDir(col === "score" ? "desc" : "asc"); }
+  };
+
+  const statusCfg: Record<string, { label: string; cls: string }> = {
+    ready: { label: "READY", cls: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+    approaching: { label: "APPROACHING", cls: "bg-amber-500/15 text-amber-300 border-amber-500/35" },
+    weak: { label: "WEAK", cls: "bg-white/[0.05] text-white/50 border-white/10" },
+    no_signal: { label: "NO SIGNAL", cls: "bg-white/[0.02] text-white/25 border-white/[0.06]" },
+    no_data: { label: "NO DATA", cls: "bg-red-500/10 text-red-300/50 border-red-500/20" },
+    error: { label: "ERROR", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
+  };
+
+  const scoreBg = (s: number) => s >= 80 ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : s >= 20 ? "bg-white/30" : "bg-white/10";
+  const uniqueClasses = [...new Set(assets.map((a: any) => a.asset_class))].sort();
+
+  return (
+    <div className="space-y-3">
+      {/* Summary counts */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          { label: "Total", value: counts.total || 0, cls: "text-white" },
+          { label: "Ready", value: counts.ready || 0, cls: "text-emerald-400" },
+          { label: "Approaching", value: counts.approaching || 0, cls: "text-amber-300" },
+          { label: "Weak", value: counts.weak || 0, cls: "text-white/50" },
+          { label: "No Signal", value: counts.no_signal || 0, cls: "text-white/30" },
+          { label: "No Data", value: (counts.no_data || 0) + (counts.error || 0), cls: "text-red-400/60" },
+        ].map((s, i) => (
+          <div key={i} className="bg-white/[0.025] border border-white/[0.06] rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <span className={`text-sm font-bold ${s.cls}`}>{s.value}</span>
+            <span className="text-[9px] text-white/30 uppercase tracking-wider">{s.label}</span>
+          </div>
+        ))}
+        {data.duration_ms > 0 && (
+          <div className="bg-white/[0.015] border border-white/[0.04] rounded-lg px-3 py-1.5 flex items-center">
+            <span className="text-[10px] text-white/20 font-mono">scanned in {data.duration_ms}ms</span>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-[10px] text-white/30 uppercase tracking-wider">Filter:</span>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="bg-white/[0.04] border border-white/[0.08] rounded text-[11px] text-white/70 px-2 py-1 outline-none focus:border-bah-cyan/40">
+          <option value="all">All statuses</option>
+          <option value="ready">Ready</option>
+          <option value="approaching">Approaching</option>
+          <option value="weak">Weak</option>
+          <option value="no_signal">No Signal</option>
+        </select>
+        <select value={filterClass} onChange={e => setFilterClass(e.target.value)}
+          className="bg-white/[0.04] border border-white/[0.08] rounded text-[11px] text-white/70 px-2 py-1 outline-none focus:border-bah-cyan/40">
+          <option value="all">All classes</option>
+          {uniqueClasses.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-[10px] text-white/20 ml-1">{filtered.length} shown</span>
+      </div>
+
+      {/* Table */}
+      <Section title={`Asset Universe (${filtered.length})`}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px] min-w-[900px]">
+            <thead>
+              <tr className="border-b border-white/[0.08] text-[9px] text-white/25 uppercase tracking-wider text-left">
+                <th className="py-2.5 px-3 cursor-pointer hover:text-white/50 select-none" onClick={() => toggleSort("score")}>
+                  Score {sortBy === "score" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+                </th>
+                <th className="py-2.5 px-3 cursor-pointer hover:text-white/50 select-none" onClick={() => toggleSort("asset")}>
+                  Asset {sortBy === "asset" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                </th>
+                <th className="py-2.5 px-3">Class</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Strategy</th>
+                <th className="py-2.5 px-3">Dir</th>
+                <th className="py-2.5 px-3">Regime</th>
+                <th className="py-2.5 px-3">Distance</th>
+                <th className="py-2.5 px-3">RSI</th>
+                <th className="py-2.5 px-3">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((a: any, i: number) => {
+                const st = statusCfg[a.status] || statusCfg.no_signal;
+                return (
+                  <tr key={i} className={`border-b border-white/[0.03] hover-row ${a.status === "ready" ? "bg-emerald-500/[0.02]" : ""}`}>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${scoreBg(a.score)}`} style={{ width: `${a.score}%` }} />
+                        </div>
+                        <span className={`text-xs font-bold min-w-[24px] text-center ${a.score >= 80 ? "text-emerald-300" : a.score >= 60 ? "text-amber-300" : a.score > 0 ? "text-white/50" : "text-white/20"}`}>{a.score}</span>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 text-white font-semibold">{a.asset}</td>
+                    <td className="py-2 px-3 text-white/40">{a.asset_class}</td>
+                    <td className="py-2 px-3">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${st.cls}`}>{st.label}</span>
+                    </td>
+                    <td className="py-2 px-3 text-white/50">{a.strategy}</td>
+                    <td className="py-2 px-3">
+                      {a.direction !== "—" ? <span className={`font-bold ${a.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{a.direction}</span> : <span className="text-white/20">—</span>}
+                    </td>
+                    <td className="py-2 px-3">
+                      {a.regime !== "—" ? (
+                        <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
+                          a.regime === "TREND" || a.regime === "BREAKOUT" ? "bg-emerald-500/10 text-emerald-300" :
+                          a.regime === "BEAR" ? "bg-red-500/10 text-red-300" :
+                          "bg-white/[0.03] text-white/35"
+                        }`}>{a.regime}</span>
+                      ) : <span className="text-white/20">—</span>}
+                    </td>
+                    <td className="py-2 px-3 text-[10px] text-white/45 font-mono max-w-[160px] truncate">{a.distance_to_trigger}</td>
+                    <td className="py-2 px-3 font-mono">
+                      {a.indicators?.rsi ? (
+                        <span className={a.indicators.rsi < 30 ? "text-emerald-400" : a.indicators.rsi > 70 ? "text-red-400" : "text-white/50"}>{a.indicators.rsi.toFixed(0)}</span>
+                      ) : <span className="text-white/15">—</span>}
+                    </td>
+                    <td className="py-2 px-3 text-[10px] text-white/45 max-w-[220px] truncate">{a.reason}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
     </div>
   );
 }

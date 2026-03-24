@@ -381,3 +381,120 @@ def _evaluate_asset(asset: str, asset_class: str) -> list[Candidate]:
         results.append(c)
 
     return results
+
+
+def _evaluate_asset_full(asset: str, asset_class: str) -> dict:
+    """Evaluate one asset and return its best score across all strategies.
+    Always returns a result, even if no signal (score=0)."""
+    from bahamut.data.live_data import fetch_candles
+    from bahamut.features.indicators import compute_indicators
+
+    base = {
+        "asset": asset,
+        "asset_class": asset_class,
+        "score": 0,
+        "status": "no_data",
+        "strategy": "—",
+        "direction": "—",
+        "regime": "—",
+        "distance_to_trigger": "—",
+        "reason": "Insufficient data",
+        "indicators": {},
+    }
+
+    try:
+        candles = fetch_candles(asset, count=100)
+    except Exception:
+        return base
+
+    if not candles or len(candles) < 50:
+        base["reason"] = f"Only {len(candles) if candles else 0} candles (need 50+)"
+        return base
+
+    indicators = compute_indicators(candles)
+    if not indicators:
+        base["reason"] = "Indicator computation failed"
+        return base
+
+    prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
+
+    # Evaluate all strategies, keep best
+    best: Candidate | None = None
+
+    c = score_ema_cross(asset, asset_class, "v5_base", candles, indicators, prev_indicators)
+    if c and (not best or c.score > best.score):
+        best = c
+
+    c = score_breakout(asset, asset_class, candles, indicators)
+    if c and (not best or c.score > best.score):
+        best = c
+
+    if best:
+        status = "ready" if best.score >= 80 else "approaching" if best.score >= 60 else "weak" if best.score >= 20 else "no_signal"
+        return {
+            "asset": asset,
+            "asset_class": asset_class,
+            "score": best.score,
+            "status": status,
+            "strategy": best.strategy,
+            "direction": best.direction,
+            "regime": best.regime,
+            "distance_to_trigger": best.distance_to_trigger,
+            "reason": best.reasons[0] if best.reasons else "—",
+            "indicators": best.indicators,
+        }
+
+    # No candidate passed any threshold
+    base["status"] = "no_signal"
+    base["reason"] = "No strategy conditions approaching"
+    # Still provide basic indicators
+    base["indicators"] = _fmt_indicators(indicators)
+    base["regime"] = "BEAR" if indicators.get("close", 0) < indicators.get("ema_200", 0) else "RANGE"
+    return base
+
+
+def get_all_training_assets() -> dict:
+    """Scan ALL training assets and return full universe view.
+    Returns every asset with its best score, including no-signal ones."""
+    import time
+    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+
+    start = time.time()
+    results = []
+
+    batch_size = 10
+    for i in range(0, len(TRAINING_ASSETS), batch_size):
+        batch = TRAINING_ASSETS[i:i + batch_size]
+        for asset in batch:
+            try:
+                r = _evaluate_asset_full(asset, ASSET_CLASS_MAP.get(asset, "unknown"))
+                results.append(r)
+            except Exception as e:
+                results.append({
+                    "asset": asset,
+                    "asset_class": ASSET_CLASS_MAP.get(asset, "unknown"),
+                    "score": 0, "status": "error",
+                    "strategy": "—", "direction": "—", "regime": "—",
+                    "distance_to_trigger": "—",
+                    "reason": f"Evaluation failed: {str(e)[:60]}",
+                    "indicators": {},
+                })
+
+    # Sort by score desc
+    results.sort(key=lambda r: r["score"], reverse=True)
+
+    # Summary counts
+    counts = {"total": len(results), "ready": 0, "approaching": 0, "weak": 0, "no_signal": 0, "no_data": 0, "error": 0}
+    for r in results:
+        s = r.get("status", "no_signal")
+        if s in counts:
+            counts[s] += 1
+
+    duration_ms = int((time.time() - start) * 1000)
+    logger.info("all_assets_scanned", total=len(results), duration_ms=duration_ms)
+
+    return {
+        "assets": results,
+        "counts": counts,
+        "duration_ms": duration_ms,
+    }

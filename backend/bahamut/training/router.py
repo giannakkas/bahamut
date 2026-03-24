@@ -572,3 +572,15 @@ async def get_candidates(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("candidates_failed", error=str(e))
         return []
+
+
+@router.get("/assets")
+async def get_all_assets(user=Depends(get_current_user)):
+    """Get ALL training assets with scores, status, and indicators.
+    Returns the full ~50 asset universe — not filtered."""
+    try:
+        from bahamut.training.candidates import get_all_training_assets
+        return get_all_training_assets()
+    except Exception as e:
+        logger.error("all_assets_failed", error=str(e))
+        return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
