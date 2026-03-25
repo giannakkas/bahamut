@@ -85,6 +85,18 @@ WARMUP_DEFAULTS = {
     "warmup.size_multiplier": 0.5,
 }
 
+# ─── Exploration Mode ───
+EXPLORATION_DEFAULTS = {
+    "exploration.enabled": True,
+    "exploration.min_consensus_score": 0.35,
+    "exploration.max_per_cycle": 1,
+    "exploration.max_open_positions": 2,
+    "exploration.risk_pct": 0.5,           # 0.5% vs 2% normal
+    "exploration.size_multiplier": 0.25,   # 25% of normal size
+    "exploration.min_signal_label": "WEAK_SIGNAL",  # Allow WEAK_SIGNAL
+    "exploration.blocked_regimes": "CRISIS",
+}
+
 # ─── Trading Profiles ───
 PROFILE_PRESETS = {
     "conservative": {
@@ -150,7 +162,7 @@ def get_all_defaults() -> dict:
     for group in [KILL_SWITCH_DEFAULTS, SAFE_MODE_DEFAULTS, DELEVERAGE_DEFAULTS,
                    CONFIDENCE_DEFAULTS, EXPOSURE_DEFAULTS, MARGINAL_RISK_DEFAULTS,
                    QUALITY_DEFAULTS, SCENARIO_DEFAULTS, READINESS_DEFAULTS,
-                   WARMUP_DEFAULTS]:
+                   WARMUP_DEFAULTS, EXPLORATION_DEFAULTS]:
         merged.update(group)
     return merged
 

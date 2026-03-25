@@ -214,6 +214,11 @@ TABLES = [
         learning_processed BOOLEAN DEFAULT FALSE
     )""",
 
+    # ── Paper Positions: exploration mode column ──
+    """DO $$ BEGIN
+        ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20) DEFAULT 'STRICT';
+    EXCEPTION WHEN others THEN NULL; END $$""",
+
     # ── Learning ──
     """CREATE TABLE IF NOT EXISTS learning_events (
         id SERIAL PRIMARY KEY,

@@ -30,6 +30,7 @@ class ExecutionRequest:
     regime: str = "RISK_ON"
     mean_agent_trust: float = 1.0       # avg trust of contributing agents
     system_confidence: float = 0.5      # composite: trust stability + disagreement + perf + calib
+    is_exploration: bool = False         # True when evaluating under exploration mode
 
 
 @dataclass
@@ -77,7 +78,13 @@ class ExecutionPolicy:
         size_mult = 1.0
         limits = PROFILE_LIMITS.get(req.trading_profile, PROFILE_LIMITS["BALANCED"])
 
-        # ── HARD BLOCKERS ──
+        # Exploration mode uses relaxed score threshold but keeps all safety gates
+        effective_min_score = limits["min_consensus_score"]
+        if req.is_exploration:
+            effective_min_score = 0.35  # Exploration floor
+            size_mult = 0.25           # Reduced sizing from the start
+
+        # ── HARD BLOCKERS (always enforced, even in exploration) ──
         if not req.risk_can_trade:
             blockers.append(f"RISK_VETO: {', '.join(req.risk_flags)}")
         if req.current_drawdown_daily >= limits["max_daily_drawdown"]:
@@ -88,12 +95,12 @@ class ExecutionPolicy:
             blockers.append(f"MAX_POSITIONS: {req.open_position_count} >= {limits['max_concurrent_trades']}")
         if req.has_position_in_asset:
             blockers.append(f"DUPLICATE: Already in {req.asset}")
-        if req.consensus_score < limits["min_consensus_score"]:
-            blockers.append(f"SCORE_LOW: {req.consensus_score:.3f} < {limits['min_consensus_score']:.3f}")
+        if req.consensus_score < effective_min_score:
+            blockers.append(f"SCORE_LOW: {req.consensus_score:.3f} < {effective_min_score:.3f}")
         if req.disagreement_gate == "BLOCKED":
             blockers.append(f"DISAGREEMENT_BLOCKED: idx={req.disagreement_index:.3f}")
-        if req.regime == "CRISIS" and req.trading_profile == "CONSERVATIVE":
-            blockers.append("CRISIS_REGIME: Conservative blocks in crisis")
+        if req.regime == "CRISIS" and (req.trading_profile == "CONSERVATIVE" or req.is_exploration):
+            blockers.append("CRISIS_REGIME: blocked in crisis")
         hard_flags = {"DAILY_DD_WARNING", "WEEKLY_DD_WARNING", "STALE_DATA", "BROKER_FAILURE"}
         active = set(req.risk_flags) & hard_flags
         if active:
@@ -132,7 +139,7 @@ class ExecutionPolicy:
             return ExecutionDecision(allowed=False, mode="BLOCKED", reason=blockers[0],
                                      blockers=blockers, warnings=warnings, position_size_multiplier=0.0)
 
-        if req.execution_mode_from_consensus == "WATCH":
+        if req.execution_mode_from_consensus == "WATCH" and not req.is_exploration:
             return ExecutionDecision(allowed=False, mode="BLOCKED", reason="WATCH mode",
                                      blockers=["WATCH_MODE"], warnings=warnings)
 
@@ -141,7 +148,11 @@ class ExecutionPolicy:
                      or req.execution_mode_from_consensus == "APPROVAL"
                      or req.system_confidence < 0.40
                      or "PORTFOLIO_FRAGILE" in req.risk_flags)
-        mode = "PAPER_APPROVAL" if approval else "PAPER_AUTO"
+
+        if req.is_exploration:
+            mode = "EXPLORATION"
+        else:
+            mode = "PAPER_APPROVAL" if approval else "PAPER_AUTO"
         size_mult = max(0.1, min(1.0, size_mult))
 
         logger.info("exec_policy", asset=req.asset, allowed=True, mode=mode,

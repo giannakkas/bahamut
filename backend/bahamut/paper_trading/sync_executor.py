@@ -34,9 +34,19 @@ def process_signal_sync(
         return {"action": "SKIP", "reason": f"Disagreement BLOCKED (index={disagreement_index:.3f})",
                 "gate": "DISAGREEMENT", "disagreement_index": disagreement_index}
 
+    # ── SIGNAL LABEL GATE with exploration fallback ──
+    is_exploration = False
     if signal_label not in ("STRONG_SIGNAL", "SIGNAL"):
-        log.info("skip_sync", reason="weak_signal", label=signal_label)
-        return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}"}
+        # Normal path would reject — check if exploration mode can salvage this
+        exploration_eligible, explore_reason = _check_exploration_eligible(
+            asset, consensus_score, regime, signal_label)
+        if not exploration_eligible:
+            log.info("skip_sync", reason="weak_signal", label=signal_label,
+                     exploration=explore_reason)
+            return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}. {explore_reason}"}
+        is_exploration = True
+        log.info("exploration_fallback", asset=asset, score=consensus_score,
+                 label=signal_label, reason=explore_reason)
 
     try:
         with sync_engine.connect() as conn:
@@ -120,6 +130,12 @@ def process_signal_sync(
                     augmented_flags.append("SAFE_MODE")
 
             from bahamut.execution.policy import execution_policy, ExecutionRequest
+
+            # Exploration: override risk to 0.5% (vs normal 2%)
+            effective_risk_pct = risk_pct
+            if is_exploration:
+                effective_risk_pct = 0.5
+
             exec_req = ExecutionRequest(
                 asset=asset, direction=direction, consensus_score=consensus_score,
                 signal_label=signal_label,
@@ -133,6 +149,7 @@ def process_signal_sync(
                 mean_agent_trust=mean_trust,
                 system_confidence=sys_conf,
                 regime=regime,
+                is_exploration=is_exploration,
             )
             decision = execution_policy.evaluate(exec_req)
 
@@ -204,7 +221,7 @@ def process_signal_sync(
                 sl, tp = entry_price + sl_dist, entry_price - tp_dist
 
             # Position sizing with policy multiplier
-            risk_amt = balance * (risk_pct / 100.0)
+            risk_amt = balance * (effective_risk_pct / 100.0)
             qty = risk_amt / sl_dist if sl_dist > 0 else 1
             pos_val = qty * entry_price
             if size_mult < 1.0:
@@ -237,7 +254,16 @@ def process_signal_sync(
 
             log.info("trade_opened_sync", sl=round(sl, 6), tp=round(tp, 6),
                      qty=round(qty, 6), risk=round(risk_amt, 2),
-                     policy=decision.mode, size_mult=size_mult)
+                     policy=decision.mode, size_mult=size_mult,
+                     is_exploration=is_exploration)
+
+            # Track exploration trades
+            if is_exploration:
+                _increment_exploration_cycle_counter()
+                log.info("EXPLORATION_TRADE_OPENED",
+                         asset=asset, direction=direction,
+                         score=consensus_score, risk_pct=effective_risk_pct,
+                         size_mult=size_mult)
 
             # Log portfolio state at entry for learning
             try:
@@ -270,3 +296,74 @@ def process_signal_sync(
         import traceback
         logger.error("sync_traceback", tb=traceback.format_exc())
         return {"action": "ERROR", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+# EXPLORATION MODE HELPERS
+# ═══════════════════════════════════════════════════════════
+
+EXPLORATION_CYCLE_KEY = "bahamut:exploration:cycle_count"
+EXPLORATION_CYCLE_TTL = 180  # 3 min — one production cycle
+
+
+def _check_exploration_eligible(
+    asset: str, consensus_score: float, regime: str, signal_label: str,
+) -> tuple[bool, str]:
+    """
+    Check if a weak signal qualifies for exploration mode.
+    Returns (eligible, reason).
+    """
+    # 1. Config check
+    try:
+        from bahamut.admin.config import get_config
+        enabled = get_config("exploration.enabled", True)
+    except Exception:
+        enabled = True
+
+    if not enabled:
+        return False, "Exploration mode disabled"
+
+    # 2. Score floor
+    min_score = 0.35
+    if consensus_score < min_score:
+        return False, f"Score {consensus_score:.3f} < exploration floor {min_score}"
+
+    # 3. Regime gate
+    if regime == "CRISIS":
+        return False, "CRISIS regime blocks exploration"
+
+    # 4. Must have a directional signal (not NO_TRADE)
+    if signal_label == "NO_TRADE":
+        return False, "NO_TRADE — no direction to explore"
+
+    # 5. Per-cycle limit (Redis counter)
+    try:
+        import os, redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        count = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
+        if count >= 1:  # Max 1 per cycle
+            return False, f"Exploration cycle limit reached ({count}/1)"
+    except Exception:
+        pass  # Redis down — allow (fail-open for exploration, fail-closed for production)
+
+    # 6. Max open exploration positions
+    try:
+        from bahamut.paper_trading.store import count_exploration_positions
+        open_exp = count_exploration_positions()
+        if open_exp >= 2:
+            return False, f"Max exploration positions open ({open_exp}/2)"
+    except Exception:
+        pass
+
+    return True, f"Exploration eligible: score={consensus_score:.3f} label={signal_label}"
+
+
+def _increment_exploration_cycle_counter():
+    """Increment per-cycle exploration trade counter in Redis."""
+    try:
+        import os, redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.incr(EXPLORATION_CYCLE_KEY)
+        r.expire(EXPLORATION_CYCLE_KEY, EXPLORATION_CYCLE_TTL)
+    except Exception:
+        pass

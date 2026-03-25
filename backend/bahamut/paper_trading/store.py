@@ -222,6 +222,18 @@ def has_open_position(portfolio_id: int, asset: str) -> bool:
         return row is not None
 
 
+def count_exploration_positions() -> int:
+    """Count all open positions tagged as EXPLORATION across all portfolios."""
+    try:
+        with get_connection() as conn:
+            row = conn.execute(text(
+                "SELECT COUNT(*) FROM paper_positions WHERE status = 'OPEN' AND execution_mode = 'EXPLORATION'"
+            )).fetchone()
+            return row[0] if row else 0
+    except Exception:
+        return 0
+
+
 def get_position_by_id(position_id: int) -> dict | None:
     """Get a single position by ID."""
     from bahamut.db.query import run_query_one
