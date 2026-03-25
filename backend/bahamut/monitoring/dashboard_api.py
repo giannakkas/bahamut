@@ -685,3 +685,13 @@ async def get_training_dashboard(user=Depends(get_current_user)):
         return stats
     except Exception as e:
         return {"error": str(e), "open_positions": 0, "total_closed_trades": 0}
+
+
+@router.get("/exploration-status")
+async def get_exploration_status_endpoint():
+    """Get current exploration mode status for dashboard."""
+    try:
+        from bahamut.paper_trading.sync_executor import get_exploration_status
+        return get_exploration_status()
+    except Exception as e:
+        return {"enabled": False, "error": str(e)}

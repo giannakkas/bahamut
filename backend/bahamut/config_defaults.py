@@ -91,10 +91,13 @@ EXPLORATION_DEFAULTS = {
     "exploration.min_consensus_score": 0.35,
     "exploration.max_per_cycle": 1,
     "exploration.max_open_positions": 2,
+    "exploration.max_per_day": 5,
     "exploration.risk_pct": 0.5,           # 0.5% vs 2% normal
     "exploration.size_multiplier": 0.25,   # 25% of normal size
-    "exploration.min_signal_label": "WEAK_SIGNAL",  # Allow WEAK_SIGNAL
+    "exploration.min_signal_label": "WEAK_SIGNAL",
     "exploration.blocked_regimes": "CRISIS",
+    "exploration.cooldown_loss_streak": 3,
+    "exploration.cooldown_hours": 12,
 }
 
 # ─── Trading Profiles ───

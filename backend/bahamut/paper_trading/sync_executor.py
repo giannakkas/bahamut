@@ -303,7 +303,28 @@ def process_signal_sync(
 # ═══════════════════════════════════════════════════════════
 
 EXPLORATION_CYCLE_KEY = "bahamut:exploration:cycle_count"
-EXPLORATION_CYCLE_TTL = 180  # 3 min — one production cycle
+EXPLORATION_DAILY_KEY = "bahamut:exploration:daily_count"
+EXPLORATION_COOLDOWN_KEY = "bahamut:exploration:cooldown_until"
+EXPLORATION_LOSS_STREAK_KEY = "bahamut:exploration:loss_streak"
+EXPLORATION_CYCLE_TTL = 180     # 3 min — one production cycle
+EXPLORATION_DAILY_TTL = 86400   # 24 hours
+
+# Configurable limits
+EXPLORATION_MAX_PER_CYCLE = 1
+EXPLORATION_MAX_PER_DAY = 5
+EXPLORATION_MAX_POSITIONS = 2
+EXPLORATION_COOLDOWN_LOSS_STREAK = 3
+EXPLORATION_COOLDOWN_HOURS = 12
+
+
+def _get_exploration_redis():
+    try:
+        import os, redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.ping()
+        return r
+    except Exception:
+        return None
 
 
 def _check_exploration_eligible(
@@ -323,8 +344,13 @@ def _check_exploration_eligible(
     if not enabled:
         return False, "Exploration mode disabled"
 
-    # 2. Score floor
+    # 2. Score floor (strategy-specific)
     min_score = 0.35
+    # v5 strategies need higher confidence
+    if any(kw in asset.upper() for kw in ["BTC", "ETH"]):
+        # BTC/ETH are the primary production assets — higher floor
+        min_score = 0.40
+
     if consensus_score < min_score:
         return False, f"Score {consensus_score:.3f} < exploration floor {min_score}"
 
@@ -332,26 +358,54 @@ def _check_exploration_eligible(
     if regime == "CRISIS":
         return False, "CRISIS regime blocks exploration"
 
-    # 4. Must have a directional signal (not NO_TRADE)
+    # 4. Must have a directional signal
     if signal_label == "NO_TRADE":
         return False, "NO_TRADE — no direction to explore"
 
-    # 5. Per-cycle limit (Redis counter)
-    try:
-        import os, redis
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        count = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
-        if count >= 1:  # Max 1 per cycle
-            return False, f"Exploration cycle limit reached ({count}/1)"
-    except Exception:
-        pass  # Redis down — allow (fail-open for exploration, fail-closed for production)
+    r = _get_exploration_redis()
 
-    # 6. Max open exploration positions
+    # 5. Loss-streak cooldown check
+    if r:
+        try:
+            cooldown_until = r.get(EXPLORATION_COOLDOWN_KEY)
+            if cooldown_until:
+                from datetime import datetime, timezone
+                cd_time = datetime.fromisoformat(cooldown_until.decode())
+                now = datetime.now(timezone.utc)
+                if now < cd_time:
+                    remaining = (cd_time - now).total_seconds() / 3600
+                    return False, f"Cooldown active ({remaining:.1f}h remaining after {EXPLORATION_COOLDOWN_LOSS_STREAK} losses)"
+                else:
+                    # Cooldown expired — clear it
+                    r.delete(EXPLORATION_COOLDOWN_KEY)
+                    r.delete(EXPLORATION_LOSS_STREAK_KEY)
+        except Exception:
+            pass
+
+    # 6. Per-cycle limit
+    if r:
+        try:
+            count = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
+            if count >= EXPLORATION_MAX_PER_CYCLE:
+                return False, f"Exploration cycle limit reached ({count}/{EXPLORATION_MAX_PER_CYCLE})"
+        except Exception:
+            pass
+
+    # 7. Daily limit (24h rolling window)
+    if r:
+        try:
+            daily = int(r.get(EXPLORATION_DAILY_KEY) or 0)
+            if daily >= EXPLORATION_MAX_PER_DAY:
+                return False, f"Daily exploration limit reached ({daily}/{EXPLORATION_MAX_PER_DAY})"
+        except Exception:
+            pass
+
+    # 8. Max open exploration positions
     try:
         from bahamut.paper_trading.store import count_exploration_positions
         open_exp = count_exploration_positions()
-        if open_exp >= 2:
-            return False, f"Max exploration positions open ({open_exp}/2)"
+        if open_exp >= EXPLORATION_MAX_POSITIONS:
+            return False, f"Max exploration positions open ({open_exp}/{EXPLORATION_MAX_POSITIONS})"
     except Exception:
         pass
 
@@ -360,10 +414,88 @@ def _check_exploration_eligible(
 
 def _increment_exploration_cycle_counter():
     """Increment per-cycle exploration trade counter in Redis."""
+    r = _get_exploration_redis()
+    if not r:
+        return
     try:
-        import os, redis
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         r.incr(EXPLORATION_CYCLE_KEY)
         r.expire(EXPLORATION_CYCLE_KEY, EXPLORATION_CYCLE_TTL)
+        # Also increment daily counter
+        r.incr(EXPLORATION_DAILY_KEY)
+        # Set TTL only if new key (don't reset on increment)
+        if r.ttl(EXPLORATION_DAILY_KEY) < 0:
+            r.expire(EXPLORATION_DAILY_KEY, EXPLORATION_DAILY_TTL)
     except Exception:
         pass
+
+
+def record_exploration_outcome(pnl: float):
+    """
+    Called when an exploration trade closes.
+    Tracks loss streak and activates cooldown if needed.
+    """
+    r = _get_exploration_redis()
+    if not r:
+        return
+    try:
+        if pnl < 0:
+            streak = r.incr(EXPLORATION_LOSS_STREAK_KEY)
+            r.expire(EXPLORATION_LOSS_STREAK_KEY, EXPLORATION_DAILY_TTL)
+            if int(streak) >= EXPLORATION_COOLDOWN_LOSS_STREAK:
+                from datetime import datetime, timezone, timedelta
+                cooldown_end = datetime.now(timezone.utc) + timedelta(hours=EXPLORATION_COOLDOWN_HOURS)
+                r.set(EXPLORATION_COOLDOWN_KEY, cooldown_end.isoformat(), ex=EXPLORATION_COOLDOWN_HOURS * 3600 + 60)
+                logger.warning("exploration_cooldown_activated",
+                               streak=int(streak), cooldown_hours=EXPLORATION_COOLDOWN_HOURS)
+        else:
+            # Win resets streak
+            r.set(EXPLORATION_LOSS_STREAK_KEY, 0, ex=EXPLORATION_DAILY_TTL)
+    except Exception:
+        pass
+
+
+def get_exploration_status() -> dict:
+    """Get exploration status for dashboard API."""
+    r = _get_exploration_redis()
+    status = {
+        "enabled": True,
+        "cycle_count": 0,
+        "daily_count": 0,
+        "daily_limit": EXPLORATION_MAX_PER_DAY,
+        "open_positions": 0,
+        "max_positions": EXPLORATION_MAX_POSITIONS,
+        "loss_streak": 0,
+        "cooldown_active": False,
+        "cooldown_remaining_hours": 0,
+    }
+
+    try:
+        from bahamut.admin.config import get_config
+        status["enabled"] = get_config("exploration.enabled", True)
+    except Exception:
+        pass
+
+    if r:
+        try:
+            status["cycle_count"] = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
+            status["daily_count"] = int(r.get(EXPLORATION_DAILY_KEY) or 0)
+            status["loss_streak"] = int(r.get(EXPLORATION_LOSS_STREAK_KEY) or 0)
+
+            cooldown_until = r.get(EXPLORATION_COOLDOWN_KEY)
+            if cooldown_until:
+                from datetime import datetime, timezone
+                cd_time = datetime.fromisoformat(cooldown_until.decode())
+                now = datetime.now(timezone.utc)
+                if now < cd_time:
+                    status["cooldown_active"] = True
+                    status["cooldown_remaining_hours"] = round((cd_time - now).total_seconds() / 3600, 1)
+        except Exception:
+            pass
+
+    try:
+        from bahamut.paper_trading.store import count_exploration_positions
+        status["open_positions"] = count_exploration_positions()
+    except Exception:
+        pass
+
+    return status

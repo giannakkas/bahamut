@@ -129,7 +129,7 @@ class TestExplorationEligibility:
 
 
 class TestExplorationLimits:
-    """Test per-cycle and max-positions limits."""
+    """Test per-cycle, daily, and max-positions limits."""
 
     @patch("bahamut.paper_trading.store.count_exploration_positions")
     def test_max_positions_blocks(self, mock_count):
@@ -138,6 +138,71 @@ class TestExplorationLimits:
         eligible, reason = _check_exploration_eligible("BTCUSD", 0.50, "RISK_ON", "WEAK_SIGNAL")
         assert not eligible
         assert "Max exploration" in reason
+
+
+class TestExplorationCooldown:
+    """Test loss-streak cooldown."""
+
+    @pytest.fixture(autouse=True)
+    def _redis(self):
+        from bahamut.paper_trading.sync_executor import _get_exploration_redis
+        r = _get_exploration_redis()
+        if not r:
+            pytest.skip("No Redis available")
+        self.r = r
+
+    def test_record_loss_increments_streak(self):
+        from bahamut.paper_trading.sync_executor import record_exploration_outcome, EXPLORATION_LOSS_STREAK_KEY
+        self.r.delete(EXPLORATION_LOSS_STREAK_KEY)
+        record_exploration_outcome(-50.0)
+        streak = int(self.r.get(EXPLORATION_LOSS_STREAK_KEY) or 0)
+        assert streak == 1
+
+    def test_win_resets_streak(self):
+        from bahamut.paper_trading.sync_executor import record_exploration_outcome, EXPLORATION_LOSS_STREAK_KEY
+        self.r.set(EXPLORATION_LOSS_STREAK_KEY, 2)
+        record_exploration_outcome(100.0)
+        streak = int(self.r.get(EXPLORATION_LOSS_STREAK_KEY) or 0)
+        assert streak == 0
+
+    def test_cooldown_activates_after_streak(self):
+        from bahamut.paper_trading.sync_executor import (
+            record_exploration_outcome, EXPLORATION_LOSS_STREAK_KEY, EXPLORATION_COOLDOWN_KEY,
+        )
+        self.r.delete(EXPLORATION_LOSS_STREAK_KEY)
+        self.r.delete(EXPLORATION_COOLDOWN_KEY)
+        record_exploration_outcome(-10.0)
+        record_exploration_outcome(-10.0)
+        record_exploration_outcome(-10.0)
+        assert self.r.get(EXPLORATION_COOLDOWN_KEY) is not None
+        self.r.delete(EXPLORATION_COOLDOWN_KEY)
+        self.r.delete(EXPLORATION_LOSS_STREAK_KEY)
+
+    def test_cooldown_blocks_exploration(self):
+        from bahamut.paper_trading.sync_executor import (
+            _check_exploration_eligible, EXPLORATION_COOLDOWN_KEY,
+        )
+        from datetime import datetime, timezone, timedelta
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        self.r.set(EXPLORATION_COOLDOWN_KEY, future.isoformat(), ex=3700)
+        eligible, reason = _check_exploration_eligible("BTCUSD", 0.50, "RISK_ON", "WEAK_SIGNAL")
+        assert not eligible
+        assert "cooldown" in reason.lower()
+        self.r.delete(EXPLORATION_COOLDOWN_KEY)
+
+
+class TestExplorationStatus:
+    """Test dashboard status function."""
+
+    def test_status_returns_dict(self):
+        from bahamut.paper_trading.sync_executor import get_exploration_status
+        status = get_exploration_status()
+        assert isinstance(status, dict)
+        assert "enabled" in status
+        assert "daily_count" in status
+        assert "daily_limit" in status
+        assert "cooldown_active" in status
+        assert "loss_streak" in status
 
 
 class TestExplorationIsolation:
@@ -179,8 +244,11 @@ class TestConfigDefaults:
         assert EXPLORATION_DEFAULTS["exploration.min_consensus_score"] == 0.35
         assert EXPLORATION_DEFAULTS["exploration.max_per_cycle"] == 1
         assert EXPLORATION_DEFAULTS["exploration.max_open_positions"] == 2
+        assert EXPLORATION_DEFAULTS["exploration.max_per_day"] == 5
         assert EXPLORATION_DEFAULTS["exploration.risk_pct"] == 0.5
         assert EXPLORATION_DEFAULTS["exploration.size_multiplier"] == 0.25
+        assert EXPLORATION_DEFAULTS["exploration.cooldown_loss_streak"] == 3
+        assert EXPLORATION_DEFAULTS["exploration.cooldown_hours"] == 12
 
     def test_exploration_in_merged_defaults(self):
         from bahamut.config_defaults import get_all_defaults

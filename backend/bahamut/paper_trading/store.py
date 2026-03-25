@@ -116,13 +116,16 @@ def close_position(position_id: int, exit_price: float, realized_pnl: float,
                    update_portfolio: bool = True) -> None:
     """Close a position with exit details. Optionally updates portfolio stats."""
     with get_connection() as conn:
-        # Get portfolio_id before closing
+        # Get portfolio_id and execution_mode before closing
         portfolio_id = None
+        execution_mode = "STRICT"
         if update_portfolio:
             row = conn.execute(text(
-                "SELECT portfolio_id FROM paper_positions WHERE id = :pid"
+                "SELECT portfolio_id, COALESCE(execution_mode, 'STRICT') FROM paper_positions WHERE id = :pid"
             ), {"pid": position_id}).fetchone()
-            portfolio_id = row[0] if row else None
+            if row:
+                portfolio_id = row[0]
+                execution_mode = row[1] or "STRICT"
 
         conn.execute(text("""
             UPDATE paper_positions SET
@@ -139,8 +142,17 @@ def close_position(position_id: int, exit_price: float, realized_pnl: float,
     if update_portfolio and portfolio_id:
         update_portfolio_after_close(portfolio_id, realized_pnl)
 
+    # Track exploration loss streak for cooldown
+    if execution_mode == "EXPLORATION":
+        try:
+            from bahamut.paper_trading.sync_executor import record_exploration_outcome
+            record_exploration_outcome(realized_pnl)
+        except Exception:
+            pass
+
     logger.info("position_closed", position_id=position_id, status=status,
-                exit_price=exit_price, realized_pnl=realized_pnl)
+                exit_price=exit_price, realized_pnl=realized_pnl,
+                execution_mode=execution_mode)
 
 
 def close_position_for_reallocation(position_id: int) -> dict | None:
