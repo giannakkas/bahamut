@@ -16,6 +16,8 @@ export default function DailyOperations() {
   const [timing, setTiming] = useState<any>(null);
   const [stratConds, setStratConds] = useState<any>({});
   const [performance, setPerformance] = useState<any>(null);
+  const [accuracy, setAccuracy] = useState<any>(null);
+  const [explorationStatus, setExplorationStatus] = useState<any>(null);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"cycle" | "conditions" | "strategies" | "positions" | "trades" | "alerts" | "training">("cycle");
@@ -72,6 +74,9 @@ export default function DailyOperations() {
       if (d.strategy_conditions) setStratConds(d.strategy_conditions);
       if (d.performance) setPerformance(d.performance);
     }
+    // Fetch accuracy + exploration status in parallel (non-blocking)
+    api("/trading-accuracy").then(r => { if (r) setAccuracy(r); });
+    api("/exploration-status").then(r => { if (r) setExplorationStatus(r); });
     setLoading(false);
     setLastUpdated(new Date());
   }, [api]);
@@ -162,6 +167,32 @@ export default function DailyOperations() {
           {critAlerts > 0 && <button onClick={() => setTab("alerts")} className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse cursor-pointer hover:bg-red-500/30 transition-colors">{critAlerts} CRITICAL</button>}
         </div>
         <div className="flex gap-2 items-center">
+          {/* ═══ TRADING ACCURACY — top right ═══ */}
+          <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-bah-border/60 bg-bah-bg/50" title={accuracy?.has_data ? `Accuracy = ${accuracy.strict_wins} wins / ${accuracy.strict_total_trades} strict closed trades. Exploration and test trades excluded.` : "No strict closed trades yet"}>
+            <div className="text-right">
+              <div className={`text-lg font-bold leading-none tabular-nums ${
+                !accuracy?.has_data ? "text-bah-muted" :
+                (accuracy.strict_accuracy_pct ?? 0) >= 60 ? "text-green-400" :
+                (accuracy.strict_accuracy_pct ?? 0) >= 45 ? "text-amber-400" : "text-red-400"
+              }`}>
+                {accuracy?.has_data ? `${accuracy.strict_accuracy_pct}%` : "—%"}
+              </div>
+              <div className="text-[8px] text-bah-muted uppercase tracking-wider leading-none mt-0.5">Win Rate</div>
+            </div>
+            <div className="text-[9px] text-bah-muted/60 leading-tight max-w-[70px]">
+              {accuracy?.has_data ? `${accuracy.strict_total_trades} strict trades` : "awaiting trades"}
+            </div>
+          </div>
+          {/* ═══ Exploration badge ═══ */}
+          {explorationStatus?.enabled && (
+            <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9px] font-semibold ${
+              explorationStatus.cooldown_active ? "border-red-500/30 text-red-400 bg-red-500/5" :
+              "border-amber-500/25 text-amber-300 bg-amber-500/5"
+            }`} title={`Exploration: ${explorationStatus.daily_count}/${explorationStatus.daily_limit} today, ${explorationStatus.open_positions}/${explorationStatus.max_positions} open${explorationStatus.cooldown_active ? `, cooldown ${explorationStatus.cooldown_remaining_hours}h` : ""}`}>
+              <span>{explorationStatus.cooldown_active ? "⏸" : "⚡"}</span>
+              <span>EXPLORE {explorationStatus.daily_count}/{explorationStatus.daily_limit}</span>
+            </div>
+          )}
           <span className="text-[10px] text-bah-muted font-mono flex items-center gap-1.5">
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${secondsAgo < 10 ? "bg-green-400 animate-pulse" : secondsAgo < 30 ? "bg-amber-400" : "bg-red-400"}`} />
             {secondsAgo}s ago

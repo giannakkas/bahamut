@@ -695,3 +695,68 @@ async def get_exploration_status_endpoint():
         return get_exploration_status()
     except Exception as e:
         return {"enabled": False, "error": str(e)}
+
+
+@router.get("/trading-accuracy")
+async def get_trading_accuracy():
+    """
+    Canonical trading accuracy metric — based on REAL closed trade outcomes only.
+
+    Uses STRICT closed trades only by default.
+    Excludes EXPLORATION and TEST_ trades from the main accuracy number.
+    This is the single source of truth for the top-right dashboard widget.
+    """
+    try:
+        from bahamut.db.query import run_query_one, run_query
+
+        # Strict trades only (excludes EXPLORATION and TEST_)
+        strict = run_query_one("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN realized_pnl <= 0 THEN 1 ELSE 0 END) as losses,
+                COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                COALESCE(AVG(realized_pnl), 0) as avg_pnl
+            FROM paper_positions
+            WHERE status = 'CLOSED'
+              AND COALESCE(execution_mode, 'STRICT') != 'EXPLORATION'
+              AND asset NOT LIKE 'TEST_%'
+        """)
+
+        # Exploration trades separately
+        exploration = run_query_one("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as wins
+            FROM paper_positions
+            WHERE status = 'CLOSED'
+              AND execution_mode = 'EXPLORATION'
+        """)
+
+        s_total = int(strict.get("total", 0) or 0) if strict else 0
+        s_wins = int(strict.get("wins", 0) or 0) if strict else 0
+        s_losses = int(strict.get("losses", 0) or 0) if strict else 0
+        s_pnl = float(strict.get("total_pnl", 0) or 0) if strict else 0
+        s_avg = float(strict.get("avg_pnl", 0) or 0) if strict else 0
+
+        e_total = int(exploration.get("total", 0) or 0) if exploration else 0
+        e_wins = int(exploration.get("wins", 0) or 0) if exploration else 0
+
+        strict_accuracy = round(s_wins / max(1, s_total) * 100, 1) if s_total > 0 else None
+        exploration_accuracy = round(e_wins / max(1, e_total) * 100, 1) if e_total > 0 else None
+
+        return {
+            "strict_accuracy_pct": strict_accuracy,
+            "strict_total_trades": s_total,
+            "strict_wins": s_wins,
+            "strict_losses": s_losses,
+            "strict_total_pnl": round(s_pnl, 2),
+            "strict_avg_pnl": round(s_avg, 2),
+            "exploration_accuracy_pct": exploration_accuracy,
+            "exploration_total_trades": e_total,
+            "exploration_wins": e_wins,
+            "has_data": s_total > 0,
+        }
+    except Exception as e:
+        logger.error("trading_accuracy_failed", error=str(e))
+        return {"strict_accuracy_pct": None, "has_data": False, "strict_total_trades": 0}
