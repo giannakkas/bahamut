@@ -38,7 +38,7 @@ export default function Portfolio() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] space-y-5">
+      <div className="w-full space-y-5">
         {/* Header */}
         <div className={`transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
           <h1 className="text-xl sm:text-2xl font-bold">Portfolio</h1>
@@ -61,11 +61,11 @@ export default function Portfolio() {
         </div>
 
         {/* Charts Row */}
-        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-4 transition-all duration-700 delay-200 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-3 2xl:grid-cols-4 gap-4 transition-all duration-700 delay-200 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
           {/* Equity Curve */}
-          <div className="lg:col-span-2 bg-bg-secondary/60 border border-border-default rounded-xl p-4">
+          <div className="lg:col-span-2 2xl:col-span-3 bg-bg-secondary/60 border border-border-default rounded-xl p-4">
             <div className="text-xs font-bold mb-3">Portfolio Equity — Today</div>
-            <div className="h-[180px]">
+            <div className="h-[180px] 2xl:h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={EQUITY}>
                   <defs>
@@ -150,7 +150,7 @@ export default function Portfolio() {
                 </div>
               </div>
               {/* Details row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-3 border-t border-border-default/40">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-3 border-t border-border-default/40">
                 {[
                   { l:"Entry", v:fm(p.entry) },
                   { l:"Current", v:fm(p.current) },

@@ -52,7 +52,7 @@ export default function NewsFeed() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] space-y-5">
+      <div className="w-full space-y-5">
         <div className={`flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">News Feed</h1>
@@ -68,7 +68,7 @@ export default function NewsFeed() {
           </select>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] 2xl:grid-cols-[1fr_480px] gap-5">
           {/* Economic Calendar */}
           <div className={`space-y-3 transition-all duration-700 delay-100 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
             <div className="flex items-center gap-2">

@@ -56,7 +56,7 @@ export default function Dashboard() {
 
   return (
     <AppShell>
-      <div className="space-y-4 sm:space-y-5 max-w-[1400px]">
+      <div className="space-y-4 sm:space-y-5 w-full">
         {/* Hero */}
         <Card className={`p-5 sm:p-7 relative overflow-hidden transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <div className="absolute top-[-60px] right-[-20px] w-48 h-48 bg-accent-violet/5 rounded-full blur-[40px]" />
@@ -86,7 +86,7 @@ export default function Dashboard() {
             <div className="text-xs font-bold">Portfolio Equity — Today</div>
             <div className="text-xs text-text-muted tabular-nums">24h</div>
           </div>
-          <div className="h-[120px] sm:h-[160px]">
+          <div className="h-[120px] sm:h-[160px] 2xl:h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={EQUITY}>
                 <defs><linearGradient id="dashGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6c5ce7" stopOpacity={0.25} /><stop offset="100%" stopColor="#6c5ce7" stopOpacity={0} /></linearGradient></defs>
@@ -149,7 +149,7 @@ export default function Dashboard() {
         </div>
 
         {/* News + Risk */}
-        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 transition-all duration-700 delay-[400ms] ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_300px] 2xl:grid-cols-[1fr_380px] gap-4 transition-all duration-700 delay-[400ms] ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Card className="p-4">
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-accent-emerald" /><span className="text-xs font-bold">News Feed</span></div>
@@ -192,7 +192,7 @@ export default function Dashboard() {
         {/* Opportunities */}
         <div>
           <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2.5">Top Opportunities</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
             {OPPS.map((o, i) => (
               <Card key={i} className="p-3.5">
                 <div className="flex justify-between items-center mb-1.5">

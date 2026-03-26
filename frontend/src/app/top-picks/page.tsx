@@ -41,7 +41,7 @@ export default function TopPicks() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] space-y-5">
+      <div className="w-full space-y-5">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
           <div>
@@ -61,7 +61,7 @@ export default function TopPicks() {
         </div>
 
         {/* Top 5 Cards — horizontal scroll on mobile */}
-        <div className="flex gap-3 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-5 sm:overflow-visible">
+        <div className="flex gap-3 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-5 sm:overflow-visible">
           {top5.map((p, i) => (
             <div key={i} className="min-w-[180px] sm:min-w-0 bg-bg-secondary/60 border border-border-default rounded-xl p-3.5 shrink-0">
               <div className="flex justify-between items-start mb-1.5">
@@ -89,11 +89,11 @@ export default function TopPicks() {
 
         {/* Table — desktop */}
         <div className="hidden lg:block rounded-xl overflow-hidden border border-border-default">
-          <div className="grid grid-cols-[50px_80px_75px_95px_75px_70px_110px_65px_50px_50px_1fr] px-4 py-2.5 bg-bg-tertiary/50 border-b border-border-default">
+          <div className="grid grid-cols-[minmax(40px,0.5fr)_minmax(60px,1fr)_minmax(60px,0.8fr)_minmax(80px,1.2fr)_minmax(65px,1fr)_minmax(50px,0.6fr)_minmax(90px,1.4fr)_minmax(55px,0.8fr)_minmax(45px,0.7fr)_minmax(45px,0.7fr)_minmax(120px,3fr)] px-4 py-2.5 bg-bg-tertiary/50 border-b border-border-default">
             {["RANK","ASSET","CLASS","PRICE","CHANGE","DIR","SCORE","WHALES","RSI","ADX","REASONS"].map(h => <span key={h} className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">{h}</span>)}
           </div>
           {filtered.map((p, i) => (
-            <div key={i} className={`grid grid-cols-[50px_80px_75px_95px_75px_70px_110px_65px_50px_50px_1fr] px-4 py-2.5 items-center border-b border-border-default/30 hover:bg-bg-tertiary/30 transition-colors ${i%2===0 ? "" : "bg-bg-secondary/20"}`}>
+            <div key={i} className={`grid grid-cols-[minmax(40px,0.5fr)_minmax(60px,1fr)_minmax(60px,0.8fr)_minmax(80px,1.2fr)_minmax(65px,1fr)_minmax(50px,0.6fr)_minmax(90px,1.4fr)_minmax(55px,0.8fr)_minmax(45px,0.7fr)_minmax(45px,0.7fr)_minmax(120px,3fr)] px-4 py-2.5 items-center border-b border-border-default/30 hover:bg-bg-tertiary/30 transition-colors ${i%2===0 ? "" : "bg-bg-secondary/20"}`}>
               <span className="text-sm text-text-muted">{p.rank}</span>
               <span className="text-sm font-bold">{p.asset}</span>
               <span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${clsBg[p.cls]} ${clsTx[p.cls]}`}>{p.cls}</span></span>

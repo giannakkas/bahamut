@@ -38,7 +38,7 @@ export default function Trades() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] space-y-5">
+      <div className="w-full space-y-5">
         <div className={`transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
           <h1 className="text-xl sm:text-2xl font-bold">Trade History</h1>
           <p className="text-xs text-text-muted mt-1">{CLOSED.length} completed trades</p>
@@ -62,10 +62,10 @@ export default function Trades() {
         </div>
 
         {/* Charts */}
-        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4 transition-all duration-700 delay-200 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_240px] 2xl:grid-cols-[1fr_300px] gap-4 transition-all duration-700 delay-200 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
           <div className="bg-bg-secondary/60 border border-border-default rounded-xl p-4">
             <div className="text-xs font-bold mb-3">P&L by Trade</div>
-            <div className="h-[200px]">
+            <div className="h-[200px] 2xl:h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barData} barSize={20}>
                   <XAxis dataKey="name" tick={{ fontSize:9, fill:'#555570' }} axisLine={false} tickLine={false} />
