@@ -125,7 +125,7 @@ export default function Dashboard() {
   return (
     <AppShell>
       <div className="space-y-3 w-full">
-        {/* ═══ ROW 1: Hero + Equity Chart side by side ═══ */}
+        {/* ═══ ROW 1: Balance+Funds combined + Equity Chart ═══ */}
         <div className={`grid grid-cols-1 lg:grid-cols-[380px_1fr] 2xl:grid-cols-[420px_1fr] gap-3 transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Card className="p-4 relative overflow-hidden">
             <div className="absolute top-[-40px] right-[-20px] w-32 h-32 bg-accent-violet/5 rounded-full blur-[30px]" />
@@ -133,7 +133,7 @@ export default function Dashboard() {
               <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold mb-0.5">Total Balance</div>
               <div className="text-3xl sm:text-4xl font-black tracking-tight tabular-nums">{fm(balance)}</div>
               <div className="mt-1 text-xs text-text-secondary">Available: <span className="text-text-primary font-semibold">{fm(available)}</span></div>
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-default/40">
+              <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border-default/40">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse" />
                   <span className="text-xs font-semibold text-accent-emerald">Trading Active</span>
@@ -142,6 +142,20 @@ export default function Dashboard() {
                   <span className="text-lg font-bold text-accent-emerald tabular-nums">+{fm(d.todayPnl)}</span>
                   <span className="text-xs text-accent-emerald/50 ml-1">{fp(d.todayPnlPct)}</span>
                 </div>
+              </div>
+              {/* Add Funds — inline */}
+              <div className="mt-3 pt-3 border-t border-border-default/40">
+                {!showTopUp ? (
+                  <button onClick={() => setShowTopUp(true)} className="w-full py-2.5 rounded-lg bg-gradient-to-r from-accent-violet to-[#4c3ad1] text-white font-bold text-xs shadow-lg shadow-accent-violet/20 hover:brightness-110 active:scale-[0.98] transition-all">Add Virtual Funds</button>
+                ) : (
+                  <div className="space-y-2">
+                    <input type="number" value={topUpAmt} onChange={e => setTopUpAmt(e.target.value)} placeholder="Enter amount" className="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border-default text-white text-base font-semibold placeholder:text-text-muted focus:outline-none focus:border-accent-violet/40" />
+                    <div className="flex gap-2">
+                      <button onClick={() => { setShowTopUp(false); setTopUpAmt(""); }} className="flex-1 py-2 rounded-lg border border-border-default text-text-secondary text-xs hover:bg-bg-tertiary">Cancel</button>
+                      <button onClick={handleTopUp} className="flex-1 py-2 rounded-lg bg-accent-violet text-white text-xs font-bold hover:brightness-110 active:scale-[0.97] transition-all">Confirm</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>
@@ -163,41 +177,30 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* ═══ ROW 2: Add Funds + Allocation + Trust Strip ═══ */}
-        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3 transition-all duration-700 delay-100 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-          <Card className="p-3.5">
-            <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold mb-2">Add Funds</div>
-            {!showTopUp ? (
-              <button onClick={() => setShowTopUp(true)} className="w-full py-2.5 rounded-lg bg-gradient-to-r from-accent-violet to-[#4c3ad1] text-white font-bold text-xs shadow-lg shadow-accent-violet/20 hover:brightness-110 active:scale-[0.98] transition-all">Add Virtual Funds</button>
-            ) : (
-              <div className="space-y-2">
-                <input type="number" value={topUpAmt} onChange={e => setTopUpAmt(e.target.value)} placeholder="Enter amount" className="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border-default text-white text-base font-semibold placeholder:text-text-muted focus:outline-none focus:border-accent-violet/40" />
-                <div className="flex gap-2">
-                  <button onClick={() => { setShowTopUp(false); setTopUpAmt(""); }} className="flex-1 py-2 rounded-lg border border-border-default text-text-secondary text-xs hover:bg-bg-tertiary">Cancel</button>
-                  <button onClick={handleTopUp} className="flex-1 py-2 rounded-lg bg-accent-violet text-white text-xs font-bold hover:brightness-110 active:scale-[0.97] transition-all">Confirm</button>
-                </div>
-              </div>
-            )}
-          </Card>
+        {/* ═══ ROW 2: Trading Allocation + Trust Strip ═══ */}
+        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 transition-all duration-700 delay-100 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Card className="p-3.5">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold">Trading Allocation</div>
-              <div className="text-[9px] text-text-muted">How much to trade?</div>
+              <div className="text-[9px] text-text-muted">How much should Bahamut trade for you?</div>
             </div>
-            <div className="relative mb-1.5">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm font-bold">$</span>
-              <input type="number" value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full pl-7 pr-3 py-2 rounded-lg bg-bg-primary border border-border-default text-white text-lg font-bold focus:outline-none focus:border-accent-violet/40 tabular-nums" />
+            <div className="flex gap-3 items-start">
+              <div className="flex-1">
+                <div className="relative mb-1.5">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm font-bold">$</span>
+                  <input type="number" value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full pl-7 pr-3 py-2 rounded-lg bg-bg-primary border border-border-default text-white text-lg font-bold focus:outline-none focus:border-accent-violet/40 tabular-nums" />
+                </div>
+                <input type="range" min={0} max={balance} step={100} value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full mb-1.5 accent-accent-violet h-1" />
+                <div className="flex gap-1">
+                  {[100,500,1000,5000].map(v => (
+                    <button key={v} onClick={() => setTradingAmt(v)} className={`flex-1 py-1 rounded text-[9px] font-semibold border transition-all ${tradingAmt === v ? 'bg-accent-violet/15 text-accent-violet border-accent-violet/30' : 'bg-bg-primary text-text-muted border-border-default'}`}>{fm(v)}</button>
+                  ))}
+                  <button onClick={() => setTradingAmt(balance)} className="flex-1 py-1 rounded text-[9px] font-semibold border border-border-default bg-bg-primary text-text-muted">Max</button>
+                </div>
+              </div>
+              <button onClick={handleUpdateAllocation} className="px-5 py-2 rounded-lg bg-bg-tertiary border border-border-default text-white font-semibold text-xs hover:bg-bg-surface active:scale-[0.98] transition-all whitespace-nowrap self-center">Update</button>
             </div>
-            <input type="range" min={0} max={balance} step={100} value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full mb-1.5 accent-accent-violet h-1" />
-            <div className="flex gap-1 mb-2">
-              {[100,500,1000,5000].map(v => (
-                <button key={v} onClick={() => setTradingAmt(v)} className={`flex-1 py-1 rounded text-[9px] font-semibold border transition-all ${tradingAmt === v ? 'bg-accent-violet/15 text-accent-violet border-accent-violet/30' : 'bg-bg-primary text-text-muted border-border-default'}`}>{fm(v)}</button>
-              ))}
-              <button onClick={() => setTradingAmt(balance)} className="flex-1 py-1 rounded text-[9px] font-semibold border border-border-default bg-bg-primary text-text-muted">Max</button>
-            </div>
-            <button onClick={handleUpdateAllocation} className="w-full py-2 rounded-lg bg-bg-tertiary border border-border-default text-white font-semibold text-xs hover:bg-bg-surface active:scale-[0.98] transition-all">Update Trading Amount</button>
           </Card>
-          {/* Trust strip — vertical on lg, horizontal otherwise */}
           <div className="grid grid-cols-4 lg:grid-cols-2 lg:w-[200px] 2xl:w-[220px] gap-2">
             {[
               { l:"Win Rate", v:`${d.winRate}%`, c: d.winRate >= 60 ? "text-accent-emerald" : "text-accent-amber" },
