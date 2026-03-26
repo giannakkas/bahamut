@@ -40,6 +40,9 @@ def process_signal_sync(
     if execution_gate == "BLOCKED":
         log.info("exploration_condition", reason="disagreement_blocked",
                  index=disagreement_index, mode="STRICT")
+        _record_failed_signal(asset, direction, consensus_score, signal_label,
+                              regime, f"Disagreement BLOCKED (idx={disagreement_index:.3f})",
+                              gate="DISAGREEMENT")
         return {"action": "SKIP", "reason": f"Disagreement BLOCKED (index={disagreement_index:.3f})",
                 "gate": "DISAGREEMENT", "disagreement_index": disagreement_index}
 
@@ -64,6 +67,9 @@ def process_signal_sync(
             log.info("exploration_condition",
                      asset=asset, mode="NONE",
                      strict_reason="weak_signal", exploration_reason=explore_reason)
+            _record_failed_signal(asset, direction, consensus_score, signal_label,
+                                  regime, f"Strict: weak_signal. Exploration: {explore_reason}",
+                                  gate="SIGNAL_LABEL+EXPLORATION")
             return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}. {explore_reason}"}
 
         is_exploration = True
@@ -122,6 +128,10 @@ def process_signal_sync(
 
                 if not portfolio_verdict.allowed:
                     log.info("blocked_by_portfolio", blockers=portfolio_verdict.blockers)
+                    _record_failed_signal(asset, direction, consensus_score, signal_label,
+                                          regime, portfolio_verdict.blockers[0],
+                                          gate="PORTFOLIO", blockers=portfolio_verdict.blockers,
+                                          mode="EXPLORATION" if is_exploration else "STRICT")
                     return {"action": "SKIP", "reason": portfolio_verdict.blockers[0],
                             "blockers": portfolio_verdict.blockers, "gate": "PORTFOLIO"}
 
@@ -239,6 +249,10 @@ def process_signal_sync(
 
                 if not decision.allowed:
                     log.info("blocked_by_policy", reason=decision.reason, blockers=decision.blockers)
+                    _record_failed_signal(asset, direction, consensus_score, signal_label,
+                                          regime, decision.reason,
+                                          gate="EXECUTION_POLICY", blockers=decision.blockers,
+                                          mode="EXPLORATION" if is_exploration else "STRICT")
                     return {"action": "SKIP", "reason": decision.reason,
                             "blockers": decision.blockers, "policy_mode": decision.mode}
 
@@ -336,6 +350,58 @@ def process_signal_sync(
         import traceback
         logger.error("sync_traceback", tb=traceback.format_exc())
         return {"action": "ERROR", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════
+# FAILED SIGNAL STORAGE — Redis-backed for dashboard visibility
+# ═══════════════════════════════════════════════════════════
+
+FAILED_SIGNALS_KEY = "bahamut:failed_signals"
+FAILED_SIGNALS_MAX = 100
+
+
+def _record_failed_signal(
+    asset: str, direction: str, score: float, label: str,
+    regime: str, reason: str, gate: str = "",
+    blockers: list = None, mode: str = "STRICT",
+):
+    """Store a failed signal in Redis for dashboard display."""
+    r = _get_exploration_redis()
+    if not r:
+        return
+    try:
+        import json
+        from datetime import datetime, timezone
+        entry = {
+            "asset": asset,
+            "direction": direction,
+            "score": round(score, 4),
+            "label": label,
+            "regime": regime,
+            "reason": reason,
+            "gate": gate,
+            "blockers": blockers or [],
+            "mode": mode,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        r.lpush(FAILED_SIGNALS_KEY, json.dumps(entry))
+        r.ltrim(FAILED_SIGNALS_KEY, 0, FAILED_SIGNALS_MAX - 1)
+        r.expire(FAILED_SIGNALS_KEY, 86400)  # 24h TTL
+    except Exception:
+        pass
+
+
+def get_failed_signals(limit: int = 50) -> list[dict]:
+    """Get recent failed signals for dashboard."""
+    r = _get_exploration_redis()
+    if not r:
+        return []
+    try:
+        import json
+        raw_list = r.lrange(FAILED_SIGNALS_KEY, 0, limit - 1)
+        return [json.loads(x) for x in raw_list] if raw_list else []
+    except Exception:
+        return []
 
 
 # ═══════════════════════════════════════════════════════════

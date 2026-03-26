@@ -779,3 +779,14 @@ async def dismiss_all_alerts():
     from bahamut.monitoring.alerts import dismiss_all_monitoring_alerts
     count = dismiss_all_monitoring_alerts()
     return {"status": "dismissed", "count": count}
+
+
+@router.get("/failed-signals")
+async def get_failed_signals_endpoint(user=Depends(get_current_user)):
+    """Get recent failed/rejected production signals for dashboard."""
+    try:
+        from bahamut.paper_trading.sync_executor import get_failed_signals
+        return {"signals": get_failed_signals(limit=50)}
+    except Exception as e:
+        logger.error("failed_signals_endpoint_error", error=str(e))
+        return {"signals": []}

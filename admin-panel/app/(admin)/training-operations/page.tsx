@@ -36,7 +36,8 @@ export default function TrainingOperationsPage() {
   const [adaptive, setAdaptive] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [allAssets, setAllAssets] = useState<any>(null);
-  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "learning" | "risk" | "assets">("overview");
+  const [failedSignals, setFailedSignals] = useState<any[]>([]);
+  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets">("overview");
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
 
   const load = async () => {
@@ -54,6 +55,24 @@ export default function TrainingOperationsPage() {
       if (decRes.ok) setDecisions(await decRes.json());
       if (assetsRes.ok) setAllAssets(await assetsRes.json());
       if (adaptRes.ok) setAdaptive(await adaptRes.json());
+    } catch {}
+    // Non-blocking: fetch failed signals from both training + production
+    try {
+      const [failRes, prodFailRes] = await Promise.all([
+        fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
+        fetch(`${apiBase()}/monitoring/failed-signals`, { headers: h }),
+      ]);
+      const combined: any[] = [];
+      if (failRes.ok) {
+        const d = await failRes.json();
+        for (const r of (d.rejected || [])) combined.push({ ...r, source: "training", _group: "REJECT" });
+        for (const w of (d.watchlist || [])) combined.push({ ...w, source: "training", _group: "WATCHLIST" });
+      }
+      if (prodFailRes.ok) {
+        const p = await prodFailRes.json();
+        for (const s of (p.signals || [])) combined.push({ ...s, source: "production", _group: "BLOCKED" });
+      }
+      setFailedSignals(combined);
     } catch {}
     setLoading(false);
   };
@@ -162,9 +181,9 @@ export default function TrainingOperationsPage() {
 
       {/* ═══ TABS ═══ */}
       <div className="flex border-b border-white/[0.08] overflow-x-auto">
-        {(["overview", "positions", "trades", "assets", "learning", "risk"] as const).map(t => (
+        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-white/30 hover:text-white/60"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `❌ Failed (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
           </button>
         ))}
       </div>
@@ -174,6 +193,7 @@ export default function TrainingOperationsPage() {
         {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
         {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
         {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
+        {tab === "failed" && <FailedTab signals={failedSignals} />}
         {tab === "assets" && <AssetsTab data={allAssets} />}
         {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} />}
         {tab === "risk" && <RiskTab expo={expo} />}
@@ -549,6 +569,149 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
         </table></div>
       ) : <div className="text-center py-10 text-white/35 text-sm">No closed trades yet. First closes happen after SL/TP/timeout on open positions.</div>}
     </Section>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   FAILED SIGNALS TAB
+   ═══════════════════════════════════════════ */
+function FailedTab({ signals }: { signals: any[] }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggle = (i: number) => setExpanded(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
+
+  const fmtT = (iso: string) => { if (!iso) return "—"; try { return new Date(iso).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } };
+
+  const groupClr: Record<string, string> = {
+    REJECT: "bg-red-500/15 text-red-300 border-red-500/30",
+    BLOCKED: "bg-red-500/15 text-red-300 border-red-500/30",
+    WATCHLIST: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  };
+  const gateClr: Record<string, string> = {
+    SIGNAL_LABEL: "text-amber-300",
+    "SIGNAL_LABEL+EXPLORATION": "text-amber-300",
+    DISAGREEMENT: "text-red-400",
+    EXECUTION_POLICY: "text-red-300",
+    PORTFOLIO: "text-orange-300",
+    SCORE: "text-amber-200",
+    REGIME: "text-red-400",
+  };
+
+  // Separate training (rejected/watchlist) from production (blocked)
+  const training = signals.filter(s => s.source === "training");
+  const production = signals.filter(s => s.source === "production");
+
+  return (
+    <div className="space-y-4">
+      {/* Summary counts */}
+      <div className="flex gap-3 items-center">
+        <span className="text-sm font-bold text-white">Failed Signals</span>
+        {training.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{training.length} Training</span>}
+        {production.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/15 text-red-300 border border-red-500/30">{production.length} Production</span>}
+        {signals.length === 0 && <span className="text-xs text-white/30">No failed signals in current window</span>}
+      </div>
+
+      {/* Production failed signals */}
+      {production.length > 0 && (
+        <Section title={`Production Failed (${production.length})`}>
+          <div className="space-y-1">
+            {production.map((s: any, i: number) => {
+              const idx = i;
+              const isOpen = expanded.has(idx);
+              return (
+                <div key={idx}>
+                  <button onClick={() => toggle(idx)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] transition-colors text-left cursor-pointer">
+                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.BLOCKED}`}>{s._group}</span>
+                    <span className="text-xs text-white font-bold w-[70px] shrink-0">{s.asset}</span>
+                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{s.direction}</span>
+                    <span className="text-[10px] text-white/50 w-[35px] shrink-0 text-center font-mono">{typeof s.score === "number" ? (s.score * 100).toFixed(0) : s.score}</span>
+                    <span className="text-[10px] text-white/40 w-[65px] shrink-0">{s.label}</span>
+                    <span className="text-[10px] text-white/25 flex-1 truncate">{s.reason}</span>
+                    <span className="text-[10px] text-white/20 w-[100px] shrink-0 text-right">{fmtT(s.timestamp)}</span>
+                    <span className="text-[10px] text-white/20 shrink-0">{isOpen ? "▼" : "▶"}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-white/[0.06] space-y-1.5 text-[10px] font-mono">
+                      <div className="text-white/25 uppercase text-[8px] tracking-widest font-bold mb-2">Rejection Trace</div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Asset</span><span className="text-white">{s.asset}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-emerald-400" : "text-red-400"}>{s.direction}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Score</span><span className="text-white">{typeof s.score === "number" ? s.score.toFixed(4) : s.score}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Label</span><span className="text-white">{s.label}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Regime</span><span className="text-white">{s.regime}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Gate</span><span className={gateClr[s.gate] || "text-white"}>{s.gate || "—"}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[60px] shrink-0">Mode</span><span className="text-white">{s.mode}</span></div>
+                      <div className="border-t border-white/[0.06] pt-1.5 mt-1">
+                        <span className="text-white/30">Reason:</span>
+                        <span className="text-red-300 ml-2">{s.reason}</span>
+                      </div>
+                      {s.blockers && s.blockers.length > 0 && (
+                        <div className="border-t border-white/[0.06] pt-1.5 mt-1">
+                          <div className="text-white/30 mb-1">Blockers:</div>
+                          {s.blockers.map((b: string, bi: number) => (
+                            <div key={bi} className="text-red-400/80 pl-3">• {b}</div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2 pt-1 text-white/20"><span className="w-[60px] shrink-0">Time</span><span>{s.timestamp}</span></div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      {/* Training rejected/watchlisted signals */}
+      {training.length > 0 && (
+        <Section title={`Training Rejected / Watchlisted (${training.length})`}>
+          <div className="space-y-1">
+            {training.map((s: any, i: number) => {
+              const idx = production.length + i;
+              const isOpen = expanded.has(idx);
+              return (
+                <div key={idx}>
+                  <button onClick={() => toggle(idx)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.03] transition-colors text-left cursor-pointer">
+                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.REJECT}`}>{s._group}</span>
+                    <span className="text-xs text-white font-bold w-[70px] shrink-0">{s.asset}</span>
+                    <span className="text-[10px] text-white/40 w-[55px] shrink-0">{s.strategy}</span>
+                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{s.direction}</span>
+                    <span className="text-[10px] text-white/50 w-[30px] shrink-0 text-center">{s.readiness_score}</span>
+                    <span className="text-[10px] text-white/25 flex-1 truncate">{(s.reasons || []).join(" · ")}</span>
+                    <span className="text-[10px] text-white/20 shrink-0">{isOpen ? "▼" : "▶"}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-white/[0.06] space-y-1.5 text-[10px] font-mono">
+                      <div className="text-white/25 uppercase text-[8px] tracking-widest font-bold mb-2">Decision Trace</div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Asset</span><span className="text-white">{s.asset} ({s.asset_class})</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Strategy</span><span className="text-white">{s.strategy}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-emerald-400" : "text-red-400"}>{s.direction}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Readiness</span><span className="text-white">{s.readiness_score}/100</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Priority</span><span className="text-white">{s.priority_score}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Regime</span><span className="text-white">{s.regime}</span></div>
+                      <div className="flex gap-2"><span className="text-white/30 w-[70px] shrink-0">Decision</span><span className={s.decision === "REJECT" ? "text-red-400" : "text-amber-300"}>{s.decision}</span></div>
+                      {s.priority_breakdown && (
+                        <div className="border-t border-white/[0.06] pt-1.5 mt-1">
+                          <div className="text-white/30 mb-1">Priority Breakdown:</div>
+                          {Object.entries(s.priority_breakdown as Record<string, number>).map(([k, v]) => (
+                            <div key={k} className="flex gap-2 pl-3"><span className="text-white/25 w-[100px]">{k}</span><span className="text-white">{String(v)}</span></div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-white/[0.06] pt-1.5 mt-1">
+                        <div className="text-white/30 mb-1">Reasons:</div>
+                        {(s.reasons || []).map((r: string, ri: number) => (
+                          <div key={ri} className="text-amber-300/80 pl-3">• {r}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+    </div>
   );
 }
 
