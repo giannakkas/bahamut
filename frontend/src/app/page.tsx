@@ -31,28 +31,96 @@ const NEWS = [
   { hl:"Gold Hits All-Time High", sum:"Safe haven demand pushes gold past $2,400.", t:"10h ago", impact:80, dir:"Bullish" },
 ];
 
-const ACTIVITY = [
-  { icon:"✓", text:"BTC/USD trade closed — +$287.50 profit", t:"2h ago", cls:"bg-accent-emerald/15 text-accent-emerald" },
-  { icon:"→", text:"ETH/USD trade opened — Long position", t:"4h ago", cls:"bg-accent-cyan/15 text-accent-cyan" },
-  { icon:"↕", text:"Trading amount updated to $50,000", t:"1d ago", cls:"bg-accent-violet/15 text-accent-violet" },
-  { icon:"+", text:"Balance topped up — +$25,000", t:"2d ago", cls:"bg-blue-500/15 text-blue-400" },
-  { icon:"✓", text:"Gold trade closed — +$142.00 profit", t:"3d ago", cls:"bg-accent-emerald/15 text-accent-emerald" },
-];
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`bg-bg-secondary/60 border border-border-default rounded-xl ${className}`}>{children}</div>;
 }
 
+// ─── Demo state helpers ───
+const DEMO_KEY = 'bahamut_demo_state';
+const ACTIVITY_KEY = 'bahamut_demo_activity';
+
+function loadDemoState() {
+  if (typeof window === 'undefined') return null;
+  try { const raw = localStorage.getItem(DEMO_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveDemoState(state: any) {
+  if (typeof window !== 'undefined') localStorage.setItem(DEMO_KEY, JSON.stringify(state));
+}
+function loadActivity(): any[] {
+  if (typeof window === 'undefined') return [];
+  try { const raw = localStorage.getItem(ACTIVITY_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+function saveActivity(items: any[]) {
+  if (typeof window !== 'undefined') localStorage.setItem(ACTIVITY_KEY, JSON.stringify(items.slice(0, 20)));
+}
+function addActivity(items: any[], type: string, text: string) {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return [{ icon: type === 'topup' ? '+' : type === 'amount' ? '↕' : '✓', text, t: timeStr, cls: type === 'topup' ? 'bg-blue-500/15 text-blue-400' : type === 'amount' ? 'bg-accent-violet/15 text-accent-violet' : 'bg-accent-emerald/15 text-accent-emerald' }, ...items].slice(0, 20);
+}
+
+const DEFAULT_ACTIVITY = [
+  { icon: "✓", text: "Demo account created with $100,000", t: "Now", cls: "bg-accent-emerald/15 text-accent-emerald" },
+];
+
 export default function Dashboard() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmt, setTopUpAmt] = useState("");
-  const [tradingAmt, setTradingAmt] = useState(DATA.tradingAmount);
   const [newsIdx, setNewsIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const d = DATA;
+  const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => { setTimeout(() => setLoaded(true), 100); }, []);
+  // Demo state — persisted in localStorage
+  const [balance, setBalance] = useState(DATA.balance);
+  const [available, setAvailable] = useState(DATA.available);
+  const [tradingAmt, setTradingAmt] = useState(DATA.tradingAmount);
+  const [activity, setActivity] = useState<any[]>(DEFAULT_ACTIVITY);
+
+  // Load persisted demo state on mount
+  useEffect(() => {
+    const saved = loadDemoState();
+    if (saved) {
+      setBalance(saved.balance ?? DATA.balance);
+      setAvailable(saved.available ?? DATA.available);
+      setTradingAmt(saved.tradingAmt ?? DATA.tradingAmount);
+    }
+    const savedAct = loadActivity();
+    if (savedAct.length > 0) setActivity(savedAct);
+    setTimeout(() => setLoaded(true), 100);
+  }, []);
+
+  // Persist on change
+  useEffect(() => { saveDemoState({ balance, available, tradingAmt }); }, [balance, available, tradingAmt]);
+  useEffect(() => { saveActivity(activity); }, [activity]);
   useEffect(() => { const iv = setInterval(() => setNewsIdx(i => (i+1) % NEWS.length), 5000); return () => clearInterval(iv); }, []);
+
+  // Toast auto-dismiss
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t); } }, [toast]);
+
+  const handleTopUp = () => {
+    const amt = parseFloat(topUpAmt);
+    if (!amt || amt <= 0 || isNaN(amt)) { setToast("Enter a valid amount"); return; }
+    setBalance(b => b + amt);
+    setAvailable(a => a + amt);
+    const newAct = addActivity(activity, 'topup', `Balance topped up — +${fm(amt)}`);
+    setActivity(newAct);
+    setShowTopUp(false);
+    setTopUpAmt("");
+    setToast(`+${fm(amt)} added to your balance!`);
+  };
+
+  const handleUpdateAllocation = () => {
+    if (tradingAmt > balance) { setToast("Trading amount can't exceed balance"); return; }
+    if (tradingAmt < 0) { setToast("Amount must be positive"); return; }
+    const newAvail = balance - tradingAmt;
+    setAvailable(newAvail);
+    const newAct = addActivity(activity, 'amount', `Trading amount updated to ${fm(tradingAmt)}`);
+    setActivity(newAct);
+    setToast(`Trading allocation set to ${fm(tradingAmt)}`);
+  };
+
+  const d = { ...DATA, balance, available, tradingAmount: tradingAmt };
 
   return (
     <AppShell>
@@ -63,8 +131,8 @@ export default function Dashboard() {
           <div className="relative flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
               <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-1">Total Balance</div>
-              <div className="text-3xl sm:text-4xl lg:text-[42px] font-black tracking-tight tabular-nums">{fm(d.balance)}</div>
-              <div className="mt-1.5 text-sm text-text-secondary">Available: <span className="text-text-primary font-semibold">{fm(d.available)}</span></div>
+              <div className="text-3xl sm:text-4xl lg:text-[42px] font-black tracking-tight tabular-nums">{fm(balance)}</div>
+              <div className="mt-1.5 text-sm text-text-secondary">Available: <span className="text-text-primary font-semibold">{fm(available)}</span></div>
             </div>
             <div className="sm:text-right">
               <div className="flex items-center gap-2 sm:justify-end">
@@ -109,7 +177,7 @@ export default function Dashboard() {
                 <input type="number" value={topUpAmt} onChange={e => setTopUpAmt(e.target.value)} placeholder="Enter amount" className="w-full px-4 py-3 rounded-xl bg-bg-primary border border-border-default text-white text-lg font-semibold placeholder:text-text-muted focus:outline-none focus:border-accent-violet/40" />
                 <div className="flex gap-2">
                   <button onClick={() => { setShowTopUp(false); setTopUpAmt(""); }} className="flex-1 py-2.5 rounded-xl border border-border-default text-text-secondary text-sm hover:bg-bg-tertiary">Cancel</button>
-                  <button className="flex-1 py-2.5 rounded-xl bg-accent-violet text-white text-sm font-bold hover:brightness-110">Confirm</button>
+                  <button onClick={handleTopUp} className="flex-1 py-2.5 rounded-xl bg-accent-violet text-white text-sm font-bold hover:brightness-110 active:scale-[0.97] transition-all">Confirm</button>
                 </div>
               </div>
             )}
@@ -121,14 +189,14 @@ export default function Dashboard() {
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-lg font-bold">$</span>
               <input type="number" value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full pl-9 pr-4 py-3 rounded-xl bg-bg-primary border border-border-default text-white text-xl font-bold focus:outline-none focus:border-accent-violet/40 tabular-nums" />
             </div>
-            <input type="range" min={0} max={d.balance} step={100} value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full mb-2 accent-accent-violet" />
+            <input type="range" min={0} max={balance} step={100} value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full mb-2 accent-accent-violet" />
             <div className="flex gap-1.5 mb-3">
               {[100,500,1000,5000].map(v => (
                 <button key={v} onClick={() => setTradingAmt(v)} className={`flex-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold border transition-all ${tradingAmt === v ? 'bg-accent-violet/15 text-accent-violet border-accent-violet/30' : 'bg-bg-primary text-text-muted border-border-default hover:text-text-secondary'}`}>{fm(v)}</button>
               ))}
-              <button onClick={() => setTradingAmt(d.balance)} className="flex-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold border border-border-default bg-bg-primary text-text-muted">Max</button>
+              <button onClick={() => setTradingAmt(balance)} className="flex-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold border border-border-default bg-bg-primary text-text-muted">Max</button>
             </div>
-            <button className="w-full py-2.5 rounded-xl bg-bg-tertiary border border-border-default text-white font-semibold text-sm hover:bg-bg-surface transition-all">Update Trading Amount</button>
+            <button onClick={handleUpdateAllocation} className="w-full py-2.5 rounded-xl bg-bg-tertiary border border-border-default text-white font-semibold text-sm hover:bg-bg-surface active:scale-[0.98] transition-all">Update Trading Amount</button>
             <div className="text-[9px] text-text-muted text-center mt-2">Bahamut will only trade with this amount.</div>
           </Card>
         </div>
@@ -236,8 +304,8 @@ export default function Dashboard() {
         {/* Activity */}
         <Card className="p-4">
           <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-3">Recent Activity</div>
-          {ACTIVITY.map((a, i) => (
-            <div key={i} className={`flex items-center gap-3 py-2.5 ${i < ACTIVITY.length-1 ? "border-b border-border-default/50" : ""}`}>
+          {activity.map((a: any, i: number) => (
+            <div key={i} className={`flex items-center gap-3 py-2.5 ${i < activity.length-1 ? "border-b border-border-default/50" : ""}`}>
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${a.cls}`}>{a.icon}</div>
               <div className="flex-1 text-sm text-text-secondary">{a.text}</div>
               <span className="text-[10px] text-text-muted shrink-0">{a.t}</span>
@@ -245,6 +313,12 @@ export default function Dashboard() {
           ))}
         </Card>
       </div>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl bg-accent-violet text-white text-sm font-semibold shadow-2xl shadow-accent-violet/30 animate-slide-in">
+          {toast}
+        </div>
+      )}
     </AppShell>
   );
 }
