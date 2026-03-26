@@ -807,7 +807,7 @@ export default function DailyOperations() {
               <>
                 <div className="px-3 py-2 border-b border-bah-border flex items-center justify-between">
                   <span className="text-[10px] text-bah-muted">{alerts.length - hiddenAlerts.length} alert{alerts.length - hiddenAlerts.length !== 1 ? "s" : ""}</span>
-                  <button onClick={() => setHiddenAlerts(alerts.map((_, idx) => idx))} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">Archive All</button>
+                  <button onClick={async () => { setHiddenAlerts(alerts.map((_, idx) => idx)); try { await fetch(`${apiBase()}/monitoring/alerts/dismiss-all`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} }); } catch {} }} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">Archive All</button>
                 </div>
                 <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
                 if (hiddenAlerts.includes(i)) return null;
@@ -853,7 +853,7 @@ export default function DailyOperations() {
                           ACK
                         </button>
                       )}
-                      <button onClick={() => setHiddenAlerts(h => [...h, i])} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Hide">✕</button>
+                      <button onClick={async () => { setHiddenAlerts(h => [...h, i]); try { const key = a.key || a.title || ""; if (key) await fetch(`${apiBase()}/monitoring/alerts/dismiss`, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ key }) }); } catch {} }} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Dismiss">✕</button>
                     </div>
                   </div>
                   <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>

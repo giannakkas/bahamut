@@ -760,3 +760,22 @@ async def get_trading_accuracy():
     except Exception as e:
         logger.error("trading_accuracy_failed", error=str(e))
         return {"strict_accuracy_pct": None, "has_data": False, "strict_total_trades": 0}
+
+
+@router.post("/alerts/dismiss")
+async def dismiss_alert_by_key(body: dict = {}):
+    """Dismiss a monitoring alert by its key. Stays dismissed for 7 days."""
+    key = body.get("key", "")
+    if not key:
+        return {"error": "key required"}
+    from bahamut.monitoring.alerts import dismiss_monitoring_alert
+    dismiss_monitoring_alert(key)
+    return {"status": "dismissed", "key": key}
+
+
+@router.post("/alerts/dismiss-all")
+async def dismiss_all_alerts():
+    """Dismiss all active monitoring alerts."""
+    from bahamut.monitoring.alerts import dismiss_all_monitoring_alerts
+    count = dismiss_all_monitoring_alerts()
+    return {"status": "dismissed", "count": count}

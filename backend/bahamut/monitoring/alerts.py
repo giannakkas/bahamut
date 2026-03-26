@@ -372,7 +372,10 @@ def resolve_alert(alert_key: str, reason: str = "condition cleared"):
 
 
 def get_recent_alerts(limit: int = 50) -> list[dict]:
-    """Get recent ACTIVE alerts for dashboard — deduped, sorted by last_seen."""
+    """Get recent ACTIVE alerts for dashboard — deduped, sorted by last_seen.
+    Excludes alerts the user has dismissed."""
+    dismissed = _get_dismissed_keys()
+
     r = _get_redis()
     if r:
         try:
@@ -380,31 +383,74 @@ def get_recent_alerts(limit: int = 50) -> list[dict]:
             if raw:
                 alerts = []
                 for k, v in raw.items():
-                    try:
-                        alert = json.loads(v)
-                        # Only return ACTIVE alerts — resolved ones are kept for history only
-                        if alert.get("status") == "ACTIVE":
-                            alerts.append(alert)
-                    except Exception:
-                        pass
-                # Sort by last_seen descending
+                    alert = json.loads(v)
+                    alert_key = alert.get("key", k.decode() if isinstance(k, bytes) else k)
+                    if alert.get("status") == "ACTIVE" and alert_key not in dismissed:
+                        alerts.append(alert)
                 alerts.sort(key=lambda a: a.get("last_seen", ""), reverse=True)
                 return alerts[:limit]
         except Exception:
             pass
-    # Fallback: in-memory, deduped by key, active only
-    seen = set()
+
+    # Fallback to in-memory
     result = []
-    for alert in reversed(_alert_history):
+    for alert in _alert_history:
         if alert.get("status") != "ACTIVE":
             continue
-        key = alert.get("key", alert.get("title", ""))
-        if key not in seen:
-            seen.add(key)
-            result.append(alert)
-        if len(result) >= limit:
-            break
-    return result
+        if alert.get("key", "") in dismissed:
+            continue
+        result.append(alert)
+    return result[:limit]
+
+
+DISMISSED_KEY = "bahamut:dismissed_alert_keys"
+DISMISSED_TTL = 7 * 86400  # 7 days — dismissed alerts stay gone for a week
+
+
+def dismiss_monitoring_alert(alert_key: str):
+    """Dismiss an alert so it stops appearing on the dashboard.
+    Stored in Redis with 7-day TTL. The alert may still fire internally
+    but won't be shown to the user."""
+    r = _get_redis()
+    if r:
+        try:
+            r.sadd(DISMISSED_KEY, alert_key)
+            r.expire(DISMISSED_KEY, DISMISSED_TTL)
+        except Exception:
+            pass
+
+
+def dismiss_all_monitoring_alerts():
+    """Dismiss all currently active alerts."""
+    r = _get_redis()
+    if not r:
+        return 0
+    count = 0
+    try:
+        raw = r.hgetall("bahamut:active_alerts")
+        if raw:
+            for k, v in raw.items():
+                alert = json.loads(v)
+                if alert.get("status") == "ACTIVE":
+                    key = alert.get("key", k.decode() if isinstance(k, bytes) else k)
+                    r.sadd(DISMISSED_KEY, key)
+                    count += 1
+            r.expire(DISMISSED_KEY, DISMISSED_TTL)
+    except Exception:
+        pass
+    return count
+
+
+def _get_dismissed_keys() -> set:
+    """Get set of dismissed alert keys from Redis."""
+    r = _get_redis()
+    if not r:
+        return set()
+    try:
+        members = r.smembers(DISMISSED_KEY)
+        return {m.decode() if isinstance(m, bytes) else m for m in members} if members else set()
+    except Exception:
+        return set()
 
 
 # ═══════════════════════════════════════════════════════
