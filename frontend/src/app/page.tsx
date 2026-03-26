@@ -1,339 +1,226 @@
 'use client';
-
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppShell from '@/components/layout/AppShell';
-import { api } from '@/lib/api';
-import { AGENT_META } from '@/lib/types';
 
-function MetricCard({ label, value, sub, variant = 'neutral' }: {
-  label: string; value: string; sub?: string; variant?: 'positive' | 'negative' | 'neutral';
-}) {
-  const colors = { positive: 'text-accent-emerald', negative: 'text-accent-crimson', neutral: 'text-text-primary' };
-  return (
-    <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-      <div className="text-xs text-text-muted uppercase tracking-wider mb-1">{label}</div>
-      <div className={`text-2xl font-mono font-semibold ${colors[variant]}`}>{value}</div>
-      {sub && <div className="text-xs text-text-secondary mt-0.5">{sub}</div>}
-    </div>
-  );
+const fm = (n: number) => { if (n == null) return "$0"; const a = Math.abs(n); if (a >= 1e6) return `$${(n/1e6).toFixed(2)}M`; if (a >= 1e3) return `$${(n/1e3).toFixed(1)}K`; return `$${n.toFixed(2)}`; };
+const fp = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+
+const DATA = { balance:100000, available:72000, todayPnl:1842.50, todayPnlPct:1.84, tradingAmount:50000, winRate:67, tradesClosed:23, riskLevel:"Low", systemStatus:"Online" };
+
+const OPPS = [
+  { asset:"BTC / USD", dir:"Long", status:"Ready", chance:85, risk:"Medium", desc:"Strong uptrend forming with high momentum" },
+  { asset:"ETH / USD", dir:"Long", status:"Close", chance:72, risk:"Medium", desc:"Approaching key breakout level" },
+  { asset:"EUR / USD", dir:"Short", status:"Watching", chance:58, risk:"Low", desc:"Dollar strength building gradually" },
+  { asset:"Gold", dir:"Long", status:"Ready", chance:81, risk:"Low", desc:"Safe haven demand increasing" },
+  { asset:"SPY", dir:"Watching", status:"Blocked", chance:35, risk:"High", desc:"Market closed — waiting for open" },
+  { asset:"GBP / USD", dir:"Long", status:"Watching", chance:44, risk:"Medium", desc:"BoE decision pending tomorrow" },
+];
+
+const TRADES = [{ asset:"BTC / USD", dir:"Long", entry:67240, pnl:412.50, pnlPct:1.28, alloc:2500, sl:65800, tp:70200, time:"6h 23m" }];
+
+const NEWS = [
+  { hl:"Fed Holds Rates Steady", sum:"Markets rally as the Fed maintains interest rates.", t:"2h ago", impact:78, dir:"Bullish" },
+  { hl:"Bitcoin Breaks $68K Resistance", sum:"BTC surges past key resistance with strong volume.", t:"3h ago", impact:85, dir:"Bullish" },
+  { hl:"EU Manufacturing Disappoints", sum:"Eurozone PMI falls below expectations.", t:"4h ago", impact:62, dir:"Bearish" },
+  { hl:"Oil Rises on Supply Concerns", sum:"Brent crude climbs 2% as OPEC+ signals cuts.", t:"5h ago", impact:71, dir:"Bullish" },
+  { hl:"Tech Earnings Beat Estimates", sum:"Major tech companies beat Q1 estimates.", t:"6h ago", impact:74, dir:"Bullish" },
+  { hl:"China GDP Growth Slows", sum:"Q1 growth misses target.", t:"8h ago", impact:68, dir:"Bearish" },
+  { hl:"Gold Hits All-Time High", sum:"Safe haven demand pushes gold past $2,400.", t:"10h ago", impact:80, dir:"Bullish" },
+];
+
+const ACTIVITY = [
+  { icon:"✓", text:"BTC/USD trade closed — +$287.50 profit", t:"2h ago", cls:"bg-accent-emerald/15 text-accent-emerald" },
+  { icon:"→", text:"ETH/USD trade opened — Long position", t:"4h ago", cls:"bg-accent-cyan/15 text-accent-cyan" },
+  { icon:"↕", text:"Trading amount updated to $50,000", t:"1d ago", cls:"bg-accent-violet/15 text-accent-violet" },
+  { icon:"+", text:"Balance topped up — +$25,000", t:"2d ago", cls:"bg-blue-500/15 text-blue-400" },
+  { icon:"✓", text:"Gold trade closed — +$142.00 profit", t:"3d ago", cls:"bg-accent-emerald/15 text-accent-emerald" },
+];
+
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`bg-bg-secondary/60 border border-border-default rounded-xl ${className}`}>{children}</div>;
 }
 
-function DrawdownBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  const color = pct > 80 ? 'bg-accent-crimson' : pct > 50 ? 'bg-accent-amber' : 'bg-accent-emerald';
-  return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="w-16 text-text-secondary">{label}</span>
-      <div className="flex-1 h-2 bg-bg-surface rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="font-mono text-xs text-text-secondary w-24 text-right">
-        {(value * 100).toFixed(1)}% / {(max * 100).toFixed(1)}%
-      </span>
-    </div>
-  );
-}
+export default function Dashboard() {
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [topUpAmt, setTopUpAmt] = useState("");
+  const [tradingAmt, setTradingAmt] = useState(DATA.tradingAmount);
+  const [newsIdx, setNewsIdx] = useState(0);
+  const d = DATA;
 
-function SignalCard({ asset, direction, score, decision, mode }: any) {
-  return (
-    <a href="/agent-council" className="flex items-center justify-between p-3 bg-bg-tertiary rounded-md border border-border-default mb-2 hover:border-border-focus transition-colors cursor-pointer">
-      <div className="flex items-center gap-3">
-        <span className={direction === 'LONG' ? 'text-accent-emerald text-lg' : direction === 'SHORT' ? 'text-accent-crimson text-lg' : 'text-text-muted text-lg'}>
-          {direction === 'LONG' ? '▲' : direction === 'SHORT' ? '▼' : '─'}
-        </span>
-        <div>
-          <div className="font-semibold text-sm">{asset} <span className="text-text-muted font-normal">{direction}</span></div>
-          <div className="text-xs text-text-muted">{decision}</div>
-        </div>
-      </div>
-      <div className="text-right">
-        <div className="font-mono text-lg font-semibold text-accent-violet">{typeof score === 'number' ? score.toFixed(2) : score}</div>
-        <div className={`text-xs ${mode === 'APPROVAL' ? 'text-accent-amber' : mode === 'AUTO' ? 'text-accent-emerald' : 'text-text-muted'}`}>{mode}</div>
-      </div>
-    </a>
-  );
-}
-
-export default function DashboardPage() {
-  const [risk, setRisk] = useState<any>(null);
-  const [brief, setBrief] = useState<any>(null);
-  const [cycles, setCycles] = useState<any>({});
-  const [loading, setLoading] = useState(true);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [headlines, setHeadlines] = useState<any[]>([]);
-  const [killSwitch, setKillSwitch] = useState<any>(null);
-  const [systemConf, setSystemConf] = useState<any>(null);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [r, b, c, ks, sc] = await Promise.allSettled([
-          api.getRiskDashboard(),
-          api.getDailyBrief(),
-          api.getAllLatestCycles(),
-          api.getKillSwitchState(),
-          api.getSystemConfidence(),
-        ]);
-        if (r.status === 'fulfilled') setRisk(r.value);
-        if (b.status === 'fulfilled') setBrief(b.value);
-        if (c.status === 'fulfilled') setCycles(c.value);
-        if (ks.status === 'fulfilled') setKillSwitch(ks.value);
-        if (sc.status === 'fulfilled') setSystemConf(sc.value);
-      } catch (e) { console.error(e); }
-      try { const ba = await api.getBreakingAlerts(); setAlerts(ba.alerts || []); } catch {}
-      try { const n = await api.getNews('general', 15); setHeadlines(n.articles || []); } catch {}
-      setLoading(false);
-    };
-    load();
-    // Refresh every 60 seconds
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const dd = risk?.drawdown || { daily: 0, weekly: 0, total: 0 };
-  const limits = risk?.limits || { daily: 0.03, weekly: 0.06, total: 0.15 };
-
-  // Build signals from real cycle results
-  const signals = Object.entries(cycles).map(([asset, cycle]: [string, any]) => {
-    const d = cycle?.decision || {};
-    return {
-      asset,
-      direction: d.direction || 'NO_TRADE',
-      score: d.final_score || 0,
-      decision: d.decision || 'NO_TRADE',
-      mode: d.execution_mode || 'WATCH',
-    };
-  });
-
-  // Build agent consensus from most recent cycle
-  const latestCycle = Object.values(cycles)[0] as any;
-  const agentOutputs = latestCycle?.agent_outputs || [];
-  const consensusScore = latestCycle?.decision?.final_score || 0;
-  const agreementPct = latestCycle?.decision?.agreement_pct || 0;
-  const latestAsset = latestCycle?.decision?.asset || '';
-
-  // Count active signals
-  const signalCount = signals.length;
-  const strongSignals = signals.filter(s => s.decision === 'STRONG_SIGNAL' || s.decision === 'SIGNAL').length;
+  useEffect(() => { const iv = setInterval(() => setNewsIdx(i => (i+1) % NEWS.length), 5000); return () => clearInterval(iv); }, []);
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        {/* Regime Banner */}
-        <div className={`bg-bg-secondary border rounded-lg p-4 flex items-center justify-between ${
-          killSwitch?.kill_switch_active ? 'border-accent-crimson/50' : 'border-border-default'
-        }`}>
-          <div className="flex items-center gap-4">
-            {killSwitch?.kill_switch_active ? (
-              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-crimson/20 text-accent-crimson border border-accent-crimson/30 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
-                KILL ACTIVE
-              </span>
-            ) : killSwitch?.safe_mode_active ? (
-              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-amber/20 text-accent-amber border border-accent-amber/30">SAFE MODE</span>
-            ) : (
-              <span className="px-3 py-1 rounded-full text-sm font-semibold bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">RISK_ON</span>
-            )}
-            <span className="text-sm text-text-secondary">Confidence: <span className="font-mono text-text-primary">{
-              systemConf?.composite_score ? `${(systemConf.composite_score * 100).toFixed(0)}%` : '—'
-            }</span></span>
-            {signalCount > 0 && !killSwitch?.kill_switch_active && (
-              <span className="flex items-center gap-1.5 text-sm text-accent-emerald">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" style={{ animationDuration: '3s' }}></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
-                </span>
-                Live Data
-              </span>
-            )}
+      <div className="space-y-4 sm:space-y-5 max-w-[1400px]">
+        {/* Hero */}
+        <Card className="p-5 sm:p-7 relative overflow-hidden">
+          <div className="absolute top-[-60px] right-[-20px] w-48 h-48 bg-accent-violet/5 rounded-full blur-[40px]" />
+          <div className="relative flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-1">Total Balance</div>
+              <div className="text-3xl sm:text-4xl lg:text-[42px] font-black tracking-tight tabular-nums">{fm(d.balance)}</div>
+              <div className="mt-1.5 text-sm text-text-secondary">Available: <span className="text-text-primary font-semibold">{fm(d.available)}</span></div>
+            </div>
+            <div className="sm:text-right">
+              <div className="flex items-center gap-2 sm:justify-end">
+                <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" />
+                <span className="text-sm font-semibold text-accent-emerald">Trading Active</span>
+              </div>
+              <div className="mt-2">
+                <span className="text-xl sm:text-2xl font-bold text-accent-emerald tabular-nums">+{fm(d.todayPnl)}</span>
+                <span className="text-sm text-accent-emerald/50 ml-1">{fp(d.todayPnlPct)}</span>
+              </div>
+              <div className="text-[10px] text-text-muted mt-0.5">Today&apos;s profit</div>
+            </div>
           </div>
-          {brief && <div className="text-xs text-text-muted max-w-lg truncate">{brief.summary?.slice(0, 120)}...</div>}
+        </Card>
+
+        {/* Top-Up + Trading Amount */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="p-5">
+            <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-4">Add Funds</div>
+            {!showTopUp ? (
+              <button onClick={() => setShowTopUp(true)} className="w-full py-3 rounded-xl bg-gradient-to-r from-accent-violet to-[#4c3ad1] text-white font-bold text-sm shadow-lg shadow-accent-violet/20 hover:brightness-110 active:scale-[0.98] transition-all">Add Virtual Funds</button>
+            ) : (
+              <div className="space-y-3">
+                <input type="number" value={topUpAmt} onChange={e => setTopUpAmt(e.target.value)} placeholder="Enter amount" className="w-full px-4 py-3 rounded-xl bg-bg-primary border border-border-default text-white text-lg font-semibold placeholder:text-text-muted focus:outline-none focus:border-accent-violet/40" />
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowTopUp(false); setTopUpAmt(""); }} className="flex-1 py-2.5 rounded-xl border border-border-default text-text-secondary text-sm hover:bg-bg-tertiary">Cancel</button>
+                  <button className="flex-1 py-2.5 rounded-xl bg-accent-violet text-white text-sm font-bold hover:brightness-110">Confirm</button>
+                </div>
+              </div>
+            )}
+          </Card>
+          <Card className="p-5">
+            <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-0.5">Trading Allocation</div>
+            <div className="text-xs text-text-muted mb-3">How much should Bahamut trade for you?</div>
+            <div className="relative mb-2">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-lg font-bold">$</span>
+              <input type="number" value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full pl-9 pr-4 py-3 rounded-xl bg-bg-primary border border-border-default text-white text-xl font-bold focus:outline-none focus:border-accent-violet/40 tabular-nums" />
+            </div>
+            <input type="range" min={0} max={d.balance} step={100} value={tradingAmt} onChange={e => setTradingAmt(Number(e.target.value))} className="w-full mb-2 accent-accent-violet" />
+            <div className="flex gap-1.5 mb-3">
+              {[100,500,1000,5000].map(v => (
+                <button key={v} onClick={() => setTradingAmt(v)} className={`flex-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold border transition-all ${tradingAmt === v ? 'bg-accent-violet/15 text-accent-violet border-accent-violet/30' : 'bg-bg-primary text-text-muted border-border-default hover:text-text-secondary'}`}>{fm(v)}</button>
+              ))}
+              <button onClick={() => setTradingAmt(d.balance)} className="flex-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold border border-border-default bg-bg-primary text-text-muted">Max</button>
+            </div>
+            <button className="w-full py-2.5 rounded-xl bg-bg-tertiary border border-border-default text-white font-semibold text-sm hover:bg-bg-surface transition-all">Update Trading Amount</button>
+            <div className="text-[9px] text-text-muted text-center mt-2">Bahamut will only trade with this amount.</div>
+          </Card>
         </div>
 
+        {/* Trust Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { l:"Win Rate", v:`${d.winRate}%`, c: d.winRate >= 60 ? "text-accent-emerald" : "text-accent-amber" },
+            { l:"Trades Closed", v:d.tradesClosed, c:"text-text-primary" },
+            { l:"Risk Level", v:d.riskLevel, c:"text-accent-emerald" },
+            { l:"System", v:d.systemStatus, c:"text-accent-emerald" },
+          ].map(s => (
+            <Card key={s.l} className="p-3 sm:p-4 text-center">
+              <div className={`text-lg sm:text-xl font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[9px] text-text-muted uppercase tracking-wider font-semibold mt-0.5">{s.l}</div>
+            </Card>
+          ))}
+        </div>
 
-        {/* Kill Switch Warning */}
-        {killSwitch?.kill_switch_active && (
-          <div className="bg-accent-crimson/15 border-2 border-accent-crimson/40 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-accent-crimson animate-pulse" />
-              <div>
-                <div className="text-sm font-bold text-accent-crimson">Kill Switch Active — Trading Halted</div>
-                <div className="text-xs text-text-secondary mt-0.5">
-                  {killSwitch?.triggers?.[0] || 'Portfolio risk exceeded safety thresholds. All new trades are blocked until risk normalizes.'}
-                </div>
-              </div>
+        {/* News + Risk */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+          <Card className="p-4">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-accent-emerald" /><span className="text-xs font-bold">News Feed</span></div>
+              <div className="flex gap-1">{NEWS.map((_, i) => <button key={i} onClick={() => setNewsIdx(i)} className={`h-1.5 rounded-full transition-all ${i === newsIdx ? 'w-3.5 bg-accent-cyan' : 'w-1.5 bg-border-default'}`} />)}</div>
             </div>
+            <div className="relative h-[60px] overflow-hidden">
+              {NEWS.map((n, i) => (
+                <div key={i} className={`absolute inset-0 transition-all duration-400 flex justify-between gap-4 ${i === newsIdx ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-6'}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-text-primary truncate">{n.hl}</div>
+                    <div className="text-xs text-text-muted mt-0.5 line-clamp-1">{n.sum}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-text-muted">{n.t}</span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${n.dir === "Bullish" ? "bg-accent-emerald/10 text-accent-emerald" : n.dir === "Bearish" ? "bg-accent-crimson/10 text-accent-crimson" : "bg-bg-tertiary text-text-muted"}`}>{n.dir}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`text-lg font-bold tabular-nums ${n.impact >= 75 ? "text-accent-cyan" : "text-text-secondary"}`}>{n.impact}%</div>
+                    <div className="text-[8px] text-text-muted uppercase">Impact</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs font-bold mb-3">Risk Status</div>
+            {["Daily","Weekly","Total"].map((l, i) => { const v = [{c:0,m:3},{c:0,m:6},{c:0,m:15}][i]; return (
+              <div key={l} className="mb-2.5">
+                <div className="flex justify-between text-xs mb-1"><span className="text-text-muted">{l}</span><span className="text-text-secondary tabular-nums">{v.c.toFixed(1)}% / {v.m}.0%</span></div>
+                <div className="h-1 bg-bg-tertiary rounded-full"><div className="h-full rounded-full bg-accent-emerald" style={{ width: `${(v.c/v.m)*100}%` }} /></div>
+              </div>
+            ); })}
+            <div className="flex gap-4 mt-2">
+              <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-accent-emerald" /><span className="text-[10px] text-text-muted">Drawdown: OK</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-accent-emerald" /><span className="text-[10px] text-text-muted">Positions: OK</span></div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Opportunities */}
+        <div>
+          <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2.5">Top Opportunities</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {OPPS.map((o, i) => (
+              <Card key={i} className="p-3.5">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-sm font-bold">{o.asset}</span>
+                  <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${o.status === "Ready" ? "bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20" : o.status === "Close" ? "bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20" : o.status === "Blocked" ? "bg-accent-crimson/10 text-accent-crimson/50 border-accent-crimson/15" : "bg-bg-tertiary text-text-muted border-border-default"}`}>{o.status}</span>
+                </div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className={`text-xs font-bold ${o.dir === "Long" ? "text-accent-emerald" : o.dir === "Short" ? "text-accent-crimson" : "text-text-muted"}`}>{o.dir}</span>
+                  <span className={`text-[10px] ${o.risk === "Low" ? "text-accent-emerald" : o.risk === "Medium" ? "text-accent-amber" : "text-accent-crimson"}`}>{o.risk} risk</span>
+                </div>
+                <div className="mb-1.5">
+                  <div className="flex justify-between mb-1"><span className="text-[9px] text-text-muted">Chance</span><span className="text-xs font-bold text-text-secondary tabular-nums">{o.chance}%</span></div>
+                  <div className="h-1 bg-bg-tertiary rounded-full"><div className={`h-full rounded-full ${o.chance >= 75 ? "bg-accent-emerald" : o.chance >= 50 ? "bg-accent-cyan" : "bg-border-default"}`} style={{ width: `${o.chance}%` }} /></div>
+                </div>
+                <div className="text-[10px] text-text-muted leading-relaxed">{o.desc}</div>
+              </Card>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Breaking News Alerts */}
-        {alerts.length > 0 && (
-          <div className="bg-accent-crimson/10 border border-accent-crimson/30 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2 h-2 rounded-full bg-accent-crimson animate-pulse" />
-              <span className="text-sm font-bold text-accent-crimson">Breaking News Alert</span>
-            </div>
-            {Array.from(new Map(alerts.slice(0, 5).map((a: any) => [a.headline, a])).values()).slice(0, 3).map((alert: any, i: number) => (
-              <div key={i} className="flex items-center justify-between py-1.5 border-b border-accent-crimson/10 last:border-0">
-                <div className="flex-1">
-                  <span className="text-sm text-text-primary">{alert.headline}</span>
-                  <span className="text-xs text-text-muted ml-2">{alert.source}</span>
+        {/* Open Trades */}
+        {TRADES.length > 0 && (
+          <div>
+            <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-2.5">Open Trades</div>
+            {TRADES.map((t, i) => (
+              <Card key={i} className="p-4 sm:p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-2.5"><span className="text-base font-bold">{t.asset}</span><span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-accent-emerald/10 text-accent-emerald">{t.dir}</span></div>
+                  <button className="px-3 py-1.5 rounded-lg border border-border-default text-xs text-text-muted hover:bg-bg-tertiary">Close Trade</button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-accent-amber">{alert.affected_assets?.join(', ')}</span>
-                  {alert.is_emergency && <span className="text-[10px] px-1.5 py-0.5 bg-accent-crimson/20 text-accent-crimson rounded-full font-semibold">EMERGENCY</span>}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {[{ l:"Entry", v:fm(t.entry), c:"text-text-primary" },{ l:"Live P&L", v:`+${fm(t.pnl)}`, c:"text-accent-emerald" },{ l:"Allocated", v:fm(t.alloc), c:"text-text-secondary" },{ l:"Stop / Target", v:`${fm(t.sl)} / ${fm(t.tp)}`, c:"text-text-muted" },{ l:"Time Open", v:t.time, c:"text-text-muted" }].map(c => (
+                    <div key={c.l}><div className="text-[9px] text-text-muted uppercase mb-0.5">{c.l}</div><div className={`text-sm font-bold tabular-nums ${c.c}`}>{c.v}</div></div>
+                  ))}
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         )}
 
-        {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <MetricCard label="Active Signals" value={String(signalCount)} sub={strongSignals > 0 ? strongSignals + ' actionable' : 'Monitoring'} variant={strongSignals > 0 ? 'positive' : 'neutral'} />
-          <MetricCard label="Agents Online" value="6 / 6" sub="All operational" variant="positive" />
-          <MetricCard label="Consensus Cycles" value={String(signalCount)} sub="Last 30 min" />
-          <MetricCard label="Risk Status" value={
-            killSwitch?.kill_switch_active ? 'KILL ACTIVE' :
-            killSwitch?.safe_mode_active ? 'SAFE MODE' :
-            dd.daily > limits.daily * 0.8 ? 'CAUTION' : 'CLEAR'
-          } sub={'Daily DD: ' + (dd.daily * 100).toFixed(1) + '%'} variant={
-            killSwitch?.kill_switch_active ? 'negative' :
-            dd.daily > limits.daily * 0.8 ? 'negative' : 'positive'
-          } />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {/* Active Signals - LIVE */}
-          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Active Signals</h3>
-              {signalCount > 0 && <span className="text-[10px] text-accent-emerald">LIVE</span>}
+        {/* Activity */}
+        <Card className="p-4">
+          <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-3">Recent Activity</div>
+          {ACTIVITY.map((a, i) => (
+            <div key={i} className={`flex items-center gap-3 py-2.5 ${i < ACTIVITY.length-1 ? "border-b border-border-default/50" : ""}`}>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${a.cls}`}>{a.icon}</div>
+              <div className="flex-1 text-sm text-text-secondary">{a.text}</div>
+              <span className="text-[10px] text-text-muted shrink-0">{a.t}</span>
             </div>
-            {signals.length > 0 ? (
-              signals.map((s, i) => <SignalCard key={i} {...s} />)
-            ) : loading ? (
-              <div className="text-sm text-text-muted p-4 text-center">Loading signals...</div>
-            ) : (
-              <div className="text-sm text-text-muted p-4 text-center">
-                No active signals. Cycles run every 15 minutes.
-                <a href="/agent-council" className="block text-accent-violet mt-2 hover:underline">Trigger manually in Agent Council</a>
-              </div>
-            )}
-          </div>
-
-          {/* Risk Status - LIVE */}
-          <div className="space-y-3 sm:space-y-4">
-            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold">Risk Status</h3>
-                {risk && <span className="text-[10px] text-accent-emerald">LIVE</span>}
-              </div>
-              <div className="space-y-3">
-                <DrawdownBar label="Daily" value={dd.daily} max={limits.daily} />
-                <DrawdownBar label="Weekly" value={dd.weekly} max={limits.weekly} />
-                <DrawdownBar label="Total" value={dd.total} max={limits.total} />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                {risk?.circuit_breakers?.map((cb: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${cb.active ? 'bg-accent-amber' : 'bg-accent-emerald'}`} />
-                    <span className="text-text-secondary text-xs">{cb.name}: <span className={cb.active ? 'text-accent-amber' : 'text-accent-emerald'}>{cb.active ? cb.reason || 'ON' : 'OK'}</span></span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* News Feed — fills remaining space */}
-            <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" style={{ animationDuration: '3s' }} />
-                  News Feed
-                </h3>
-                <a href="/event-radar" className="text-[10px] text-accent-violet hover:underline">View all</a>
-              </div>
-              {headlines.length > 0 ? (
-                <div className="space-y-0">
-                  {headlines.slice(0, 15).map((article: any, i: number) => (
-                    <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-start gap-2.5 py-2.5 border-b border-border-default last:border-0 hover:bg-bg-tertiary/50 -mx-1 px-1 rounded transition-colors">
-                      <span className="text-text-muted text-[10px] mt-1 shrink-0 w-10">{
-                        article.published ? new Date(article.published).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
-                      }</span>
-                      <span className="text-sm text-text-primary leading-snug">{article.title}</span>
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-text-muted text-center py-3">Loading headlines...</div>
-              )}
-            </div>
-          </div>
-
-          {/* Agent Consensus - LIVE from latest cycle */}
-          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Agent Consensus {latestAsset && <span className="text-text-muted font-normal">({latestAsset})</span>}</h3>
-              {agentOutputs.length > 0 && <span className="text-[10px] text-accent-emerald">LIVE</span>}
-            </div>
-            {agentOutputs.length > 0 ? (
-              <>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {agentOutputs.slice(0, 6).map((a: any, i: number) => {
-                    const meta = AGENT_META[a.agent_id] || { name: a.agent_id, icon: '?', color: '#888' };
-                    const arrow = a.directional_bias === 'LONG' ? '▲' : a.directional_bias === 'SHORT' ? '▼' : '─';
-                    const arrowColor = a.directional_bias === 'LONG' ? 'text-accent-emerald' : a.directional_bias === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted';
-                    return (
-                      <div key={i} className="bg-bg-tertiary border border-border-default rounded-md p-2 text-center">
-                        <div className="w-7 h-7 rounded-full mx-auto mb-1 flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: meta.color }}>{meta.icon}</div>
-                        <div className="text-[10px] text-text-secondary">{meta.name}</div>
-                        <div className={`text-sm font-semibold ${arrowColor}`}>{arrow} {(a.confidence * 100).toFixed(0)}%</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-text-secondary">Agreement: <span className="font-mono text-text-primary">{(agreementPct * 100).toFixed(0)}%</span></span>
-                  <span className="text-text-secondary">Score: <span className="font-mono text-accent-violet font-semibold">{consensusScore.toFixed(2)}</span></span>
-                </div>
-                <div className="mt-2 h-2 bg-bg-surface rounded-full overflow-hidden">
-                  <div className="h-full bg-accent-violet rounded-full transition-all duration-700" style={{ width: `${consensusScore * 100}%` }} />
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-text-muted p-4 text-center">No cycle results yet</div>
-            )}
-            <a href="/agent-council" className="block mt-3 text-xs text-accent-violet hover:underline text-center">View full Agent Council →</a>
-          </div>
-
-          {/* Daily Brief - LIVE */}
-          <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Daily Intelligence Brief</h3>
-              {brief && brief.model !== 'template' && <span className="text-[10px] text-accent-emerald">LIVE</span>}
-            </div>
-            {brief && (brief.overview || brief.signal_summary) ? (
-              <>
-                <p className="text-sm text-text-secondary leading-relaxed mb-2">{brief.overview}</p>
-                {brief.signal_summary && (
-                  <p className="text-xs text-text-muted leading-relaxed border-l-2 border-accent-violet pl-3 mb-2">{brief.signal_summary}</p>
-                )}
-                <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
-                  <span>Signals: <span className="font-mono text-text-primary">{brief.signals_analyzed || 0}</span></span>
-                  <span>News: <span className="font-mono text-text-primary">{brief.news_analyzed || 0}</span></span>
-                  <span>Risk Events: <span className="font-mono text-text-primary">{brief.events_upcoming || 0}</span></span>
-                </div>
-                <a href="/intel-reports" className="block mt-2 text-xs text-accent-violet hover:underline">Full report →</a>
-              </>
-            ) : (
-              <div className="text-sm text-text-muted p-4 text-center">
-                Brief generates at 06:00 UTC daily.
-                <a href="/intel-reports" className="block text-accent-violet mt-1 hover:underline">Generate now in Intel Reports →</a>
-              </div>
-            )}
-          </div>
-        </div>
+          ))}
+        </Card>
       </div>
     </AppShell>
   );

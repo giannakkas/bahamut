@@ -1,366 +1,143 @@
 'use client';
-
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
-import { api } from '@/lib/api';
 
-const CLASS_COLORS: Record<string, string> = {
-  fx: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  crypto: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  indices: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  commodities: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-};
+const PICKS = [
+  { rank:1, asset:"MSFT", cls:"indices", price:381.87, chg:-0.30, dir:"SHORT", score:100, whales:null, rsi:28.5, adx:36.3, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:2, asset:"TSLA", cls:"indices", price:367.97, chg:-1.31, dir:"SHORT", score:100, whales:null, rsi:29, adx:42.1, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:3, asset:"ABT", cls:"indices", price:105.55, chg:-0.59, dir:"SHORT", score:100, whales:"👁 👀", rsi:31.7, adx:29.9, reason:"Bearish EMA alignment · Below 200...", active:true, activeLabel:"ACTIVE · Vol 1.5x" },
+  { rank:4, asset:"GILD", cls:"indices", price:137.25, chg:-0.95, dir:"SHORT", score:100, whales:null, rsi:26.3, adx:50.1, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:5, asset:"KO", cls:"indices", price:74.78, chg:-0.23, dir:"SHORT", score:100, whales:null, rsi:25.9, adx:54, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:6, asset:"PEP", cls:"indices", price:150.11, chg:-1.21, dir:"SHORT", score:100, whales:null, rsi:19.1, adx:62.7, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:7, asset:"SEDG", cls:"indices", price:51.71, chg:-0.79, dir:"NEUTRAL", score:100, whales:null, rsi:76.4, adx:64.9, reason:"Bullish EMA alignment · Above 200...", active:false },
+  { rank:8, asset:"SMCI", cls:"indices", price:28.56, chg:-5.69, dir:"SHORT", score:100, whales:"👁 👀", rsi:17.2, adx:67.3, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:9, asset:"HON", cls:"indices", price:221.63, chg:-0.14, dir:"SHORT", score:100, whales:null, rsi:27.3, adx:58.3, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:10, asset:"CCI", cls:"indices", price:82.41, chg:-1.62, dir:"SHORT", score:100, whales:"👁 👀", rsi:28.5, adx:54.3, reason:"Bearish EMA alignment · RSI overso...", active:false },
+  { rank:11, asset:"ABBV", cls:"indices", price:205.07, chg:-0.82, dir:"SHORT", score:98, whales:"👁 👀", rsi:23.7, adx:59.6, reason:"Bearish EMA alignment · Below 200...", active:false },
+  { rank:12, asset:"BTCUSD", cls:"crypto", price:67842.50, chg:1.22, dir:"LONG", score:92, whales:"👁 👀", rsi:58.3, adx:44.1, reason:"Bullish EMA alignment · Above 200...", active:false },
+  { rank:13, asset:"ETHUSD", cls:"crypto", price:3421.80, chg:0.87, dir:"LONG", score:88, whales:"👁", rsi:52.7, adx:38.6, reason:"Bullish trend · Momentum building...", active:false },
+  { rank:14, asset:"EURUSD", cls:"fx", price:1.0842, chg:-0.15, dir:"SHORT", score:85, whales:null, rsi:41.2, adx:29.8, reason:"Dollar strength · Below 200 DMA...", active:false },
+];
 
-function ScoreBar({ score }: { score: number }) {
-  const color = score >= 70 ? 'bg-accent-emerald' : score >= 45 ? 'bg-accent-amber' : 'bg-gray-600';
+const CC = { all:215, stocks:145, crypto:38, fx:26, commodities:6 };
+const clsBg: Record<string,string> = { indices:"bg-accent-violet", crypto:"bg-accent-emerald", fx:"bg-accent-cyan", commodities:"bg-accent-amber" };
+const clsTx: Record<string,string> = { indices:"text-white", crypto:"text-white", fx:"text-white", commodities:"text-black" };
+
+function ScoreBar({ value }: { value: number }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-2 bg-bg-surface rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
+    <div className="flex items-center gap-1.5">
+      <div className="w-12 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${value >= 90 ? "bg-accent-emerald" : value >= 70 ? "bg-accent-cyan" : "bg-text-muted"}`} style={{ width: `${value}%` }} />
       </div>
-      <span className={`font-mono text-sm font-bold ${score >= 70 ? 'text-accent-emerald' : score >= 45 ? 'text-accent-amber' : 'text-text-muted'}`}>
-        {score}
-      </span>
+      <span className={`text-xs font-semibold tabular-nums ${value >= 90 ? "text-accent-emerald" : value >= 70 ? "text-accent-cyan" : "text-text-muted"}`}>{value}</span>
     </div>
   );
 }
 
-export default function TopPicksPage() {
-  const [data, setData] = useState<any>(null);
-  const [filter, setFilter] = useState('all');
-  const [scanning, setScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [countdown, setCountdown] = useState('');
-  const [modal, setModal] = useState<{ symbol: string; reasons: string[]; direction: string; score: number } | null>(null);
-
-  const SCAN_INTERVAL = 15 * 60; // 30 minutes in seconds
-
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await api.getTopPicks();
-      setData(res);
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  // Countdown timer — always shows time until next scan
-  useEffect(() => {
-    const tick = () => {
-      if (!data?.scanned_at) { setCountdown('--:--'); return; }
-      const scannedAt = new Date(data.scanned_at).getTime();
-      const nextScan = scannedAt + SCAN_INTERVAL * 1000;
-      let remaining = Math.floor((nextScan - Date.now()) / 1000);
-      // If overdue, show countdown to the NEXT 30-min cycle from now
-      if (remaining <= 0) {
-        const overdue = Math.abs(remaining);
-        const cyclesPassed = Math.floor(overdue / SCAN_INTERVAL) + 1;
-        remaining = (cyclesPassed * SCAN_INTERVAL) - overdue;
-      }
-      const min = Math.floor(remaining / 60);
-      const sec = remaining % 60;
-      setCountdown(`${min}:${sec.toString().padStart(2, '0')}`);
-    };
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [data?.scanned_at]);
-
-  const triggerScan = async () => {
-    setScanning(true);
-    setScanProgress(5);
-    try {
-      await api.triggerScan();
-      for (let i = 0; i < 20; i++) {
-        setScanProgress(Math.min(95, 5 + (i + 1) * 4.5));
-        await new Promise(r => setTimeout(r, 10000));
-        const res = await api.getTopPicks();
-        if (res?.total_scanned > 0 && res.scanned_at !== data?.scanned_at) {
-          setData(res);
-          setScanProgress(100);
-          break;
-        }
-      }
-    } catch (e) { console.error(e); }
-    setTimeout(() => { setScanning(false); setScanProgress(0); }, 500);
-  };
-
-  const allResults = data?.all_results || [];
-  const filtered = filter === 'all' ? allResults : allResults.filter((r: any) => r.asset_class === filter);
-  const topPicks = data?.top_picks || [];
-  const scanTime = data?.scanned_at ? new Date(data.scanned_at).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-
-  const classStats = {
-    fx: allResults.filter((r: any) => r.asset_class === 'fx').length,
-    crypto: allResults.filter((r: any) => r.asset_class === 'crypto').length,
-    indices: allResults.filter((r: any) => r.asset_class === 'indices').length,
-    commodities: allResults.filter((r: any) => r.asset_class === 'commodities').length,
-  };
+export default function TopPicks() {
+  const [filter, setFilter] = useState("all");
+  const filtered = filter === "all" ? PICKS : PICKS.filter(p => filter === "stocks" ? p.cls === "indices" : p.cls === filter);
+  const top5 = filtered.slice(0, 5);
 
   return (
     <AppShell>
-      <div className="space-y-5">
+      <div className="max-w-[1400px] space-y-5">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              Top Picks
-              <span className="text-xs bg-accent-violet/20 text-accent-violet px-2 py-1 rounded-full font-medium">
-                {data?.total_scanned || 0} assets scanned
-              </span>
-            </h1>
-            <p className="text-sm text-text-secondary mt-1">
-              AI scanner ranks all assets by opportunity strength · Last scan: {scanTime}
-            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold">Top Picks</h1>
+              <span className="px-2.5 py-0.5 rounded-full bg-accent-emerald/15 text-accent-emerald text-xs font-semibold">{CC.all} assets scanned</span>
+            </div>
+            <div className="text-xs text-text-muted mt-1">AI scanner ranks all assets by opportunity strength · Last scan: 21 Mar, 20:54</div>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <div className="text-[10px] text-text-muted uppercase tracking-wider">Next scan</div>
-              <div className="text-sm font-mono font-bold text-accent-violet">{countdown}</div>
+              <div className="text-[9px] text-text-muted uppercase tracking-wider">Next Scan</div>
+              <div className="text-base font-bold tabular-nums">6:47</div>
             </div>
-            <button onClick={triggerScan} disabled={scanning}
-              className="bg-accent-violet hover:bg-accent-violet/90 text-white font-semibold px-4 py-1.5 rounded-md text-sm disabled:opacity-50 shrink-0">
-              {scanning ? 'Scanning ~2 min...' : 'Scan Now'}
-            </button>
+            <button className="px-4 py-2 rounded-lg bg-gradient-to-r from-accent-violet to-[#4c3ad1] text-white font-bold text-xs shadow-lg shadow-accent-violet/20 hover:brightness-110">Scan Now</button>
           </div>
         </div>
 
-        {/* Scan Progress Bar */}
-        {scanning && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-accent-violet font-semibold flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-accent-violet animate-pulse" />
-                Scanning {data?.total_scanned || 45} assets...
-              </span>
-              <span className="text-text-muted font-mono">{Math.round(scanProgress)}%</span>
-            </div>
-            <div className="w-full h-2 bg-bg-surface rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-accent-violet to-accent-emerald rounded-full transition-all duration-1000 ease-out"
-                style={{ width: `${scanProgress}%` }} />
-            </div>
-            <div className="text-[10px] text-text-muted">
-              Analyzing technical indicators, whale activity, EMA alignment, RSI, MACD, ADX...
-            </div>
-          </div>
-        )}
-
-        {/* Top 5 Cards */}
-        {topPicks.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {topPicks.slice(0, 5).map((pick: any, i: number) => (
-              <div key={pick.symbol} className={`bg-bg-secondary border rounded-xl p-4 ${i === 0 ? 'border-accent-violet/50 ring-1 ring-accent-violet/20' : 'border-border-default'}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    {i === 0 && <span className="text-accent-violet text-xs font-bold">#1</span>}
-                    {i === 1 && <span className="text-text-muted text-xs font-bold">#2</span>}
-                    {i === 2 && <span className="text-text-muted text-xs font-bold">#3</span>}
-                    {i > 2 && <span className="text-text-muted text-xs font-bold">#{i+1}</span>}
-                    <span className="font-bold text-lg">{pick.symbol}</span>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold border ${CLASS_COLORS[pick.asset_class] || 'bg-gray-500/20 text-gray-400'}`}>
-                    {pick.asset_class}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-sm font-bold ${pick.direction === 'LONG' ? 'text-accent-emerald' : pick.direction === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted'}`}>
-                    {pick.direction === 'LONG' ? '▲' : pick.direction === 'SHORT' ? '▼' : '─'} {pick.direction}
-                  </span>
-                  <span className="font-mono text-sm text-text-secondary">${pick.price}</span>
-                </div>
-                <ScoreBar score={pick.score} />
-                <div className="mt-2 flex items-center gap-2">
-                  {pick.whale_score > 0 && (
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      pick.whale_score >= 20 ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-accent-amber/20 text-accent-amber'
-                    }`}>
-                      🐋 {pick.whale_signal === 'EXTREME_SPIKE' ? 'EXTREME' : pick.whale_signal === 'MAJOR_SPIKE' ? 'MAJOR' : 'ACTIVE'} · Vol {pick.volume_ratio}x
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1 text-[10px] text-text-muted leading-tight">
-                  {pick.reasons?.slice(0, 2).join(' · ')}
-                </div>
-                {pick.agent_decision && (
-                  <div className={`mt-2 pt-2 border-t border-border-default text-xs font-semibold ${
-                    pick.agent_decision === 'SIGNAL' || pick.agent_decision === 'STRONG_SIGNAL' ? 'text-accent-violet' : 'text-text-muted'
-                  }`}>
-                    Agent: {pick.agent_decision} ({(pick.agent_score * 100).toFixed(0)}%)
-                  </div>
-                )}
+        {/* Top 5 Cards — horizontal scroll on mobile */}
+        <div className="flex gap-3 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-5 sm:overflow-visible">
+          {top5.map((p, i) => (
+            <div key={i} className="min-w-[180px] sm:min-w-0 bg-bg-secondary/60 border border-border-default rounded-xl p-3.5 shrink-0">
+              <div className="flex justify-between items-start mb-1.5">
+                <div className="flex items-baseline gap-1.5"><span className="text-xs text-text-muted">#{p.rank}</span><span className="text-base font-extrabold">{p.asset}</span></div>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${clsBg[p.cls]} ${clsTx[p.cls]}`}>{p.cls}</span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { key: 'all', label: `All (${allResults.length})` },
-            { key: 'indices', label: `Stocks (${classStats.indices})` },
-            { key: 'crypto', label: `Crypto (${classStats.crypto})` },
-            { key: 'fx', label: `FX (${classStats.fx})` },
-            { key: 'commodities', label: `Commodities (${classStats.commodities})` },
-          ].map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                filter === f.key ? 'bg-accent-violet/20 text-accent-violet' : 'bg-bg-secondary text-text-secondary hover:text-text-primary'
-              }`}>
-              {f.label}
-            </button>
+              <div className="flex justify-between items-center mb-2">
+                <span className={`text-sm font-extrabold ${p.dir === "LONG" ? "text-accent-emerald" : p.dir === "SHORT" ? "text-accent-crimson" : "text-text-secondary"}`}>{p.dir === "SHORT" ? "▼" : "▲"} {p.dir}</span>
+                <span className="text-sm font-semibold text-text-secondary tabular-nums">${p.price > 1000 ? p.price.toLocaleString("en",{minimumFractionDigits:2}) : p.price.toFixed(2)}</span>
+              </div>
+              <div className="h-1.5 bg-bg-tertiary rounded-full overflow-hidden mb-1"><div className="h-full rounded-full bg-accent-emerald" style={{ width: `${p.score}%` }} /></div>
+              <div className="text-xs font-bold text-accent-emerald mb-1">{p.score}</div>
+              <div className="text-[10px] text-text-muted leading-snug">{p.reason}</div>
+              {p.active && <div className="mt-2"><span className="px-2 py-0.5 rounded text-[9px] font-bold bg-accent-emerald/15 text-accent-emerald">{p.activeLabel}</span></div>}
+            </div>
           ))}
         </div>
 
-        {/* Full Table */}
-        <div className="bg-bg-secondary border border-border-default rounded-lg overflow-x-auto">
-          <table className="w-full min-w-[800px]">
-            <thead>
-              <tr className="border-b border-border-default text-xs text-text-muted uppercase tracking-wider">
-                <th className="text-left py-3 px-4">Rank</th>
-                <th className="text-left py-3 px-4">Asset</th>
-                <th className="text-left py-3 px-4">Class</th>
-                <th className="text-right py-3 px-4">Price</th>
-                <th className="text-right py-3 px-4">Change</th>
-                <th className="text-center py-3 px-4">Direction</th>
-                <th className="text-right py-3 px-4">Score</th>
-                <th className="text-center py-3 px-4">Whales</th>
-                <th className="text-right py-3 px-4">RSI</th>
-                <th className="text-right py-3 px-4">ADX</th>
-                <th className="text-left py-3 px-4">Reasons</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">Loading scanner results...</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} className="py-12 text-center text-text-muted text-sm">
-                  No scan results yet. Click "Scan Now" to analyze all 57 assets, or wait for the next automatic scan (every 15 min).
-                </td></tr>
-              ) : (
-                filtered.map((r: any, i: number) => {
-                  const rank = allResults.indexOf(r) + 1;
-                  return (
-                    <tr key={r.symbol} className="border-b border-border-default hover:bg-bg-tertiary/50 transition-colors">
-                      <td className="py-2.5 px-4 text-sm font-mono text-text-muted">{rank}</td>
-                      <td className="py-2.5 px-4">
-                        <a href={`/agent-council`} className="font-semibold text-sm hover:text-accent-violet transition-colors">{r.symbol}</a>
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${CLASS_COLORS[r.asset_class] || ''}`}>
-                          {r.asset_class}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-mono text-sm">{r.price}</td>
-                      <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.change_pct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>
-                        {r.change_pct >= 0 ? '+' : ''}{r.change_pct}%
-                      </td>
-                      <td className="py-2.5 px-4 text-center">
-                        <span className={`text-sm font-bold ${r.direction === 'LONG' ? 'text-accent-emerald' : r.direction === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted'}`}>
-                          {r.direction === 'LONG' ? '▲' : r.direction === 'SHORT' ? '▼' : '─'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4 text-right"><ScoreBar score={r.score} /></td>
-                      <td className="py-2.5 px-4 text-center">
-                        {r.whale_score > 0 ? (
-                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                            r.whale_score >= 20 ? 'bg-accent-emerald/20 text-accent-emerald' :
-                            r.whale_score >= 10 ? 'bg-accent-amber/20 text-accent-amber' :
-                            'bg-bg-surface text-text-muted'
-                          }`} title={`Volume ${r.volume_ratio}x avg`}>
-                            🐋 {r.whale_score > 20 ? '+++' : r.whale_score > 10 ? '++' : '+'}
-                          </span>
-                        ) : r.whale_score < 0 ? (
-                          <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-accent-crimson/20 text-accent-crimson">
-                            🐋 −
-                          </span>
-                        ) : (
-                          <span className="text-xs text-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.rsi < 30 || r.rsi > 70 ? 'text-accent-amber font-bold' : 'text-text-secondary'}`}>
-                        {r.rsi}
-                      </td>
-                      <td className={`py-2.5 px-4 text-right font-mono text-sm ${r.adx > 25 ? 'text-accent-emerald' : 'text-text-muted'}`}>
-                        {r.adx}
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <button
-                          onClick={() => setModal({ symbol: r.symbol, reasons: r.reasons || [], direction: r.direction, score: r.score })}
-                          className="text-xs text-accent-violet hover:text-accent-violet/80 hover:underline text-left max-w-[200px] truncate cursor-pointer"
-                          title="Click to see full analysis"
-                        >
-                          {r.reasons?.join(' · ') || '—'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        {/* Filter Tabs — scrollable on mobile */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0">
+          {[{ id:"all", l:`All (${CC.all})` },{ id:"stocks", l:`Stocks (${CC.stocks})` },{ id:"crypto", l:`Crypto (${CC.crypto})` },{ id:"fx", l:`FX (${CC.fx})` },{ id:"commodities", l:`Commodities (${CC.commodities})` }].map(tab => (
+            <button key={tab.id} onClick={() => setFilter(tab.id)} className={`px-3.5 py-1.5 rounded-md text-xs font-semibold border whitespace-nowrap transition-all shrink-0 ${filter === tab.id ? "bg-accent-cyan/10 text-accent-cyan border-accent-cyan/25" : "text-text-muted border-transparent hover:text-text-secondary"}`}>{tab.l}</button>
+          ))}
         </div>
 
-        {/* Info */}
-        <div className="bg-bg-secondary/50 border border-border-default/50 rounded-xl p-4 text-xs text-text-muted">
-          <strong className="text-text-secondary">How the scanner works:</strong> Every 15 minutes, Bahamut scans all 45 assets
-          (8 FX pairs, 10 cryptocurrencies, 25 stocks, 2 commodities). Each asset gets a technical score based on RSI, EMA alignment,
-          MACD momentum, ADX trend strength, and Bollinger Band breakouts. <strong className="text-text-secondary">Whale detection</strong> adds bonus points for
-          unusual volume spikes (🐋) — large volume = institutional/whale activity. The top 10 then get a full 6-agent deep analysis.
-          Scores above 70 = strong opportunity. Scores below 30 = no clear setup.
+        {/* Table — desktop */}
+        <div className="hidden lg:block rounded-xl overflow-hidden border border-border-default">
+          <div className="grid grid-cols-[50px_80px_75px_95px_75px_70px_110px_65px_50px_50px_1fr] px-4 py-2.5 bg-bg-tertiary/50 border-b border-border-default">
+            {["RANK","ASSET","CLASS","PRICE","CHANGE","DIR","SCORE","WHALES","RSI","ADX","REASONS"].map(h => <span key={h} className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">{h}</span>)}
+          </div>
+          {filtered.map((p, i) => (
+            <div key={i} className={`grid grid-cols-[50px_80px_75px_95px_75px_70px_110px_65px_50px_50px_1fr] px-4 py-2.5 items-center border-b border-border-default/30 hover:bg-bg-tertiary/30 transition-colors ${i%2===0 ? "" : "bg-bg-secondary/20"}`}>
+              <span className="text-sm text-text-muted">{p.rank}</span>
+              <span className="text-sm font-bold">{p.asset}</span>
+              <span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${clsBg[p.cls]} ${clsTx[p.cls]}`}>{p.cls}</span></span>
+              <span className="text-sm text-text-secondary tabular-nums">{p.price < 10 ? p.price.toFixed(4) : p.price > 1000 ? p.price.toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2}) : p.price.toFixed(2)}</span>
+              <span className={`text-xs font-semibold tabular-nums ${p.chg >= 0 ? "text-accent-emerald" : "text-accent-crimson"}`}>{p.chg >= 0 ? "+" : ""}{p.chg.toFixed(2)}%</span>
+              <span className={`text-xs ${p.dir === "LONG" ? "text-accent-emerald" : p.dir === "SHORT" ? "text-accent-crimson" : "text-accent-amber"}`}>{p.dir === "SHORT" ? "▼" : "▲"}</span>
+              <ScoreBar value={p.score} />
+              <span className="text-xs">{p.whales || "—"}</span>
+              <span className={`text-xs font-semibold tabular-nums ${p.rsi <= 30 ? "text-accent-crimson" : p.rsi >= 70 ? "text-accent-emerald" : "text-text-muted"}`}>{p.rsi}</span>
+              <span className="text-xs text-text-muted tabular-nums">{p.adx}</span>
+              <span className="text-xs text-text-muted truncate">{p.reason}</span>
+            </div>
+          ))}
         </div>
-      </div>
 
-      {/* Reasons Modal */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setModal(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div className="relative bg-bg-secondary border border-border-default rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className={`text-2xl font-bold ${modal.direction === 'LONG' ? 'text-accent-emerald' : modal.direction === 'SHORT' ? 'text-accent-crimson' : 'text-text-muted'}`}>
-                  {modal.direction === 'LONG' ? '▲' : '▼'}
-                </span>
-                <div>
-                  <div className="text-lg font-bold">{modal.symbol}</div>
-                  <div className={`text-sm font-semibold ${modal.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>
-                    {modal.direction} · Score {modal.score}/100
-                  </div>
+        {/* Table — mobile/tablet card view */}
+        <div className="lg:hidden space-y-2">
+          {filtered.map((p, i) => (
+            <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-3.5">
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted font-semibold">#{p.rank}</span>
+                  <span className="text-sm font-bold">{p.asset}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${clsBg[p.cls]} ${clsTx[p.cls]}`}>{p.cls}</span>
+                </div>
+                <span className={`text-sm font-bold ${p.dir === "LONG" ? "text-accent-emerald" : p.dir === "SHORT" ? "text-accent-crimson" : "text-text-muted"}`}>{p.dir === "SHORT" ? "▼" : "▲"} {p.dir}</span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-text-secondary tabular-nums">${p.price > 1000 ? p.price.toLocaleString("en",{minimumFractionDigits:2}) : p.price < 10 ? p.price.toFixed(4) : p.price.toFixed(2)}</span>
+                <span className={`text-xs font-semibold tabular-nums ${p.chg >= 0 ? "text-accent-emerald" : "text-accent-crimson"}`}>{p.chg >= 0 ? "+" : ""}{p.chg.toFixed(2)}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <ScoreBar value={p.score} />
+                <div className="flex gap-3 text-xs">
+                  <span className={`tabular-nums ${p.rsi <= 30 ? "text-accent-crimson" : "text-text-muted"}`}>RSI {p.rsi}</span>
+                  <span className="text-text-muted tabular-nums">ADX {p.adx}</span>
+                  {p.whales && <span>{p.whales}</span>}
                 </div>
               </div>
-              <button onClick={() => setModal(null)} className="text-text-muted hover:text-text-primary text-xl leading-none p-1">✕</button>
+              <div className="text-[10px] text-text-muted mt-2">{p.reason}</div>
             </div>
-
-            <div className="mb-4">
-              <div className="text-xs text-text-muted uppercase tracking-wider mb-2">Why this asset scored high</div>
-              <div className="space-y-2">
-                {modal.reasons.length > 0 ? modal.reasons.map((reason, i) => (
-                  <div key={i} className="flex items-start gap-3 p-3 bg-bg-tertiary rounded-lg border border-border-default">
-                    <span className="text-accent-violet font-bold text-sm mt-0.5">{i + 1}</span>
-                    <span className="text-sm text-text-primary leading-relaxed">{reason}</span>
-                  </div>
-                )) : (
-                  <div className="text-sm text-text-muted p-3">No specific reasons recorded.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <a href="/agent-council" className="flex-1 text-center py-2 bg-accent-violet/20 text-accent-violet rounded-lg text-sm font-semibold hover:bg-accent-violet/30 transition-colors">
-                Deep Analysis in Agent Council
-              </a>
-              <button onClick={() => setModal(null)} className="px-4 py-2 bg-bg-tertiary text-text-secondary rounded-lg text-sm hover:bg-bg-surface transition-colors">
-                Close
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
+      </div>
     </AppShell>
   );
 }
