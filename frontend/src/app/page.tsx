@@ -1,11 +1,14 @@
 'use client';
 import { useState, useEffect } from 'react';
 import AppShell from '@/components/layout/AppShell';
+import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
 const fm = (n: number) => { if (n == null) return "$0"; const a = Math.abs(n); if (a >= 1e6) return `$${(n/1e6).toFixed(2)}M`; if (a >= 1e3) return `$${(n/1e3).toFixed(1)}K`; return `$${n.toFixed(2)}`; };
 const fp = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 
 const DATA = { balance:100000, available:72000, todayPnl:1842.50, todayPnlPct:1.84, tradingAmount:50000, winRate:67, tradesClosed:23, riskLevel:"Low", systemStatus:"Online" };
+
+const EQUITY = Array.from({length:24}, (_, i) => ({ t:`${String(i).padStart(2,'0')}:00`, v:98200 + Math.sin(i*0.25)*600 + i*75 + (Math.random()-0.3)*150 }));
 
 const OPPS = [
   { asset:"BTC / USD", dir:"Long", status:"Ready", chance:85, risk:"Medium", desc:"Strong uptrend forming with high momentum" },
@@ -45,15 +48,17 @@ export default function Dashboard() {
   const [topUpAmt, setTopUpAmt] = useState("");
   const [tradingAmt, setTradingAmt] = useState(DATA.tradingAmount);
   const [newsIdx, setNewsIdx] = useState(0);
+  const [loaded, setLoaded] = useState(false);
   const d = DATA;
 
+  useEffect(() => { setTimeout(() => setLoaded(true), 100); }, []);
   useEffect(() => { const iv = setInterval(() => setNewsIdx(i => (i+1) % NEWS.length), 5000); return () => clearInterval(iv); }, []);
 
   return (
     <AppShell>
       <div className="space-y-4 sm:space-y-5 max-w-[1400px]">
         {/* Hero */}
-        <Card className="p-5 sm:p-7 relative overflow-hidden">
+        <Card className={`p-5 sm:p-7 relative overflow-hidden transition-all duration-700 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <div className="absolute top-[-60px] right-[-20px] w-48 h-48 bg-accent-violet/5 rounded-full blur-[40px]" />
           <div className="relative flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
@@ -75,8 +80,26 @@ export default function Dashboard() {
           </div>
         </Card>
 
+        {/* Equity Chart */}
+        <Card className={`p-4 transition-all duration-700 delay-100 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-xs font-bold">Portfolio Equity — Today</div>
+            <div className="text-xs text-text-muted tabular-nums">24h</div>
+          </div>
+          <div className="h-[120px] sm:h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={EQUITY}>
+                <defs><linearGradient id="dashGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6c5ce7" stopOpacity={0.25} /><stop offset="100%" stopColor="#6c5ce7" stopOpacity={0} /></linearGradient></defs>
+                <XAxis dataKey="t" tick={{ fontSize:9, fill:'#555570' }} axisLine={false} tickLine={false} interval={5} />
+                <Tooltip contentStyle={{ background:'#1C1C35', border:'1px solid #2A2A4A', borderRadius:8, fontSize:12 }} labelStyle={{ color:'#8888AA' }} formatter={(v: number) => [`$${v.toFixed(0)}`, 'Equity']} />
+                <Area type="monotone" dataKey="v" stroke="#6c5ce7" strokeWidth={2} fill="url(#dashGrad)" animationDuration={1500} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
         {/* Top-Up + Trading Amount */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 transition-all duration-700 delay-200 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Card className="p-5">
             <div className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-4">Add Funds</div>
             {!showTopUp ? (
@@ -111,7 +134,7 @@ export default function Dashboard() {
         </div>
 
         {/* Trust Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 transition-all duration-700 delay-300 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           {[
             { l:"Win Rate", v:`${d.winRate}%`, c: d.winRate >= 60 ? "text-accent-emerald" : "text-accent-amber" },
             { l:"Trades Closed", v:d.tradesClosed, c:"text-text-primary" },
@@ -126,7 +149,7 @@ export default function Dashboard() {
         </div>
 
         {/* News + Risk */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 transition-all duration-700 delay-[400ms] ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           <Card className="p-4">
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-accent-emerald" /><span className="text-xs font-bold">News Feed</span></div>

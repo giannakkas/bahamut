@@ -6,15 +6,9 @@ import { useAuthStore } from '@/stores/auth';
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '◉', minRole: 'user' },
   { href: '/top-picks', label: 'Top Picks', icon: '🔥', minRole: 'user' },
-  { href: '/macro-arena', label: 'Macro Arena', icon: '◉', minRole: 'user' },
-  { href: '/event-radar', label: 'Event Radar', icon: '◈', minRole: 'user' },
-  { href: '/execution', label: 'Execution', icon: '⚡', minRole: 'trader' },
-  { href: '/risk-control', label: 'Risk Control', icon: '◆', minRole: 'trader' },
-  { href: '/journal', label: 'Trade Journal', icon: '☰', minRole: 'trader' },
-  { href: '/paper-trading', label: 'Paper Trading', icon: '🧠', minRole: 'trader' },
-  { href: '/intel-reports', label: 'Intel Reports', icon: '▤', minRole: 'user' },
-  { href: '/agent-council', label: 'Agent Council', icon: '◎', minRole: 'admin' },
-  { href: '/learning-lab', label: 'Learning Lab', icon: '◐', minRole: 'admin' },
+  { href: '/portfolio', label: 'Portfolio', icon: '◧', minRole: 'user' },
+  { href: '/trades', label: 'Trades', icon: '⇄', minRole: 'user' },
+  { href: '/news', label: 'News Feed', icon: '◈', minRole: 'user' },
 ];
 
 const ROLE_LEVELS: Record<string, number> = {
