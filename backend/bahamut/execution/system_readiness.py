@@ -141,20 +141,31 @@ def can_system_trade(asset: str = "") -> tuple[bool, list[str]]:
     state = _read_state()
     reasons = []
 
-    if not state.get("reconciliation_complete", False):
+    recon_ok = state.get("reconciliation_complete", False)
+    if not recon_ok:
         err = state.get("reconciliation_error", "startup pending")
         reasons.append(f"ENGINE_NOT_RECONCILED: {err}")
 
+    data_ok = True
     if asset:
         health = state.get(f"data:{asset}")
         if not health:
             reasons.append(f"DATA_NOT_FRESH: {asset} status=UNKNOWN (no data recorded)")
+            data_ok = False
         elif health.get("status") in ("STALE", "MISSING", "DEGRADED"):
             reasons.append(f"DATA_NOT_FRESH: {asset} status={health['status']} age={health.get('age_seconds', '?')}s")
+            data_ok = False
         elif health.get("age_seconds") is not None and health["age_seconds"] > MAX_DATA_AGE_SECONDS:
             reasons.append(f"DATA_NOT_FRESH: {asset} age={health['age_seconds']}s > {MAX_DATA_AGE_SECONDS}s")
+            data_ok = False
 
-    return (len(reasons) == 0, reasons)
+    can_trade = len(reasons) == 0
+    logger.info("system_readiness",
+                asset=asset or "ALL", can_trade=can_trade,
+                reconciliation_complete=recon_ok, data_fresh=data_ok,
+                db_healthy=is_db_healthy(),
+                reasons=reasons if reasons else "none")
+    return (can_trade, reasons)
 
 
 def get_readiness_state() -> dict:

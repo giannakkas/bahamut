@@ -24,29 +24,56 @@ def process_signal_sync(
 
     log = logger.bind(asset=asset, direction=direction, score=consensus_score)
 
+    # ══════════════════════════════════════════════
+    # TRACE: Signal received
+    # ══════════════════════════════════════════════
+    log.info("signal_received", asset=asset, direction=direction,
+             score=consensus_score, label=signal_label, regime=regime,
+             gate=execution_gate, disagree=disagreement_index,
+             risk_can_trade=risk_can_trade, profile=trading_profile)
+
     if entry_price <= 0:
+        log.info("exploration_condition", reason="invalid_price", price=entry_price)
         return {"action": "SKIP", "reason": "Invalid price"}
 
     # ── PRIMARY GATE: Disagreement (checked first, unconditionally) ──
     if execution_gate == "BLOCKED":
-        log.info("primary_gate_blocked", reason="disagreement",
-                 index=disagreement_index)
+        log.info("exploration_condition", reason="disagreement_blocked",
+                 index=disagreement_index, mode="STRICT")
         return {"action": "SKIP", "reason": f"Disagreement BLOCKED (index={disagreement_index:.3f})",
                 "gate": "DISAGREEMENT", "disagreement_index": disagreement_index}
 
     # ── SIGNAL LABEL GATE with exploration fallback ──
     is_exploration = False
     if signal_label not in ("STRONG_SIGNAL", "SIGNAL"):
-        # Normal path would reject — check if exploration mode can salvage this
+        log.info("exploration_condition",
+                 asset=asset, score=consensus_score, label=signal_label,
+                 reason="score_below_signal_threshold",
+                 threshold_needed="SIGNAL (≥0.58 for BALANCED)")
+
+        # Check exploration fallback
+        log.info("exploration_condition",
+                 asset=asset, score=consensus_score, label=signal_label)
+
         exploration_eligible, explore_reason = _check_exploration_eligible(
             asset, consensus_score, regime, signal_label)
+
         if not exploration_eligible:
-            log.info("skip_sync", reason="weak_signal", label=signal_label,
-                     exploration=explore_reason)
+            log.info("exploration_condition",
+                     asset=asset, score=consensus_score, reason=explore_reason)
+            log.info("exploration_condition",
+                     asset=asset, mode="NONE",
+                     strict_reason="weak_signal", exploration_reason=explore_reason)
             return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}. {explore_reason}"}
+
         is_exploration = True
-        log.info("exploration_fallback", asset=asset, score=consensus_score,
-                 label=signal_label, reason=explore_reason)
+        log.info("exploration_condition",
+                 asset=asset, score=consensus_score, label=signal_label,
+                 reason=explore_reason)
+    else:
+        log.info("exploration_condition",
+                 asset=asset, score=consensus_score, label=signal_label,
+                 mode="STRICT")
 
     try:
         with sync_engine.connect() as conn:
@@ -151,7 +178,20 @@ def process_signal_sync(
                 regime=regime,
                 is_exploration=is_exploration,
             )
+            log.info("exploration_condition",
+                     asset=asset, mode="EXPLORATION" if is_exploration else "STRICT",
+                     score=consensus_score, open_positions=open_count,
+                     has_duplicate=has_dup, sys_confidence=round(sys_conf, 3),
+                     mean_trust=round(mean_trust, 2), regime=regime)
+
             decision = execution_policy.evaluate(exec_req)
+
+            log.info("exploration_condition",
+                     asset=asset, allowed=decision.allowed, mode=decision.mode,
+                     reason=decision.reason, blockers=decision.blockers,
+                     warnings=decision.warnings,
+                     size_mult=decision.position_size_multiplier,
+                     is_exploration=is_exploration)
 
             if not decision.allowed:
                 # ── DYNAMIC REALLOCATION: if blocked by MAX_POSITIONS, try upgrading ──
@@ -332,8 +372,10 @@ def _check_exploration_eligible(
 ) -> tuple[bool, str]:
     """
     Check if a weak signal qualifies for exploration mode.
-    Returns (eligible, reason).
+    Returns (eligible, reason). Logs every condition for full tracing.
     """
+    log = logger.bind(asset=asset, score=consensus_score)
+
     # 1. Config check
     try:
         from bahamut.admin.config import get_config
@@ -341,30 +383,41 @@ def _check_exploration_eligible(
     except Exception:
         enabled = True
 
+    log.info("exploration_condition",
+             condition="enabled", result=enabled)
     if not enabled:
         return False, "Exploration mode disabled"
 
     # 2. Score floor (strategy-specific)
     min_score = 0.35
-    # v5 strategies need higher confidence
     if any(kw in asset.upper() for kw in ["BTC", "ETH"]):
-        # BTC/ETH are the primary production assets — higher floor
         min_score = 0.40
 
-    if consensus_score < min_score:
+    score_pass = consensus_score >= min_score
+    log.info("exploration_condition",
+             condition="score_floor", value=round(consensus_score, 4),
+             required=min_score, result=score_pass)
+    if not score_pass:
         return False, f"Score {consensus_score:.3f} < exploration floor {min_score}"
 
     # 3. Regime gate
-    if regime == "CRISIS":
+    regime_pass = regime != "CRISIS"
+    log.info("exploration_condition",
+             condition="regime_not_crisis", regime=regime, result=regime_pass)
+    if not regime_pass:
         return False, "CRISIS regime blocks exploration"
 
     # 4. Must have a directional signal
-    if signal_label == "NO_TRADE":
-        return False, "NO_TRADE — no direction to explore"
+    dir_pass = signal_label != "NO_TRADE"
+    log.info("exploration_condition",
+             condition="has_direction", label=signal_label, result=dir_pass)
+    if not dir_pass:
+        return False, "NO_TRADE -- no direction to explore"
 
     r = _get_exploration_redis()
 
     # 5. Loss-streak cooldown check
+    cooldown_active = False
     if r:
         try:
             cooldown_until = r.get(EXPLORATION_COOLDOWN_KEY)
@@ -374,41 +427,63 @@ def _check_exploration_eligible(
                 now = datetime.now(timezone.utc)
                 if now < cd_time:
                     remaining = (cd_time - now).total_seconds() / 3600
+                    cooldown_active = True
+                    log.info("exploration_condition",
+                             condition="cooldown_active", remaining_hours=round(remaining, 1),
+                             result=False)
                     return False, f"Cooldown active ({remaining:.1f}h remaining after {EXPLORATION_COOLDOWN_LOSS_STREAK} losses)"
                 else:
-                    # Cooldown expired — clear it
                     r.delete(EXPLORATION_COOLDOWN_KEY)
                     r.delete(EXPLORATION_LOSS_STREAK_KEY)
         except Exception:
             pass
+    log.info("exploration_condition",
+             condition="cooldown_active", result=not cooldown_active)
 
     # 6. Per-cycle limit
+    cycle_count = 0
     if r:
         try:
-            count = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
-            if count >= EXPLORATION_MAX_PER_CYCLE:
-                return False, f"Exploration cycle limit reached ({count}/{EXPLORATION_MAX_PER_CYCLE})"
+            cycle_count = int(r.get(EXPLORATION_CYCLE_KEY) or 0)
         except Exception:
             pass
+    cycle_pass = cycle_count < EXPLORATION_MAX_PER_CYCLE
+    log.info("exploration_condition",
+             condition="cycle_limit", current=cycle_count,
+             max=EXPLORATION_MAX_PER_CYCLE, result=cycle_pass)
+    if not cycle_pass:
+        return False, f"Exploration cycle limit reached ({cycle_count}/{EXPLORATION_MAX_PER_CYCLE})"
 
-    # 7. Daily limit (24h rolling window)
+    # 7. Daily limit
+    daily_count = 0
     if r:
         try:
-            daily = int(r.get(EXPLORATION_DAILY_KEY) or 0)
-            if daily >= EXPLORATION_MAX_PER_DAY:
-                return False, f"Daily exploration limit reached ({daily}/{EXPLORATION_MAX_PER_DAY})"
+            daily_count = int(r.get(EXPLORATION_DAILY_KEY) or 0)
         except Exception:
             pass
+    daily_pass = daily_count < EXPLORATION_MAX_PER_DAY
+    log.info("exploration_condition",
+             condition="daily_limit", current=daily_count,
+             max=EXPLORATION_MAX_PER_DAY, result=daily_pass)
+    if not daily_pass:
+        return False, f"Daily exploration limit reached ({daily_count}/{EXPLORATION_MAX_PER_DAY})"
 
     # 8. Max open exploration positions
+    open_exp = 0
     try:
         from bahamut.paper_trading.store import count_exploration_positions
         open_exp = count_exploration_positions()
-        if open_exp >= EXPLORATION_MAX_POSITIONS:
-            return False, f"Max exploration positions open ({open_exp}/{EXPLORATION_MAX_POSITIONS})"
     except Exception:
         pass
+    pos_pass = open_exp < EXPLORATION_MAX_POSITIONS
+    log.info("exploration_condition",
+             condition="open_positions", current=open_exp,
+             max=EXPLORATION_MAX_POSITIONS, result=pos_pass)
+    if not pos_pass:
+        return False, f"Max exploration positions open ({open_exp}/{EXPLORATION_MAX_POSITIONS})"
 
+    log.info("exploration_condition",
+             asset=asset, score=round(consensus_score, 4))
     return True, f"Exploration eligible: score={consensus_score:.3f} label={signal_label}"
 
 
