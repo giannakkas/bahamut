@@ -88,7 +88,13 @@ class PortfolioSnapshot:
 
 
 def load_portfolio_snapshot() -> PortfolioSnapshot:
-    """Load current open positions from DB into a fast snapshot."""
+    """Load current open positions from DB into a fast snapshot.
+    
+    Includes sanity checks:
+      - Only loads status='OPEN' positions
+      - Cross-checks position_count vs total_position_value
+      - Logs CRITICAL if phantom exposure detected (value > 0 with 0 positions)
+    """
     try:
         from bahamut.database import sync_engine
         from sqlalchemy import text
@@ -112,9 +118,18 @@ def load_portfolio_snapshot() -> PortfolioSnapshot:
                 asset = r["asset"]
                 ac = ASSET_CLASS_MAP.get(asset, "other")
                 themes = [t for t, assets in THEME_MAP.items() if asset in assets]
+                pos_value = float(r["position_value"])
+
+                # Skip positions with zero or negative value (data integrity guard)
+                if pos_value <= 0:
+                    logger.warning("invalid_position_value_skipped",
+                                   position_id=r["id"], asset=asset,
+                                   position_value=pos_value)
+                    continue
+
                 p = OpenPosition(
                     id=r["id"], asset=asset, direction=r["direction"],
-                    position_value=float(r["position_value"]),
+                    position_value=pos_value,
                     risk_amount=float(r["risk_amount"]),
                     entry_price=float(r["entry_price"]),
                     current_price=float(r["current_price"] or r["entry_price"]),
@@ -126,10 +141,30 @@ def load_portfolio_snapshot() -> PortfolioSnapshot:
                 total_val += p.position_value
                 total_risk += p.risk_amount
 
-            return PortfolioSnapshot(
+            snapshot = PortfolioSnapshot(
                 positions=positions, balance=balance,
                 total_position_value=total_val, total_risk=total_risk,
             )
+
+            # ── Sanity cross-check ──
+            if snapshot.position_count == 0 and total_val > 0:
+                logger.critical("phantom_exposure_at_load",
+                                db_rows=len(rows), filtered_positions=0,
+                                total_position_value=total_val,
+                                action="forcing_zero")
+                snapshot.total_position_value = 0.0
+                snapshot.total_risk = 0.0
+
+            gross_pct = (total_val / balance * 100) if balance > 0 else 0
+            logger.info("portfolio_snapshot_loaded",
+                        position_count=snapshot.position_count,
+                        total_value=round(total_val, 2),
+                        balance=round(balance, 2),
+                        gross_exposure_pct=round(gross_pct, 2),
+                        source="paper_positions_db",
+                        position_ids=[p.id for p in positions])
+
+            return snapshot
     except Exception as e:
         logger.warning("portfolio_snapshot_failed", error=str(e))
         return PortfolioSnapshot()

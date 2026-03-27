@@ -124,6 +124,7 @@ def process_signal_sync(
                     signal_label=signal_label,
                     atr=atr,
                     entry_price=entry_price,
+                    execution_mode="EXPLORATION" if is_exploration else "STRICT",
                 )
 
                 if not portfolio_verdict.allowed:

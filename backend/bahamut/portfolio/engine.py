@@ -139,15 +139,50 @@ def evaluate_trade_for_portfolio(
     signal_label: str = "SIGNAL",
     atr: float = 0.0,
     entry_price: float = 0.0,
+    execution_mode: str = "STRICT",
 ) -> PortfolioVerdict:
     """
     Main entry point. Evaluates a proposed trade against current portfolio state.
     Returns a PortfolioVerdict that can modify, approve, or block.
+
+    execution_mode: "STRICT" (production) or "EXPLORATION" (training).
+      EXPLORATION bypasses soft blockers (scenario_risk, marginal_risk, quality_ratio)
+      but keeps all hard blockers (kill switch, exposure caps, duplicates, crisis).
     """
+    is_exploration = execution_mode == "EXPLORATION"
     verdict = PortfolioVerdict()
     bal = snapshot.balance if snapshot.balance > 0 else 100000.0
     proposed_class = ASSET_CLASS_MAP.get(proposed_asset, "other")
     proposed_themes = [t for t, assets in THEME_MAP.items() if proposed_asset in assets]
+
+    # ═══════════════════════════════════
+    # SANITY GUARD: Phantom exposure detection
+    # ═══════════════════════════════════
+    # If snapshot reports zero open positions, exposure MUST be zero.
+    # Any non-zero value indicates stale/orphaned DB state.
+    if snapshot.position_count == 0 and snapshot.total_position_value > 0:
+        logger.critical("phantom_exposure_detected",
+                        position_count=0,
+                        total_position_value=snapshot.total_position_value,
+                        total_risk=snapshot.total_risk,
+                        action="forcing_zero_exposure")
+        # Force-correct the snapshot — canonical truth is position_count
+        snapshot.total_position_value = 0.0
+        snapshot.total_risk = 0.0
+        snapshot.positions = []
+
+    # Log portfolio state for every evaluation (transparency)
+    logger.info("portfolio_evaluation_start",
+                asset=proposed_asset, direction=proposed_direction,
+                execution_mode=execution_mode,
+                position_count=snapshot.position_count,
+                total_position_value=snapshot.total_position_value,
+                balance=bal,
+                contributing_positions=[
+                    {"asset": p.asset, "direction": p.direction,
+                     "value": p.position_value, "id": p.id}
+                    for p in snapshot.positions
+                ])
 
     # ═══════════════════════════════════
     # 0. KILL SWITCH CHECK (before everything else)
@@ -300,6 +335,7 @@ def evaluate_trade_for_portfolio(
     # ═══════════════════════════════════
     # 6. SCENARIO RISK (macro shock simulation)
     # ═══════════════════════════════════
+    # SOFT BLOCKER — bypassed in EXPLORATION mode
     scenario_assessment = None
     try:
         from bahamut.portfolio.scenarios import evaluate_scenario_risk
@@ -312,14 +348,26 @@ def evaluate_trade_for_portfolio(
             balance=bal,
         )
         if scenario_assessment.risk_level == "BLOCK":
-            verdict.blockers.append(
-                f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
-                f"in {scenario_assessment.worst_scenario}")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"SCENARIO_RISK_BYPASSED: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
+                    f"in {scenario_assessment.worst_scenario} (exploration mode)")
+                logger.info("soft_blocker_bypassed", check="scenario_risk",
+                            mode="EXPLORATION", asset=proposed_asset,
+                            tail_risk=scenario_assessment.portfolio_tail_risk)
+            else:
+                verdict.blockers.append(
+                    f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
+                    f"in {scenario_assessment.worst_scenario}")
         elif scenario_assessment.risk_level == "APPROVAL":
-            verdict.requires_approval = True
-            verdict.warnings.append(
-                f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
-                f"— approval required ({scenario_assessment.worst_scenario})")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"SCENARIO_RISK_BYPASSED: approval waived (exploration mode)")
+            else:
+                verdict.requires_approval = True
+                verdict.warnings.append(
+                    f"SCENARIO_RISK: tail_risk={scenario_assessment.portfolio_tail_risk:.1%} "
+                    f"— approval required ({scenario_assessment.worst_scenario})")
         elif scenario_assessment.risk_level == "WARN":
             # Size reduction: scale linearly between 0.6 and 1.0
             from bahamut.portfolio.scenarios import TAIL_RISK_WARN, TAIL_RISK_APPROVAL
@@ -334,7 +382,8 @@ def evaluate_trade_for_portfolio(
         from bahamut.shared.degraded import mark_degraded
         mark_degraded("portfolio.scenario_risk", str(e))
         verdict.warnings.append(f"SCENARIO_RISK_UNAVAILABLE: {str(e)[:80]}")
-        verdict.requires_approval = True  # conservative: require approval when scenarios can't evaluate
+        if not is_exploration:
+            verdict.requires_approval = True
 
     if scenario_assessment:
         verdict.scenario_risk = scenario_assessment.to_dict()
@@ -342,6 +391,7 @@ def evaluate_trade_for_portfolio(
     # ═══════════════════════════════════
     # 7. MARGINAL RISK CONTRIBUTION
     # ═══════════════════════════════════
+    # SOFT BLOCKER — bypassed in EXPLORATION mode
     marginal_result = None
     try:
         from bahamut.portfolio.marginal_risk import compute_marginal_risk
@@ -355,13 +405,25 @@ def evaluate_trade_for_portfolio(
         verdict.marginal_risk = marginal_result.to_dict()
 
         if marginal_result.risk_level == "BLOCK":
-            verdict.blockers.append(
-                f"MARGINAL_RISK: worst={marginal_result.worst_case_marginal:.0f} "
-                f"in {marginal_result.worst_marginal_scenario}")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"MARGINAL_RISK_BYPASSED: worst={marginal_result.worst_case_marginal:.0f} "
+                    f"in {marginal_result.worst_marginal_scenario} (exploration mode)")
+                logger.info("soft_blocker_bypassed", check="marginal_risk",
+                            mode="EXPLORATION", asset=proposed_asset,
+                            worst=marginal_result.worst_case_marginal)
+            else:
+                verdict.blockers.append(
+                    f"MARGINAL_RISK: worst={marginal_result.worst_case_marginal:.0f} "
+                    f"in {marginal_result.worst_marginal_scenario}")
         elif marginal_result.risk_level == "APPROVAL":
-            verdict.requires_approval = True
-            verdict.warnings.append(
-                f"MARGINAL_RISK: approval required (worst={marginal_result.worst_case_marginal:.0f})")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"MARGINAL_RISK_BYPASSED: approval waived (exploration mode)")
+            else:
+                verdict.requires_approval = True
+                verdict.warnings.append(
+                    f"MARGINAL_RISK: approval required (worst={marginal_result.worst_case_marginal:.0f})")
         elif marginal_result.risk_level == "WARN":
             verdict.size_multiplier *= 0.8
             verdict.warnings.append(
@@ -375,11 +437,13 @@ def evaluate_trade_for_portfolio(
         from bahamut.shared.degraded import mark_degraded
         mark_degraded("portfolio.marginal_risk", str(e))
         verdict.warnings.append(f"MARGINAL_RISK_UNAVAILABLE: {str(e)[:80]}")
-        verdict.requires_approval = True  # conservative: require approval when marginal risk can't evaluate
+        if not is_exploration:
+            verdict.requires_approval = True
 
     # ═══════════════════════════════════
     # 8. QUALITY RATIO (expected return / marginal risk)
     # ═══════════════════════════════════
+    # SOFT BLOCKER — bypassed in EXPLORATION mode
     try:
         from bahamut.portfolio.quality import compute_quality_ratio
         qr = compute_quality_ratio(
@@ -393,12 +457,23 @@ def evaluate_trade_for_portfolio(
         verdict.quality_ratio = qr.to_dict()
 
         if qr.risk_level == "BLOCK":
-            verdict.blockers.append(
-                f"QUALITY_RATIO: {qr.quality_ratio:.2f} — return/risk too low")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"QUALITY_RATIO_BYPASSED: {qr.quality_ratio:.2f} — return/risk too low (exploration mode)")
+                logger.info("soft_blocker_bypassed", check="quality_ratio",
+                            mode="EXPLORATION", asset=proposed_asset,
+                            ratio=qr.quality_ratio)
+            else:
+                verdict.blockers.append(
+                    f"QUALITY_RATIO: {qr.quality_ratio:.2f} — return/risk too low")
         elif qr.risk_level == "APPROVAL":
-            verdict.requires_approval = True
-            verdict.warnings.append(
-                f"QUALITY_RATIO: {qr.quality_ratio:.2f} — approval required")
+            if is_exploration:
+                verdict.warnings.append(
+                    f"QUALITY_RATIO_BYPASSED: approval waived (exploration mode)")
+            else:
+                verdict.requires_approval = True
+                verdict.warnings.append(
+                    f"QUALITY_RATIO: {qr.quality_ratio:.2f} — approval required")
         elif qr.risk_level == "REDUCE":
             verdict.size_multiplier *= 0.7
             verdict.warnings.append(
@@ -422,12 +497,24 @@ def evaluate_trade_for_portfolio(
         _critical_degraded.append("kill_switch")
 
     if _critical_degraded:
-        verdict.requires_approval = True
-        verdict.size_multiplier *= 0.5
-        verdict.warnings.append(
-            f"DEGRADED_MODE: {', '.join(_critical_degraded)} — conservative sizing enforced")
+        if is_exploration:
+            # In exploration: only apply degraded penalties for kill_switch (hard safety)
+            if "kill_switch" in _critical_degraded:
+                verdict.requires_approval = True
+                verdict.size_multiplier *= 0.5
+                verdict.warnings.append(
+                    f"DEGRADED_MODE: kill_switch — conservative sizing enforced (even in exploration)")
+            else:
+                verdict.warnings.append(
+                    f"DEGRADED_MODE_NOTED: {', '.join(_critical_degraded)} (exploration — no size penalty)")
+        else:
+            verdict.requires_approval = True
+            verdict.size_multiplier *= 0.5
+            verdict.warnings.append(
+                f"DEGRADED_MODE: {', '.join(_critical_degraded)} — conservative sizing enforced")
         logger.warning("degraded_mode_enforcement", subsystems=_critical_degraded,
-                        asset=proposed_asset, size_mult=verdict.size_multiplier)
+                        asset=proposed_asset, size_mult=verdict.size_multiplier,
+                        mode=execution_mode)
 
     # ═══════════════════════════════════
     # FINAL VERDICT
@@ -438,16 +525,38 @@ def evaluate_trade_for_portfolio(
         verdict.allowed = False
         verdict.size_multiplier = 0.0
 
-    logger.info("portfolio_verdict", asset=proposed_asset, direction=proposed_direction,
+    # Identify which checks were bypassed (for transparency)
+    bypassed = [w.split(":")[0] for w in verdict.warnings if "BYPASSED" in w]
+
+    logger.info("risk_gate_result",
+                 asset=proposed_asset, direction=proposed_direction,
+                 mode=execution_mode,
+                 decision="ALLOW" if verdict.allowed else "BLOCK",
                  allowed=verdict.allowed, size=verdict.size_multiplier,
                  impact=verdict.impact_score, fragility=frag.portfolio_fragility,
-                 blockers=len(verdict.blockers), warnings=len(verdict.warnings))
+                 hard_blockers=verdict.blockers,
+                 soft_blockers_bypassed=bypassed,
+                 hard_checks_passed=len(verdict.blockers) == 0,
+                 blocker_count=len(verdict.blockers),
+                 warning_count=len(verdict.warnings),
+                 position_count=snapshot.position_count)
 
     return verdict
 
 
 def _compute_exposure(snapshot, asset, direction, value, bal):
     exp = ExposureMetrics()
+
+    # SANITY GUARD: no positions = zero exposure (defense-in-depth)
+    if not snapshot.positions:
+        # Only the proposed trade contributes
+        exp.after_trade_gross = value / bal
+        if direction == "LONG":
+            exp.after_trade_net = value / bal
+        else:
+            exp.after_trade_net = -(value / bal)
+        return exp
+
     dirs = snapshot.by_direction()
     long_val = sum(p.position_value for p in dirs.get("LONG", []))
     short_val = sum(p.position_value for p in dirs.get("SHORT", []))

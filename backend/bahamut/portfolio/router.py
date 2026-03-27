@@ -50,13 +50,17 @@ async def get_fragility(user=Depends(get_current_user)):
 async def evaluate_impact(
     asset: str, direction: str = "LONG", value: float = 2000,
     risk: float = 200, score: float = 0.65,
+    execution_mode: str = "STRICT",
     user=Depends(get_current_user),
 ):
     """Simulate adding a trade and see its portfolio impact."""
     from bahamut.portfolio.registry import load_portfolio_snapshot
     from bahamut.portfolio.engine import evaluate_trade_for_portfolio
     snap = load_portfolio_snapshot()
-    verdict = evaluate_trade_for_portfolio(snap, asset, direction, value, risk, score)
+    verdict = evaluate_trade_for_portfolio(
+        snap, asset, direction, value, risk, score,
+        execution_mode=execution_mode,
+    )
     return verdict.to_dict()
 
 
