@@ -48,38 +48,34 @@ def process_signal_sync(
 
     # ── SIGNAL LABEL GATE with exploration fallback ──
     is_exploration = False
+    strict_rejected_reason = None  # Tracks why STRICT failed (for fallback logging)
+
     if signal_label not in ("STRONG_SIGNAL", "SIGNAL"):
-        log.info("exploration_condition",
-                 asset=asset, score=consensus_score, label=signal_label,
-                 reason="score_below_signal_threshold",
+        # Weak signal: go directly to exploration path
+        log.info("strict_rejected", asset=asset, score=consensus_score,
+                 label=signal_label, reason="score_below_signal_threshold",
                  threshold_needed="SIGNAL (≥0.58 for BALANCED)")
 
-        # Check exploration fallback
-        log.info("exploration_condition",
-                 asset=asset, score=consensus_score, label=signal_label)
+        log.info("attempting_exploration", asset=asset, score=consensus_score,
+                 label=signal_label, trigger="weak_signal")
 
         exploration_eligible, explore_reason = _check_exploration_eligible(
             asset, consensus_score, regime, signal_label)
 
         if not exploration_eligible:
-            log.info("exploration_condition",
-                     asset=asset, score=consensus_score, reason=explore_reason)
-            log.info("exploration_condition",
-                     asset=asset, mode="NONE",
-                     strict_reason="weak_signal", exploration_reason=explore_reason)
+            log.info("exploration_blocked", asset=asset, score=consensus_score,
+                     reason=explore_reason)
             _record_failed_signal(asset, direction, consensus_score, signal_label,
                                   regime, f"Strict: weak_signal. Exploration: {explore_reason}",
                                   gate="SIGNAL_LABEL+EXPLORATION")
             return {"action": "SKIP", "reason": f"Only SIGNAL+, got {signal_label}. {explore_reason}"}
 
         is_exploration = True
-        log.info("exploration_condition",
-                 asset=asset, score=consensus_score, label=signal_label,
-                 reason=explore_reason)
+        log.info("exploration_eligible", asset=asset, score=consensus_score,
+                 label=signal_label, reason=explore_reason)
     else:
-        log.info("exploration_condition",
-                 asset=asset, score=consensus_score, label=signal_label,
-                 mode="STRICT")
+        log.info("signal_qualifies_for_strict", asset=asset,
+                 score=consensus_score, label=signal_label)
 
     try:
         with sync_engine.connect() as conn:
@@ -128,13 +124,69 @@ def process_signal_sync(
                 )
 
                 if not portfolio_verdict.allowed:
-                    log.info("blocked_by_portfolio", blockers=portfolio_verdict.blockers)
-                    _record_failed_signal(asset, direction, consensus_score, signal_label,
-                                          regime, portfolio_verdict.blockers[0],
-                                          gate="PORTFOLIO", blockers=portfolio_verdict.blockers,
-                                          mode="EXPLORATION" if is_exploration else "STRICT")
-                    return {"action": "SKIP", "reason": portfolio_verdict.blockers[0],
-                            "blockers": portfolio_verdict.blockers, "gate": "PORTFOLIO"}
+                    # ═══════════════════════════════════════════════════════
+                    # EXPLORATION FALLBACK — portfolio blocked in STRICT mode
+                    # ═══════════════════════════════════════════════════════
+                    if not is_exploration:
+                        strict_rejected_reason = portfolio_verdict.blockers[0] if portfolio_verdict.blockers else "portfolio_blocked"
+                        log.info("strict_rejected",
+                                 asset=asset, score=consensus_score,
+                                 reason=strict_rejected_reason,
+                                 blockers=portfolio_verdict.blockers,
+                                 gate="PORTFOLIO")
+
+                        log.info("attempting_exploration",
+                                 asset=asset, score=consensus_score,
+                                 trigger="strict_portfolio_blocked",
+                                 strict_blockers=portfolio_verdict.blockers)
+
+                        exploration_eligible, explore_reason = _check_exploration_eligible(
+                            asset, consensus_score, regime, signal_label)
+
+                        if exploration_eligible:
+                            is_exploration = True
+                            log.info("exploration_eligible",
+                                     asset=asset, score=consensus_score,
+                                     reason=explore_reason,
+                                     retrying_portfolio=True)
+
+                            # Re-evaluate portfolio with EXPLORATION mode
+                            # (soft blockers bypassed — scenario/marginal/quality)
+                            snap = load_portfolio_snapshot()  # fresh snapshot
+                            portfolio_verdict = evaluate_trade_for_portfolio(
+                                snapshot=snap,
+                                proposed_asset=asset,
+                                proposed_direction=direction,
+                                proposed_value=val_est,
+                                proposed_risk=risk_est,
+                                consensus_score=consensus_score,
+                                signal_label=signal_label,
+                                atr=atr,
+                                entry_price=entry_price,
+                                execution_mode="EXPLORATION",
+                            )
+                            if portfolio_verdict.allowed:
+                                log.info("exploration_trade_unblocked",
+                                         asset=asset, score=consensus_score,
+                                         gate="PORTFOLIO",
+                                         strict_blockers=strict_rejected_reason)
+                        else:
+                            log.info("exploration_blocked",
+                                     asset=asset, score=consensus_score,
+                                     reason=explore_reason,
+                                     gate="PORTFOLIO")
+
+                    if not portfolio_verdict.allowed:
+                        log.info("blocked_by_portfolio",
+                                 blockers=portfolio_verdict.blockers,
+                                 mode="EXPLORATION" if is_exploration else "STRICT",
+                                 exploration_attempted=is_exploration)
+                        _record_failed_signal(asset, direction, consensus_score, signal_label,
+                                              regime, portfolio_verdict.blockers[0],
+                                              gate="PORTFOLIO", blockers=portfolio_verdict.blockers,
+                                              mode="EXPLORATION" if is_exploration else "STRICT")
+                        return {"action": "SKIP", "reason": portfolio_verdict.blockers[0],
+                                "blockers": portfolio_verdict.blockers, "gate": "PORTFOLIO"}
 
                 portfolio_size_mult = portfolio_verdict.size_multiplier
             except Exception as e:
@@ -189,7 +241,7 @@ def process_signal_sync(
                 regime=regime,
                 is_exploration=is_exploration,
             )
-            log.info("exploration_condition",
+            log.info("policy_evaluation_input",
                      asset=asset, mode="EXPLORATION" if is_exploration else "STRICT",
                      score=consensus_score, open_positions=open_count,
                      has_duplicate=has_dup, sys_confidence=round(sys_conf, 3),
@@ -197,7 +249,7 @@ def process_signal_sync(
 
             decision = execution_policy.evaluate(exec_req)
 
-            log.info("exploration_condition",
+            log.info("policy_evaluation_result",
                      asset=asset, allowed=decision.allowed, mode=decision.mode,
                      reason=decision.reason, blockers=decision.blockers,
                      warnings=decision.warnings,
@@ -248,8 +300,88 @@ def process_signal_sync(
                     except Exception as e:
                         log.debug("realloc_attempt_failed", error=str(e))
 
+                # ═══════════════════════════════════════════════════════
+                # EXPLORATION FALLBACK — policy blocked in STRICT mode
+                # ═══════════════════════════════════════════════════════
+                if not decision.allowed and not is_exploration:
+                    strict_rejected_reason = decision.blockers[0] if decision.blockers else decision.reason
+                    log.info("strict_rejected",
+                             asset=asset, score=consensus_score,
+                             reason=strict_rejected_reason,
+                             blockers=decision.blockers,
+                             gate="EXECUTION_POLICY")
+
+                    log.info("attempting_exploration",
+                             asset=asset, score=consensus_score,
+                             trigger="strict_policy_blocked",
+                             strict_blockers=decision.blockers)
+
+                    exploration_eligible, explore_reason = _check_exploration_eligible(
+                        asset, consensus_score, regime, signal_label)
+
+                    if exploration_eligible:
+                        is_exploration = True
+                        effective_risk_pct = 0.5  # Exploration uses reduced risk
+                        log.info("exploration_eligible",
+                                 asset=asset, score=consensus_score,
+                                 reason=explore_reason,
+                                 retrying_policy=True)
+
+                        # Re-evaluate portfolio with EXPLORATION mode (if it was blocked before)
+                        if portfolio_verdict and not portfolio_verdict.allowed:
+                            try:
+                                snap = load_portfolio_snapshot()
+                                portfolio_verdict = evaluate_trade_for_portfolio(
+                                    snapshot=snap,
+                                    proposed_asset=asset,
+                                    proposed_direction=direction,
+                                    proposed_value=val_est,
+                                    proposed_risk=risk_est,
+                                    consensus_score=consensus_score,
+                                    signal_label=signal_label,
+                                    atr=atr,
+                                    entry_price=entry_price,
+                                    execution_mode="EXPLORATION",
+                                )
+                                portfolio_size_mult = portfolio_verdict.size_multiplier if portfolio_verdict.allowed else 1.0
+                            except Exception:
+                                pass
+
+                        # Re-evaluate policy with exploration mode
+                        exec_req.is_exploration = True
+                        # Rebuild augmented flags for exploration context
+                        augmented_flags_exp = list(risk_flags)
+                        if portfolio_verdict:
+                            for w in portfolio_verdict.warnings:
+                                if "CORRELATED" in w or "CLASS_CONCENTRATION" in w:
+                                    augmented_flags_exp.append("HIGH_CORRELATION")
+                                if "THEME_CONCENTRATION" in w or "THEME_OVERLAP" in w:
+                                    augmented_flags_exp.append("HIGH_EXPOSURE")
+                            if portfolio_verdict.requires_approval:
+                                augmented_flags_exp.append("PORTFOLIO_FRAGILE")
+                            ks = portfolio_verdict.kill_switch_state
+                            if ks.get("safe_mode_active"):
+                                augmented_flags_exp.append("SAFE_MODE")
+                        exec_req.risk_flags = augmented_flags_exp
+
+                        decision = execution_policy.evaluate(exec_req)
+
+                        if decision.allowed:
+                            log.info("exploration_trade_unblocked",
+                                     asset=asset, score=consensus_score,
+                                     gate="EXECUTION_POLICY",
+                                     strict_blockers=strict_rejected_reason)
+                    else:
+                        log.info("exploration_blocked",
+                                 asset=asset, score=consensus_score,
+                                 reason=explore_reason,
+                                 gate="EXECUTION_POLICY")
+
                 if not decision.allowed:
-                    log.info("blocked_by_policy", reason=decision.reason, blockers=decision.blockers)
+                    log.info("blocked_by_policy",
+                             reason=decision.reason, blockers=decision.blockers,
+                             mode="EXPLORATION" if is_exploration else "STRICT",
+                             exploration_attempted=is_exploration)
                     _record_failed_signal(asset, direction, consensus_score, signal_label,
                                           regime, decision.reason,
                                           gate="EXECUTION_POLICY", blockers=decision.blockers,
@@ -315,10 +447,12 @@ def process_signal_sync(
             # Track exploration trades
             if is_exploration:
                 _increment_exploration_cycle_counter()
-                log.info("EXPLORATION_TRADE_OPENED",
+                log.info("exploration_trade_executed",
                          asset=asset, direction=direction,
                          score=consensus_score, risk_pct=effective_risk_pct,
-                         size_mult=size_mult)
+                         size_mult=size_mult,
+                         was_strict_fallback=strict_rejected_reason is not None,
+                         strict_rejected_reason=strict_rejected_reason)
 
             # Log portfolio state at entry for learning
             try:
