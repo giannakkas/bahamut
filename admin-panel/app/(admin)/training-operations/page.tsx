@@ -43,24 +43,24 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-    // ── Phase 1: Fast endpoints → render immediately (~200ms) ──
+    // ── Phase 1: Fast endpoints → render immediately ──
     try {
-      const [opsRes, decRes, adaptRes] = await Promise.all([
+      const [opsRes, decRes, adaptRes, assetsRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
         fetch(`${apiBase()}/training/adaptive`, { headers: h }),
+        fetch(`${apiBase()}/training/assets`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
       if (adaptRes.ok) setAdaptive(await adaptRes.json());
+      if (assetsRes.ok) setAllAssets(await assetsRes.json());
     } catch {}
     setLoading(false);
 
-    // ── Phase 2: Slow endpoints → background, don't block render ──
+    // ── Phase 2: Candidates (may be slow on first load) → background ──
     fetch(`${apiBase()}/training/candidates`, { headers: h })
       .then(r => r.ok ? r.json() : []).then(setCandidates).catch(() => {});
-    fetch(`${apiBase()}/training/assets`, { headers: h })
-      .then(r => r.ok ? r.json() : null).then(d => { if (d) setAllAssets(d); }).catch(() => {});
 
     // ── Phase 3: Failed signals → background ──
     try {

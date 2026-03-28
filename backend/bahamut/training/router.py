@@ -712,8 +712,8 @@ async def get_candidates(user=Depends(get_current_user)):
 
 @router.get("/assets")
 async def get_all_assets(user=Depends(get_current_user)):
-    """Get ALL training assets. Cache-first, empty on cold cache.
-    The training cycle (every 10 min) populates the cache — API never scans."""
+    """Get ALL training assets. Cache-first, static list on cold cache.
+    The training cycle (every 10 min) populates scores — API never scans."""
     try:
         from bahamut.training.candidates import get_cached_all_assets
         cached = get_cached_all_assets()
@@ -721,8 +721,25 @@ async def get_all_assets(user=Depends(get_current_user)):
             return cached
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))
-    # Cache cold — return empty, next training cycle will populate
-    return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
+    # Cache cold — return static asset list (no expensive scanning)
+    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+    assets = [
+        {
+            "asset": a,
+            "asset_class": ASSET_CLASS_MAP.get(a, "unknown"),
+            "score": 0,
+            "status": "no_data",
+            "strategy": "—",
+            "direction": "—",
+            "regime": "—",
+            "distance_to_trigger": "—",
+            "reason": "Awaiting first training cycle scan",
+            "indicators": {},
+        }
+        for a in TRAINING_ASSETS
+    ]
+    counts = {"total": len(assets), "ready": 0, "approaching": 0, "weak": 0, "no_signal": 0, "no_data": len(assets), "error": 0}
+    return {"assets": assets, "counts": counts, "duration_ms": 0}
 
 
 @router.get("/execution-decisions")
