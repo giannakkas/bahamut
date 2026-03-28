@@ -39,7 +39,17 @@ export default function TrainingOperationsPage() {
   const [failedSignals, setFailedSignals] = useState<any[]>([]);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets">("overview");
   const [cycleTriggered, setCycleTriggered] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [secondsAgo, setSecondsAgo] = useState(0);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
+
+  // Tick "seconds ago" every second
+  useEffect(() => {
+    const i = setInterval(() => {
+      if (lastUpdated) setSecondsAgo(Math.round((Date.now() - lastUpdated.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(i);
+  }, [lastUpdated]);
 
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -57,7 +67,6 @@ export default function TrainingOperationsPage() {
       if (adaptRes.ok) setAdaptive(await adaptRes.json());
       if (assetsRes.ok) {
         const newAssets = await assetsRes.json();
-        // Don't overwrite real data with stale "no_data" fallback
         const hasRealData = newAssets?.assets?.some((a: any) => a.status !== "no_data");
         setAllAssets(prev => hasRealData || !prev ? newAssets : prev);
       }
@@ -90,7 +99,22 @@ export default function TrainingOperationsPage() {
     } catch {}
   };
 
-  useEffect(() => { load(); const iv = setInterval(load, 20000); return () => clearInterval(iv); }, []);
+  // Fast refresh: live data (positions, KPIs, cycle status) — every 5s like Daily Operations
+  const fastRefresh = async () => {
+    const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    try {
+      const r = await fetch(`${apiBase()}/training/operations`, { headers: h });
+      if (r.ok) { setData(await r.json()); setLastUpdated(new Date()); }
+    } catch {}
+  };
+
+  // Initial full load, then: fast=5s for live data, slow=60s for heavy data
+  useEffect(() => {
+    load();
+    const fast = setInterval(fastRefresh, 5_000);
+    const slow = setInterval(load, 60_000);
+    return () => { clearInterval(fast); clearInterval(slow); };
+  }, []);
 
   if (loading) return (
     <div className="p-12 text-center">
@@ -142,6 +166,12 @@ export default function TrainingOperationsPage() {
           <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">Training Operations</h1>
           <span className="px-2.5 py-0.5 text-[10px] rounded-full font-bold border bg-purple-500/20 text-purple-300 border-purple-500/40 tracking-wider">PAPER ONLY</span>
           <span className="text-[11px] text-white/40">{cs.universe_size || k.universe_size || 0} assets</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] text-white/30 font-mono tabular-nums">
+            {secondsAgo <= 1 ? "live" : `${secondsAgo}s ago`}
+          </span>
         </div>
       </div>
 
