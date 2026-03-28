@@ -202,14 +202,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         pri = item["priority"]
         reasons: list[str] = []
 
-        # 1. Hard threshold
-        if sig.readiness_score < threshold:
+        # 1. Hard threshold (debug_exploration signals bypass this)
+        if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
             continue
 
-        # 2. Regime check
-        if config["require_regime_alignment"] and sig.regime not in ("TREND", "BREAKOUT"):
+        # 2. Regime check (debug_exploration bypasses regime alignment)
+        if config["require_regime_alignment"] and sig.regime not in ("TREND", "BREAKOUT") and sig.execution_type != "debug_exploration":
             reasons.append(f"Regime {sig.regime} not aligned (need TREND or BREAKOUT)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             continue

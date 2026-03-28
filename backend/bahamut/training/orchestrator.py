@@ -215,6 +215,8 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     # Evaluate strategies and collect as PendingSignals (don't execute)
     strategies = _get_strategies()
+    strategy_signals_found = 0
+
     for strat_name, strategy in strategies.items():
         try:
             signal = strategy.evaluate(candles, indicators, prev_indicators, asset=asset)
@@ -227,6 +229,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             continue
 
         if signal:
+            strategy_signals_found += 1
             # Get readiness score + indicators from candidates scorer
             readiness = 50
             candidate_indicators = {}
@@ -257,7 +260,6 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             trigger = "4h_close"
             risk_mult = 1.0
 
-
             if not is_new_bar and readiness >= 90:
                 # Not a new 4H bar — evaluate for early execution
                 early = evaluate_early_execution(
@@ -277,7 +279,14 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                                 asset=asset, score=readiness, confidence=confidence)
             elif not is_new_bar:
                 # Not a new bar and not early-eligible — skip (wait for 4H close)
+                logger.debug("training_signal_skipped_not_new_bar",
+                             asset=asset, strategy=strat_name, readiness=readiness)
                 continue
+
+            logger.info("training_signal_generated",
+                        asset=asset, strategy=strat_name, direction=signal.direction,
+                        readiness=readiness, regime=regime, exec_type=exec_type,
+                        is_new_bar=is_new_bar, source="strategy")
 
             result["signals"].append(PendingSignal(
                 asset=asset,
@@ -297,6 +306,80 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 risk_multiplier=risk_mult,
                 indicators=candidate_indicators,
             ))
+
+    # ═══════════════════════════════════════════
+    # DEBUG EXPLORATION OVERRIDE
+    # When strategies don't fire (they require exact crossover/breakout events),
+    # but candidate scores are promising, force a signal for exploration learning.
+    # Config-driven — disable by setting exploration.debug_override=false
+    # ═══════════════════════════════════════════
+    if strategy_signals_found == 0 and is_new_bar:
+        debug_enabled = True
+        debug_min_score = 50
+        try:
+            from bahamut.admin.config import get_config
+            debug_enabled = get_config("exploration.debug_override", True)
+            debug_min_score = get_config("exploration.debug_min_score", 50)
+        except Exception:
+            pass
+
+        if debug_enabled:
+            # Evaluate all candidate scorers for this asset
+            best_candidate = None
+            best_score = 0
+            for strat_name in ["v5_base", "v9_breakout"]:
+                try:
+                    c = None
+                    if "v5" in strat_name:
+                        c = score_ema_cross(asset, asset_class, strat_name, candles, indicators, prev_indicators)
+                    elif "v9" in strat_name:
+                        c = score_breakout(asset, asset_class, candles, indicators)
+                    if c and c.score >= debug_min_score and c.score > best_score:
+                        best_candidate = c
+                        best_score = c.score
+                except Exception:
+                    pass
+
+            if best_candidate:
+                # Determine direction from candidate analysis
+                direction = best_candidate.direction if hasattr(best_candidate, 'direction') and best_candidate.direction in ("LONG", "SHORT") else "LONG"
+
+                logger.info("DEBUG_EXPLORATION_OVERRIDE",
+                            asset=asset, strategy=best_candidate.strategy if hasattr(best_candidate, 'strategy') else "v5_base",
+                            score=best_score, direction=direction,
+                            regime=regime, debug_min_score=debug_min_score,
+                            reason="Strategy didn't fire but candidate score qualifies")
+
+                result["signals"].append(PendingSignal(
+                    asset=asset,
+                    asset_class=asset_class,
+                    strategy=best_candidate.strategy if hasattr(best_candidate, 'strategy') else "v5_base",
+                    direction=direction,
+                    readiness_score=best_score,
+                    regime=regime,
+                    entry_price=bar["close"],
+                    sl_pct=0.05,   # tighter SL for debug exploration
+                    tp_pct=0.10,   # moderate TP
+                    max_hold_bars=20,
+                    reasons=best_candidate.reasons if hasattr(best_candidate, 'reasons') else ["debug_exploration_override"],
+                    execution_type="debug_exploration",
+                    confidence_score=float(best_score),
+                    trigger_reason="debug_exploration_override",
+                    risk_multiplier=0.5,  # half risk for debug
+                    indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
+                ))
+            else:
+                logger.debug("debug_exploration_no_candidate",
+                             asset=asset, min_score=debug_min_score)
+
+    # Log per-asset scan summary
+    logger.info("training_asset_scan_complete",
+                asset=asset, is_new_bar=is_new_bar,
+                strategies_loaded=len(strategies),
+                strategy_signals=strategy_signals_found,
+                total_signals=len(result["signals"]),
+                trades_closed=result["trades_closed"],
+                regime=regime)
 
     if is_new_bar:
         _mark_training_bar(asset, latest_time)
@@ -368,20 +451,27 @@ def _get_strategies() -> dict:
 
     strats = {}
     try:
-        from bahamut.strategies.v5_base import BreakoutStrategyV5Base
-        strats["v5_base"] = BreakoutStrategyV5Base()
-    except Exception:
-        pass
+        from bahamut.strategies.v5_base import V5Base
+        strats["v5_base"] = V5Base()
+        logger.info("strategy_loaded", name="v5_base")
+    except Exception as e:
+        logger.error("strategy_load_failed", name="v5_base", error=str(e))
     try:
-        from bahamut.strategies.v5_tuned import BreakoutStrategyV5Tuned
-        strats["v5_tuned"] = BreakoutStrategyV5Tuned()
-    except Exception:
-        pass
+        from bahamut.strategies.v5_tuned import V5Tuned
+        strats["v5_tuned"] = V5Tuned()
+        logger.info("strategy_loaded", name="v5_tuned")
+    except Exception as e:
+        logger.error("strategy_load_failed", name="v5_tuned", error=str(e))
     try:
-        from bahamut.alpha.v9_candidate import BreakoutStrategyV9
-        strats["v9_breakout"] = BreakoutStrategyV9()
-    except Exception:
-        pass
+        from bahamut.alpha.v9_candidate import V9Breakout
+        strats["v9_breakout"] = V9Breakout()
+        logger.info("strategy_loaded", name="v9_breakout")
+    except Exception as e:
+        logger.error("strategy_load_failed", name="v9_breakout", error=str(e))
+
+    if not strats:
+        logger.critical("no_strategies_loaded", msg="ALL strategy imports failed — 0 signals possible")
+        return strats  # Don't cache empty — retry next call
 
     _strategies = strats
     return strats
