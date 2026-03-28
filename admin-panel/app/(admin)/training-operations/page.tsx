@@ -68,7 +68,7 @@ export default function TrainingOperationsPage() {
       if (assetsRes.ok) {
         const newAssets = await assetsRes.json();
         const hasRealData = newAssets?.assets?.some((a: any) => a.status !== "no_data");
-        setAllAssets(prev => hasRealData || !prev ? newAssets : prev);
+        setAllAssets((prev: any) => hasRealData || !prev ? newAssets : prev);
       }
     } catch {}
     setLoading(false);
