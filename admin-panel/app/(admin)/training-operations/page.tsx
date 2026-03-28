@@ -55,13 +55,20 @@ export default function TrainingOperationsPage() {
       if (opsRes.ok) setData(await opsRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
       if (adaptRes.ok) setAdaptive(await adaptRes.json());
-      if (assetsRes.ok) setAllAssets(await assetsRes.json());
+      if (assetsRes.ok) {
+        const newAssets = await assetsRes.json();
+        // Don't overwrite real data with stale "no_data" fallback
+        const hasRealData = newAssets?.assets?.some((a: any) => a.status !== "no_data");
+        setAllAssets(prev => hasRealData || !prev ? newAssets : prev);
+      }
     } catch {}
     setLoading(false);
 
-    // ── Phase 2: Candidates (may be slow on first load) → background ──
+    // ── Phase 2: Candidates → background, never overwrite good data with empty ──
     fetch(`${apiBase()}/training/candidates`, { headers: h })
-      .then(r => r.ok ? r.json() : []).then(setCandidates).catch(() => {});
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.length > 0) setCandidates(d); })
+      .catch(() => {});
 
     // ── Phase 3: Failed signals → background ──
     try {

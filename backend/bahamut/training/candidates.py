@@ -561,7 +561,7 @@ def get_all_training_assets() -> dict:
 
 _CACHE_CANDIDATES_KEY = "bahamut:training:cache:candidates"
 _CACHE_ASSETS_KEY = "bahamut:training:cache:all_assets"
-_CACHE_TTL = 900  # 15 min (cycle runs every 10 min, so always fresh)
+_CACHE_TTL = 7200  # 2 hours — generous TTL since training data changes slowly
 
 
 def _get_cache_redis():
