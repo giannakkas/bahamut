@@ -697,41 +697,31 @@ def _build_alerts(r) -> list[dict]:
 
 @router.get("/candidates")
 async def get_candidates(user=Depends(get_current_user)):
-    """Get top 20 trade candidates. Cache-first, threaded fallback if cold."""
-    import asyncio
+    """Get top 20 trade candidates. Cache-first, empty on cold cache.
+    The training cycle (every 10 min) populates the cache — API never scans."""
     try:
-        from bahamut.training.candidates import (
-            get_cached_candidates, get_training_candidates, cache_candidates,
-        )
+        from bahamut.training.candidates import get_cached_candidates
         cached = get_cached_candidates()
         if cached is not None:
             return cached
-        # Cache cold (first load after deploy) — run in thread to avoid event loop conflict
-        result = await asyncio.to_thread(get_training_candidates, 20)
-        cache_candidates(result)
-        return result
     except Exception as e:
         logger.error("candidates_failed", error=str(e))
+    # Cache cold — return empty, next training cycle will populate
     return []
 
 
 @router.get("/assets")
 async def get_all_assets(user=Depends(get_current_user)):
-    """Get ALL training assets. Cache-first, threaded fallback if cold."""
-    import asyncio
+    """Get ALL training assets. Cache-first, empty on cold cache.
+    The training cycle (every 10 min) populates the cache — API never scans."""
     try:
-        from bahamut.training.candidates import (
-            get_cached_all_assets, get_all_training_assets, cache_all_assets,
-        )
+        from bahamut.training.candidates import get_cached_all_assets
         cached = get_cached_all_assets()
         if cached is not None:
             return cached
-        # Cache cold — run in thread to avoid event loop conflict
-        result = await asyncio.to_thread(get_all_training_assets)
-        cache_all_assets(result)
-        return result
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))
+    # Cache cold — return empty, next training cycle will populate
     return {"assets": [], "counts": {"total": 0}, "duration_ms": 0}
 
 
