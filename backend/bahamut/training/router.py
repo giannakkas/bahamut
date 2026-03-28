@@ -697,8 +697,7 @@ def _build_alerts(r) -> list[dict]:
 
 @router.get("/candidates")
 async def get_candidates(user=Depends(get_current_user)):
-    """Get top 20 trade candidates. Cache-first, empty on cold cache.
-    The training cycle (every 10 min) populates the cache — API never scans."""
+    """Get top 20 trade candidates. Cache-first, triggers background scan on cold cache."""
     try:
         from bahamut.training.candidates import get_cached_candidates
         cached = get_cached_candidates()
@@ -706,14 +705,14 @@ async def get_candidates(user=Depends(get_current_user)):
             return cached
     except Exception as e:
         logger.error("candidates_failed", error=str(e))
-    # Cache cold — return empty, next training cycle will populate
+    # Cache cold — trigger background scan and return empty for now
+    _trigger_background_asset_scan()
     return []
 
 
 @router.get("/assets")
 async def get_all_assets(user=Depends(get_current_user)):
-    """Get ALL training assets. Cache-first, static list on cold cache.
-    The training cycle (every 10 min) populates scores — API never scans."""
+    """Get ALL training assets. Cache-first, static list + background scan on cold cache."""
     try:
         from bahamut.training.candidates import get_cached_all_assets
         cached = get_cached_all_assets()
@@ -721,7 +720,9 @@ async def get_all_assets(user=Depends(get_current_user)):
             return cached
     except Exception as e:
         logger.error("all_assets_failed", error=str(e))
-    # Cache cold — return static asset list (no expensive scanning)
+
+    # Cache cold — return static list AND trigger background scan
+    _trigger_background_asset_scan()
     from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
     assets = [
         {
@@ -733,13 +734,50 @@ async def get_all_assets(user=Depends(get_current_user)):
             "direction": "—",
             "regime": "—",
             "distance_to_trigger": "—",
-            "reason": "Awaiting first training cycle scan",
+            "reason": "Scanning in background — refresh in ~60s",
             "indicators": {},
         }
         for a in TRAINING_ASSETS
     ]
     counts = {"total": len(assets), "ready": 0, "approaching": 0, "weak": 0, "no_signal": 0, "no_data": len(assets), "error": 0}
     return {"assets": assets, "counts": counts, "duration_ms": 0}
+
+
+@router.post("/scan-now")
+async def trigger_scan(user=Depends(get_current_user)):
+    """Manually trigger asset scan. Populates candidates + assets cache in background."""
+    _trigger_background_asset_scan()
+    return {"status": "scan_triggered", "message": "Background scan started — data appears in ~60s"}
+
+
+# ── Background scan (prevent duplicate scans) ──
+_bg_scan_running = False
+
+def _trigger_background_asset_scan():
+    """Fire background thread to scan assets and populate cache. Non-blocking, singleton."""
+    global _bg_scan_running
+    if _bg_scan_running:
+        return
+    _bg_scan_running = True
+
+    import threading
+    def _do_scan():
+        global _bg_scan_running
+        try:
+            from bahamut.training.candidates import (
+                get_training_candidates, get_all_training_assets,
+                cache_candidates, cache_all_assets,
+            )
+            logger.info("background_asset_scan_start")
+            cache_all_assets(get_all_training_assets())
+            cache_candidates(get_training_candidates(max_results=20))
+            logger.info("background_asset_scan_complete")
+        except Exception as e:
+            logger.error("background_asset_scan_failed", error=str(e))
+        finally:
+            _bg_scan_running = False
+
+    threading.Thread(target=_do_scan, daemon=True).start()
 
 
 @router.get("/execution-decisions")
