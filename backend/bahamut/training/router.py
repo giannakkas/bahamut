@@ -750,8 +750,35 @@ async def trigger_scan(user=Depends(get_current_user)):
     return {"status": "scan_triggered", "message": "Background scan started — data appears in ~60s"}
 
 
-# ── Background scan (prevent duplicate scans) ──
+@router.post("/run-cycle")
+async def trigger_training_cycle(user=Depends(get_current_user)):
+    """Manually trigger a full training cycle (scan + evaluate + trade + cache).
+    Runs in background thread — returns immediately."""
+    global _bg_cycle_running
+    if _bg_cycle_running:
+        return {"status": "already_running", "message": "Training cycle already in progress"}
+    _bg_cycle_running = True
+
+    import threading
+    def _do_cycle():
+        global _bg_cycle_running
+        try:
+            from bahamut.training.orchestrator import run_training_cycle
+            logger.info("manual_training_cycle_start")
+            run_training_cycle()
+            logger.info("manual_training_cycle_complete")
+        except Exception as e:
+            logger.error("manual_training_cycle_failed", error=str(e))
+        finally:
+            _bg_cycle_running = False
+
+    threading.Thread(target=_do_cycle, daemon=True).start()
+    return {"status": "cycle_triggered", "message": "Full training cycle started — completes in ~2-3 min"}
+
+
+# ── Background state flags ──
 _bg_scan_running = False
+_bg_cycle_running = False
 
 def _trigger_background_asset_scan():
     """Fire background thread to scan assets and populate cache. Non-blocking, singleton."""

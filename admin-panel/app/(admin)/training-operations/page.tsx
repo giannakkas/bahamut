@@ -38,6 +38,7 @@ export default function TrainingOperationsPage() {
   const [allAssets, setAllAssets] = useState<any>(null);
   const [failedSignals, setFailedSignals] = useState<any[]>([]);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets">("overview");
+  const [cycleTriggered, setCycleTriggered] = useState(false);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
 
   const load = async () => {
@@ -138,7 +139,13 @@ export default function TrainingOperationsPage() {
       </div>
 
       {/* ═══ LIVE CYCLE STATUS STRIP ═══ */}
-      <CycleStatusStrip cs={cs} />
+      <CycleStatusStrip cs={cs} cycleTriggered={cycleTriggered} onRunCycle={async () => {
+        const h: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+        try {
+          const r = await fetch(`${apiBase()}/training/run-cycle`, { method: "POST", headers: h });
+          if (r.ok) { setCycleTriggered(true); setTimeout(() => setCycleTriggered(false), 120000); }
+        } catch {}
+      }} />
 
       {/* ═══ ALERTS ═══ */}
       {alerts.length > 0 && (
@@ -210,7 +217,7 @@ export default function TrainingOperationsPage() {
 /* ═══════════════════════════════════════════
    CYCLE STATUS STRIP
    ═══════════════════════════════════════════ */
-function CycleStatusStrip({ cs }: { cs: any }) {
+function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCycle: () => void; cycleTriggered: boolean }) {
   const nextCycle = useCountdown(cs.next_cycle_time);
   const next4H = useCountdown(cs.next_4h_bar_time);
 
@@ -277,6 +284,19 @@ function CycleStatusStrip({ cs }: { cs: any }) {
       </div>
 
       <div className="hidden sm:block w-px h-5 bg-white/[0.08]" />
+
+      {/* ── Run Cycle Button ── */}
+      <button
+        onClick={onRunCycle}
+        disabled={cs.is_running || cycleTriggered}
+        className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${
+          cs.is_running || cycleTriggered
+            ? "bg-white/[0.03] border-white/[0.06] text-white/20 cursor-not-allowed"
+            : "bg-bah-cyan/10 border-bah-cyan/30 text-bah-cyan hover:bg-bah-cyan/20 hover:border-bah-cyan/50 active:scale-95"
+        }`}
+      >
+        {cs.is_running ? "Running…" : cycleTriggered ? "Triggered ✓" : "▶ Run Cycle"}
+      </button>
 
       <div className="flex items-center gap-2 text-[10px] text-white/30 font-mono">
         <span>every {(cs.cycle_interval_seconds || 600) / 60}m</span>
