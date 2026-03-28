@@ -77,12 +77,12 @@ def open_position(portfolio_id: int, asset: str, direction: str, entry_price: fl
             portfolio_id, asset, direction, entry_price, quantity, position_value,
             entry_signal_score, entry_signal_label, stop_loss, take_profit,
             risk_amount, atr_at_entry, current_price, consensus_score, agent_votes,
-            cycle_id, status, opened_at
+            cycle_id, status, opened_at, execution_mode
         ) VALUES (
             :pid, :asset, :dir, :ep, :qty, :pv,
             :ess, :esl, :sl, :tp,
             :ra, :atr, :ep, :cs, CAST(:av AS jsonb),
-            :cid, 'OPEN', NOW()
+            :cid, 'OPEN', NOW(), :exec_mode
         )
     """
     params = {
@@ -92,7 +92,7 @@ def open_position(portfolio_id: int, asset: str, direction: str, entry_price: fl
         "sl": round(stop_loss, 6), "tp": round(take_profit, 6),
         "ra": round(risk_amount, 2), "atr": atr_at_entry,
         "cs": consensus_score, "av": json.dumps(agent_votes),
-        "cid": cycle_id,
+        "cid": cycle_id, "exec_mode": execution_mode or "STRICT",
     }
     try:
         with get_connection() as conn:
