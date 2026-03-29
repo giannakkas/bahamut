@@ -353,22 +353,30 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # ═══════════════════════════════════════════
     if strategy_signals_found == 0:
         debug_enabled = True
-        debug_min_score = 30  # Low floor — any approaching candidate qualifies
-        debug_max_per_cycle = 3  # Rate limiter — max 3 debug signals per cycle
+        debug_min_score = 20  # Low floor — most approaching candidates qualify
         try:
             from bahamut.admin.config import get_config
             debug_enabled = get_config("exploration.debug_override", True)
-            debug_min_score = get_config("exploration.debug_min_score", 30)
+            debug_min_score = get_config("exploration.debug_min_score", 20)
         except Exception as e:
             logger.warning("debug_override_config_failed", error=str(e),
-                           msg="using defaults: enabled=True, min_score=30")
+                           msg="using defaults: enabled=True, min_score=20")
+
+        # Skip assets that already have an open position (no duplicates)
+        has_existing_position = False
+        try:
+            from bahamut.training.engine import _load_positions
+            existing = _load_positions()
+            has_existing_position = any(p.asset == asset for p in existing)
+        except Exception:
+            pass
 
         logger.info("debug_override_check",
                     asset=asset, enabled=debug_enabled,
                     min_score=debug_min_score, is_new_bar=is_new_bar,
-                    regime=regime)
+                    regime=regime, has_existing_position=has_existing_position)
 
-        if debug_enabled:
+        if debug_enabled and not has_existing_position:
             # Evaluate all candidate scorers for this asset
             best_candidate = None
             best_score = 0
@@ -432,6 +440,9 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 logger.info("debug_override_no_qualifying_candidate",
                             asset=asset, min_score=debug_min_score,
                             scorer_errors=scorer_errors if scorer_errors else "none")
+        elif has_existing_position:
+            logger.info("debug_override_skipped_duplicate",
+                        asset=asset, reason="Already has open position")
 
     # Log per-asset scan summary
     logger.info("training_asset_scan_complete",
