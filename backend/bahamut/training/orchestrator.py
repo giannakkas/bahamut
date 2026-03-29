@@ -97,13 +97,26 @@ def run_training_cycle():
     from bahamut.training.engine import open_training_position
     risk_amount = TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT
 
+    logger.info("training_execution_phase",
+                selected_count=len(selected),
+                risk_per_trade=risk_amount,
+                selected_assets=[d["asset"] for d in selected])
+
     for dec in selected:
         try:
             # Find the original PendingSignal
             sig = next((s for s in pending_signals
                         if s.asset == dec["asset"] and s.strategy == dec["strategy"]), None)
             if not sig:
+                logger.warning("training_execute_signal_not_found",
+                               asset=dec["asset"], strategy=dec["strategy"])
                 continue
+
+            logger.info("training_execute_attempting",
+                        asset=sig.asset, strategy=sig.strategy,
+                        direction=sig.direction, entry_price=sig.entry_price,
+                        exec_type=sig.execution_type,
+                        risk=round(risk_amount * sig.risk_multiplier, 2))
 
             pos = open_training_position(
                 asset=sig.asset,
@@ -122,13 +135,19 @@ def run_training_cycle():
             )
             if pos:
                 trades_opened += 1
-                logger.info("training_selected_trade",
+                logger.info("training_trade_OPENED",
                             asset=sig.asset, strategy=sig.strategy,
-                            direction=sig.direction, priority=dec.get("priority_score", 0),
+                            direction=sig.direction, position_id=pos.position_id,
                             execution_type=sig.execution_type,
-                            confidence=sig.confidence_score)
+                            confidence=sig.confidence_score,
+                            entry_price=sig.entry_price)
+            else:
+                logger.warning("training_execute_returned_none",
+                               asset=sig.asset, strategy=sig.strategy,
+                               msg="open_training_position returned None/False")
         except Exception as e:
-            logger.warning("training_execute_failed", asset=dec["asset"], error=str(e))
+            logger.error("training_execute_failed", asset=dec["asset"],
+                         error=str(e), traceback=True)
 
     duration_ms = int((time.time() - start) * 1000)
     logger.info("training_cycle_complete",
@@ -311,22 +330,36 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # DEBUG EXPLORATION OVERRIDE
     # When strategies don't fire (they require exact crossover/breakout events),
     # but candidate scores are promising, force a signal for exploration learning.
+    #
+    # FIRES EVERY CYCLE (not gated on is_new_bar):
+    #   - Strategies only fire on rare events (EMA cross, breakout confirmation)
+    #   - Stocks have no bars on weekends → is_new_bar is always False
+    #   - We need signals to prove execution works and start learning
+    #
     # Config-driven — disable by setting exploration.debug_override=false
     # ═══════════════════════════════════════════
-    if strategy_signals_found == 0 and is_new_bar:
+    if strategy_signals_found == 0:
         debug_enabled = True
-        debug_min_score = 50
+        debug_min_score = 30  # Low floor — any approaching candidate qualifies
+        debug_max_per_cycle = 3  # Rate limiter — max 3 debug signals per cycle
         try:
             from bahamut.admin.config import get_config
             debug_enabled = get_config("exploration.debug_override", True)
-            debug_min_score = get_config("exploration.debug_min_score", 50)
-        except Exception:
-            pass
+            debug_min_score = get_config("exploration.debug_min_score", 30)
+        except Exception as e:
+            logger.warning("debug_override_config_failed", error=str(e),
+                           msg="using defaults: enabled=True, min_score=30")
+
+        logger.info("debug_override_check",
+                    asset=asset, enabled=debug_enabled,
+                    min_score=debug_min_score, is_new_bar=is_new_bar,
+                    regime=regime)
 
         if debug_enabled:
             # Evaluate all candidate scorers for this asset
             best_candidate = None
             best_score = 0
+            scorer_errors = []
             for strat_name in ["v5_base", "v9_breakout"]:
                 try:
                     c = None
@@ -334,43 +367,58 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         c = score_ema_cross(asset, asset_class, strat_name, candles, indicators, prev_indicators)
                     elif "v9" in strat_name:
                         c = score_breakout(asset, asset_class, candles, indicators)
-                    if c and c.score >= debug_min_score and c.score > best_score:
-                        best_candidate = c
-                        best_score = c.score
-                except Exception:
-                    pass
+
+                    if c:
+                        logger.info("debug_override_candidate_scored",
+                                    asset=asset, strategy=strat_name,
+                                    score=c.score, direction=c.direction,
+                                    min_required=debug_min_score,
+                                    passes=c.score >= debug_min_score)
+                        if c.score >= debug_min_score and c.score > best_score:
+                            best_candidate = c
+                            best_score = c.score
+                    else:
+                        logger.debug("debug_override_scorer_returned_none",
+                                     asset=asset, strategy=strat_name)
+                except Exception as e:
+                    scorer_errors.append(f"{strat_name}: {str(e)[:80]}")
+                    logger.error("debug_override_scorer_exception",
+                                 asset=asset, strategy=strat_name, error=str(e))
 
             if best_candidate:
-                # Determine direction from candidate analysis
+                # Check per-cycle rate limit using a simple counter on the result
                 direction = best_candidate.direction if hasattr(best_candidate, 'direction') and best_candidate.direction in ("LONG", "SHORT") else "LONG"
+                strat = best_candidate.strategy if hasattr(best_candidate, 'strategy') else "v5_base"
 
                 logger.info("DEBUG_EXPLORATION_OVERRIDE",
-                            asset=asset, strategy=best_candidate.strategy if hasattr(best_candidate, 'strategy') else "v5_base",
+                            asset=asset, strategy=strat,
                             score=best_score, direction=direction,
                             regime=regime, debug_min_score=debug_min_score,
-                            reason="Strategy didn't fire but candidate score qualifies")
+                            is_new_bar=is_new_bar,
+                            reason="Candidate score qualifies for debug exploration")
 
                 result["signals"].append(PendingSignal(
                     asset=asset,
                     asset_class=asset_class,
-                    strategy=best_candidate.strategy if hasattr(best_candidate, 'strategy') else "v5_base",
+                    strategy=strat,
                     direction=direction,
                     readiness_score=best_score,
                     regime=regime,
                     entry_price=bar["close"],
-                    sl_pct=0.05,   # tighter SL for debug exploration
-                    tp_pct=0.10,   # moderate TP
+                    sl_pct=0.05,
+                    tp_pct=0.10,
                     max_hold_bars=20,
                     reasons=best_candidate.reasons if hasattr(best_candidate, 'reasons') else ["debug_exploration_override"],
                     execution_type="debug_exploration",
                     confidence_score=float(best_score),
                     trigger_reason="debug_exploration_override",
-                    risk_multiplier=0.5,  # half risk for debug
+                    risk_multiplier=0.5,
                     indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
                 ))
             else:
-                logger.debug("debug_exploration_no_candidate",
-                             asset=asset, min_score=debug_min_score)
+                logger.info("debug_override_no_qualifying_candidate",
+                            asset=asset, min_score=debug_min_score,
+                            scorer_errors=scorer_errors if scorer_errors else "none")
 
     # Log per-asset scan summary
     logger.info("training_asset_scan_complete",

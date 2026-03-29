@@ -163,14 +163,21 @@ def open_training_position(
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
 
     # Check position limit
-    if get_open_position_count() >= TRAINING_MAX_POSITIONS:
+    current_count = get_open_position_count()
+    if current_count >= TRAINING_MAX_POSITIONS:
+        logger.warning("training_position_rejected",
+                       asset=asset, reason="POSITION_LIMIT",
+                       current=current_count, max=TRAINING_MAX_POSITIONS)
         return None
 
     # Check no duplicate (same asset + strategy + direction)
     existing = _load_positions()
     for p in existing:
         if p.asset == asset and p.strategy == strategy and p.direction == direction:
-            return None  # Already have this position
+            logger.warning("training_position_rejected",
+                           asset=asset, reason="DUPLICATE",
+                           strategy=strategy, direction=direction)
+            return None
 
     # Calculate SL/TP prices
     if direction == "LONG":

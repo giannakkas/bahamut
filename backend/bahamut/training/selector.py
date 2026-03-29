@@ -143,20 +143,20 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
 def select_candidates(signals: list[PendingSignal]) -> dict:
     """
     Main selection function with portfolio optimization.
-
-    Pipeline:
-      1. Score with composite priority
-      2. Hard threshold → REJECT
-      3. Regime check → WATCHLIST
-      4. Portfolio optimizer (correlation/direction/cluster) → BLOCK/PENALIZE
-      5. Caps (cycle/class/duplicate) → WATCHLIST
-      6. Remaining → EXECUTE (updates portfolio snapshot for next candidate)
     """
     config = _get_config()
     threshold = config["execution_threshold"]
     max_new = config["max_new_per_cycle"]
     max_per_class = config["max_per_class"]
     max_total = config["max_total_positions"]
+
+    # ── HARD LOG: every signal entering selector ──
+    logger.info("selector_entry",
+                total_signals=len(signals),
+                threshold=threshold, max_new=max_new,
+                max_per_class=max_per_class, max_total=max_total,
+                debug_signals=sum(1 for s in signals if s.execution_type == "debug_exploration"),
+                signal_assets=[s.asset for s in signals[:10]])
 
     # Load current portfolio state
     from bahamut.training.engine import _load_positions
@@ -167,6 +167,9 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         for p in positions_raw
     ]
     current_count = len(open_positions)
+
+    logger.info("selector_portfolio_state",
+                open_positions=current_count, max_total=max_total)
 
     # Load strategy stats
     strategy_stats = _load_strategy_stats()
@@ -202,16 +205,27 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         pri = item["priority"]
         reasons: list[str] = []
 
+        # ── HARD LOG: every signal considered ──
+        logger.info("selector_considering",
+                    asset=sig.asset, strategy=sig.strategy,
+                    score=sig.readiness_score, direction=sig.direction,
+                    regime=sig.regime, exec_type=sig.execution_type,
+                    priority=pri["total"])
+
         # 1. Hard threshold (debug_exploration signals bypass this)
         if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+            logger.info("selector_rejected", asset=sig.asset, reason="THRESHOLD",
+                        score=sig.readiness_score, threshold=threshold)
             continue
 
         # 2. Regime check (debug_exploration bypasses regime alignment)
         if config["require_regime_alignment"] and sig.regime not in ("TREND", "BREAKOUT") and sig.execution_type != "debug_exploration":
             reasons.append(f"Regime {sig.regime} not aligned (need TREND or BREAKOUT)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            logger.info("selector_watchlisted", asset=sig.asset, reason="REGIME",
+                        regime=sig.regime)
             continue
 
         # 3. Portfolio optimizer check
@@ -278,6 +292,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         execute.append(dec)
         class_counts[cls] = class_counts.get(cls, 0) + 1
         selected_assets.add(sig.asset)
+
+        logger.info("selector_EXECUTE",
+                    asset=sig.asset, strategy=sig.strategy,
+                    score=sig.readiness_score, direction=sig.direction,
+                    exec_type=sig.execution_type, priority=effective_priority,
+                    total_selected=len(execute))
 
         # Update snapshot so next candidates see this selection
         portfolio_snap["total"] += 1
