@@ -92,6 +92,18 @@ def run_training_cycle():
                 watchlisted=len(decisions.get("watchlist", [])),
                 rejected=len(decisions.get("rejected", [])))
 
+    # Telegram: notify on new execution decisions
+    if selected:
+        try:
+            from bahamut.monitoring.telegram import send_training_signal
+            send_training_signal({
+                "signals": signals_generated,
+                "selected": len(selected),
+                "assets": [d["asset"] for d in selected],
+            })
+        except Exception:
+            pass
+
     # Phase 3: Execute only selected signals
     trades_opened = 0
     from bahamut.training.engine import open_training_position

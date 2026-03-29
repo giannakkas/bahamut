@@ -213,6 +213,20 @@ def open_training_position(
                 asset=asset, strategy=strategy, direction=direction,
                 entry=entry_price, sl=stop_price, tp=tp_price,
                 execution_type=execution_type, confidence=confidence_score)
+
+    # Telegram notification
+    try:
+        from bahamut.monitoring.telegram import send_training_trade_opened
+        send_training_trade_opened({
+            "asset": asset, "strategy": strategy, "direction": direction,
+            "entry_price": entry_price, "stop_price": stop_price,
+            "tp_price": tp_price, "risk_amount": risk_amount,
+            "regime": regime, "execution_type": execution_type,
+            "confidence_score": confidence_score,
+        })
+    except Exception:
+        pass
+
     return pos
 
 
@@ -301,6 +315,19 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             logger.info("training_position_closed",
                         asset=pos.asset, strategy=pos.strategy,
                         pnl=trade.pnl, reason=exit_reason, bars=pos.bars_held)
+
+            # Telegram notification
+            try:
+                from bahamut.monitoring.telegram import send_training_trade_closed
+                send_training_trade_closed({
+                    "asset": pos.asset, "strategy": pos.strategy,
+                    "direction": pos.direction,
+                    "entry_price": pos.entry_price, "exit_price": exit_price,
+                    "pnl": trade.pnl, "exit_reason": exit_reason,
+                    "bars_held": pos.bars_held, "risk_amount": pos.risk_amount,
+                })
+            except Exception:
+                pass
         else:
             # Update position in Redis
             _save_position(pos)

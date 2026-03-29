@@ -271,6 +271,103 @@ def send_trade_closed(trade: dict) -> bool:
 
 
 # ═══════════════════════════════════════════════════════
+# TRAINING TRADE TEMPLATES
+# ═══════════════════════════════════════════════════════
+
+def send_training_trade_opened(trade: dict) -> bool:
+    """Send training trade opened notification via Telegram."""
+    asset = trade.get("asset", "?")
+    strategy = trade.get("strategy", "?")
+    direction = trade.get("direction", "LONG")
+    entry = trade.get("entry_price", 0)
+    sl = trade.get("stop_price", 0)
+    tp = trade.get("tp_price", 0)
+    risk = trade.get("risk_amount", 0)
+    regime = trade.get("regime", "?")
+    exec_type = trade.get("execution_type", "standard")
+    score = trade.get("confidence_score", 0)
+
+    dir_emoji = "📈" if direction == "LONG" else "📉"
+    type_tag = "🔬 DEBUG" if "debug" in exec_type else "⚡ EARLY" if exec_type == "early" else "📊 STD"
+
+    text = (
+        f"{dir_emoji} <b>Training Trade Opened</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"\n"
+        f"🪙 <b>{direction} {asset}</b>\n"
+        f"📋 Strategy: {strategy}\n"
+        f"🏷 {type_tag} · Score: {score:.0f} · {regime}\n"
+        f"\n"
+        f"▶️ Entry: <code>${entry:,.2f}</code>\n"
+        f"🛑 SL: <code>${sl:,.2f}</code>\n"
+        f"🎯 TP: <code>${tp:,.2f}</code>\n"
+        f"⚠️ Risk: <code>${risk:,.0f}</code>\n"
+        f"\n"
+        f"🔗 <a href='https://admin.bahamut.ai/training-operations'>Training Dashboard</a>"
+    )
+    return _send(text)
+
+
+def send_training_trade_closed(trade: dict) -> bool:
+    """Send training trade closed notification via Telegram."""
+    asset = trade.get("asset", "?")
+    strategy = trade.get("strategy", "?")
+    direction = trade.get("direction", "LONG")
+    entry = trade.get("entry_price", 0)
+    exit_price = trade.get("exit_price", 0)
+    pnl = trade.get("pnl", 0)
+    reason = trade.get("exit_reason", "?")
+    bars = trade.get("bars_held", 0)
+    risk = trade.get("risk_amount", 0)
+
+    is_win = pnl > 0
+    result_emoji = "✅" if is_win else "❌"
+    r_multiple = abs(pnl / risk) if risk > 0 else 0
+    r_sign = "+" if is_win else "-"
+    reason_emoji = "🎯" if "TP" in reason.upper() else "🛑" if "SL" in reason.upper() else "⏰"
+
+    text = (
+        f"{result_emoji} <b>Training Trade Closed</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"\n"
+        f"🪙 <b>{asset} {direction}</b> — {'🟢 WIN' if is_win else '🔴 LOSS'}\n"
+        f"💰 P&L: <code>${pnl:+,.2f}</code> ({r_sign}{r_multiple:.1f}R)\n"
+        f"\n"
+        f"📋 {strategy}\n"
+        f"▶️ Entry: <code>${entry:,.2f}</code> → ⏹ <code>${exit_price:,.2f}</code>\n"
+        f"{reason_emoji} Reason: <b>{reason}</b> · {bars} bars\n"
+        f"\n"
+        f"🔗 <a href='https://admin.bahamut.ai/training-operations'>Training Dashboard</a>"
+    )
+    return _send(text)
+
+
+def send_training_signal(signal: dict) -> bool:
+    """Send training signal/execution decision notification."""
+    count = signal.get("selected", 0)
+    total = signal.get("signals", 0)
+    assets = signal.get("assets", [])
+
+    if count == 0:
+        return False  # Don't spam for zero signals
+
+    assets_text = ", ".join(assets[:5])
+    if len(assets) > 5:
+        assets_text += f" +{len(assets) - 5} more"
+
+    text = (
+        f"⚡ <b>Training Signals</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"\n"
+        f"📶 Signals: {total} → Selected: <b>{count}</b>\n"
+        f"🪙 Assets: {assets_text}\n"
+        f"\n"
+        f"🔗 <a href='https://admin.bahamut.ai/training-operations'>Training Dashboard</a>"
+    )
+    return _send(text)
+
+
+# ═══════════════════════════════════════════════════════
 # UTILITY
 # ═══════════════════════════════════════════════════════
 
