@@ -193,6 +193,25 @@ def run_training_cycle():
     except Exception as e:
         logger.debug("training_adaptive_failed", error=str(e))
 
+    # Phase 6: Self-schedule next cycle (doesn't depend on Beat service)
+    try:
+        import os, redis as _redis
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        # Only schedule if no pending cycle already queued
+        lock_key = "bahamut:training:next_cycle_scheduled"
+        if not r.get(lock_key):
+            if _has_celery and celery_app:
+                celery_app.send_task(
+                    "bahamut.training.orchestrator.run_training_cycle",
+                    countdown=600,  # 10 minutes
+                )
+                r.set(lock_key, "1", ex=660)  # Expires just after the 10min countdown
+                logger.info("training_next_cycle_scheduled", countdown_seconds=600)
+        else:
+            logger.debug("training_next_cycle_already_scheduled")
+    except Exception as e:
+        logger.warning("training_self_schedule_failed", error=str(e))
+
     return {
         "status": "OK",
         "processed": processed,

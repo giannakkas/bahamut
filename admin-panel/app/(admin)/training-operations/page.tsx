@@ -399,10 +399,15 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
 
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] text-white/30 uppercase tracking-wider">Next cycle</span>
-        <span className={`text-[13px] font-bold font-mono tabular-nums ${cs.is_running ? "text-bah-cyan" : nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" : "text-white/80"}`}>
-          {cs.is_running ? "NOW" : fmtCountdown(nextCycle)}
+        <span className={`text-[13px] font-bold font-mono tabular-nums ${
+          cs.is_running ? "text-bah-cyan" :
+          nextCycle !== null && nextCycle <= 0 ? "text-red-400" :
+          nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" :
+          "text-white/80"
+        }`}>
+          {cs.is_running ? "NOW" : nextCycle !== null && nextCycle <= 0 ? "OVERDUE" : fmtCountdown(nextCycle)}
         </span>
-        {nextCycleTime && !cs.is_running && (
+        {nextCycleTime && !cs.is_running && nextCycle !== null && nextCycle > 0 && (
           <span className="text-[10px] text-white/25 font-mono">({nextCycleTime})</span>
         )}
       </div>

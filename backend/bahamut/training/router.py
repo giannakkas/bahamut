@@ -765,8 +765,18 @@ async def trigger_scan(user=Depends(get_current_user)):
 
 @router.post("/run-cycle")
 async def trigger_training_cycle(user=Depends(get_current_user)):
-    """Manually trigger a full training cycle (scan + evaluate + trade + cache).
-    Runs in background thread — returns immediately."""
+    """Manually trigger a full training cycle. Tries Celery task first (enables
+    auto-scheduling chain), falls back to background thread."""
+    # Try Celery task dispatch (enables self-scheduling)
+    try:
+        from bahamut.celery_app import celery_app
+        celery_app.send_task("bahamut.training.orchestrator.run_training_cycle")
+        logger.info("manual_training_cycle_dispatched_via_celery")
+        return {"status": "cycle_triggered", "message": "Training cycle dispatched via Celery — auto-schedules next in 10min"}
+    except Exception as e:
+        logger.warning("celery_dispatch_failed_using_thread", error=str(e))
+
+    # Fallback: background thread (no self-scheduling but still works)
     global _bg_cycle_running
     if _bg_cycle_running:
         return {"status": "already_running", "message": "Training cycle already in progress"}
@@ -786,7 +796,7 @@ async def trigger_training_cycle(user=Depends(get_current_user)):
             _bg_cycle_running = False
 
     threading.Thread(target=_do_cycle, daemon=True).start()
-    return {"status": "cycle_triggered", "message": "Full training cycle started — completes in ~2-3 min"}
+    return {"status": "cycle_triggered", "message": "Training cycle started in background thread"}
 
 
 # ── Background state flags ──
