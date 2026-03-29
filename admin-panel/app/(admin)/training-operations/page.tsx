@@ -41,7 +41,85 @@ export default function TrainingOperationsPage() {
   const [cycleTriggered, setCycleTriggered] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
+
+  // ── Trade sound effects via Web Audio API ──
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playTradeOpenSound = () => {
+    try {
+      const ctx = getAudioCtx();
+      // Rising two-tone chime — trade opened
+      [520, 780].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.3);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.12);
+        osc.stop(ctx.currentTime + i * 0.12 + 0.3);
+      });
+    } catch {}
+  };
+
+  const playTradeCloseSound = () => {
+    try {
+      const ctx = getAudioCtx();
+      // Falling two-tone — trade closed
+      [660, 440].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.25);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.12);
+        osc.stop(ctx.currentTime + i * 0.12 + 0.25);
+      });
+    } catch {}
+  };
+
+  const playSignalSound = () => {
+    try {
+      const ctx = getAudioCtx();
+      // Quick blip — new signal/execution decision
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.15);
+    } catch {}
+  };
+
+  // Detect trade changes and play sounds
+  const checkTradeChanges = (newData: any) => {
+    if (!soundEnabled || !newData?.kpi) return;
+    const open = newData.kpi.open_positions || 0;
+    const closed = newData.kpi.closed_trades || 0;
+    const signals = newData.cycle_health?.signals_generated || 0;
+    const prev = prevCounts.current;
+
+    if (prev.open > 0 || prev.closed > 0) { // Skip first load
+      if (open > prev.open) playTradeOpenSound();
+      if (closed > prev.closed) playTradeCloseSound();
+      if (signals > prev.signals) playSignalSound();
+    }
+    prevCounts.current = { open, closed, signals };
+  };
 
   // Tick "seconds ago" every second
   useEffect(() => {
@@ -104,7 +182,12 @@ export default function TrainingOperationsPage() {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
       const r = await fetch(`${apiBase()}/training/operations`, { headers: h });
-      if (r.ok) { setData(await r.json()); setLastUpdated(new Date()); }
+      if (r.ok) {
+        const newData = await r.json();
+        checkTradeChanges(newData);
+        setData(newData);
+        setLastUpdated(new Date());
+      }
     } catch {}
   };
 
@@ -167,7 +250,18 @@ export default function TrainingOperationsPage() {
           <span className="px-2.5 py-0.5 text-[10px] rounded-full font-bold border bg-purple-500/20 text-purple-300 border-purple-500/40 tracking-wider">PAPER ONLY</span>
           <span className="text-[11px] text-white/40">{cs.universe_size || k.universe_size || 0} assets</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { setSoundEnabled(s => !s); if (!soundEnabled) playSignalSound(); }}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+              soundEnabled
+                ? "bg-bah-cyan/10 border-bah-cyan/30 text-bah-cyan"
+                : "bg-white/[0.03] border-white/[0.06] text-white/25"
+            }`}
+            title={soundEnabled ? "Sound alerts ON — click to mute" : "Sound alerts OFF — click to enable"}
+          >
+            {soundEnabled ? "🔔" : "🔇"}
+          </button>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[10px] text-white/30 font-mono tabular-nums">
             {secondsAgo <= 1 ? "live" : `${secondsAgo}s ago`}
