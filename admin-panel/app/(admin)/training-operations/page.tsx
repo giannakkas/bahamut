@@ -477,9 +477,9 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
   return (
     <div className="space-y-4">
       <Section title="Cycle Health">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <Stat l="Processed" v={cy.assets_processed} /><Stat l="Skipped" v={cy.assets_skipped} />
-          <Stat l="Errors" v={cy.errors} c={cy.errors > 0 ? "text-red-400" : ""} /><Stat l="Signals" v={cy.signals_generated} />
+          <Stat l="Errors" v={cy.errors} c={cy.errors > 0 ? "text-red-400" : ""} /><Stat l="Signals" v={cy.signals_generated} /><Stat l="Opened" v={cy.trades_opened || 0} c={cy.trades_opened > 0 ? "text-emerald-400" : ""} />
         </div>
       </Section>
 
@@ -489,7 +489,7 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
               <thead><tr className="border-b border-white/[0.08] text-[9px] text-white/25 uppercase tracking-wider text-left">
-                <th className="py-2 pr-3">Time</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Processed</th><th className="py-2 pr-3">Errors</th><th className="py-2 pr-3">Signals</th><th className="py-2 pr-3">Closed</th><th className="py-2 pr-3">Duration</th>
+                <th className="py-2 pr-3">Time</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Processed</th><th className="py-2 pr-3">Errors</th><th className="py-2 pr-3">Signals</th><th className="py-2 pr-3">Selected</th><th className="py-2 pr-3">Opened</th><th className="py-2 pr-3">Closed</th><th className="py-2 pr-3">Duration</th>
               </tr></thead>
               <tbody>
                 {recentCycles.slice(0, 7).map((c: any, i: number) => (
@@ -499,6 +499,8 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
                     <td className="py-1.5 pr-3 text-white/60">{c.processed}</td>
                     <td className="py-1.5 pr-3 text-white/60">{c.errors}</td>
                     <td className="py-1.5 pr-3 text-white/60">{c.signals}</td>
+                    <td className="py-1.5 pr-3 text-white/60">{c.selected || 0}</td>
+                    <td className={`py-1.5 pr-3 font-bold ${c.trades_opened > 0 ? "text-emerald-400" : "text-white/60"}`}>{c.trades_opened || 0}</td>
                     <td className="py-1.5 pr-3 text-white/60">{c.trades_closed}</td>
                     <td className="py-1.5 pr-3 text-white/40 font-mono">{c.duration_ms}ms</td>
                   </tr>

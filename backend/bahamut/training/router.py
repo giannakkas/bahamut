@@ -302,7 +302,7 @@ def _build_cycle_health(r) -> dict:
             health["assets_skipped"] = len(TRAINING_ASSETS) - processed - errors
             health["errors"] = errors
             health["signals_generated"] = lc.get("signals", 0)
-            health["trades_opened"] = lc.get("signals", 0)  # signals ≈ opened in training
+            health["trades_opened"] = lc.get("trades_opened", 0)
             health["trades_closed"] = lc.get("trades_closed", 0)
             health["last_run"] = lc.get("last_cycle")
     except Exception:

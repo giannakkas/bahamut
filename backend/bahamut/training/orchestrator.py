@@ -156,7 +156,8 @@ def run_training_cycle():
                 trades_opened=trades_opened, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
-    _record_cycle_stats(processed, errors, signals_generated, trades_closed, duration_ms)
+    _record_cycle_stats(processed, errors, signals_generated, trades_closed,
+                        duration_ms, trades_opened=trades_opened, selected=len(selected))
     _set_running(False, 0)
 
     # Phase 4: Cache candidates + all-assets for instant API responses
@@ -529,7 +530,9 @@ def _get_strategies() -> dict:
 # CYCLE STATS (Redis for dashboard)
 # ═══════════════════════════════════════════
 
-def _record_cycle_stats(processed: int, errors: int, signals: int, trades_closed: int, duration_ms: int):
+def _record_cycle_stats(processed: int, errors: int, signals: int,
+                        trades_closed: int, duration_ms: int,
+                        trades_opened: int = 0, selected: int = 0):
     import os, json, redis as _redis
     try:
         r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
@@ -541,6 +544,8 @@ def _record_cycle_stats(processed: int, errors: int, signals: int, trades_closed
             "processed": processed,
             "errors": errors,
             "signals": signals,
+            "selected": selected,
+            "trades_opened": trades_opened,
             "trades_closed": trades_closed,
             "duration_ms": duration_ms,
             "status": status,
