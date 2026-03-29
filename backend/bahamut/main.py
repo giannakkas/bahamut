@@ -76,9 +76,57 @@ async def lifespan(app: FastAPI):
             logger.info("cleared_stale_brief_cache")
         except Exception as e:
             logger.warning("stale_cache_clear_failed", error=str(e))
+
+    # ── Start background training cycle loop ──
+    import asyncio
+    training_task = asyncio.create_task(_training_cycle_loop())
+
     yield
+
+    # Shutdown
+    training_task.cancel()
+    try:
+        await training_task
+    except asyncio.CancelledError:
+        pass
     await redis_manager.disconnect()
     logger.info("Bahamut.AI shutdown complete")
+
+
+async def _training_cycle_loop():
+    """Background loop: runs training cycle every 10 minutes.
+    Lives inside the API process — no Celery Beat dependency."""
+    import asyncio
+    INTERVAL = 600  # 10 minutes
+
+    # Wait 60s after startup before first cycle (let everything initialize)
+    await asyncio.sleep(60)
+    logger.info("training_auto_cycle_started", interval_seconds=INTERVAL)
+
+    while True:
+        try:
+            # Run in thread to avoid blocking the event loop
+            await asyncio.to_thread(_run_training_cycle_safe)
+        except Exception as e:
+            logger.error("training_auto_cycle_error", error=str(e))
+        await asyncio.sleep(INTERVAL)
+
+
+def _run_training_cycle_safe():
+    """Run one training cycle. Catches all exceptions."""
+    try:
+        from bahamut.training.orchestrator import run_training_cycle
+        logger.info("training_auto_cycle_firing")
+        run_training_cycle()
+        logger.info("training_auto_cycle_complete")
+    except Exception as e:
+        logger.error("training_auto_cycle_failed", error=str(e))
+        # Clear running flag on crash
+        try:
+            from bahamut.training.orchestrator import _set_running
+            _set_running(False, 0)
+        except Exception:
+            pass
 
 
 app = FastAPI(
