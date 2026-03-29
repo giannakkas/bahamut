@@ -765,22 +765,20 @@ async def trigger_scan(user=Depends(get_current_user)):
 
 @router.post("/run-cycle")
 async def trigger_training_cycle(user=Depends(get_current_user)):
-    """Manually trigger a full training cycle. Tries Celery task first (enables
-    auto-scheduling chain), falls back to background thread."""
-    # Try Celery task dispatch (enables self-scheduling)
-    try:
-        from bahamut.celery_app import celery_app
-        celery_app.send_task("bahamut.training.orchestrator.run_training_cycle")
-        logger.info("manual_training_cycle_dispatched_via_celery")
-        return {"status": "cycle_triggered", "message": "Training cycle dispatched via Celery — auto-schedules next in 10min"}
-    except Exception as e:
-        logger.warning("celery_dispatch_failed_using_thread", error=str(e))
-
-    # Fallback: background thread (no self-scheduling but still works)
+    """Manually trigger a full training cycle. Sets running flag immediately
+    for instant UI feedback, then runs in thread."""
     global _bg_cycle_running
     if _bg_cycle_running:
         return {"status": "already_running", "message": "Training cycle already in progress"}
     _bg_cycle_running = True
+
+    # Set running flag IMMEDIATELY so UI shows animation within 5s
+    try:
+        from bahamut.training.orchestrator import _set_running
+        from bahamut.config_assets import TRAINING_ASSETS
+        _set_running(True, len(TRAINING_ASSETS))
+    except Exception:
+        pass
 
     import threading
     def _do_cycle():
@@ -792,11 +790,17 @@ async def trigger_training_cycle(user=Depends(get_current_user)):
             logger.info("manual_training_cycle_complete")
         except Exception as e:
             logger.error("manual_training_cycle_failed", error=str(e))
+            # Clear running flag on error
+            try:
+                from bahamut.training.orchestrator import _set_running
+                _set_running(False, 0)
+            except Exception:
+                pass
         finally:
             _bg_cycle_running = False
 
     threading.Thread(target=_do_cycle, daemon=True).start()
-    return {"status": "cycle_triggered", "message": "Training cycle started in background thread"}
+    return {"status": "running", "message": "Training cycle started — watch the progress bar"}
 
 
 # ── Background state flags ──

@@ -44,7 +44,24 @@ export default function TrainingOperationsPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const prevLastCycle = useRef<string | null>(null);
   const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
+
+  // Reset "Triggered" button when cycle actually starts running or when new cycle data arrives
+  useEffect(() => {
+    if (!data) return;
+    const cs = data.cycle_status || {};
+    // Cycle is running → clear triggered (animation takes over)
+    if (cs.is_running && cycleTriggered) {
+      setCycleTriggered(false);
+    }
+    // New cycle completed (last_cycle_time changed) → clear triggered
+    const lastCycleTime = cs.last_cycle_time || "";
+    if (prevLastCycle.current && lastCycleTime !== prevLastCycle.current && cycleTriggered) {
+      setCycleTriggered(false);
+    }
+    prevLastCycle.current = lastCycleTime;
+  }, [data]);
 
   // ── Trade sound effects via Web Audio API ──
   const getAudioCtx = () => {
@@ -274,7 +291,7 @@ export default function TrainingOperationsPage() {
         const h: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         try {
           const r = await fetch(`${apiBase()}/training/run-cycle`, { method: "POST", headers: h });
-          if (r.ok) { setCycleTriggered(true); setTimeout(() => setCycleTriggered(false), 120000); }
+          if (r.ok) { setCycleTriggered(true); }
         } catch {}
       }} />
 
@@ -426,12 +443,14 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
         onClick={onRunCycle}
         disabled={cs.is_running || cycleTriggered}
         className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${
-          cs.is_running || cycleTriggered
-            ? "bg-white/[0.03] border-white/[0.06] text-white/20 cursor-not-allowed"
+          cs.is_running
+            ? "bg-bah-cyan/15 border-bah-cyan/40 text-bah-cyan animate-pulse cursor-wait"
+            : cycleTriggered
+            ? "bg-amber-500/10 border-amber-500/30 text-amber-300 cursor-wait"
             : "bg-bah-cyan/10 border-bah-cyan/30 text-bah-cyan hover:bg-bah-cyan/20 hover:border-bah-cyan/50 active:scale-95"
         }`}
       >
-        {cs.is_running ? "Running…" : cycleTriggered ? "Triggered ✓" : "▶ Run Cycle"}
+        {cs.is_running ? "⏳ Running…" : cycleTriggered ? "⏳ Starting…" : "▶ Run Cycle"}
       </button>
 
       <div className="flex items-center gap-2 text-[10px] text-white/30 font-mono">
