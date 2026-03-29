@@ -341,7 +341,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
 def _persist_trade(trade: TrainingTrade):
     """Persist closed trade to training_trades table + feed learning."""
-    # DB
+    # DB — primary persistence
     try:
         from bahamut.database import sync_engine
         from sqlalchemy import text
@@ -371,8 +371,42 @@ def _persist_trade(trade: TrainingTrade):
                 "trig": trade.trigger_reason,
             })
             conn.commit()
+            logger.info("training_trade_persisted_to_db", trade_id=trade.trade_id,
+                        asset=trade.asset, pnl=trade.pnl)
     except Exception as e:
-        logger.warning("training_trade_persist_failed", error=str(e))
+        logger.error("TRAINING_TRADE_DB_PERSIST_FAILED",
+                     trade_id=trade.trade_id, asset=trade.asset,
+                     pnl=trade.pnl, error=str(e),
+                     msg="Trade saved to Redis only — may disappear on deploy!")
+        # Attempt simpler insert without newer columns
+        try:
+            from bahamut.database import sync_engine
+            from sqlalchemy import text
+            with sync_engine.connect() as conn:
+                conn.execute(text("""
+                    INSERT INTO training_trades
+                    (trade_id, position_id, asset, asset_class, strategy, direction,
+                     entry_price, exit_price, stop_price, tp_price, size, risk_amount,
+                     pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime)
+                    VALUES (:tid, :pid, :a, :ac, :s, :d, :ep, :xp, :sp, :tp, :sz, :ra,
+                            :pnl, :pp, :et, :xt, :xr, :bh, :reg)
+                """), {
+                    "tid": trade.trade_id, "pid": trade.position_id,
+                    "a": trade.asset, "ac": trade.asset_class,
+                    "s": trade.strategy, "d": trade.direction,
+                    "ep": trade.entry_price, "xp": trade.exit_price,
+                    "sp": trade.stop_price, "tp": trade.tp_price,
+                    "sz": trade.size, "ra": trade.risk_amount,
+                    "pnl": trade.pnl, "pp": trade.pnl_pct,
+                    "et": trade.entry_time, "xt": trade.exit_time,
+                    "xr": trade.exit_reason, "bh": trade.bars_held,
+                    "reg": trade.regime,
+                })
+                conn.commit()
+                logger.info("training_trade_persisted_fallback", trade_id=trade.trade_id)
+        except Exception as e2:
+            logger.error("TRAINING_TRADE_DB_PERSIST_FALLBACK_ALSO_FAILED",
+                         trade_id=trade.trade_id, error=str(e2))
 
     # Feed learning engine
     try:
@@ -478,6 +512,22 @@ def _feed_learning(trade: TrainingTrade):
 # ═══════════════════════════════════════════
 # STATS / DASHBOARD QUERIES
 # ═══════════════════════════════════════════
+
+def get_recent_trades_from_redis() -> list[dict]:
+    """Read recent closed trades from Redis. Used as fallback when DB has no rows."""
+    r = _get_redis()
+    if not r:
+        return []
+    try:
+        raw = r.lrange(REDIS_KEY_RECENT, 0, 99)
+        return [json.loads(x) for x in raw] if raw else []
+    except Exception:
+        return []
+
+
+# Alias for backward compat
+get_test_trades_from_redis = get_recent_trades_from_redis
+
 
 def get_training_stats() -> dict:
     """Get training universe stats for dashboard."""

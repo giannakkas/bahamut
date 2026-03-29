@@ -327,7 +327,11 @@ def _build_positions(r) -> list[dict]:
 
 
 def _build_closed_trades() -> list[dict]:
-    """Recent closed trades table (last 50)."""
+    """Recent closed trades table (last 50). Merges DB + Redis to never lose trades."""
+    db_trades = []
+    redis_trades = []
+
+    # DB: permanent storage
     try:
         from bahamut.db.query import run_query
         rows = run_query("""
@@ -338,18 +342,27 @@ def _build_closed_trades() -> list[dict]:
             FROM training_trades
             ORDER BY created_at DESC LIMIT 50
         """)
-        return [dict(r) for r in rows] if rows else []
+        if rows:
+            db_trades = [dict(r) for r in rows]
     except Exception:
         pass
 
-    # Fallback: Redis recent trades
-    if _get_redis():
-        try:
-            from bahamut.training.engine import get_test_trades_from_redis
-            return get_test_trades_from_redis()
-        except Exception:
-            pass
-    return []
+    # Redis: recent trades (catches trades that failed DB persist)
+    try:
+        from bahamut.training.engine import get_recent_trades_from_redis
+        redis_trades = get_recent_trades_from_redis() or []
+    except Exception:
+        pass
+
+    # Merge: DB is primary, add Redis trades not already in DB
+    db_ids = {t.get("trade_id") for t in db_trades if t.get("trade_id")}
+    for rt in redis_trades:
+        if rt.get("trade_id") not in db_ids:
+            db_trades.append(rt)
+
+    # Sort by exit_time descending
+    db_trades.sort(key=lambda t: t.get("exit_time", ""), reverse=True)
+    return db_trades[:50]
 
 
 def _build_strategy_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
