@@ -392,6 +392,32 @@ TABLES = [
         ALTER TABLE training_trades ADD COLUMN IF NOT EXISTS trigger_reason VARCHAR(50) DEFAULT '4h_close';
     EXCEPTION WHEN others THEN NULL; END $$""",
 
+    # ── Training Open Positions (DB-backed, survives deploys) ──
+    """CREATE TABLE IF NOT EXISTS training_positions (
+        position_id VARCHAR(20) PRIMARY KEY,
+        asset VARCHAR(30) NOT NULL,
+        asset_class VARCHAR(20) DEFAULT 'unknown',
+        strategy VARCHAR(50) NOT NULL,
+        direction VARCHAR(10) NOT NULL,
+        entry_price DOUBLE PRECISION NOT NULL,
+        stop_price DOUBLE PRECISION NOT NULL,
+        tp_price DOUBLE PRECISION NOT NULL,
+        size DOUBLE PRECISION NOT NULL,
+        risk_amount DOUBLE PRECISION NOT NULL,
+        entry_time VARCHAR(50),
+        bars_held INTEGER DEFAULT 0,
+        max_hold_bars INTEGER DEFAULT 30,
+        current_price DOUBLE PRECISION DEFAULT 0,
+        execution_type VARCHAR(20) DEFAULT 'standard',
+        confidence_score DOUBLE PRECISION DEFAULT 0,
+        trigger_reason VARCHAR(50) DEFAULT '4h_close',
+        status VARCHAR(10) DEFAULT 'OPEN',
+        created_at TIMESTAMP DEFAULT NOW()
+    )""",
+
+    """CREATE INDEX IF NOT EXISTS idx_training_positions_status
+       ON training_positions(status) WHERE status = 'OPEN'""",
+
     # ── Stress Testing ──
     """CREATE TABLE IF NOT EXISTS stress_test_runs (
         id SERIAL PRIMARY KEY,

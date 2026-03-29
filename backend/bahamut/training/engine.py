@@ -90,28 +90,90 @@ class TrainingTrade:
 
 
 # ═══════════════════════════════════════════
-# POSITION MANAGEMENT (Redis-backed)
+# POSITION MANAGEMENT (DB-backed + Redis cache)
+# DB is the canonical source. Redis is a fast cache.
+# On load: try Redis first (fast), reconcile from DB if mismatch.
+# On write: always write to BOTH.
 # ═══════════════════════════════════════════
 
 def _load_positions() -> list[TrainingPosition]:
-    """Load all open training positions from Redis."""
+    """Load all open training positions. Redis first, DB fallback."""
+    # Try Redis (fast path)
     r = _get_redis()
-    if not r:
-        return []
+    if r:
+        try:
+            raw = r.hgetall(REDIS_KEY_POSITIONS)
+            if raw:
+                positions = []
+                for v in raw.values():
+                    d = json.loads(v)
+                    positions.append(TrainingPosition(**d))
+                return positions
+        except Exception as e:
+            logger.warning("training_load_positions_redis_failed", error=str(e))
+
+    # Redis empty or failed — load from DB (canonical source)
+    return _load_positions_from_db()
+
+
+def _load_positions_from_db() -> list[TrainingPosition]:
+    """Load open positions from DB. Repopulates Redis cache."""
     try:
-        raw = r.hgetall(REDIS_KEY_POSITIONS)
-        positions = []
-        for v in raw.values():
-            d = json.loads(v)
-            positions.append(TrainingPosition(**d))
-        return positions
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT position_id, asset, asset_class, strategy, direction,
+                       entry_price, stop_price, tp_price, size, risk_amount,
+                       entry_time, bars_held, max_hold_bars, current_price,
+                       execution_type, confidence_score, trigger_reason
+                FROM training_positions WHERE status = 'OPEN'
+            """)).mappings().all()
+
+            positions = []
+            for row in rows:
+                pos = TrainingPosition(
+                    position_id=row["position_id"],
+                    asset=row["asset"],
+                    asset_class=row["asset_class"] or "unknown",
+                    strategy=row["strategy"],
+                    direction=row["direction"],
+                    entry_price=float(row["entry_price"]),
+                    stop_price=float(row["stop_price"]),
+                    tp_price=float(row["tp_price"]),
+                    size=float(row["size"]),
+                    risk_amount=float(row["risk_amount"]),
+                    entry_time=str(row["entry_time"] or ""),
+                    bars_held=int(row["bars_held"] or 0),
+                    max_hold_bars=int(row["max_hold_bars"] or 30),
+                    current_price=float(row["current_price"] or 0),
+                    execution_type=str(row["execution_type"] or "standard"),
+                    confidence_score=float(row["confidence_score"] or 0),
+                    trigger_reason=str(row["trigger_reason"] or "4h_close"),
+                )
+                positions.append(pos)
+
+            # Repopulate Redis cache from DB
+            if positions:
+                r = _get_redis()
+                if r:
+                    try:
+                        r.delete(REDIS_KEY_POSITIONS)
+                        for pos in positions:
+                            r.hset(REDIS_KEY_POSITIONS, pos.position_id, json.dumps(asdict(pos)))
+                    except Exception:
+                        pass
+
+            logger.info("training_positions_loaded_from_db", count=len(positions))
+            return positions
     except Exception as e:
-        logger.warning("training_load_positions_failed", error=str(e))
+        logger.error("training_load_positions_db_failed", error=str(e))
         return []
 
 
 def _save_position(pos: TrainingPosition):
-    """Save a position to Redis."""
+    """Save a position to Redis + DB (dual write)."""
+    # Redis (fast cache)
     r = _get_redis()
     if r:
         try:
@@ -119,9 +181,42 @@ def _save_position(pos: TrainingPosition):
         except Exception:
             pass
 
+    # DB (canonical)
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO training_positions
+                (position_id, asset, asset_class, strategy, direction,
+                 entry_price, stop_price, tp_price, size, risk_amount,
+                 entry_time, bars_held, max_hold_bars, current_price,
+                 execution_type, confidence_score, trigger_reason, status)
+                VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
+                        :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN')
+                ON CONFLICT (position_id) DO UPDATE SET
+                    bars_held = EXCLUDED.bars_held,
+                    current_price = EXCLUDED.current_price,
+                    status = 'OPEN'
+            """), {
+                "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
+                "s": pos.strategy, "d": pos.direction,
+                "ep": pos.entry_price, "sp": pos.stop_price,
+                "tp": pos.tp_price, "sz": pos.size, "ra": pos.risk_amount,
+                "et": pos.entry_time, "bh": pos.bars_held,
+                "mhb": pos.max_hold_bars, "cp": pos.current_price,
+                "ext": pos.execution_type, "cs": pos.confidence_score,
+                "tr": pos.trigger_reason,
+            })
+            conn.commit()
+    except Exception as e:
+        logger.error("training_save_position_db_failed",
+                     position_id=pos.position_id, error=str(e))
+
 
 def _remove_position(position_id: str):
-    """Remove a closed position from Redis."""
+    """Remove a closed position from Redis + mark CLOSED in DB."""
+    # Redis
     r = _get_redis()
     if r:
         try:
@@ -129,13 +224,39 @@ def _remove_position(position_id: str):
         except Exception:
             pass
 
+    # DB: mark as CLOSED (don't delete — keep for audit)
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text(
+                "UPDATE training_positions SET status = 'CLOSED' WHERE position_id = :pid"
+            ), {"pid": position_id})
+            conn.commit()
+    except Exception as e:
+        logger.error("training_remove_position_db_failed",
+                     position_id=position_id, error=str(e))
+
 
 def get_open_position_count() -> int:
+    """Get count of open training positions. Redis first, DB fallback."""
     r = _get_redis()
-    if not r:
-        return 0
+    if r:
+        try:
+            count = r.hlen(REDIS_KEY_POSITIONS)
+            if count and count > 0:
+                return count
+        except Exception:
+            pass
+    # DB fallback
     try:
-        return r.hlen(REDIS_KEY_POSITIONS) or 0
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT COUNT(*) FROM training_positions WHERE status = 'OPEN'"
+            )).fetchone()
+            return row[0] if row else 0
     except Exception:
         return 0
 
@@ -530,13 +651,14 @@ get_test_trades_from_redis = get_recent_trades_from_redis
 
 
 def get_training_stats() -> dict:
-    """Get training universe stats for dashboard."""
+    """Get training universe stats for dashboard. DB-backed with Redis cache."""
     r = _get_redis()
     positions = _load_positions()
     recent = []
     strategy_stats = {}
     class_stats = {}
 
+    # Try Redis cache first
     if r:
         try:
             raw = r.lrange(REDIS_KEY_RECENT, 0, 19)
@@ -560,6 +682,12 @@ def get_training_stats() -> dict:
             except Exception:
                 pass
 
+    # If Redis stats are empty, rebuild from DB
+    if not strategy_stats:
+        strategy_stats, class_stats = _rebuild_stats_from_db()
+    if not recent:
+        recent = _get_recent_trades_from_db()
+
     total_trades = sum(s.get("trades", 0) for s in strategy_stats.values())
     total_pnl = sum(s.get("total_pnl", 0) for s in strategy_stats.values())
     total_wins = sum(s.get("wins", 0) for s in strategy_stats.values())
@@ -575,6 +703,84 @@ def get_training_stats() -> dict:
         "class_stats": class_stats,
         "assets_in_universe": len(set(p.asset for p in positions)),
     }
+
+
+def _rebuild_stats_from_db() -> tuple[dict, dict]:
+    """Rebuild strategy + class stats from training_trades DB table. Repopulates Redis."""
+    strategy_stats = {}
+    class_stats = {}
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT strategy, asset_class,
+                       COUNT(*) as cnt,
+                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       COALESCE(SUM(pnl), 0) as total_pnl
+                FROM training_trades GROUP BY strategy, asset_class
+            """)).mappings().all()
+
+            for row in rows:
+                s = row["strategy"]
+                ac = row["asset_class"]
+                cnt = int(row["cnt"])
+                wins = int(row["wins"])
+                pnl = float(row["total_pnl"])
+
+                if s not in strategy_stats:
+                    strategy_stats[s] = {"trades": 0, "wins": 0, "losses": 0, "total_pnl": 0, "win_rate": 0}
+                ss = strategy_stats[s]
+                ss["trades"] += cnt
+                ss["wins"] += wins
+                ss["losses"] += cnt - wins
+                ss["total_pnl"] = round(ss["total_pnl"] + pnl, 2)
+                ss["win_rate"] = round(ss["wins"] / max(1, ss["trades"]), 4)
+
+                if ac not in class_stats:
+                    class_stats[ac] = {"trades": 0, "wins": 0, "losses": 0, "total_pnl": 0, "win_rate": 0}
+                cs = class_stats[ac]
+                cs["trades"] += cnt
+                cs["wins"] += wins
+                cs["losses"] += cnt - wins
+                cs["total_pnl"] = round(cs["total_pnl"] + pnl, 2)
+                cs["win_rate"] = round(cs["wins"] / max(1, cs["trades"]), 4)
+
+        # Write back to Redis for next fast read
+        r = _get_redis()
+        if r:
+            try:
+                for s, stats in strategy_stats.items():
+                    r.set(f"bahamut:training:strategy_stats:{s}", json.dumps(stats))
+                for ac, stats in class_stats.items():
+                    r.set(f"bahamut:training:class_stats:{ac}", json.dumps(stats))
+            except Exception:
+                pass
+
+        logger.info("training_stats_rebuilt_from_db",
+                    strategies=len(strategy_stats), classes=len(class_stats))
+    except Exception as e:
+        logger.warning("training_stats_rebuild_failed", error=str(e))
+
+    return strategy_stats, class_stats
+
+
+def _get_recent_trades_from_db(limit: int = 20) -> list[dict]:
+    """Get recent closed trades from DB."""
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT trade_id, asset, asset_class, strategy, direction,
+                       entry_price, exit_price, pnl, pnl_pct,
+                       exit_reason, bars_held, entry_time, exit_time
+                FROM training_trades
+                ORDER BY created_at DESC LIMIT :lim
+            """), {"lim": limit}).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 
 # ═══════════════════════════════════════════
