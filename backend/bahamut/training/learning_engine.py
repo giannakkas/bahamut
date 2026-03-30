@@ -184,7 +184,7 @@ def update_trust_from_trade(ctx: LearningContext):
             trust["trades"] += 1
             if ctx.pnl > 0:
                 trust["wins"] += 1
-            else:
+            elif ctx.pnl < -0.01:  # Only count real losses, not breakeven scratches
                 trust["losses"] += 1
             if ctx.quick_stop:
                 trust["quick_stops"] += 1

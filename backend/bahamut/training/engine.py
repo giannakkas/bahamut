@@ -576,7 +576,7 @@ def _feed_learning(trade: TrainingTrade):
         stats["total_pnl"] = round(stats["total_pnl"] + trade.pnl, 2)
         if trade.pnl > 0:
             stats["wins"] += 1
-        else:
+        elif trade.pnl < -0.01:
             stats["losses"] += 1
         stats["win_rate"] = round(stats["wins"] / max(1, stats["trades"]), 4)
         stats["last_trade"] = trade.exit_time
@@ -595,7 +595,7 @@ def _feed_learning(trade: TrainingTrade):
         stats["total_pnl"] = round(stats["total_pnl"] + trade.pnl, 2)
         if trade.pnl > 0:
             stats["wins"] += 1
-        else:
+        elif trade.pnl < -0.01:
             stats["losses"] += 1
         stats["win_rate"] = round(stats["wins"] / max(1, stats["trades"]), 4)
         r.set(ac_key, json.dumps(stats))

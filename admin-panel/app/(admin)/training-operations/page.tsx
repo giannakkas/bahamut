@@ -242,7 +242,7 @@ export default function TrainingOperationsPage() {
   const recentCycles = data.recent_cycles || [];
 
   const fmtPnl = (v: number) => v >= 0 ? `+$${v.toLocaleString(undefined, { minimumFractionDigits: 0 })}` : `-$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 0 })}`;
-  const pnlC = (v: number) => v >= 0 ? "text-green-400" : "text-red-400";
+  const pnlC = (v: number) => Math.abs(v) < 0.01 ? "text-white/50" : v > 0 ? "text-green-400" : "text-red-400";
   const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
   const fmtT = (s: string) => { if (!s) return "—"; try { return new Date(s).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return s; } };
 
@@ -761,6 +761,9 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
             const risk = t.risk_amount || 0;
             const rMult = risk > 0 ? pnl / risk : 0;
             const isWin = pnl > 0;
+            const isFlat = Math.abs(pnl) < 0.01;
+            const resultLabel = isFlat ? "FLAT" : isWin ? "WIN" : "LOSS";
+            const resultCls = isFlat ? "bg-white/10 text-white/50 border border-white/15" : isWin ? "bg-green-500/15 text-green-400 border border-green-500/25" : "bg-red-500/15 text-red-400 border border-red-500/25";
             return (
               <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                 <td className="py-2.5 pr-2">
@@ -775,8 +778,8 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{pnl >= 0 ? "+" : "-"}{fmtMoney(pnl)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{rMult >= 0 ? "+" : ""}{rMult.toFixed(1)}R</td>
                 <td className="py-2.5 pr-2">
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isWin ? "bg-green-500/15 text-green-400 border border-green-500/25" : "bg-red-500/15 text-red-400 border border-red-500/25"}`}>
-                    {isWin ? "WIN" : "LOSS"}
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${resultCls}`}>
+                    {resultLabel}
                   </span>
                 </td>
                 <td className="py-2.5 pr-2">
