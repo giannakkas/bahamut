@@ -239,23 +239,38 @@ def _build_recent_cycles(r) -> list[dict]:
 
 def _build_kpi(r, db_agg: dict) -> dict:
     """Top KPI row data — uses pre-aggregated DB data."""
-    from bahamut.config_assets import TRAINING_ASSETS, TRAINING_VIRTUAL_CAPITAL
-    from bahamut.training.engine import get_open_position_count
+    from bahamut.config_assets import TRAINING_ASSETS, TRAINING_VIRTUAL_CAPITAL, TRAINING_RISK_PER_TRADE_PCT
+    from bahamut.training.engine import get_open_position_count, _load_positions
 
     totals = db_agg.get("total", {})
+    net_pnl = round(totals.get("pnl", 0), 2)
+    closed = totals.get("cnt", 0)
+    wins = totals.get("wins", 0)
+    equity = round(TRAINING_VIRTUAL_CAPITAL + net_pnl, 2)
+    risk_per_trade = round(TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT, 2)
+
+    # Unrealized PnL from open positions
+    positions = _load_positions()
+    unrealized = round(sum(p.unrealized_pnl for p in positions), 2)
+    total_equity = round(equity + unrealized, 2)
 
     kpi = {
         "universe_size": len(TRAINING_ASSETS),
         "virtual_capital": TRAINING_VIRTUAL_CAPITAL,
+        "equity": total_equity,
+        "net_pnl": net_pnl,
+        "unrealized_pnl": unrealized,
+        "return_pct": round((total_equity - TRAINING_VIRTUAL_CAPITAL) / TRAINING_VIRTUAL_CAPITAL * 100, 2),
+        "risk_per_trade": risk_per_trade,
+        "risk_per_trade_pct": round(TRAINING_RISK_PER_TRADE_PCT * 100, 2),
         "assets_scanned": 0,
         "open_positions": get_open_position_count(),
-        "closed_trades": totals.get("cnt", 0),
-        "net_pnl": round(totals.get("pnl", 0), 2),
-        "win_rate": round(totals.get("wins", 0) / max(1, totals.get("cnt", 1)), 4),
+        "closed_trades": closed,
+        "win_rate": round(wins / max(1, closed), 4),
         "avg_duration_bars": round(totals.get("avg_bars", 0), 1),
         "last_cycle": None,
         "cycle_status": "unknown",
-        "learning_samples": totals.get("cnt", 0),
+        "learning_samples": closed,
     }
 
     if r:
@@ -337,8 +352,10 @@ def _build_closed_trades() -> list[dict]:
         rows = run_query("""
             SELECT trade_id, asset, asset_class, strategy, direction,
                    entry_price, exit_price, stop_price, tp_price,
+                   size, risk_amount,
                    pnl, pnl_pct, exit_reason, bars_held,
-                   entry_time, exit_time, regime
+                   entry_time, exit_time, regime,
+                   execution_type, confidence_score
             FROM training_trades
             ORDER BY created_at DESC LIMIT 50
         """)
