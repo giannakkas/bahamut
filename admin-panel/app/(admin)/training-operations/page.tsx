@@ -348,7 +348,7 @@ export default function TrainingOperationsPage() {
       <div className="flex border-b border-bah-border overflow-x-auto">
         {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `❌ Failed (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
           </button>
         ))}
       </div>
@@ -829,15 +829,15 @@ function FailedTab({ signals }: { signals: any[] }) {
     <div className="space-y-4">
       {/* Summary counts */}
       <div className="flex gap-3 items-center">
-        <span className="text-sm font-bold text-bah-heading">Failed Signals</span>
+        <span className="text-sm font-bold text-bah-heading">Rejected Signals</span>
         {training.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{training.length} Training</span>}
         {production.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/15 text-red-300 border border-red-500/30">{production.length} Production</span>}
-        {signals.length === 0 && <span className="text-xs text-bah-muted">No failed signals in current window</span>}
+        {signals.length === 0 && <span className="text-xs text-bah-muted">No rejected signals in current window</span>}
       </div>
 
-      {/* Production failed signals */}
+      {/* Production rejected signals */}
       {production.length > 0 && (
-        <Section title={`Production Failed (${production.length})`}>
+        <Section title={`Production Blocked (${production.length})`}>
           <div className="space-y-1">
             {production.map((s: any, i: number) => {
               const idx = i;

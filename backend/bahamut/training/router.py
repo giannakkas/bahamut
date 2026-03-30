@@ -385,7 +385,7 @@ def _build_closed_trades() -> list[dict]:
 def _build_strategy_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
     """Per-strategy breakdown using pre-aggregated data. Zero DB queries."""
     strategies = {}
-    for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
+    for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
         bs = db_agg.get("by_strategy", {}).get(strat, {})
         cnt = bs.get("cnt", 0)
         wins = bs.get("wins", 0)
@@ -452,7 +452,7 @@ def _build_exposure_fast(positions: list) -> dict:
 def _build_strategy_breakdown(r) -> dict:
     """Per-strategy breakdown."""
     strategies = {}
-    for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
+    for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
         stats = {
             "open_trades": 0, "closed_trades": 0, "win_rate": 0,
             "profit_factor": 0, "avg_pnl": 0, "total_pnl": 0,
