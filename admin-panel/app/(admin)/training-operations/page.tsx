@@ -488,7 +488,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
 
   const urgency = (s: number) => s >= THRESHOLD ? { label: "READY", cls: "bg-green-500/25 text-green-400 border-green-500/40" } :
     s >= 60 ? { label: "APPROACHING", cls: "bg-amber-500/20 text-amber-300 border-amber-500/40" } :
-    { label: "WEAK", cls: "bg-bah-surface text-bah-text/70 border-bah-border" };
+    { label: "WEAK", cls: "bg-white/5 text-white/50 border-white/10" };
 
   const scoreBg = (s: number) => s >= THRESHOLD ? "bg-green-400" : s >= 60 ? "bg-amber-400" : s >= 40 ? "bg-bah-cyan" : "bg-bah-border";
 
@@ -548,38 +548,37 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
                         <div className="w-12 h-2 bg-bah-border rounded-full overflow-hidden">
                           <div className={`h-full rounded-full anim-bar ${scoreBg(c.score)}`} style={{ width: `${c.score}%`, animationDelay: `${0.2 + i * 0.04}s` }} />
                         </div>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded border min-w-[32px] text-center ${
-                          c.score >= THRESHOLD ? "text-green-400 bg-green-500/25 border-green-500/45" :
-                          c.score >= 60 ? "text-amber-300 bg-amber-500/20 border-amber-500/40" :
-                          c.score >= 40 ? "text-bah-cyan bg-bah-cyan/15 border-bah-cyan/30" :
-                          "text-bah-text bg-bah-surface border-bah-border"
-                        }`}>{c.score}</span>
+                        <span className="text-xs font-bold text-white min-w-[24px] text-center">{c.score}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold ${isTop ? "text-bah-cyan" : "text-bah-heading"}`}>{c.asset}</span>
+                        <span className={`font-bold ${isTop ? "text-bah-cyan" : "text-white"}`}>{c.asset}</span>
                         <span className={`px-1.5 py-0 text-[8px] font-bold rounded border tracking-wider ${u.cls}`}>{u.label}</span>
                       </div>
-                      <div className="text-[9px] text-bah-text/60 mt-0.5">{c.asset_class}</div>
+                      <div className="text-[9px] text-white/40 mt-0.5">{c.asset_class}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-bah-heading font-medium">{c.strategy}</td>
+                    <td className="px-3 py-2.5 text-white font-medium">{c.strategy}</td>
                     <td className="px-3 py-2.5"><span className={`font-bold ${c.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{c.direction}</span></td>
-                    <td className="px-3 py-2.5"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                      c.regime === "TREND" || c.regime === "BREAKOUT" ? "bg-green-500/15 text-green-400 border border-green-500/30" :
-                      c.regime === "BEAR" ? "bg-red-500/15 text-red-400 border border-red-500/30" :
-                      "bg-amber-500/10 text-amber-300 border border-amber-500/25"
-                    }`}>{c.regime}</span></td>
-                    <td className="px-3 py-2.5 text-[10px] text-bah-heading font-mono">{c.distance_to_trigger}</td>
-                    <td className="px-3 py-2.5 font-mono"><span className={`font-semibold ${c.indicators?.rsi < 30 ? "text-green-400" : c.indicators?.rsi > 70 ? "text-red-400" : "text-bah-heading"}`}>{c.indicators?.rsi?.toFixed(0) || "—"}</span></td>
-                    <td className="px-3 py-2.5"><span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
-                      c.indicators?.ema_alignment?.includes("bullish") ? "bg-green-500/10 text-green-400" :
-                      c.indicators?.ema_alignment?.includes("bearish") ? "bg-red-500/10 text-red-400" :
-                      "text-bah-text"
-                    }`}>{c.indicators?.ema_alignment?.replace("_", " ") || "—"}</span></td>
+                    <td className="px-3 py-2.5">
+                      <span className={`font-bold text-xs ${
+                        c.regime === "TREND" || c.regime === "BREAKOUT" ? "text-green-400" :
+                        c.regime === "BEAR" || c.regime === "CRASH" ? "text-red-400" :
+                        "text-amber-300"
+                      }`}>{c.regime}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-[10px] text-white font-mono">{c.distance_to_trigger}</td>
+                    <td className="px-3 py-2.5 font-mono"><span className={`font-bold ${c.indicators?.rsi < 30 ? "text-green-400" : c.indicators?.rsi > 70 ? "text-red-400" : "text-white"}`}>{c.indicators?.rsi?.toFixed(0) || "—"}</span></td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[10px] font-bold ${
+                        c.indicators?.ema_alignment?.includes("bullish") ? "text-green-400" :
+                        c.indicators?.ema_alignment?.includes("bearish") ? "text-red-400" :
+                        "text-white/70"
+                      }`}>{c.indicators?.ema_alignment?.replace("_", " ") || "—"}</span>
+                    </td>
                     <td className="px-3 py-2.5 max-w-[260px]">
                       {(c.reasons || []).slice(0, 3).map((r: string, j: number) => (
-                        <div key={j} className="text-[10px] text-bah-text/70 leading-snug">{r}</div>
+                        <div key={j} className="text-[10px] text-white/60 leading-snug">{r}</div>
                       ))}
                     </td>
                   </tr>
