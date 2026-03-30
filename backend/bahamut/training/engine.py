@@ -348,11 +348,18 @@ def open_training_position(
     except Exception:
         pass
 
+    # WebSocket live update
+    try:
+        from bahamut.ws.admin_live import publish_event
+        publish_event("position_opened", {
+            "mode": "training", "asset": asset, "strategy": strategy,
+            "position_id": pos.position_id, "direction": direction,
+            "entry": entry_price, "risk": risk_amount,
+        })
+    except Exception:
+        pass
+
     return pos
-
-
-# ═══════════════════════════════════════════
-# UPDATE POSITIONS WITH NEW BAR
 # ═══════════════════════════════════════════
 
 def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
@@ -446,6 +453,18 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     "entry_price": pos.entry_price, "exit_price": exit_price,
                     "pnl": trade.pnl, "exit_reason": exit_reason,
                     "bars_held": pos.bars_held, "risk_amount": pos.risk_amount,
+                })
+            except Exception:
+                pass
+
+            # WebSocket live update
+            try:
+                from bahamut.ws.admin_live import publish_event
+                publish_event("position_closed", {
+                    "mode": "training", "asset": pos.asset,
+                    "strategy": pos.strategy, "position_id": pos.position_id,
+                    "pnl": trade.pnl, "result": "WIN" if trade.pnl > 0 else ("FLAT" if abs(trade.pnl) < 0.01 else "LOSS"),
+                    "exit_reason": exit_reason,
                 })
             except Exception:
                 pass

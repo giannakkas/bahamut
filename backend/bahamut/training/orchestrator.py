@@ -187,6 +187,18 @@ def run_training_cycle():
                 trades_opened=trades_opened, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
+    # Push live update to admin dashboard
+    try:
+        from bahamut.ws.admin_live import publish_event
+        publish_event("cycle_completed", {
+            "mode": "training", "processed": processed,
+            "signals": signals_generated, "selected": len(selected),
+            "opened": trades_opened, "closed": trades_closed,
+            "duration_ms": duration_ms,
+        })
+    except Exception:
+        pass
+
     _record_cycle_stats(processed, errors, signals_generated, trades_closed,
                         duration_ms, trades_opened=trades_opened, selected=len(selected))
     _set_running(False, 0)

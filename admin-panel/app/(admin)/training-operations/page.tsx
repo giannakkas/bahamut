@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiBase } from "@/lib/utils";
+import { useAdminSocket } from "@/hooks/useAdminSocket";
 
 /* ═══════════════════════════════════════════
    COUNTDOWN HOOK — ticks every second
@@ -195,7 +196,7 @@ export default function TrainingOperationsPage() {
   };
 
   // Fast refresh: live data (positions, KPIs, cycle status) — every 5s like Daily Operations
-  const fastRefresh = async () => {
+  const fastRefresh = useCallback(async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
       const r = await fetch(`${apiBase()}/training/operations`, { headers: h });
@@ -206,7 +207,14 @@ export default function TrainingOperationsPage() {
         setLastUpdated(new Date());
       }
     } catch {}
-  };
+  }, [token]);
+
+  // WebSocket: instant refresh when events arrive (replaces polling for real-time)
+  const { status: wsStatus } = useAdminSocket((evt) => {
+    if (["cycle_completed", "position_opened", "position_closed", "selector_updated", "learning_updated"].includes(evt.event)) {
+      fastRefresh();
+    }
+  });
 
   // Initial full load, then: fast=5s for live data, slow=60s for heavy data
   useEffect(() => {
@@ -280,9 +288,9 @@ export default function TrainingOperationsPage() {
           >
             {soundEnabled ? "🔔" : "🔇"}
           </button>
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === "connected" ? "bg-green-400 animate-pulse" : wsStatus === "connecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"}`} />
           <span className="text-[10px] text-bah-muted font-mono tabular-nums">
-            {secondsAgo <= 1 ? "live" : `${secondsAgo}s ago`}
+            {wsStatus === "connected" ? (secondsAgo <= 1 ? "live" : `${secondsAgo}s ago`) : wsStatus === "connecting" ? "reconnecting..." : `${secondsAgo}s ago`}
           </span>
         </div>
       </div>
