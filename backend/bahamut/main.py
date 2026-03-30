@@ -95,8 +95,9 @@ async def lifespan(app: FastAPI):
 
 async def _training_cycle_loop():
     """Background loop: runs training cycle every 10 minutes.
-    Lives inside the API process — no Celery Beat dependency."""
-    import asyncio
+    Lives inside the API process — no Celery Beat dependency.
+    Compensates for cycle duration so next cycle fires on time."""
+    import asyncio, time
     INTERVAL = 600  # 10 minutes
 
     # Wait 60s after startup before first cycle (let everything initialize)
@@ -104,12 +105,16 @@ async def _training_cycle_loop():
     logger.info("training_auto_cycle_started", interval_seconds=INTERVAL)
 
     while True:
+        cycle_start = time.time()
         try:
-            # Run in thread to avoid blocking the event loop
             await asyncio.to_thread(_run_training_cycle_safe)
         except Exception as e:
             logger.error("training_auto_cycle_error", error=str(e))
-        await asyncio.sleep(INTERVAL)
+        cycle_duration = time.time() - cycle_start
+        # Sleep only the remaining time (minimum 10s to prevent tight loops on errors)
+        sleep_time = max(10, INTERVAL - cycle_duration)
+        logger.info("training_cycle_next_sleep", duration_s=round(cycle_duration, 1), sleep_s=round(sleep_time, 1))
+        await asyncio.sleep(sleep_time)
 
 
 def _run_training_cycle_safe():
