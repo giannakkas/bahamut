@@ -44,12 +44,20 @@ export function AdminSocketProvider({ children }: { children: React.ReactNode })
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
     if (!apiUrl) return;
-    const wsBase = apiUrl.replace(/^http/, "ws").replace(/\/+$/, "");
-    const url = `${wsBase}/ws/admin/live?token=${encodeURIComponent(token)}`;
+    // Strip path like /api/v1 — WS endpoint is at root /ws/admin/live
+    let wsUrl: string;
+    try {
+      const u = new URL(apiUrl);
+      const wsProto = u.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl = `${wsProto}//${u.host}/ws/admin/live?token=${encodeURIComponent(token)}`;
+    } catch {
+      const wsBase = apiUrl.replace(/^http/, "ws").replace(/\/api\/v1.*$/, "").replace(/\/+$/, "");
+      wsUrl = `${wsBase}/ws/admin/live?token=${encodeURIComponent(token)}`;
+    }
 
     setStatus("connecting");
     try {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
