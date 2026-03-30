@@ -371,7 +371,7 @@ export default function TrainingOperationsPage() {
         {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
         {tab === "failed" && <FailedTab signals={failedSignals} />}
         {tab === "assets" && <AssetsTab data={allAssets} />}
-        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} />}
+        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
         {tab === "risk" && <RiskTab expo={expo} />}
       </div>
     </div>
@@ -953,10 +953,13 @@ function FailedTab({ signals }: { signals: any[] }) {
 /* ═══════════════════════════════════════════
    LEARNING TAB
    ═══════════════════════════════════════════ */
-function LearningTab({ learn, adaptive }: { learn: any; adaptive: any }) {
+function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; token: string | null }) {
   const ap = adaptive?.profile || {};
   const am = adaptive?.metrics || {};
   const ah = adaptive?.history || [];
+  const [diagText, setDiagText] = useState<string>("");
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const modeClr = (m: string): string => m === "AGGRESSIVE" ? "text-bah-cyan" : m === "CONSERVATIVE" ? "text-amber-300" : m === "BALANCED" ? "text-green-400" : "text-bah-muted";
   const modeBg = (m: string): string => m === "AGGRESSIVE" ? "bg-bah-cyan/15 border-bah-cyan/30" : m === "CONSERVATIVE" ? "bg-amber-500/15 border-amber-500/30" : m === "BALANCED" ? "bg-green-500/15 border-green-500/30" : "bg-bah-border/50 border-bah-border";
@@ -1064,6 +1067,72 @@ function LearningTab({ learn, adaptive }: { learn: any; adaptive: any }) {
           )) : <p className="text-xs text-bah-muted">No samples yet</p>}
         </Section>
       </div>
+
+      {/* ═══ AI DIAGNOSTIC LOGS ═══ */}
+      <Section title="🤖 AI Diagnostic Logs">
+        <p className="text-[10px] text-bah-muted mb-3">
+          Copy these logs and paste into Claude to diagnose issues, identify weak patterns, and improve trading accuracy.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={async () => {
+              setDiagLoading(true);
+              setCopied(false);
+              try {
+                const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+                const res = await fetch(`${apiBase()}/training/diagnostics`, { headers: h });
+                if (res.ok) {
+                  const data = await res.json();
+                  const lines: string[] = [];
+                  lines.push(`BAHAMUT AI DIAGNOSTICS — ${data.generated_at}`);
+                  lines.push("=".repeat(70));
+                  for (const sec of data.sections || []) {
+                    lines.push("");
+                    lines.push(`## ${sec.title}`);
+                    if (sec.error) { lines.push(`  ERROR: ${sec.error}`); continue; }
+                    if (sec.data && Object.keys(sec.data).length > 0) {
+                      lines.push(JSON.stringify(sec.data, null, 2));
+                    }
+                    for (const row of sec.rows || []) {
+                      const parts = Object.entries(row).map(([k, v]) => {
+                        if (typeof v === "object" && v !== null) return `${k}=${JSON.stringify(v)}`;
+                        return `${k}=${v}`;
+                      });
+                      lines.push(`  ${parts.join("  ")}`);
+                    }
+                  }
+                  lines.push("");
+                  lines.push("=".repeat(70));
+                  lines.push("END DIAGNOSTICS — paste above into Claude for analysis");
+                  setDiagText(lines.join("\n"));
+                } else {
+                  setDiagText(`Error: ${res.status} ${res.statusText}`);
+                }
+              } catch (e: any) {
+                setDiagText(`Fetch error: ${e.message}`);
+              }
+              setDiagLoading(false);
+            }}
+            disabled={diagLoading}
+            className="px-3 py-1.5 text-xs font-bold rounded-lg border border-bah-cyan/40 bg-bah-cyan/10 text-bah-cyan hover:bg-bah-cyan/20 transition-all disabled:opacity-50"
+          >
+            {diagLoading ? "⏳ Generating..." : "📋 Generate Diagnostic Logs"}
+          </button>
+          {diagText && (
+            <button
+              onClick={() => { navigator.clipboard.writeText(diagText); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-all"
+            >
+              {copied ? "✓ Copied!" : "📎 Copy to Clipboard"}
+            </button>
+          )}
+        </div>
+        {diagText && (
+          <pre className="bg-black/40 border border-bah-border rounded-lg p-4 text-[10px] text-green-300/80 font-mono overflow-x-auto max-h-[500px] overflow-y-auto whitespace-pre-wrap select-all leading-relaxed">
+            {diagText}
+          </pre>
+        )}
+      </Section>
     </div>
   );
 }

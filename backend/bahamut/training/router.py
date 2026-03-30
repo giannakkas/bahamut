@@ -883,3 +883,201 @@ async def get_adaptive_state(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("adaptive_state_failed", error=str(e))
         return {"profile": {}, "metrics": {}, "history": []}
+
+
+@router.get("/diagnostics")
+async def get_training_diagnostics(user=Depends(get_current_user)):
+    """Structured diagnostic logs for AI analysis.
+
+    Returns comprehensive system state formatted for copy-paste into
+    Claude for debugging and accuracy improvement.
+    """
+    r = _get_redis()
+    diag = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "sections": [],
+    }
+
+    # ── 1. TRUST STATE PER PATTERN ──
+    trust_section = {"title": "TRUST STATE", "rows": []}
+    try:
+        from bahamut.training.learning_engine import get_pattern_trust, get_trust_overview
+        overview = get_trust_overview()
+        for strat, info in overview.get("strategies", {}).items():
+            trust_section["rows"].append({
+                "strategy": strat,
+                "trust": info.get("trust", 0.5),
+                "samples": info.get("samples", 0),
+                "maturity": info.get("maturity", "provisional"),
+                "confidence": info.get("confidence", 0),
+                "wins": info.get("wins", 0),
+                "losses": info.get("losses", 0),
+                "quick_stops": info.get("quick_stops", 0),
+            })
+
+        # Per-regime trust for each strategy
+        for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+            for regime in ["TREND", "RANGE", "BREAKOUT"]:
+                for ac in ["crypto", "stock", "forex", "commodity", "index"]:
+                    try:
+                        t = get_pattern_trust(strat, regime, ac)
+                        if t.get("total_trades", 0) > 0:
+                            trust_section["rows"].append({
+                                "pattern": f"{strat}:{regime}:{ac}",
+                                "blended_trust": t["blended_trust"],
+                                "confidence": t["blended_confidence"],
+                                "maturity": t["maturity"],
+                                "trades": t["total_trades"],
+                                "quick_stops": t["quick_stops"],
+                                "expectancy": t.get("expectancy", 0),
+                                "buckets": {k: {"trust": v["trust"], "samples": v["samples"], "maturity": v["maturity"]}
+                                           for k, v in t.get("buckets", {}).items() if v.get("samples", 0) > 0},
+                            })
+                    except Exception:
+                        pass
+    except Exception as e:
+        trust_section["error"] = str(e)
+    diag["sections"].append(trust_section)
+
+    # ── 2. RECENT TRADES (last 20) ──
+    trades_section = {"title": "RECENT TRADES", "rows": []}
+    try:
+        if r:
+            raw = r.lrange("bahamut:training:recent_trades", 0, 19)
+            for item in (raw or []):
+                try:
+                    t = json.loads(item)
+                    trades_section["rows"].append({
+                        "asset": t.get("asset"),
+                        "strategy": t.get("strategy"),
+                        "direction": t.get("direction"),
+                        "regime": t.get("regime"),
+                        "pnl": t.get("pnl"),
+                        "pnl_pct": t.get("pnl_pct"),
+                        "exit_reason": t.get("exit_reason"),
+                        "bars_held": t.get("bars_held"),
+                        "r_multiple": round(t.get("pnl", 0) / max(t.get("risk_amount", 1), 0.01), 2),
+                        "entry_time": t.get("entry_time", ""),
+                        "exit_time": t.get("exit_time", ""),
+                    })
+                except Exception:
+                    pass
+    except Exception as e:
+        trades_section["error"] = str(e)
+    diag["sections"].append(trades_section)
+
+    # ── 3. STRATEGY PERFORMANCE ──
+    perf_section = {"title": "STRATEGY PERFORMANCE", "rows": []}
+    try:
+        if r:
+            for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+                raw = r.get(f"bahamut:training:strategy_stats:{strat}")
+                if raw:
+                    s = json.loads(raw)
+                    perf_section["rows"].append({
+                        "strategy": strat,
+                        "trades": s.get("trades", 0),
+                        "wins": s.get("wins", 0),
+                        "losses": s.get("losses", 0),
+                        "win_rate": s.get("win_rate", 0),
+                        "total_pnl": s.get("total_pnl", 0),
+                        "last_pnl": s.get("last_pnl", 0),
+                        "last_asset": s.get("last_asset", ""),
+                    })
+    except Exception as e:
+        perf_section["error"] = str(e)
+    diag["sections"].append(perf_section)
+
+    # ── 4. REJECTION STATS ──
+    rej_section = {"title": "REJECTION REASONS", "data": {}}
+    try:
+        from bahamut.training.learning_engine import get_rejection_stats
+        rej_section["data"] = get_rejection_stats()
+    except Exception as e:
+        rej_section["error"] = str(e)
+    diag["sections"].append(rej_section)
+
+    # ── 5. PATTERN SUPPRESSIONS ──
+    sup_section = {"title": "ACTIVE SUPPRESSIONS", "rows": []}
+    try:
+        from bahamut.training.context_gate import get_all_suppressions
+        sup_section["rows"] = get_all_suppressions()
+    except Exception as e:
+        sup_section["error"] = str(e)
+    diag["sections"].append(sup_section)
+
+    # ── 6. OPEN POSITIONS ──
+    pos_section = {"title": "OPEN POSITIONS", "rows": []}
+    try:
+        from bahamut.training.engine import _load_positions
+        from dataclasses import asdict
+        positions = _load_positions()
+        for p in positions:
+            d = asdict(p)
+            pos_section["rows"].append({
+                "asset": d.get("asset"),
+                "strategy": d.get("strategy"),
+                "direction": d.get("direction"),
+                "regime": d.get("regime"),
+                "entry_price": d.get("entry_price"),
+                "stop_price": d.get("stop_price"),
+                "tp_price": d.get("tp_price"),
+                "bars_held": d.get("bars_held"),
+                "unrealized_pnl": d.get("unrealized_pnl", 0),
+            })
+    except Exception as e:
+        pos_section["error"] = str(e)
+    diag["sections"].append(pos_section)
+
+    # ── 7. ASSET CLASS PERFORMANCE ──
+    class_section = {"title": "ASSET CLASS PERFORMANCE", "rows": []}
+    try:
+        if r:
+            for ac in ["crypto", "stock", "forex", "commodity", "index"]:
+                raw = r.get(f"bahamut:training:class_stats:{ac}")
+                if raw:
+                    s = json.loads(raw)
+                    if s.get("trades", 0) > 0:
+                        class_section["rows"].append({
+                            "class": ac,
+                            "trades": s.get("trades", 0),
+                            "wins": s.get("wins", 0),
+                            "losses": s.get("losses", 0),
+                            "win_rate": s.get("win_rate", 0),
+                            "total_pnl": s.get("total_pnl", 0),
+                        })
+    except Exception as e:
+        class_section["error"] = str(e)
+    diag["sections"].append(class_section)
+
+    # ── 8. SELECTOR CONFIG ──
+    config_section = {"title": "SELECTOR CONFIG", "data": {}}
+    try:
+        from bahamut.training.selector import _get_config
+        config_section["data"] = _get_config()
+    except Exception as e:
+        config_section["error"] = str(e)
+    diag["sections"].append(config_section)
+
+    # ── 9. CONTEXT GATE RULES ──
+    gate_section = {"title": "CONTEXT GATE RULES", "data": {}}
+    try:
+        from bahamut.training.context_gate import STRATEGY_REGIME_MAP, SOFT_PENALTY_COMBOS
+        gate_section["data"] = {
+            "allowed_regimes": {k: list(v) for k, v in STRATEGY_REGIME_MAP.items()},
+            "soft_penalties": {f"{k[0]}+{k[1]}": v for k, v in SOFT_PENALTY_COMBOS.items()},
+        }
+    except Exception as e:
+        gate_section["error"] = str(e)
+    diag["sections"].append(gate_section)
+
+    # ── 10. QUALITY FLOORS ──
+    floors_section = {"title": "QUALITY FLOORS", "data": {}}
+    try:
+        from bahamut.training.quality_floors import FLOORS
+        floors_section["data"] = FLOORS
+    except Exception as e:
+        floors_section["error"] = str(e)
+    diag["sections"].append(floors_section)
+
+    return diag
