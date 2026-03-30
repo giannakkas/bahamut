@@ -195,6 +195,13 @@ def update_trust_from_trade(ctx: LearningContext):
                 recent = recent[-20:]
             trust["recent_outcomes"] = recent
 
+            # Store R-multiples for expectancy calculation
+            r_mults = trust.get("recent_r_multiples", [])
+            r_mults.append(ctx.r_multiple)
+            if len(r_mults) > 20:
+                r_mults = r_mults[-20:]
+            trust["recent_r_multiples"] = r_mults
+
             samples = trust["trades"]
             maturity = get_maturity_state(samples)
 
@@ -213,6 +220,13 @@ def update_trust_from_trade(ctx: LearningContext):
             trust["confidence_weight"] = get_confidence_weight(samples)
             trust["last_updated"] = now
 
+            # Calculate rolling expectancy (average R-multiple of last 10 trades)
+            if r_mults:
+                window = r_mults[-10:]
+                trust["expectancy"] = round(sum(window) / len(window), 4)
+            else:
+                trust["expectancy"] = 0.0
+
             r.set(key, json.dumps(trust), ex=TRUST_TTL_SECONDS)
 
             logger.info("trust_updated",
@@ -220,6 +234,7 @@ def update_trust_from_trade(ctx: LearningContext):
                         samples=samples, state=maturity,
                         trust=trust["trust_score"],
                         confidence=trust["confidence_weight"],
+                        expectancy=trust["expectancy"],
                         outcome=ctx.outcome_score)
         except Exception as e:
             logger.warning("trust_update_failed", key=key, error=str(e))
@@ -273,6 +288,7 @@ def get_pattern_trust(strategy: str, regime: str, asset_class: str) -> dict:
             "maturity": get_maturity_state(samples),
             "confidence": eff_conf, "base_weight": base_w,
             "quick_stops": data.get("quick_stops", 0), "decay": decay,
+            "expectancy": data.get("expectancy", 0.0),
         }
         total_trades = max(total_trades, samples)
         total_qs += data.get("quick_stops", 0)
@@ -303,7 +319,28 @@ def get_pattern_trust(strategy: str, regime: str, asset_class: str) -> dict:
         "maturity": overall, "total_trades": total_trades,
         "quick_stops": total_qs, "provisional": overall == "provisional",
         "buckets": buckets,
+        "expectancy": _calc_expectancy_from_buckets(buckets, r, strategy, regime, asset_class),
     }
+
+
+def _calc_expectancy_from_buckets(buckets: dict, r, strategy: str, regime: str, asset_class: str) -> float:
+    """Calculate rolling expectancy from the pattern-level trust bucket."""
+    # Use pattern-level R-multiples (most specific)
+    key = f"bahamut:training:trust:pattern:{strategy}:{regime}:{asset_class}"
+    data = _load_trust_bucket(r, key)
+    return calculate_expectancy(data.get("recent_r_multiples", []))
+
+
+def calculate_expectancy(r_multiples: list) -> float:
+    """Calculate rolling expectancy from a list of R-multiples.
+
+    expectancy = average R-multiple of last N trades (max 10).
+    > 0 = positive edge, < 0 = losing, ~0 = neutral.
+    """
+    if not r_multiples:
+        return 0.0
+    recent = r_multiples[-10:]  # Last 10 trades
+    return round(sum(recent) / len(recent), 4)
 
 
 # ═══════════════════════════════════════════

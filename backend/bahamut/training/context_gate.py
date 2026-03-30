@@ -101,6 +101,8 @@ def validate_strategy_context(strategy: str, regime: str, direction: str = "LONG
 SUPPRESS_TRUST_THRESHOLD = 0.30      # Suppress if mature trust below this
 SUPPRESS_QUICK_STOP_COUNT = 3        # Suppress if 3+ quick stops in recent trades
 SUPPRESS_RECENT_LOSS_STREAK = 4      # Suppress after 4 consecutive losses
+SUPPRESS_EXPECTANCY_THRESHOLD = -0.25  # Suppress if rolling expectancy below -0.25R
+SUPPRESS_EXPECTANCY_MIN_TRADES = 6   # Need at least 6 trades for expectancy suppression
 SUPPRESS_CYCLES = 6                  # Suppress for 6 cycles (~60 min)
 SUPPRESS_CYCLES_PRODUCTION = 12      # Longer suppression in production
 
@@ -157,6 +159,7 @@ def suppress_pattern(strategy: str, regime: str, asset_class: str,
     data = {
         "strategy": strategy, "regime": regime, "asset_class": asset_class,
         "reason": reason, "cycles_remaining": cycles,
+        "suppressed_regime": regime,  # For regime-aware release
         "suppressed_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
@@ -184,13 +187,53 @@ def decrement_suppression_cycles():
             remaining = data.get("cycles_remaining", 0) - 1
             if remaining <= 0:
                 r.delete(key)
-                logger.info("pattern_suppression_expired",
-                            pattern=key.split("suppression:")[-1])
+                pkey = key.split("suppression:")[-1] if isinstance(key, str) else key.decode().split("suppression:")[-1]
+                logger.info("pattern_suppression_expired", pattern=pkey)
             else:
                 data["cycles_remaining"] = remaining
                 r.set(key, json.dumps(data), ex=remaining * 600 + 120)
     except Exception as e:
         logger.warning("suppression_decrement_failed", error=str(e))
+
+
+def check_regime_release(current_regimes: dict[str, str]):
+    """Release suppressions when regime changes.
+
+    current_regimes: dict of asset_class → current regime
+    e.g. {"crypto": "TREND", "stock": "RANGE"}
+
+    If a pattern was suppressed in RANGE and the regime is now TREND,
+    the suppression is lifted immediately.
+    """
+    r = _get_redis()
+    if not r or not current_regimes:
+        return
+
+    try:
+        keys = r.keys("bahamut:training:suppression:*")
+        for key in keys:
+            raw = r.get(key)
+            if not raw:
+                continue
+            data = json.loads(raw)
+            suppressed_regime = data.get("suppressed_regime", "")
+            asset_class = data.get("asset_class", "")
+
+            if not suppressed_regime or not asset_class:
+                continue
+
+            # Check if regime has changed for this asset class
+            current = current_regimes.get(asset_class, "")
+            if current and current != suppressed_regime:
+                pkey = key.split("suppression:")[-1] if isinstance(key, str) else key.decode().split("suppression:")[-1]
+                r.delete(key)
+                logger.info("pattern_unsuppressed",
+                            pattern=pkey,
+                            reason=f"regime_change: {suppressed_regime} → {current}",
+                            old_regime=suppressed_regime,
+                            new_regime=current)
+    except Exception as e:
+        logger.warning("regime_release_failed", error=str(e))
 
 
 def evaluate_for_suppression(strategy: str, regime: str, asset_class: str,
@@ -234,6 +277,14 @@ def evaluate_for_suppression(strategy: str, regime: str, asset_class: str,
         if maturity == "developing" and blended < 0.25 and total >= 8:
             suppress_pattern(strategy, regime, asset_class,
                            f"Developing trust {blended:.2f} very low after {total} trades", cycles)
+            return
+
+        # Rule 4: Negative expectancy (NEW)
+        expectancy = trust.get("expectancy", 0.0)
+        if total >= SUPPRESS_EXPECTANCY_MIN_TRADES and expectancy < SUPPRESS_EXPECTANCY_THRESHOLD:
+            suppress_pattern(strategy, regime, asset_class,
+                           f"Negative expectancy {expectancy:.2f}R (threshold {SUPPRESS_EXPECTANCY_THRESHOLD}R) after {total} trades",
+                           cycles)
             return
 
     except Exception as e:

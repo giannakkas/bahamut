@@ -64,6 +64,7 @@ def run_training_cycle():
     errors = 0
     trades_closed = 0
     pending_signals: list[PendingSignal] = []
+    observed_regimes: dict[str, str] = {}  # asset_class → latest regime
 
     # Phase 1: Scan all assets — collect signals, update positions, DO NOT execute yet
     batch_size = 8
@@ -78,6 +79,9 @@ def run_training_cycle():
                 )
                 trades_closed += result.get("trades_closed", 0)
                 pending_signals.extend(result.get("signals", []))
+                # Collect regime per asset class
+                if result.get("regime"):
+                    observed_regimes[ASSET_CLASS_MAP.get(asset, "unknown")] = result["regime"]
                 processed += 1
             except Exception as e:
                 errors += 1
@@ -87,6 +91,14 @@ def run_training_cycle():
 
         if i + batch_size < len(TRAINING_ASSETS):
             time.sleep(3)
+
+    # Phase 1.5: Check if regime changes should release suppressed patterns
+    if observed_regimes:
+        try:
+            from bahamut.training.context_gate import check_regime_release
+            check_regime_release(observed_regimes)
+        except Exception:
+            pass
 
     # Phase 2: Selector picks which signals to execute
     decisions = select_candidates(pending_signals)
@@ -254,6 +266,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     # Inject regime into indicators so strategies (v10) can read it
     indicators["_regime"] = regime
+    result["regime"] = regime  # For orchestrator regime collection
 
     # Evaluate strategies and collect as PendingSignals (don't execute)
     strategies = _get_strategies()
