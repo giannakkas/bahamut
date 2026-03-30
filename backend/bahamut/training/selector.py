@@ -99,7 +99,12 @@ class PendingSignal:
 # ═══════════════════════════════════════════
 
 def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stats: dict) -> dict:
-    """Compute composite priority score with breakdown."""
+    """Compute composite priority score with breakdown.
+
+    Trust scoring (0-20pts) now uses pattern-level trust from the enhanced
+    learning engine. A strategy with bad trust in a specific regime gets
+    real penalties, not just 5pts provisional.
+    """
     bd = {}
 
     # 1. Readiness (0-40 pts) — direct from candidate score
@@ -113,7 +118,7 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     if signal.regime in ("TREND", "BREAKOUT"):
         bd["regime_quality"] = 15
     elif signal.regime == "RANGE":
-        bd["regime_quality"] = 5
+        bd["regime_quality"] = 8  # Range is valid for v10
     else:
         bd["regime_quality"] = 0
 
@@ -123,14 +128,24 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     overlap_penalty = same_asset_count * 15 + same_class_count * 3
     bd["portfolio_fit"] = max(0, 15 - overlap_penalty)
 
-    # 5. Strategy track record (0-10 pts)
-    strat_record = strategy_stats.get(signal.strategy, {})
-    strat_trades = strat_record.get("trades", 0)
-    strat_wr = strat_record.get("win_rate", 0.5)
-    if strat_trades >= 10:
-        bd["strategy_track"] = min(10, int(strat_wr * 15))
-    else:
-        bd["strategy_track"] = 5  # Provisional — not penalized, not boosted
+    # 5. Pattern trust (0-20 pts) — from enhanced learning engine
+    try:
+        from bahamut.training.learning_engine import get_pattern_trust
+        trust = get_pattern_trust(signal.strategy, signal.regime, signal.asset_class)
+        blended = trust["blended_trust"]  # 0.0 to 1.0
+
+        if trust["provisional"]:
+            bd["trust"] = 10  # Provisional = neutral (not penalized, not boosted)
+        else:
+            # Map trust 0.0-1.0 → 0-20 pts
+            # Trust 0.3 (bad) → 6pts, Trust 0.5 (neutral) → 10pts, Trust 0.7 (good) → 14pts
+            bd["trust"] = max(0, min(20, int(blended * 20)))
+
+            # Extra penalty for high quick-stop rate
+            if trust["total_trades"] >= 5 and trust["quick_stops"] >= 3:
+                bd["trust"] = max(0, bd["trust"] - 5)
+    except Exception:
+        bd["trust"] = 10  # Default neutral if learning engine unavailable
 
     total = sum(bd.values())
     return {"components": bd, "total": total}
@@ -199,6 +214,15 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     optimizer_blocked = []
     class_counts: dict[str, int] = {}
     selected_assets: set[str] = set()
+    rejection_reasons: dict[str, int] = {}
+
+    def _track_rejection(reason: str):
+        rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+        try:
+            from bahamut.training.learning_engine import record_rejection_reason
+            record_rejection_reason(reason)
+        except Exception:
+            pass
 
     for item in scored:
         sig = item["signal"]
@@ -216,17 +240,22 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+            _track_rejection("threshold")
             logger.info("selector_rejected", asset=sig.asset, reason="THRESHOLD",
                         score=sig.readiness_score, threshold=threshold)
             continue
 
-        # 2. Regime check (debug_exploration bypasses regime alignment)
-        if config["require_regime_alignment"] and sig.regime not in ("TREND", "BREAKOUT") and sig.execution_type != "debug_exploration":
-            reasons.append(f"Regime {sig.regime} not aligned (need TREND or BREAKOUT)")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
-            logger.info("selector_watchlisted", asset=sig.asset, reason="REGIME",
-                        regime=sig.regime)
-            continue
+        # 2. Regime check — v10 is allowed in RANGE, others need TREND/BREAKOUT
+        if config["require_regime_alignment"] and sig.execution_type != "debug_exploration":
+            is_v10_range = "v10" in sig.strategy and sig.regime == "RANGE"
+            regime_ok = sig.regime in ("TREND", "BREAKOUT") or is_v10_range
+            if not regime_ok:
+                reasons.append(f"Regime {sig.regime} not aligned (need TREND/BREAKOUT, or RANGE for v10)")
+                watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+                _track_rejection("regime_mismatch")
+                logger.info("selector_watchlisted", asset=sig.asset, reason="REGIME",
+                            regime=sig.regime)
+                continue
 
         # 3. Portfolio optimizer check
         opt = evaluate_candidate(
@@ -240,6 +269,16 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             dec["optimizer"] = opt
             optimizer_blocked.append(dec)
             watchlist.append(dec)
+            # Track specific block reasons
+            for r in opt["reasons"]:
+                if "cluster" in r.lower():
+                    _track_rejection("cluster_overlap")
+                elif "direction" in r.lower():
+                    _track_rejection("direction_full")
+                elif "already holding" in r.lower():
+                    _track_rejection("already_holding_asset")
+                else:
+                    _track_rejection("portfolio_blocked")
             continue
 
         effective_priority = pri["total"]
@@ -251,12 +290,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if current_count + len(execute) >= max_total:
             reasons.append(f"Portfolio full ({current_count + len(execute)}/{max_total})")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("position_cap")
             continue
 
         # 5. Per-cycle cap
         if len(execute) >= max_new:
             reasons.append(f"Cycle cap reached ({max_new} max per cycle)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("cycle_cap")
             continue
 
         # 6. Per-class cap (per cycle)
@@ -264,15 +305,17 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if class_counts.get(cls, 0) >= max_per_class:
             reasons.append(f"Class cap reached ({cls}: {max_per_class} max per cycle)")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("class_cap")
             continue
 
         # 7. Duplicate asset
         if sig.asset in selected_assets:
             reasons.append(f"Already selected {sig.asset} this cycle")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("duplicate_asset")
             continue
 
-        # 8. Near-duplicate
+        # 8. Near-duplicate (same class + strategy)
         same_class_same_strat = any(
             e["asset_class"] == cls and e["strategy"] == sig.strategy
             for e in execute
@@ -280,6 +323,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if same_class_same_strat:
             reasons.append(f"Similar setup already selected ({cls}/{sig.strategy})")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("duplicate_setup")
             continue
 
         # SELECTED — update portfolio snapshot for next candidates
@@ -321,12 +365,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         "rejected": rejected,
         "optimizer_blocked": optimizer_blocked,
         "portfolio_constraints": constraints,
+        "rejection_reasons": rejection_reasons,
         "summary": {
             "total_signals": len(signals),
             "selected": len(execute),
             "watchlisted": len(watchlist),
             "rejected": len(rejected),
             "optimizer_blocked": len(optimizer_blocked),
+            "rejection_breakdown": rejection_reasons,
             "config": config,
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),

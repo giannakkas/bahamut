@@ -553,6 +553,20 @@ def _feed_learning(trade: TrainingTrade):
     if not r:
         return
 
+    # ── Enhanced learning: structured context + pattern-level trust ──
+    try:
+        from bahamut.training.learning_engine import compute_learning_context, update_trust_from_trade
+        ctx = compute_learning_context(asdict(trade))
+        update_trust_from_trade(ctx)
+        logger.info("enhanced_learning_fed",
+                    strategy=trade.strategy, exit=trade.exit_reason,
+                    pnl=trade.pnl, outcome=ctx.outcome_score,
+                    quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple)
+    except Exception as e:
+        logger.warning("enhanced_learning_failed", error=str(e))
+
+    # ── Legacy stats (kept for backward compat with dashboard) ──
+
     # 1. Per-strategy stats (dashboard + leaderboard)
     key = f"bahamut:training:strategy_stats:{trade.strategy}"
     try:
@@ -572,7 +586,7 @@ def _feed_learning(trade: TrainingTrade):
     except Exception:
         pass
 
-    # 2. Per-asset-class stats (dashboard + learning)
+    # 2. Per-asset-class stats
     ac_key = f"bahamut:training:class_stats:{trade.asset_class}"
     try:
         raw = r.get(ac_key)
@@ -588,42 +602,7 @@ def _feed_learning(trade: TrainingTrade):
     except Exception:
         pass
 
-    # 3. Strategy trust score (computed from rolling window)
-    trust_key = f"bahamut:training:trust:{trade.strategy}"
-    try:
-        raw = r.get(trust_key)
-        trust = json.loads(raw) if raw else {
-            "trades": 0, "wins": 0, "recent_pnls": [],
-            "trust_score": 0.5, "provisional": True,
-        }
-        trust["trades"] += 1
-        if trade.pnl > 0:
-            trust["wins"] += 1
-
-        # Keep last 20 PnLs for rolling metrics
-        recent = trust.get("recent_pnls", [])
-        recent.append(round(trade.pnl, 2))
-        if len(recent) > 20:
-            recent = recent[-20:]
-        trust["recent_pnls"] = recent
-
-        # Compute trust score (requires MIN_SAMPLES)
-        from bahamut.intelligence.learning_progress import MIN_SAMPLES_FOR_TRUST
-        if trust["trades"] >= MIN_SAMPLES_FOR_TRUST:
-            wr = trust["wins"] / max(1, trust["trades"])
-            recent_wr = sum(1 for p in recent if p > 0) / max(1, len(recent))
-            trust["trust_score"] = round(0.6 * wr + 0.4 * recent_wr, 4)
-            trust["provisional"] = False
-        else:
-            trust["trust_score"] = 0.5
-            trust["provisional"] = True
-
-        trust["last_updated"] = trade.exit_time
-        r.set(trust_key, json.dumps(trust))
-    except Exception:
-        pass
-
-    # 4. Global learning counter (for progress tracking)
+    # 3. Global learning counter
     try:
         r.incr("bahamut:training:total_closed_trades")
     except Exception:

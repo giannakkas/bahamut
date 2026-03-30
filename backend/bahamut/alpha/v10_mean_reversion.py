@@ -206,8 +206,9 @@ class V10MeanReversion:
         Unlike v5/v9, this strategy also needs the regime to decide whether to fire.
         The regime is extracted from indicators (set by the orchestrator) or defaults to RANGE.
         """
-        # Regime: the orchestrator passes it via indicators or we detect it
-        regime = indicators.get("_regime", "RANGE")
+        # Regime: injected by orchestrator. Default to UNKNOWN to prevent
+        # accidental firing when regime isn't set.
+        regime = indicators.get("_regime", "UNKNOWN")
 
         sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
 
