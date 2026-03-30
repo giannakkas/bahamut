@@ -26,56 +26,64 @@ export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
   onEventRef.current = onEvent;
 
   const connect = useCallback(() => {
-    // Get token from localStorage (set by login)
-    const token = typeof window !== "undefined" ? localStorage.getItem("bahamut_token") : null;
+    // Get token from sessionStorage (set by login page)
+    const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
     if (!token) {
-      setStatus("disconnected");
+      // Token not yet available — retry in 2s (login page may still be setting it)
+      timerRef.current = setTimeout(connect, 2000);
       return;
     }
 
     // Build WS URL from API base
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    if (!apiUrl) return;
     const wsBase = apiUrl.replace(/^http/, "ws").replace(/\/+$/, "");
-    const url = `${wsBase}/ws/admin/live?token=${token}`;
+    const url = `${wsBase}/ws/admin/live?token=${encodeURIComponent(token)}`;
 
     setStatus("connecting");
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    try {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      setStatus("connected");
-      retryRef.current = 0;
-      // Start ping keepalive every 30s
-      pingRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ event: "ping" }));
+      ws.onopen = () => {
+        setStatus("connected");
+        retryRef.current = 0;
+        // Start ping keepalive every 30s
+        pingRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event: "ping" }));
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg: WsEvent = JSON.parse(e.data);
+          if (msg.event === "pong") return;
+          setLastEvent(msg);
+          onEventRef.current?.(msg);
+        } catch {
+          // Ignore malformed messages
         }
-      }, 30000);
-    };
+      };
 
-    ws.onmessage = (e) => {
-      try {
-        const msg: WsEvent = JSON.parse(e.data);
-        if (msg.event === "pong") return; // Ignore keepalive responses
-        setLastEvent(msg);
-        onEventRef.current?.(msg);
-      } catch {
-        // Ignore malformed messages
-      }
-    };
+      ws.onclose = () => {
+        setStatus("disconnected");
+        if (pingRef.current) clearInterval(pingRef.current);
+        const delay = Math.min(30000, 1000 * Math.pow(2, retryRef.current));
+        retryRef.current++;
+        timerRef.current = setTimeout(connect, delay);
+      };
 
-    ws.onclose = () => {
-      setStatus("disconnected");
-      if (pingRef.current) clearInterval(pingRef.current);
-      // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+      ws.onerror = () => {
+        ws.close();
+      };
+    } catch {
+      // WebSocket constructor failed — retry
       const delay = Math.min(30000, 1000 * Math.pow(2, retryRef.current));
       retryRef.current++;
       timerRef.current = setTimeout(connect, delay);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
+    }
   }, []);
 
   useEffect(() => {
