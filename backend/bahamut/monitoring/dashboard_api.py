@@ -386,6 +386,20 @@ async def dashboard_all(user=Depends(get_current_user)):
         "regime": get_cross_process_regimes() or dict(getattr(pm, 'asset_regimes', {})),
     }
 
+    # Win rate: use production trades if available, otherwise pull from training
+    if real_trades:
+        prod_wins = len([t for t in real_trades if t.pnl > 0])
+        portfolio["win_rate"] = round(prod_wins / max(1, len(real_trades)) * 100, 1)
+    else:
+        # Pull training win rate as fallback
+        try:
+            from bahamut.training.engine import get_training_stats
+            ts = get_training_stats()
+            portfolio["win_rate"] = round((ts.get("win_rate", 0)) * 100, 1)
+            portfolio["total_trades"] = ts.get("total_closed_trades", 0)
+        except Exception:
+            portfolio["win_rate"] = 0.0
+
     # Strategies — sleeve names never start with TEST_, so this naturally excludes test trades
     strats = {}
     for name, sleeve in pm.sleeves.items():
