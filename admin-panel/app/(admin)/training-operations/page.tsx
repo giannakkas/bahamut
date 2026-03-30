@@ -488,7 +488,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
 
   const urgency = (s: number) => s >= THRESHOLD ? { label: "READY", cls: "bg-green-500/25 text-green-400 border-green-500/40" } :
     s >= 60 ? { label: "APPROACHING", cls: "bg-amber-500/20 text-amber-300 border-amber-500/40" } :
-    { label: "WEAK", cls: "bg-white/5 text-white/50 border-white/10" };
+    { label: "WEAK", cls: "", style: {color: "rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)"} };
 
   const scoreBg = (s: number) => s >= THRESHOLD ? "bg-green-400" : s >= 60 ? "bg-amber-400" : s >= 40 ? "bg-bah-cyan" : "bg-bah-border";
 
@@ -545,40 +545,38 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
                   <tr key={i} className={`border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors anim-slide ${isTop ? "bg-bah-cyan/[0.04]" : isAbove ? "bg-bah-surface/50" : ""}`} style={{ animationDelay: `${i * 0.035}s` }}>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-12 h-2 bg-bah-border rounded-full overflow-hidden">
+                        <div className="w-12 h-2 rounded-full overflow-hidden" style={{background: "rgba(255,255,255,0.1)"}}>
                           <div className={`h-full rounded-full anim-bar ${scoreBg(c.score)}`} style={{ width: `${c.score}%`, animationDelay: `${0.2 + i * 0.04}s` }} />
                         </div>
-                        <span className="text-xs font-bold text-white min-w-[24px] text-center">{c.score}</span>
+                        <span style={{color: "white", fontWeight: 700, fontSize: "12px", minWidth: "24px", textAlign: "center" as const}}>{c.score}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold ${isTop ? "text-bah-cyan" : "text-white"}`}>{c.asset}</span>
-                        <span className={`px-1.5 py-0 text-[8px] font-bold rounded border tracking-wider ${u.cls}`}>{u.label}</span>
+                        <span style={{color: isTop ? "#00d2d2" : "white", fontWeight: 700}}>{c.asset}</span>
+                        <span className={`px-1.5 py-0 text-[8px] font-bold rounded border tracking-wider ${u.cls}`} style={(u as any).style || {}}>{u.label}</span>
                       </div>
-                      <div className="text-[9px] text-white/40 mt-0.5">{c.asset_class}</div>
+                      <div style={{fontSize: "9px", color: "rgba(255,255,255,0.4)", marginTop: "2px"}}>{c.asset_class}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-white font-medium">{c.strategy}</td>
-                    <td className="px-3 py-2.5"><span className={`font-bold ${c.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{c.direction}</span></td>
+                    <td className="px-3 py-2.5" style={{color: "white", fontWeight: 500}}>{c.strategy}</td>
+                    <td className="px-3 py-2.5"><span style={{color: c.direction === "LONG" ? "#4ade80" : "#f87171", fontWeight: 700}}>{c.direction}</span></td>
                     <td className="px-3 py-2.5">
-                      <span className={`font-bold text-xs ${
-                        c.regime === "TREND" || c.regime === "BREAKOUT" ? "text-green-400" :
-                        c.regime === "BEAR" || c.regime === "CRASH" ? "text-red-400" :
-                        "text-amber-300"
-                      }`}>{c.regime}</span>
+                      <span style={{
+                        color: (c.regime === "TREND" || c.regime === "BREAKOUT") ? "#4ade80" : (c.regime === "BEAR" || c.regime === "CRASH") ? "#f87171" : "#fcd34d",
+                        fontWeight: 700, fontSize: "12px"
+                      }}>{c.regime}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-[10px] text-white font-mono">{c.distance_to_trigger}</td>
-                    <td className="px-3 py-2.5 font-mono"><span className={`font-bold ${c.indicators?.rsi < 30 ? "text-green-400" : c.indicators?.rsi > 70 ? "text-red-400" : "text-white"}`}>{c.indicators?.rsi?.toFixed(0) || "—"}</span></td>
+                    <td className="px-3 py-2.5" style={{color: "white", fontSize: "10px", fontFamily: "monospace"}}>{c.distance_to_trigger}</td>
+                    <td className="px-3 py-2.5" style={{fontFamily: "monospace"}}><span style={{color: (c.indicators?.rsi < 30) ? "#4ade80" : (c.indicators?.rsi > 70) ? "#f87171" : "white", fontWeight: 700}}>{c.indicators?.rsi?.toFixed(0) || "—"}</span></td>
                     <td className="px-3 py-2.5">
-                      <span className={`text-[10px] font-bold ${
-                        c.indicators?.ema_alignment?.includes("bullish") ? "text-green-400" :
-                        c.indicators?.ema_alignment?.includes("bearish") ? "text-red-400" :
-                        "text-white/70"
-                      }`}>{c.indicators?.ema_alignment?.replace("_", " ") || "—"}</span>
+                      <span style={{
+                        color: c.indicators?.ema_alignment?.includes("bullish") ? "#4ade80" : c.indicators?.ema_alignment?.includes("bearish") ? "#f87171" : "rgba(255,255,255,0.7)",
+                        fontSize: "10px", fontWeight: 700
+                      }}>{c.indicators?.ema_alignment?.replace("_", " ") || "—"}</span>
                     </td>
-                    <td className="px-3 py-2.5 max-w-[260px]">
+                    <td className="px-3 py-2.5" style={{maxWidth: "260px"}}>
                       {(c.reasons || []).slice(0, 3).map((r: string, j: number) => (
-                        <div key={j} className="text-[10px] text-white/60 leading-snug">{r}</div>
+                        <div key={j} style={{fontSize: "10px", color: "rgba(255,255,255,0.6)", lineHeight: 1.4}}>{r}</div>
                       ))}
                     </td>
                   </tr>
