@@ -66,6 +66,13 @@ def run_training_cycle():
     pending_signals: list[PendingSignal] = []
     observed_regimes: dict[str, str] = {}  # asset_class → latest regime
 
+    # Reset per-cycle dedup tracking
+    try:
+        from bahamut.training.engine import reset_cycle_dedup
+        reset_cycle_dedup()
+    except Exception:
+        pass
+
     # Phase 1: Scan all assets — collect signals, update positions, DO NOT execute yet
     batch_size = 8
     for i in range(0, len(TRAINING_ASSETS), batch_size):
@@ -463,6 +470,12 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                             is_new_bar=is_new_bar,
                             reason="Candidate score qualifies for debug exploration")
 
+                # Get strategy's actual parameters (don't hardcode)
+                strat_obj = strategies.get(strat)
+                strat_sl = getattr(strat_obj, "sl_pct", 0.05) if strat_obj else 0.05
+                strat_tp = getattr(strat_obj, "tp_pct", 0.10) if strat_obj else 0.10
+                strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
+
                 result["signals"].append(PendingSignal(
                     asset=asset,
                     asset_class=asset_class,
@@ -471,9 +484,9 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                     readiness_score=best_score,
                     regime=regime,
                     entry_price=bar["close"],
-                    sl_pct=0.05,
-                    tp_pct=0.10,
-                    max_hold_bars=20,
+                    sl_pct=strat_sl,
+                    tp_pct=strat_tp,
+                    max_hold_bars=strat_hold,
                     reasons=best_candidate.reasons if hasattr(best_candidate, 'reasons') else ["debug_exploration_override"],
                     execution_type="debug_exploration",
                     confidence_score=float(best_score),

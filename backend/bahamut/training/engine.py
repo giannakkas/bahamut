@@ -55,6 +55,7 @@ class TrainingPosition:
     execution_type: str = "standard"      # "standard" | "early"
     confidence_score: float = 0.0
     trigger_reason: str = "4h_close"      # "4h_close" | "early_signal"
+    regime: str = ""                      # TREND / RANGE / BREAKOUT — preserved for learning
 
     @property
     def unrealized_pnl(self):
@@ -300,6 +301,32 @@ def open_training_position(
                            strategy=strategy, direction=direction)
             return None
 
+    # Entry price sanity check — reject obviously wrong prices
+    # (e.g. BTC price leaking into EURUSD)
+    PRICE_SANITY = {
+        "forex": (0.001, 300),         # EURUSD ~1.08, USDJPY ~150
+        "crypto": (0.0001, 200000),    # XRP ~2, BTC ~85K
+        "stock": (1, 100000),          # AAPL ~220, BRK.A ~600K
+        "commodity": (0.5, 15000),     # Gold ~3100, Oil ~70
+        "index": (100, 100000),        # SPX ~5600, IXIC ~17K
+    }
+    limits = PRICE_SANITY.get(asset_class, (0, 1000000))
+    if entry_price < limits[0] or entry_price > limits[1]:
+        logger.error("training_position_rejected_bad_price",
+                     asset=asset, asset_class=asset_class,
+                     entry_price=entry_price, limits=limits,
+                     msg="Entry price outside sane range for asset class")
+        return None
+
+    # Per-strategy position limit (prevent one strategy from hogging all slots)
+    MAX_PER_STRATEGY = 6
+    strat_count = sum(1 for p in existing if p.strategy == strategy)
+    if strat_count >= MAX_PER_STRATEGY:
+        logger.warning("training_position_rejected",
+                       asset=asset, reason="STRATEGY_LIMIT",
+                       strategy=strategy, count=strat_count, max=MAX_PER_STRATEGY)
+        return None
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)
@@ -327,6 +354,7 @@ def open_training_position(
         execution_type=execution_type,
         confidence_score=confidence_score,
         trigger_reason=trigger_reason,
+        regime=regime,
     )
 
     _save_position(pos)
@@ -362,6 +390,11 @@ def open_training_position(
     return pos
 # ═══════════════════════════════════════════
 
+def reset_cycle_dedup():
+    """Reset the per-cycle dedup set. Call once at cycle start."""
+    update_positions_for_asset._already_closed = set()
+
+
 def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
     """Update all open positions for an asset with a new bar.
     Returns list of trades that were closed this bar."""
@@ -373,7 +406,14 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
     low = bar.get("low", 0)
     close = bar.get("close", 0)
 
+    # Dedup: track position_ids already closed this cycle to prevent double-close
+    _already_closed: set = getattr(update_positions_for_asset, "_already_closed", set())
+
     for pos in asset_positions:
+        # Skip if already closed in a previous call this cycle
+        if pos.position_id in _already_closed:
+            continue
+
         pos.current_price = close
         pos.bars_held += 1
 
@@ -433,9 +473,12 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 execution_type=pos.execution_type,
                 confidence_score=pos.confidence_score,
                 trigger_reason=pos.trigger_reason,
+                regime=pos.regime,
             )
 
             _remove_position(pos.position_id)
+            _already_closed.add(pos.position_id)
+            update_positions_for_asset._already_closed = _already_closed
             _persist_trade(trade)
             _record_recent(trade)
             closed_trades.append(trade)
