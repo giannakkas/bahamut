@@ -266,6 +266,7 @@ export default function TrainingOperationsPage() {
           <h1 className="text-base sm:text-lg font-bold text-bah-heading tracking-tight">Training Operations</h1>
           <span className="px-2.5 py-0.5 text-[10px] rounded-full font-bold border bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40 tracking-wider">PAPER TRADING</span>
           <span className="text-[11px] text-bah-muted">{cs.universe_size || k.universe_size || 0} assets</span>
+          <span style={{fontSize: "8px", color: "#666"}}>v2.1</span>
         </div>
         <div className="flex items-center gap-3">
           <button
