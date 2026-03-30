@@ -245,6 +245,9 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     except Exception:
         pass
 
+    # Inject regime into indicators so strategies (v10) can read it
+    indicators["_regime"] = regime
+
     # Evaluate strategies and collect as PendingSignals (don't execute)
     strategies = _get_strategies()
     strategy_signals_found = 0
@@ -275,6 +278,13 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         distance_str = c.distance_to_trigger
                 elif "v9" in strat_name or "breakout" in strat_name:
                     c = score_breakout(asset, asset_class, candles, indicators)
+                    if c:
+                        readiness = c.score
+                        candidate_indicators = c.indicators
+                        distance_str = c.distance_to_trigger
+                elif "v10" in strat_name or "mean" in strat_name:
+                    from bahamut.alpha.v10_mean_reversion import score_mean_reversion
+                    c = score_mean_reversion(asset, asset_class, candles, indicators, prev_indicators, regime)
                     if c:
                         readiness = c.score
                         candidate_indicators = c.indicators
@@ -381,13 +391,16 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             best_candidate = None
             best_score = 0
             scorer_errors = []
-            for strat_name in ["v5_base", "v9_breakout"]:
+            for strat_name in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
                 try:
                     c = None
                     if "v5" in strat_name:
                         c = score_ema_cross(asset, asset_class, strat_name, candles, indicators, prev_indicators)
                     elif "v9" in strat_name:
                         c = score_breakout(asset, asset_class, candles, indicators)
+                    elif "v10" in strat_name:
+                        from bahamut.alpha.v10_mean_reversion import score_mean_reversion
+                        c = score_mean_reversion(asset, asset_class, candles, indicators, prev_indicators, regime)
 
                     if c:
                         logger.info("debug_override_candidate_scored",
@@ -540,6 +553,12 @@ def _get_strategies() -> dict:
         logger.info("strategy_loaded", name="v9_breakout")
     except Exception as e:
         logger.error("strategy_load_failed", name="v9_breakout", error=str(e))
+    try:
+        from bahamut.alpha.v10_mean_reversion import V10MeanReversion
+        strats["v10_mean_reversion"] = V10MeanReversion()
+        logger.info("strategy_loaded", name="v10_mean_reversion")
+    except Exception as e:
+        logger.error("strategy_load_failed", name="v10_mean_reversion", error=str(e))
 
     if not strats:
         logger.critical("no_strategies_loaded", msg="ALL strategy imports failed — 0 signals possible")

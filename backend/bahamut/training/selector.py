@@ -372,7 +372,7 @@ def _load_strategy_stats() -> dict:
     try:
         import redis
         r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
+        for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
             raw = r.get(f"bahamut:training:strategy_stats:{strat}")
             if raw:
                 stats[strat] = json.loads(raw)

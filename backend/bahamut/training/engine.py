@@ -666,7 +666,7 @@ def get_training_stats() -> dict:
         except Exception:
             pass
 
-        for strat in ["v5_base", "v5_tuned", "v9_breakout"]:
+        for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
             try:
                 raw = r.get(f"bahamut:training:strategy_stats:{strat}")
                 if raw:
