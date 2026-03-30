@@ -53,6 +53,13 @@ def run_training_cycle():
     start = time.time()
     logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
 
+    # Decrement pattern suppression timers
+    try:
+        from bahamut.training.context_gate import decrement_suppression_cycles
+        decrement_suppression_cycles()
+    except Exception:
+        pass
+
     processed = 0
     errors = 0
     trades_closed = 0

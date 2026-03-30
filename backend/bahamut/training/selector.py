@@ -128,13 +128,19 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     overlap_penalty = same_asset_count * 15 + same_class_count * 3
     bd["portfolio_fit"] = max(0, 15 - overlap_penalty)
 
-    # 5. Pattern trust (0-20 pts) — maturity-aware from learning engine
+    # 5. Pattern trust (0-30 pts) — maturity-aware from learning engine
     try:
         from bahamut.training.learning_engine import compute_trust_points
-        tp = compute_trust_points(signal.strategy, signal.regime, signal.asset_class)
+        tp = compute_trust_points(signal.strategy, signal.regime, signal.asset_class, max_points=30)
         bd["trust"] = tp["points"]
+
+        # Extra penalty for mature bad patterns
+        if tp["maturity"] == "mature" and tp["trust"] < 0.35:
+            bd["mature_bad_penalty"] = -10
+        elif tp["maturity"] == "developing" and tp["trust"] < 0.30:
+            bd["mature_bad_penalty"] = -5
     except Exception:
-        bd["trust"] = 10  # Default neutral if learning engine unavailable
+        bd["trust"] = 15  # Default neutral if learning engine unavailable
 
     total = sum(bd.values())
     return {"components": bd, "total": total}
@@ -223,30 +229,37 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                     asset=sig.asset, strategy=sig.strategy,
                     score=sig.readiness_score, direction=sig.direction,
                     regime=sig.regime, exec_type=sig.execution_type,
-                    priority=pri["total"])
+                    priority=pri["total"],
+                    trust_pts=pri["components"].get("trust", "?"))
+
+        # 0. CONTEXT GATE — hard-block invalid strategy/regime combos + suppression
+        if sig.execution_type != "debug_exploration":
+            try:
+                from bahamut.training.context_gate import pre_score_gate
+                gate = pre_score_gate(sig.strategy, sig.regime, sig.asset_class,
+                                      sig.direction, mode="TRAINING")
+                if not gate["allowed"]:
+                    reasons.append(gate["reason"])
+                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                    _track_rejection(gate["gate"])
+                    logger.info("selector_context_blocked",
+                                asset=sig.asset, strategy=sig.strategy,
+                                regime=sig.regime, gate=gate["gate"])
+                    continue
+                if gate["penalty"] > 0:
+                    pri["components"]["context_penalty"] = -gate["penalty"]
+                    pri["total"] -= gate["penalty"]
+            except Exception:
+                pass
 
         # 1. Hard threshold (debug_exploration signals bypass this)
         if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
             _track_rejection("threshold")
-            logger.info("selector_rejected", asset=sig.asset, reason="THRESHOLD",
-                        score=sig.readiness_score, threshold=threshold)
             continue
 
-        # 2. Regime check — v10 is allowed in RANGE, others need TREND/BREAKOUT
-        if config["require_regime_alignment"] and sig.execution_type != "debug_exploration":
-            is_v10_range = "v10" in sig.strategy and sig.regime == "RANGE"
-            regime_ok = sig.regime in ("TREND", "BREAKOUT") or is_v10_range
-            if not regime_ok:
-                reasons.append(f"Regime {sig.regime} not aligned (need TREND/BREAKOUT, or RANGE for v10)")
-                watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
-                _track_rejection("regime_mismatch")
-                logger.info("selector_watchlisted", asset=sig.asset, reason="REGIME",
-                            regime=sig.regime)
-                continue
-
-        # 3. Portfolio optimizer check
+        # 2. Portfolio optimizer check
         opt = evaluate_candidate(
             asset=sig.asset, asset_class=sig.asset_class,
             strategy=sig.strategy, direction=sig.direction,

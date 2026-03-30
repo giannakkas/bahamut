@@ -562,6 +562,10 @@ def _feed_learning(trade: TrainingTrade):
                     strategy=trade.strategy, exit=trade.exit_reason,
                     pnl=trade.pnl, outcome=ctx.outcome_score,
                     quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple)
+
+        # Check if this pattern should now be suppressed
+        from bahamut.training.context_gate import evaluate_for_suppression
+        evaluate_for_suppression(trade.strategy, trade.regime, trade.asset_class)
     except Exception as e:
         logger.warning("enhanced_learning_failed", error=str(e))
 
