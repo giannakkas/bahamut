@@ -293,10 +293,8 @@ export default function TrainingOperationsPage() {
           >
             {soundEnabled ? "🔔" : "🔇"}
           </button>
-          <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === "connected" ? "bg-green-400 animate-pulse" : wsStatus === "connecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"}`} />
-          <span className="text-[10px] text-bah-muted font-mono tabular-nums">
-            {wsStatus === "connected" ? (secondsAgo <= 1 ? "live" : `${secondsAgo}s ago`) : wsStatus === "connecting" ? "reconnecting..." : `${secondsAgo}s ago`}
-          </span>
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-[10px] text-green-400 font-bold">LIVE</span>
         </div>
       </div>
 

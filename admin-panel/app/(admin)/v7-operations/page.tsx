@@ -193,9 +193,9 @@ export default function DailyOperations() {
               <span>EXPLORE {explorationStatus.daily_count}/{explorationStatus.daily_limit}</span>
             </div>
           )}
-          <span className="text-[10px] text-bah-muted font-mono flex items-center gap-1.5">
-            <span className={`inline-block w-1.5 h-1.5 rounded-full ${secondsAgo < 10 ? "bg-green-400 animate-pulse" : secondsAgo < 30 ? "bg-amber-400" : "bg-red-400"}`} />
-            {secondsAgo}s ago
+          <span className="text-[10px] font-bold flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-green-400">LIVE</span>
           </span>
           <button onClick={runCycle} disabled={cycleRunning} className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
             cycleRunning ? "bg-bah-cyan/30 border-bah-cyan/50 text-bah-cyan" : "bg-bah-cyan/20 border-bah-cyan/40 text-bah-cyan hover:bg-bah-cyan/30"
