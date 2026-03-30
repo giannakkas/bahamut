@@ -1300,6 +1300,7 @@ function AssetsTab({ data }: { data: any }) {
    EXECUTION DECISIONS
    ═══════════════════════════════════════════ */
 function ExecutionDecisions({ decisions }: { decisions: any }) {
+  const [showAll, setShowAll] = useState(false);
   const exec = decisions.execute || [];
   const watch = decisions.watchlist || [];
   const rej = decisions.rejected || [];
@@ -1317,6 +1318,10 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
   ];
 
   if (allItems.length === 0) return null;
+
+  const VISIBLE = 5;
+  const visible = showAll ? allItems : allItems.slice(0, VISIBLE);
+  const hasMore = allItems.length > VISIBLE;
 
   return (
     <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
@@ -1336,7 +1341,7 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
       </div>
 
       <div className="space-y-1.5">
-        {allItems.map((d: any, i: number) => (
+        {visible.map((d: any, i: number) => (
           <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
             <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
             <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{d.asset}</span>
@@ -1346,7 +1351,6 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
             <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center">{d.readiness_score}</span>
             <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center font-mono">{d.priority_score}</span>
 
-            {/* Priority breakdown mini-bars */}
             {d.priority_breakdown && (
               <div className="flex gap-0.5 shrink-0">
                 {Object.entries(d.priority_breakdown as Record<string, number>).slice(0, 5).map(([k, v]) => (
@@ -1361,6 +1365,13 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
           </div>
         ))}
       </div>
+
+      {hasMore && (
+        <button onClick={() => setShowAll(!showAll)}
+          className="w-full mt-2 py-2 text-[10px] font-bold text-bah-cyan hover:text-bah-cyan/80 border border-bah-border rounded-lg hover:bg-bah-cyan/5 transition-all">
+          {showAll ? `▲ Show less` : `▼ Show all ${allItems.length} decisions`}
+        </button>
+      )}
     </div>
   );
 }
