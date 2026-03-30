@@ -495,7 +495,6 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
    TRADE CANDIDATES (upgraded)
    ═══════════════════════════════════════════ */
 function CandidatesSection({ candidates }: { candidates: any[] }) {
-  const [expanded, setExpanded] = useState(true);
   const THRESHOLD = 80;
 
   const urgency = (s: number) => s >= THRESHOLD ? { label: "READY", cls: "bg-green-500/25 text-green-400 border-green-500/40" } :
@@ -526,20 +525,18 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
 
   return (
     <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-      <button onClick={() => setExpanded(!expanded)} className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-bah-surface transition-all">
+      <div className="px-4 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-sm font-bold text-bah-heading tracking-tight">🔥 Trade Candidates</span>
-          <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30" style={{ animation: "scanPulse 3s ease-in-out infinite" }}>{candidates.length}</span>
+          <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{candidates.length}</span>
           {aboveThreshold > 0 && (
             <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{aboveThreshold} READY (≥{THRESHOLD})</span>
           )}
           <span className="text-[10px] text-bah-muted hidden sm:inline">execution threshold: {THRESHOLD}</span>
         </div>
-        <span className="text-xs text-bah-muted">{expanded ? "▾" : "▸"}</span>
-      </button>
+      </div>
 
-      {expanded && (
-        <div className="border-t border-bah-border overflow-x-auto">
+      <div className="border-t border-bah-border overflow-x-auto">
           <table className="w-full text-[11px] min-w-[1000px]">
             <thead>
               <tr className="border-b border-bah-border text-left text-[9px] text-bah-muted uppercase tracking-[0.1em]">
@@ -597,7 +594,6 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
             </tbody>
           </table>
         </div>
-      )}
     </div>
   );
 }
