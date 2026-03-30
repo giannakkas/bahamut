@@ -1,40 +1,47 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
-
-/**
- * useAdminSocket — connects to /ws/admin/live for real-time dashboard updates.
- *
- * Returns:
- *   status: "connected" | "connecting" | "disconnected"
- *   lastEvent: { event, data, ts } | null
- *   
- * On events like cycle_completed, position_opened, position_closed,
- * the parent component can trigger a data refetch.
- */
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 
 type WsStatus = "connected" | "connecting" | "disconnected";
 type WsEvent = { event: string; data: any; ts: string };
+type WsListener = (evt: WsEvent) => void;
 
-export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
+interface AdminSocketContextType {
+  status: WsStatus;
+  lastEvent: WsEvent | null;
+  addListener: (fn: WsListener) => void;
+  removeListener: (fn: WsListener) => void;
+}
+
+const AdminSocketContext = createContext<AdminSocketContextType>({
+  status: "disconnected",
+  lastEvent: null,
+  addListener: () => {},
+  removeListener: () => {},
+});
+
+export function useAdminSocket() {
+  return useContext(AdminSocketContext);
+}
+
+export function AdminSocketProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<WsStatus>("disconnected");
   const [lastEvent, setLastEvent] = useState<WsEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pingRef = useRef<NodeJS.Timeout | null>(null);
-  const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  const listenersRef = useRef<Set<WsListener>>(new Set());
+
+  const addListener = useCallback((fn: WsListener) => { listenersRef.current.add(fn); }, []);
+  const removeListener = useCallback((fn: WsListener) => { listenersRef.current.delete(fn); }, []);
 
   const connect = useCallback(() => {
-    // Get token from sessionStorage (set by login page)
     const token = typeof window !== "undefined" ? sessionStorage.getItem("bah_token") : null;
     if (!token) {
-      // Token not yet available — retry in 2s (login page may still be setting it)
       timerRef.current = setTimeout(connect, 2000);
       return;
     }
 
-    // Build WS URL from API base
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
     if (!apiUrl) return;
     const wsBase = apiUrl.replace(/^http/, "ws").replace(/\/+$/, "");
@@ -48,7 +55,6 @@ export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
       ws.onopen = () => {
         setStatus("connected");
         retryRef.current = 0;
-        // Start ping keepalive every 30s
         pingRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ event: "ping" }));
@@ -61,10 +67,8 @@ export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
           const msg: WsEvent = JSON.parse(e.data);
           if (msg.event === "pong") return;
           setLastEvent(msg);
-          onEventRef.current?.(msg);
-        } catch {
-          // Ignore malformed messages
-        }
+          listenersRef.current.forEach((fn) => { try { fn(msg); } catch {} });
+        } catch {}
       };
 
       ws.onclose = () => {
@@ -75,11 +79,8 @@ export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
         timerRef.current = setTimeout(connect, delay);
       };
 
-      ws.onerror = () => {
-        ws.close();
-      };
+      ws.onerror = () => { ws.close(); };
     } catch {
-      // WebSocket constructor failed — retry
       const delay = Math.min(30000, 1000 * Math.pow(2, retryRef.current));
       retryRef.current++;
       timerRef.current = setTimeout(connect, delay);
@@ -95,5 +96,9 @@ export function useAdminSocket(onEvent?: (evt: WsEvent) => void) {
     };
   }, [connect]);
 
-  return { status, lastEvent };
+  return (
+    <AdminSocketContext.Provider value={{ status, lastEvent, addListener, removeListener }}>
+      {children}
+    </AdminSocketContext.Provider>
+  );
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiBase } from "@/lib/utils";
-import { useAdminSocket } from "@/hooks/useAdminSocket";
+import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 /* ═══════════════════════════════════════════
    COUNTDOWN HOOK — ticks every second
@@ -209,12 +209,17 @@ export default function TrainingOperationsPage() {
     } catch {}
   }, [token]);
 
-  // WebSocket: instant refresh when events arrive (replaces polling for real-time)
-  const { status: wsStatus } = useAdminSocket((evt) => {
-    if (["cycle_completed", "position_opened", "position_closed", "selector_updated", "learning_updated"].includes(evt.event)) {
-      fastRefresh();
-    }
-  });
+  // WebSocket: instant refresh when events arrive
+  const { status: wsStatus, addListener, removeListener } = useAdminSocket();
+  useEffect(() => {
+    const handler = (evt: { event: string }) => {
+      if (["cycle_completed", "position_opened", "position_closed", "selector_updated", "learning_updated"].includes(evt.event)) {
+        fastRefresh();
+      }
+    };
+    addListener(handler);
+    return () => removeListener(handler);
+  }, [addListener, removeListener, fastRefresh]);
 
   // Initial full load, then: fast=5s for live data, slow=60s for heavy data
   useEffect(() => {

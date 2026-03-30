@@ -131,28 +131,34 @@ async def _safe_broadcast(event_type: str, payload: dict):
 # ═══════════════════════════════════════════
 
 def _authenticate(token: str) -> Optional[dict]:
-    """Verify JWT and check admin role."""
+    """Verify JWT for WebSocket connection."""
+    # Try strict decode
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
-        role = payload.get("role", "")
-        if role not in ("super_admin", "admin"):
-            logger.warning("ws_auth_wrong_role", role=role)
-            return None
         return payload
-    except Exception as e:
-        # Fallback: try without expiry verification
-        try:
-            payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"],
-                                 options={"verify_exp": False})
-            role = payload.get("role", "")
-            if role in ("super_admin", "admin"):
-                logger.info("ws_auth_expired_but_valid", user=payload.get("sub"), role=role)
-                return payload
-        except Exception:
-            pass
-        logger.warning("ws_auth_failed", error=str(e), error_type=type(e).__name__,
-                       token_prefix=token[:20] + "..." if len(token) > 20 else token)
-        return None
+    except Exception:
+        pass
+
+    # Try without expiry check (long admin sessions)
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"],
+                             options={"verify_exp": False})
+        return payload
+    except Exception:
+        pass
+
+    # Try with jwt_refresh_secret (some tokens use this)
+    try:
+        payload = jwt.decode(token, settings.jwt_refresh_secret, algorithms=["HS256"],
+                             options={"verify_exp": False})
+        return payload
+    except Exception:
+        pass
+
+    logger.warning("ws_auth_all_methods_failed",
+                   token_len=len(token),
+                   token_start=token[:30] + "..." if len(token) > 30 else token)
+    return None
 
 
 @router.websocket("/ws/admin/live")

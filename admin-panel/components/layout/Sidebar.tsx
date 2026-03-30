@@ -8,6 +8,7 @@ import { EnvIndicator } from "@/components/ui";
 import { useAuthStore } from "@/store/auth";
 import { useAlerts } from "@/lib/hooks";
 import { useOverrides } from "@/lib/hooks";
+import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const OPERATIONAL_NAV = [
   { href: "/v7-operations", label: "Daily Operations", icon: "📊" },
@@ -45,6 +46,7 @@ export function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const { data: alerts } = useAlerts();
   const { data: overrides } = useOverrides();
+  const { status: wsStatus } = useAdminSocket();
   const [showLegacy, setShowLegacy] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -130,6 +132,12 @@ export function Sidebar() {
       {/* Footer */}
       <div className="px-4 py-3 border-t border-bah-border/60 text-[10px] text-bah-muted">
         <EnvIndicator />
+        <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+          <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === "connected" ? "bg-green-400" : wsStatus === "connecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"}`} />
+          <span className={wsStatus === "connected" ? "text-green-400" : wsStatus === "connecting" ? "text-amber-400" : "text-red-400"}>
+            {wsStatus === "connected" ? "Realtime ON" : wsStatus === "connecting" ? "Connecting..." : "Realtime OFF"}
+          </span>
+        </div>
 
         {isSuperAdmin && (
           <a href="#" onClick={(e) => {
