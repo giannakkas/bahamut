@@ -128,22 +128,11 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     overlap_penalty = same_asset_count * 15 + same_class_count * 3
     bd["portfolio_fit"] = max(0, 15 - overlap_penalty)
 
-    # 5. Pattern trust (0-20 pts) — from enhanced learning engine
+    # 5. Pattern trust (0-20 pts) — maturity-aware from learning engine
     try:
-        from bahamut.training.learning_engine import get_pattern_trust
-        trust = get_pattern_trust(signal.strategy, signal.regime, signal.asset_class)
-        blended = trust["blended_trust"]  # 0.0 to 1.0
-
-        if trust["provisional"]:
-            bd["trust"] = 10  # Provisional = neutral (not penalized, not boosted)
-        else:
-            # Map trust 0.0-1.0 → 0-20 pts
-            # Trust 0.3 (bad) → 6pts, Trust 0.5 (neutral) → 10pts, Trust 0.7 (good) → 14pts
-            bd["trust"] = max(0, min(20, int(blended * 20)))
-
-            # Extra penalty for high quick-stop rate
-            if trust["total_trades"] >= 5 and trust["quick_stops"] >= 3:
-                bd["trust"] = max(0, bd["trust"] - 5)
+        from bahamut.training.learning_engine import compute_trust_points
+        tp = compute_trust_points(signal.strategy, signal.regime, signal.asset_class)
+        bd["trust"] = tp["points"]
     except Exception:
         bd["trust"] = 10  # Default neutral if learning engine unavailable
 

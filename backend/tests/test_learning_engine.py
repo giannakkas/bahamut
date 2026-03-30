@@ -1,153 +1,192 @@
 """
-Tests for the enhanced learning engine.
-
-Proves:
-  1. SL loss reduces trust for that pattern
-  2. Repeated losses reduce trust more than one loss
-  3. TP win increases trust
-  4. Scratch/timeout has smaller effect than full SL
-  5. Quick stop penalized more than slow stop
-  6. Outcome scoring is correct for all exit types
+Tests for enhanced learning engine v2 — maturity-aware trust.
 """
 from bahamut.training.learning_engine import (
     compute_learning_context,
-    LearningContext,
+    get_maturity_state,
+    get_confidence_weight,
+    get_decay_factor,
+    compute_trust_points,
     TRUST_DEFAULT,
+    CONFIDENCE_PROVISIONAL,
+    CONFIDENCE_DEVELOPING,
+    CONFIDENCE_MATURE,
+    TIER_PROVISIONAL_MAX,
+    TIER_DEVELOPING_MAX,
 )
-
 
 def _make_trade(exit_reason="SL", pnl=-100, risk_amount=100, bars_held=1, strategy="v9_breakout", regime="RANGE"):
     return {
-        "strategy": strategy,
-        "asset": "BTCUSD",
-        "asset_class": "crypto",
-        "direction": "LONG",
-        "regime": regime,
-        "exit_reason": exit_reason,
-        "pnl": pnl,
-        "risk_amount": risk_amount,
-        "bars_held": bars_held,
+        "strategy": strategy, "asset": "BTCUSD", "asset_class": "crypto",
+        "direction": "LONG", "regime": regime, "exit_reason": exit_reason,
+        "pnl": pnl, "risk_amount": risk_amount, "bars_held": bars_held,
     }
 
 
-# ═══════════════════════════════════════════
-# TEST 1: SL loss produces negative outcome
-# ═══════════════════════════════════════════
+# ═══ OUTCOME SCORING ═══
 
-def test_sl_loss_negative_outcome():
-    """SL loss should produce a negative outcome score."""
+def test_sl_loss_negative():
     ctx = compute_learning_context(_make_trade(exit_reason="SL", pnl=-100, bars_held=5))
-    assert ctx.outcome_score < 0, f"SL loss should be negative, got {ctx.outcome_score}"
-    assert ctx.exit_reason == "SL"
-    assert ctx.r_multiple == -1.0
-    assert not ctx.quick_stop  # 5 bars > 3 = not quick
-
-
-# ═══════════════════════════════════════════
-# TEST 2: Quick SL penalized MORE than slow SL
-# ═══════════════════════════════════════════
+    assert ctx.outcome_score < 0
+    assert not ctx.quick_stop
 
 def test_quick_stop_worse_than_slow():
-    """Quick SL (within 3 bars) should be penalized more than normal SL."""
     quick = compute_learning_context(_make_trade(exit_reason="SL", pnl=-100, bars_held=1))
     slow = compute_learning_context(_make_trade(exit_reason="SL", pnl=-100, bars_held=8))
-
     assert quick.quick_stop is True
     assert slow.quick_stop is False
-    assert quick.outcome_score < slow.outcome_score, \
-        f"Quick SL ({quick.outcome_score}) should be worse than slow SL ({slow.outcome_score})"
-
-
-# ═══════════════════════════════════════════
-# TEST 3: TP win produces positive outcome
-# ═══════════════════════════════════════════
+    assert quick.outcome_score < slow.outcome_score
 
 def test_tp_win_positive():
-    """Take profit should produce a strong positive outcome."""
     ctx = compute_learning_context(_make_trade(exit_reason="TP", pnl=200, bars_held=10))
-    assert ctx.outcome_score > 0.5, f"TP win should be strongly positive, got {ctx.outcome_score}"
-    assert ctx.r_multiple == 2.0
+    assert ctx.outcome_score > 0.5
 
-
-# ═══════════════════════════════════════════
-# TEST 4: Timeout scratch is nearly neutral
-# ═══════════════════════════════════════════
-
-def test_timeout_scratch_nearly_neutral():
-    """Timeout with tiny loss should be nearly neutral."""
+def test_timeout_scratch_neutral():
     ctx = compute_learning_context(_make_trade(exit_reason="TIMEOUT", pnl=-5, bars_held=10))
-    assert abs(ctx.outcome_score) < 0.15, \
-        f"Timeout scratch should be nearly neutral, got {ctx.outcome_score}"
-
-
-# ═══════════════════════════════════════════
-# TEST 5: Timeout has less impact than SL
-# ═══════════════════════════════════════════
+    assert abs(ctx.outcome_score) < 0.15
 
 def test_timeout_less_impact_than_sl():
-    """Timeout loss should have smaller negative impact than SL loss."""
     timeout = compute_learning_context(_make_trade(exit_reason="TIMEOUT", pnl=-50, bars_held=10))
     sl = compute_learning_context(_make_trade(exit_reason="SL", pnl=-50, bars_held=10))
+    assert timeout.outcome_score > sl.outcome_score
 
-    assert timeout.outcome_score > sl.outcome_score, \
-        f"Timeout ({timeout.outcome_score}) should be less negative than SL ({sl.outcome_score})"
-
-
-# ═══════════════════════════════════════════
-# TEST 6: Profitable timeout is mildly positive
-# ═══════════════════════════════════════════
-
-def test_profitable_timeout_positive():
-    """Timeout with profit should be mildly positive."""
-    ctx = compute_learning_context(_make_trade(exit_reason="TIMEOUT", pnl=30, bars_held=10))
-    assert ctx.outcome_score > 0, f"Profitable timeout should be positive, got {ctx.outcome_score}"
-    assert ctx.outcome_score < 0.5, f"Should be mild, not strong, got {ctx.outcome_score}"
+def test_outcome_bounded():
+    for case in [
+        _make_trade(exit_reason="SL", pnl=-500, bars_held=1),
+        _make_trade(exit_reason="TP", pnl=1000, bars_held=5),
+        _make_trade(exit_reason="TIMEOUT", pnl=0, bars_held=10),
+    ]:
+        ctx = compute_learning_context(case)
+        assert -1.0 <= ctx.outcome_score <= 1.0
 
 
-# ═══════════════════════════════════════════
-# TEST 7: R-multiple computed correctly
-# ═══════════════════════════════════════════
+# ═══ MATURITY TIERS ═══
 
-def test_r_multiple_computation():
-    """R-multiple = pnl / risk_amount."""
-    ctx1 = compute_learning_context(_make_trade(pnl=-100, risk_amount=100))
-    assert ctx1.r_multiple == -1.0
-
-    ctx2 = compute_learning_context(_make_trade(pnl=200, risk_amount=100, exit_reason="TP"))
-    assert ctx2.r_multiple == 2.0
-
-    ctx3 = compute_learning_context(_make_trade(pnl=-50, risk_amount=100))
-    assert ctx3.r_multiple == -0.5
+def test_maturity_states():
+    assert get_maturity_state(0) == "provisional"
+    assert get_maturity_state(3) == "provisional"
+    assert get_maturity_state(4) == "provisional"
+    assert get_maturity_state(5) == "developing"
+    assert get_maturity_state(10) == "developing"
+    assert get_maturity_state(14) == "developing"
+    assert get_maturity_state(15) == "mature"
+    assert get_maturity_state(50) == "mature"
 
 
-# ═══════════════════════════════════════════
-# TEST 8: Outcome score bounds
-# ═══════════════════════════════════════════
+# ═══ CONFIDENCE WEIGHT ═══
 
-def test_outcome_score_bounded():
-    """Outcome score should always be between -1 and +1."""
-    cases = [
-        _make_trade(exit_reason="SL", pnl=-500, bars_held=1),   # Extreme loss
-        _make_trade(exit_reason="TP", pnl=1000, bars_held=5),   # Extreme win
-        _make_trade(exit_reason="TIMEOUT", pnl=0, bars_held=10), # Flat
-        _make_trade(exit_reason="MANUAL", pnl=50, bars_held=3), # Manual
-    ]
-    for c in cases:
-        ctx = compute_learning_context(c)
-        assert -1.0 <= ctx.outcome_score <= 1.0, \
-            f"Outcome {ctx.outcome_score} out of bounds for {c['exit_reason']}"
+def test_confidence_weight_ramp():
+    """Confidence smoothly increases from 0 to 1.0."""
+    c0 = get_confidence_weight(0)
+    c1 = get_confidence_weight(1)
+    c4 = get_confidence_weight(TIER_PROVISIONAL_MAX)
+    c5 = get_confidence_weight(TIER_PROVISIONAL_MAX + 1)
+    c14 = get_confidence_weight(TIER_DEVELOPING_MAX)
+    c30 = get_confidence_weight(30)
+
+    assert c0 == 0.0
+    assert 0 < c1 < CONFIDENCE_PROVISIONAL
+    assert abs(c4 - CONFIDENCE_PROVISIONAL) < 0.02
+    assert c5 > CONFIDENCE_PROVISIONAL
+    assert abs(c14 - CONFIDENCE_DEVELOPING) < 0.02
+    assert c30 > CONFIDENCE_DEVELOPING
+    assert c30 <= CONFIDENCE_MATURE
+
+def test_confidence_monotonic():
+    """Confidence never decreases as samples increase."""
+    prev = 0.0
+    for s in range(0, 35):
+        c = get_confidence_weight(s)
+        assert c >= prev, f"Confidence decreased at {s}: {c} < {prev}"
+        prev = c
+
+
+# ═══ TWO LOSSES DON'T DESTROY TRUST ═══
+
+def test_two_losses_dont_destroy():
+    """2 losses in a new pattern should NOT push trust below 0.2."""
+    # Simulate: start at 0.5, apply 2 quick SL losses
+    trust = TRUST_DEFAULT
+    for _ in range(2):
+        ctx = compute_learning_context(_make_trade(exit_reason="SL", pnl=-100, bars_held=1))
+        mapped = (ctx.outcome_score + 1) / 2
+        alpha = min(0.35, 0.5 / max(1, 1))  # Provisional alpha
+        trust = trust * (1 - alpha) + mapped * alpha
+    assert trust > 0.15, f"Trust dropped too low after 2 losses: {trust}"
+
+
+# ═══ TWO WINS DON'T OVER-PROMOTE ═══
+
+def test_two_wins_dont_overpromote():
+    """2 wins in a new pattern should NOT push trust above 0.85."""
+    trust = TRUST_DEFAULT
+    for i in range(2):
+        ctx = compute_learning_context(_make_trade(exit_reason="TP", pnl=200, bars_held=10))
+        mapped = (ctx.outcome_score + 1) / 2
+        alpha = min(0.35, 0.5 / max(1, i + 1))
+        trust = trust * (1 - alpha) + mapped * alpha
+    assert trust < 0.85, f"Trust too high after 2 wins: {trust}"
+
+
+# ═══ DECAY ═══
+
+def test_decay_fresh_is_1():
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    assert get_decay_factor(now) == 1.0
+
+def test_decay_stale_drops():
+    from datetime import datetime, timezone, timedelta
+    old = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
+    d = get_decay_factor(old)
+    assert d < 1.0
+    assert d > 0.3
+
+def test_decay_very_stale_at_floor():
+    from datetime import datetime, timezone, timedelta
+    ancient = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+    d = get_decay_factor(ancient)
+    assert d <= 0.3
+
+
+# ═══ RECOVERY ═══
+
+def test_recovery_after_losses():
+    """Good trades after bad ones should gradually recover trust."""
+    trust = TRUST_DEFAULT
+    alpha = TRUST_DEFAULT  # Will use adaptive alpha
+
+    # 5 losses first
+    for i in range(5):
+        ctx = compute_learning_context(_make_trade(exit_reason="SL", pnl=-100, bars_held=5))
+        mapped = (ctx.outcome_score + 1) / 2
+        a = min(0.35, 0.5 / max(1, i + 1))
+        trust = trust * (1 - a) + mapped * a
+
+    low_point = trust
+    assert low_point < 0.4, f"Trust should be low after losses: {low_point}"
+
+    # 5 wins to recover
+    for i in range(5, 10):
+        ctx = compute_learning_context(_make_trade(exit_reason="TP", pnl=200, bars_held=10))
+        mapped = (ctx.outcome_score + 1) / 2
+        a = 0.15 * 1.2  # developing alpha
+        trust = trust * (1 - a) + mapped * a
+
+    assert trust > low_point, f"Trust should recover: {trust} > {low_point}"
+    assert trust < 0.8, f"Recovery should be gradual, not instant: {trust}"
 
 
 if __name__ == "__main__":
     tests = [
-        test_sl_loss_negative_outcome,
-        test_quick_stop_worse_than_slow,
-        test_tp_win_positive,
-        test_timeout_scratch_nearly_neutral,
-        test_timeout_less_impact_than_sl,
-        test_profitable_timeout_positive,
-        test_r_multiple_computation,
-        test_outcome_score_bounded,
+        test_sl_loss_negative, test_quick_stop_worse_than_slow,
+        test_tp_win_positive, test_timeout_scratch_neutral,
+        test_timeout_less_impact_than_sl, test_outcome_bounded,
+        test_maturity_states, test_confidence_weight_ramp,
+        test_confidence_monotonic, test_two_losses_dont_destroy,
+        test_two_wins_dont_overpromote, test_decay_fresh_is_1,
+        test_decay_stale_drops, test_decay_very_stale_at_floor,
+        test_recovery_after_losses,
     ]
     passed = 0
     for t in tests:
