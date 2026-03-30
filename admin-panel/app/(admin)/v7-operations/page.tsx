@@ -310,15 +310,16 @@ export default function DailyOperations() {
             { l: "Equity", v: `$${(p?.equity||100000).toLocaleString(undefined,{maximumFractionDigits:0})}`, c: "text-bah-heading" },
             { l: "P&L", v: `${pnl>=0?"+":""}$${Math.abs(pnl).toFixed(0)}`, c: pnl>=0?"text-green-400":"text-red-400" },
             { l: "Return", v: `${(p?.return_pct||0)>=0?"+":""}${(p?.return_pct||0).toFixed(2)}%`, c: (p?.return_pct||0)>=0?"text-green-400":"text-red-400" },
-            { l: "Win Rate", v: `${wr.toFixed(1)}%`, c: wr>=60?"text-green-400":wr>=45?"text-amber-400":wr>0?"text-red-400":"text-bah-muted" },
+            { l: "Win Rate", v: `${wr.toFixed(1)}%`, c: wr>=60?"text-green-400":wr>=45?"text-amber-400":wr>0?"text-red-400":"text-bah-muted", sub: `${p?.training_closed||0} trades` },
             { l: "Drawdown", v: `${dd.toFixed(1)}%`, c: dd>8?"text-red-400":dd>5?"text-amber-400":"text-green-400" },
             { l: "Open Risk", v: `${risk.toFixed(1)}%`, c: risk>5?"text-red-400":risk>4?"text-amber-400":"text-bah-heading" },
             { l: "Positions", v: `${p?.open_positions||0} / ${p?.total_trades||0}`, c: "text-bah-cyan" },
           ];
-        })().map(m => (
+        })().map((m: any) => (
           <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-2.5 text-center">
             <div className={`text-lg font-bold font-mono ${m.c}`}>{m.v}</div>
             <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
+            {m.sub && <div className="text-[8px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
           </div>
         ))}
       </div>
