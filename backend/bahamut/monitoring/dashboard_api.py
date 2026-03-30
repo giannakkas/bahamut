@@ -757,6 +757,24 @@ async def get_trading_accuracy():
         strict_accuracy = round(s_wins / max(1, s_total) * 100, 1) if s_total > 0 else None
         exploration_accuracy = round(e_wins / max(1, e_total) * 100, 1) if e_total > 0 else None
 
+        # Fall back to training data when no production strict trades
+        if s_total == 0:
+            tf = _training_accuracy()
+            if tf.get("has_data"):
+                return {
+                    "strict_accuracy_pct": tf["strict_accuracy_pct"],
+                    "strict_total_trades": tf["strict_total_trades"],
+                    "strict_wins": tf["strict_wins"],
+                    "strict_losses": 0,
+                    "strict_total_pnl": 0,
+                    "strict_avg_pnl": 0,
+                    "exploration_accuracy_pct": exploration_accuracy,
+                    "exploration_total_trades": e_total,
+                    "exploration_wins": e_wins,
+                    "has_data": True,
+                    "source": "training",
+                }
+
         return {
             "strict_accuracy_pct": strict_accuracy,
             "strict_total_trades": s_total,
@@ -771,7 +789,30 @@ async def get_trading_accuracy():
         }
     except Exception as e:
         logger.error("trading_accuracy_failed", error=str(e))
+        tf = _training_accuracy()
+        if tf.get("has_data"):
+            return tf
         return {"strict_accuracy_pct": None, "has_data": False, "strict_total_trades": 0}
+
+
+def _training_accuracy() -> dict:
+    """Pull win rate from training system as fallback for header widget."""
+    try:
+        from bahamut.training.engine import get_training_stats
+        ts = get_training_stats()
+        wr = ts.get("win_rate", 0)  # 0.0 to 1.0
+        closed = ts.get("total_closed_trades", 0)
+        if closed > 0:
+            return {
+                "strict_accuracy_pct": round(wr * 100, 1),
+                "strict_total_trades": closed,
+                "strict_wins": round(wr * closed),
+                "has_data": True,
+                "source": "training",
+            }
+    except Exception:
+        pass
+    return {"has_data": False}
 
 
 @router.post("/alerts/dismiss")

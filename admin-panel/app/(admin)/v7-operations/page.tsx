@@ -168,7 +168,7 @@ export default function DailyOperations() {
         </div>
         <div className="flex gap-2 items-center">
           {/* ═══ TRADING ACCURACY — top right ═══ */}
-          <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-bah-border/60 bg-bah-bg/50" title={accuracy?.has_data ? `Accuracy = ${accuracy.strict_wins} wins / ${accuracy.strict_total_trades} strict closed trades. Exploration and test trades excluded.` : "No strict closed trades yet"}>
+          <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-bah-border/60 bg-bah-bg/50" title={accuracy?.has_data ? `${accuracy.source === "training" ? "Training" : "Accuracy"} = ${accuracy.strict_wins} wins / ${accuracy.strict_total_trades} trades` : "No closed trades yet"}>
             <div className="text-right">
               <div className={`text-lg font-bold leading-none tabular-nums ${
                 !accuracy?.has_data ? "text-bah-muted" :
@@ -179,8 +179,8 @@ export default function DailyOperations() {
               </div>
               <div className="text-[8px] text-bah-muted uppercase tracking-wider leading-none mt-0.5">Win Rate</div>
             </div>
-            <div className="text-[9px] text-bah-muted/60 leading-tight max-w-[70px]">
-              {accuracy?.has_data ? `${accuracy.strict_total_trades} strict trades` : "awaiting trades"}
+            <div className="text-[9px] text-bah-muted/60 leading-tight max-w-[80px]">
+              {accuracy?.has_data ? `${accuracy.strict_total_trades} ${accuracy.source === "training" ? "training" : "strict"} trades` : "awaiting trades"}
             </div>
           </div>
           {/* ═══ Exploration badge ═══ */}
