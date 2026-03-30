@@ -252,6 +252,30 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             except Exception:
                 pass
 
+        # 0.5. QUALITY FLOORS — hard minimum requirements before ranking
+        if sig.execution_type != "debug_exploration":
+            try:
+                from bahamut.training.quality_floors import check_quality_floors
+                qf = check_quality_floors(
+                    readiness_score=sig.readiness_score,
+                    sl_pct=sig.sl_pct, tp_pct=sig.tp_pct,
+                    strategy=sig.strategy, regime=sig.regime,
+                    asset_class=sig.asset_class, asset=sig.asset,
+                    mode="TRAINING",
+                )
+                if not qf["passed"]:
+                    reasons.append(qf["summary"])
+                    if qf["action"] == "reject":
+                        rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                        for f in qf["failures"]:
+                            _track_rejection(f"quality_floor_{f['floor']}")
+                    else:
+                        watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+                        _track_rejection("quality_floor_watchlist")
+                    continue
+            except Exception:
+                pass
+
         # 1. Hard threshold (debug_exploration signals bypass this)
         if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
