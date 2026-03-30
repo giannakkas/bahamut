@@ -269,7 +269,7 @@ export default function TrainingOperationsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => { setSoundEnabled(s => !s); if (!soundEnabled) playSignalSound(); }}
+            onClick={() => { setSoundEnabled((s: boolean) => !s); if (!soundEnabled) playSignalSound(); }}
             className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
               soundEnabled
                 ? "bg-bah-cyan/10 border-bah-cyan/30 text-bah-cyan"
@@ -803,7 +803,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
    ═══════════════════════════════════════════ */
 function FailedTab({ signals }: { signals: any[] }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const toggle = (i: number) => setExpanded(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
+  const toggle = (i: number) => setExpanded((prev: Set<number>) => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
 
   const fmtT = (iso: string) => { if (!iso) return "—"; try { return new Date(iso).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } };
 
@@ -1476,4 +1476,3 @@ function Stat({ l, v, c }: { l: string; v: any; c?: string }) {
     </div>
   );
 }
-/* rebuild trigger */
