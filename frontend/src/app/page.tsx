@@ -255,7 +255,6 @@ export default function Dashboard() {
             <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-3 text-center">
               <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[9px] text-text-muted uppercase tracking-wider mt-0.5">{s.l}</div>
-              {s.sub && <div className="text-[9px] text-text-muted mt-0.5">{s.sub}</div>}
             </div>
           ))}
         </div>
