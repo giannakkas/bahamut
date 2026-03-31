@@ -264,7 +264,7 @@ export default function Dashboard() {
             { l: 'Equity', v: fm(userBalance), c: 'text-text-primary' },
             { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Return', v: fp(userRetPct), c: userRetPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
-            { l: 'Risk/Trade', v: fm(k.risk_per_trade || 500), c: 'text-text-primary' },
+            { l: 'Risk/Trade', v: fm(userAllocation * 0.005), c: 'text-text-primary' },
             { l: 'Open', v: `${traderPositions}`, c: 'text-accent-cyan' },
             { l: 'Closed', v: `${traderClosed}`, c: 'text-text-primary' },
           ].map((s, i) => (
