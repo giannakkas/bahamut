@@ -83,13 +83,15 @@ export default function Dashboard() {
   }, [load]);
 
   // Demo/Live state — mode is controlled by sidebar toggle
-  const [demoBalance, setDemoBalance] = useState(50000);
+  const [demoBalance, setDemoBalance] = useState(0);
+  const [liveBalance, setLiveBalance] = useState(0);
   const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem('bahamut_demo_balance');
-    if (saved) setDemoBalance(parseFloat(saved));
-    // Read mode from sidebar (syncs every second)
+    const savedDemo = localStorage.getItem('bahamut_demo_balance');
+    if (savedDemo) setDemoBalance(parseFloat(savedDemo));
+    const savedLive = localStorage.getItem('bahamut_live_balance');
+    if (savedLive) setLiveBalance(parseFloat(savedLive));
     const syncMode = () => {
       const mode = localStorage.getItem('bahamut_trading_mode');
       if (mode === 'live' || mode === 'demo') setTradingMode(mode);
@@ -116,9 +118,12 @@ export default function Dashboard() {
   );
 
   const wr = (k.win_rate || 0) * 100;
-  const equity = k.equity || 100000;
   const pnl = k.net_pnl || 0;
   const retPct = k.return_pct || 0;
+
+  // Balance logic per mode
+  const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
+  const displayEquity = userBalance; // Balance and Equity are the same number
 
   return (
     <AppShell>
@@ -130,12 +135,12 @@ export default function Dashboard() {
             <div className="flex items-center gap-6 flex-1">
               <div>
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
-                <div className="text-xl font-bold text-text-primary">{fm(demoBalance + pnl)}</div>
+                <div className="text-xl font-bold text-text-primary">{fm(userBalance)}</div>
               </div>
               <div className="w-px h-8 bg-border-default" />
               <div>
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Trading Allocation</div>
-                <div className="text-xl font-bold text-accent-violet">{fm(demoBalance)}</div>
+                <div className="text-xl font-bold text-accent-violet">{fm(userBalance)}</div>
               </div>
               <div className="w-px h-8 bg-border-default" />
               <div>
@@ -167,7 +172,7 @@ export default function Dashboard() {
               <span className="text-[10px] text-text-muted">Add virtual funds (max $100K):</span>
               <div className="flex gap-2">
                 {[5000, 10000, 25000, 50000].map(amt => (
-                  <button key={amt} onClick={() => addFunds(amt)} disabled={demoBalance >= 100000}
+                  <button key={amt} onClick={() => addFunds(amt)} disabled={userBalance >= 100000}
                     className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
                     +{fm(amt)}
                   </button>
@@ -177,10 +182,10 @@ export default function Dashboard() {
                 onChange={e => setFundAmount(e.target.value)}
                 className="w-24 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
               {fundAmount && (
-                <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - demoBalance))}
+                <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - userBalance))}
                   className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">Add</button>
               )}
-              <span className="text-[9px] text-text-muted ml-auto">{fm(demoBalance)} / {fm(100000)}</span>
+              <span className="text-[9px] text-text-muted ml-auto">{fm(userBalance)} / {fm(100000)}</span>
             </div>
           )}
 
@@ -206,7 +211,7 @@ export default function Dashboard() {
         {/* KPI ROW */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {[
-            { l: 'Equity', v: fm(equity), c: 'text-text-primary' },
+            { l: 'Equity', v: fm(displayEquity), c: 'text-text-primary' },
             { l: 'P&L', v: fmS(pnl), c: pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Return', v: fp(retPct), c: retPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Win Rate', v: `${wr.toFixed(1)}%`, c: wr >= 50 ? 'text-accent-emerald' : wr > 0 ? 'text-accent-amber' : 'text-text-muted', sub: `${k.wins || 0}W ${k.losses || 0}L` },
