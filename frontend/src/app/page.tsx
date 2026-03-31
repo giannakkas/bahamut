@@ -51,7 +51,6 @@ export default function Dashboard() {
   const [showAllDec, setShowAllDec] = useState(false);
   const [showAddFunds, setShowAddFunds] = useState(false);
   const [fundAmount, setFundAmount] = useState('');
-  const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
 
   const k = data.kpi || {};
   const strats = data.strategy_breakdown || {};
@@ -83,17 +82,24 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, [load]);
 
-  // Demo/Live state
+  // Demo/Live state — mode is controlled by sidebar toggle
   const [demoBalance, setDemoBalance] = useState(50000);
+  const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const saved = localStorage.getItem('bahamut_demo_balance');
     if (saved) setDemoBalance(parseFloat(saved));
-    const mode = localStorage.getItem('bahamut_trading_mode');
-    if (mode === 'live' || mode === 'demo') setTradingMode(mode);
+    // Read mode from sidebar (syncs every second)
+    const syncMode = () => {
+      const mode = localStorage.getItem('bahamut_trading_mode');
+      if (mode === 'live' || mode === 'demo') setTradingMode(mode);
+    };
+    syncMode();
+    const iv = setInterval(syncMode, 1000);
+    return () => clearInterval(iv);
   }, []);
 
-  const addVirtualFunds = (amount: number) => {
+  const addFunds = (amount: number) => {
     const newBal = Math.min(100000, demoBalance + amount);
     setDemoBalance(newBal);
     localStorage.setItem('bahamut_demo_balance', String(newBal));
@@ -138,22 +144,16 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Mode toggle + Add Funds */}
             <div className="flex items-center gap-2">
-              <div className="flex bg-bg-tertiary rounded-lg border border-border-default p-0.5">
-                <button onClick={() => { setTradingMode('demo'); localStorage.setItem('bahamut_trading_mode', 'demo'); }}
-                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${tradingMode === 'demo' ? 'bg-accent-violet text-white' : 'text-text-muted hover:text-text-secondary'}`}>Demo</button>
-                <button onClick={() => { setTradingMode('live'); localStorage.setItem('bahamut_trading_mode', 'live'); }}
-                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${tradingMode === 'live' ? 'bg-accent-emerald text-white' : 'text-text-muted hover:text-text-secondary'}`}>Live</button>
-              </div>
               {tradingMode === 'demo' ? (
                 <button onClick={() => setShowAddFunds(!showAddFunds)}
                   className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet/15 text-accent-violet border border-accent-violet/30 hover:bg-accent-violet/25 transition-all">
                   + Add Virtual Funds
                 </button>
               ) : (
-                <button className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all">
-                  💳 Add Funds via Stripe
+                <button onClick={() => setShowAddFunds(!showAddFunds)}
+                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all">
+                  💳 Add Real Funds
                 </button>
               )}
               <span className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
@@ -161,28 +161,44 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Add Virtual Funds Panel */}
+          {/* Add Funds Panel — Demo */}
           {showAddFunds && tradingMode === 'demo' && (
-            <div className="mt-3 pt-3 border-t border-border-default flex items-center gap-3">
-              <span className="text-[10px] text-text-muted">Add virtual funds (max $100K total):</span>
+            <div className="mt-3 pt-3 border-t border-border-default flex items-center gap-3 flex-wrap">
+              <span className="text-[10px] text-text-muted">Add virtual funds (max $100K):</span>
               <div className="flex gap-2">
                 {[5000, 10000, 25000, 50000].map(amt => (
-                  <button key={amt} onClick={() => addVirtualFunds(amt)} disabled={demoBalance >= 100000}
+                  <button key={amt} onClick={() => addFunds(amt)} disabled={demoBalance >= 100000}
                     className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
                     +{fm(amt)}
                   </button>
                 ))}
               </div>
-              <input type="number" placeholder="Custom amount" value={fundAmount}
+              <input type="number" placeholder="Custom" value={fundAmount}
                 onChange={e => setFundAmount(e.target.value)}
-                className="w-28 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
+                className="w-24 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
               {fundAmount && (
-                <button onClick={() => addVirtualFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - demoBalance))}
-                  className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">
-                  Add
-                </button>
+                <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - demoBalance))}
+                  className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">Add</button>
               )}
-              <span className="text-[9px] text-text-muted ml-auto">Balance: {fm(demoBalance)} / {fm(100000)}</span>
+              <span className="text-[9px] text-text-muted ml-auto">{fm(demoBalance)} / {fm(100000)}</span>
+            </div>
+          )}
+
+          {/* Add Funds Panel — Live (Stripe placeholder) */}
+          {showAddFunds && tradingMode === 'live' && (
+            <div className="mt-3 pt-3 border-t border-border-default">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-[10px] text-text-muted">Add real funds via card:</span>
+                <div className="flex gap-2">
+                  {[100, 500, 1000, 5000].map(amt => (
+                    <button key={amt} disabled
+                      className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary opacity-50 cursor-not-allowed">
+                      ${amt.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[9px] text-accent-amber">Coming soon — Stripe integration</span>
+              </div>
             </div>
           )}
         </div>
