@@ -335,10 +335,10 @@ export default function TrainingOperationsPage() {
             { l: "Closed", v: `${k.closed_trades||0}`, c: (k.closed_trades||0)>0?"text-green-400":"text-bah-muted", sub: `${(k.avg_duration_bars||0).toFixed(1)} avg bars` },
           ];
         })().map((m: any) => (
-          <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-2.5 text-center">
-            <div className={`text-lg font-bold font-mono ${m.c}`}>{m.v}</div>
-            <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
-            {m.sub && <div className="text-[8px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
+          <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-1.5 sm:p-2.5 text-center">
+            <div className={`text-sm sm:text-lg font-bold font-mono ${m.c}`}>{m.v}</div>
+            <div className="text-[8px] sm:text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
+            {m.sub && <div className="text-[7px] sm:text-[8px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
           </div>
         ))}
       </div>
@@ -403,7 +403,7 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
   const nextCycleTime = cs.next_cycle_time ? new Date(cs.next_cycle_time).toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 
   return (
-    <div className={`rounded-xl border p-3 flex flex-wrap items-center gap-x-5 gap-y-2 anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-bah-surface border-bah-border"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
+    <div className={`rounded-xl border p-2 sm:p-3 flex flex-wrap items-center gap-x-3 sm:gap-x-5 gap-y-2 text-[10px] sm:text-[11px] anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-bah-surface border-bah-border"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
 
       {/* Auto Training */}
       <div className="flex items-center gap-2">
@@ -1393,25 +1393,25 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
   const hasMore = allItems.length > VISIBLE;
 
   return (
-    <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-bah-heading tracking-tight">⚡ Execution Decisions</span>
+    <div className="bg-bah-surface border border-bah-border rounded-xl p-2 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <span className="text-xs sm:text-sm font-bold text-bah-heading tracking-tight">⚡ Execution Decisions</span>
           {exec.length > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{exec.length} EXECUTE</span>
+            <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{exec.length} EXECUTE</span>
           )}
           {watch.length > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{watch.length} WATCH</span>
+            <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{watch.length} WATCH</span>
           )}
         </div>
-        <span className="text-[10px] text-bah-muted font-mono">
+        <span className="text-[9px] sm:text-[10px] text-bah-muted font-mono hidden sm:inline">
           {summary.total_signals || 0} signals → {summary.selected || 0} selected · threshold ≥{summary.config?.execution_threshold || 80}
         </span>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-1.5 overflow-x-auto">
         {visible.map((d: any, i: number) => (
-          <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
+          <div key={i} className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border min-w-[600px] ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
             <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
             <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{d.asset}</span>
             <span className="text-[10px] text-bah-muted w-[50px] shrink-0">{d.strategy}</span>

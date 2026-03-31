@@ -164,8 +164,8 @@ export default function Dashboard() {
 
         {/* TOAST */}
         {toast && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in">
-            <div className="bg-accent-violet/90 text-white px-5 py-3 rounded-xl shadow-lg shadow-accent-violet/20 text-sm font-semibold flex items-center gap-2 backdrop-blur-sm">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in w-[90vw] sm:w-auto">
+            <div className="bg-accent-violet/90 text-white px-3 sm:px-5 py-2 sm:py-3 rounded-xl shadow-lg shadow-accent-violet/20 text-xs sm:text-sm font-semibold flex items-center gap-2 backdrop-blur-sm">
               <span>💰</span> {toast}
               <button onClick={() => setToast(null)} className="ml-2 text-white/60 hover:text-white text-xs">✕</button>
             </div>
@@ -264,7 +264,7 @@ export default function Dashboard() {
         </div>
 
         {/* KPI ROW */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {[
             { l: 'Equity', v: fm(userEquity), c: 'text-text-primary' },
             { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
@@ -273,9 +273,9 @@ export default function Dashboard() {
             { l: 'Open', v: `${traderPositions}`, c: 'text-accent-cyan' },
             { l: 'Closed', v: `${traderClosed}`, c: 'text-text-primary' },
           ].map((s, i) => (
-            <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-3 text-center">
-              <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
-              <div className="text-[9px] text-text-muted uppercase tracking-wider mt-0.5">{s.l}</div>
+            <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-2 sm:p-3 text-center">
+              <div className={`text-sm sm:text-lg font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[8px] sm:text-[9px] text-text-muted uppercase tracking-wider mt-0.5">{s.l}</div>
             </div>
           ))}
         </div>
@@ -288,7 +288,7 @@ export default function Dashboard() {
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30">{candidates.length}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px] min-w-[900px]">
+              <table className="w-full text-[10px] sm:text-[11px] min-w-[700px]">
                 <thead>
                   <tr className="border-b border-border-default text-left text-[9px] text-text-muted uppercase tracking-wider">
                     <th className="px-3 py-2">Score</th><th className="px-3 py-2">Asset</th><th className="px-3 py-2">Strategy</th>
@@ -333,20 +333,20 @@ export default function Dashboard() {
           const all = [...exec.map((d: any) => ({ ...d, _g: 'EXECUTE' })), ...watch.map((d: any) => ({ ...d, _g: 'WATCHLIST' }))];
           const visible = showAllDec ? all : all.slice(0, 5);
           return (
-            <div className="bg-bg-secondary/60 border border-border-default rounded-xl p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-sm font-bold text-text-primary">⚡ Execution Decisions</span>
-                {exec.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">{exec.length} EXECUTE</span>}
-                {watch.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-accent-amber/15 text-accent-amber border border-accent-amber/30">{watch.length} WATCH</span>}
+            <div className="bg-bg-secondary/60 border border-border-default rounded-xl p-2 sm:p-4">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
+                <span className="text-xs sm:text-sm font-bold text-text-primary">⚡ Execution Decisions</span>
+                {exec.length > 0 && <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30">{exec.length} EXECUTE</span>}
+                {watch.length > 0 && <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-accent-amber/15 text-accent-amber border border-accent-amber/30">{watch.length} WATCH</span>}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 overflow-x-auto">
                 {visible.map((d: any, i: number) => (
-                  <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${d._g === 'EXECUTE' ? 'bg-accent-emerald/[0.03] border-accent-emerald/15' : 'bg-bg-secondary border-border-default'}`}>
-                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border ${d._g === 'EXECUTE' ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30' : 'bg-accent-amber/15 text-accent-amber border-accent-amber/30'}`}>{d._g}</span>
-                    <span className="text-xs text-text-primary font-bold w-[70px]">{d.asset}</span>
-                    <span className="text-[10px] text-text-muted w-[50px]">{d.strategy}</span>
-                    <span className={`text-[10px] font-bold ${d.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{d.direction}</span>
-                    <span className="text-[10px] text-text-muted flex-1 truncate">{(d.reasons || []).join(' · ')}</span>
+                  <div key={i} className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border min-w-[500px] ${d._g === 'EXECUTE' ? 'bg-accent-emerald/[0.03] border-accent-emerald/15' : 'bg-bg-secondary border-border-default'}`}>
+                    <span className={`px-1.5 sm:px-2 py-0.5 text-[8px] sm:text-[9px] font-bold rounded border shrink-0 ${d._g === 'EXECUTE' ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/30' : 'bg-accent-amber/15 text-accent-amber border-accent-amber/30'}`}>{d._g}</span>
+                    <span className="text-[10px] sm:text-xs text-text-primary font-bold w-[60px] sm:w-[70px] shrink-0">{d.asset}</span>
+                    <span className="text-[9px] sm:text-[10px] text-text-muted w-[45px] sm:w-[50px] shrink-0">{d.strategy}</span>
+                    <span className={`text-[9px] sm:text-[10px] font-bold ${d.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{d.direction}</span>
+                    <span className="text-[9px] sm:text-[10px] text-text-muted flex-1 truncate">{(d.reasons || []).join(' · ')}</span>
                   </div>
                 ))}
               </div>
@@ -413,7 +413,7 @@ export default function Dashboard() {
               <p className="text-xs text-text-muted py-4 text-center">No open positions</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-[10px] sm:text-[11px]">
                   <thead><tr className="border-b border-border-default text-[9px] text-text-muted uppercase tracking-wider text-left">
                     <th className="py-2 px-3">Asset</th><th className="py-2 px-3">Strategy</th><th className="py-2 px-3">Dir</th>
                     <th className="py-2 px-3">Entry</th><th className="py-2 px-3">SL</th><th className="py-2 px-3">TP</th>
@@ -446,7 +446,7 @@ export default function Dashboard() {
               <p className="text-xs text-text-muted py-4 text-center">No closed trades yet</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-[10px] sm:text-[11px]">
                   <thead><tr className="border-b border-border-default text-[9px] text-text-muted uppercase tracking-wider text-left">
                     <th className="py-2 px-3">Asset</th><th className="py-2 px-3">Strategy</th><th className="py-2 px-3">Dir</th>
                     <th className="py-2 px-3">Entry</th><th className="py-2 px-3">Exit</th><th className="py-2 px-3">PnL</th>
@@ -482,17 +482,17 @@ export default function Dashboard() {
             {failedSignals.length === 0 ? (
               <p className="text-xs text-text-muted py-4 text-center">No rejected signals in current window</p>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 overflow-x-auto">
                 {failedSignals.slice(0, 30).map((s: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border-default/50">
-                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${
+                  <div key={i} className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-border-default/50 min-w-[450px]">
+                    <span className={`px-1.5 sm:px-2 py-0.5 text-[8px] sm:text-[9px] font-bold rounded border shrink-0 ${
                       s._group === 'REJECT' ? 'bg-accent-crimson/15 text-accent-crimson border-accent-crimson/30' : 'bg-accent-amber/15 text-accent-amber border-accent-amber/30'
                     }`}>{s._group}</span>
-                    <span className="text-xs text-text-primary font-bold w-[70px] shrink-0">{s.asset}</span>
-                    <span className="text-[10px] text-text-muted w-[80px] shrink-0">{s.strategy}</span>
-                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{s.direction}</span>
-                    <span className="text-[10px] text-text-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
-                    <span className="text-[10px] text-text-muted flex-1 truncate">{(s.reasons || []).join(' · ')}</span>
+                    <span className="text-[10px] sm:text-xs text-text-primary font-bold w-[55px] sm:w-[70px] shrink-0">{s.asset}</span>
+                    <span className="text-[9px] sm:text-[10px] text-text-muted w-[65px] sm:w-[80px] shrink-0">{s.strategy}</span>
+                    <span className={`text-[9px] sm:text-[10px] font-bold w-[35px] sm:w-[40px] shrink-0 ${s.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{s.direction}</span>
+                    <span className="text-[9px] sm:text-[10px] text-text-muted w-[25px] sm:w-[30px] shrink-0 text-center">{s.readiness_score}</span>
+                    <span className="text-[9px] sm:text-[10px] text-text-muted flex-1 truncate">{(s.reasons || []).join(' · ')}</span>
                   </div>
                 ))}
               </div>
