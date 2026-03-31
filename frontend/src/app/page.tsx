@@ -144,9 +144,9 @@ export default function Dashboard() {
     </AppShell>
   );
 
-  // Trader's personal stats — starts at 0, will be populated from per-user portfolio
-  const traderPositions = 0;
-  const traderClosed = 0;
+  // Trader sees system trades live — "watch the magic happen"
+  const traderPositions = k.open_positions || 0;
+  const traderClosed = k.closed_trades || 0;
   const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
   const userAllocation = tradingMode === 'demo' ? demoAllocation : liveAllocation;
   const userPnl = 0; // Trader's personal P&L — will be calculated from their trades once per-user portfolios are built
