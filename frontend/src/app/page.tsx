@@ -51,6 +51,8 @@ export default function Dashboard() {
   const [showAllDec, setShowAllDec] = useState(false);
   const [showAddFunds, setShowAddFunds] = useState(false);
   const [fundAmount, setFundAmount] = useState('');
+  const [editingAlloc, setEditingAlloc] = useState(false);
+  const [allocInput, setAllocInput] = useState('');
 
   const k = data.kpi || {};
   const strats = data.strategy_breakdown || {};
@@ -85,6 +87,8 @@ export default function Dashboard() {
   // Demo/Live state — mode is controlled by sidebar toggle
   const [demoBalance, setDemoBalance] = useState(0);
   const [liveBalance, setLiveBalance] = useState(0);
+  const [demoAllocation, setDemoAllocation] = useState(0);
+  const [liveAllocation, setLiveAllocation] = useState(0);
   const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -92,6 +96,10 @@ export default function Dashboard() {
     if (savedDemo) setDemoBalance(parseFloat(savedDemo));
     const savedLive = localStorage.getItem('bahamut_live_balance');
     if (savedLive) setLiveBalance(parseFloat(savedLive));
+    const savedDemoAlloc = localStorage.getItem('bahamut_demo_allocation');
+    if (savedDemoAlloc) setDemoAllocation(parseFloat(savedDemoAlloc));
+    const savedLiveAlloc = localStorage.getItem('bahamut_live_allocation');
+    if (savedLiveAlloc) setLiveAllocation(parseFloat(savedLiveAlloc));
     const syncMode = () => {
       const mode = localStorage.getItem('bahamut_trading_mode');
       if (mode === 'live' || mode === 'demo') setTradingMode(mode);
@@ -105,8 +113,23 @@ export default function Dashboard() {
     const newBal = Math.min(100000, demoBalance + amount);
     setDemoBalance(newBal);
     localStorage.setItem('bahamut_demo_balance', String(newBal));
+    // Auto-set allocation to balance if allocation was 0 or exceeded
+    if (demoAllocation === 0 || demoAllocation > newBal) {
+      setDemoAllocation(newBal);
+      localStorage.setItem('bahamut_demo_allocation', String(newBal));
+    }
     setShowAddFunds(false);
     setFundAmount('');
+  };
+
+  const saveAllocation = (val: number) => {
+    const capped = Math.min(val, userBalance);
+    const key = tradingMode === 'demo' ? 'bahamut_demo_allocation' : 'bahamut_live_allocation';
+    if (tradingMode === 'demo') setDemoAllocation(capped);
+    else setLiveAllocation(capped);
+    localStorage.setItem(key, String(capped));
+    setEditingAlloc(false);
+    setAllocInput('');
   };
 
   if (loading) return (
@@ -117,13 +140,11 @@ export default function Dashboard() {
     </AppShell>
   );
 
-  const wr = (k.win_rate || 0) * 100;
-  const pnl = k.net_pnl || 0;
-  const retPct = k.return_pct || 0;
-
-  // Balance logic per mode
+  // Balance logic per mode — trader's own numbers, not system training data
   const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
-  const displayEquity = userBalance; // Balance and Equity are the same number
+  const userAllocation = tradingMode === 'demo' ? demoAllocation : liveAllocation;
+  const userPnl = 0; // Trader's personal P&L — will be calculated from their trades once per-user portfolios are built
+  const userRetPct = userBalance > 0 ? (userPnl / userBalance) * 100 : 0;
 
   return (
     <AppShell>
@@ -140,12 +161,25 @@ export default function Dashboard() {
               <div className="w-px h-8 bg-border-default" />
               <div>
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Trading Allocation</div>
-                <div className="text-xl font-bold text-accent-violet">{fm(userBalance)}</div>
+                {editingAlloc ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-lg text-text-muted">$</span>
+                    <input type="number" autoFocus value={allocInput}
+                      onChange={e => setAllocInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveAllocation(parseFloat(allocInput) || 0); if (e.key === 'Escape') setEditingAlloc(false); }}
+                      onBlur={() => { if (allocInput) saveAllocation(parseFloat(allocInput) || 0); else setEditingAlloc(false); }}
+                      className="w-28 text-lg font-bold bg-transparent border-b border-accent-violet text-accent-violet outline-none" />
+                  </div>
+                ) : (
+                  <div className="text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => { setEditingAlloc(true); setAllocInput(String(userAllocation)); }}>
+                    {fm(userAllocation)} <span className="text-[9px] text-text-muted">✎</span>
+                  </div>
+                )}
               </div>
               <div className="w-px h-8 bg-border-default" />
               <div>
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">P&L</div>
-                <div className={`text-lg font-bold ${pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(pnl)} <span className="text-xs text-text-muted">{fp(retPct)}</span></div>
+                <div className={`text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)} <span className="text-xs text-text-muted">{fp(userRetPct)}</span></div>
               </div>
             </div>
 
@@ -209,12 +243,11 @@ export default function Dashboard() {
         </div>
 
         {/* KPI ROW */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { l: 'Equity', v: fm(displayEquity), c: 'text-text-primary' },
-            { l: 'P&L', v: fmS(pnl), c: pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
-            { l: 'Return', v: fp(retPct), c: retPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
-            { l: 'Win Rate', v: `${wr.toFixed(1)}%`, c: wr >= 50 ? 'text-accent-emerald' : wr > 0 ? 'text-accent-amber' : 'text-text-muted', sub: `${k.wins || 0}W ${k.losses || 0}L` },
+            { l: 'Equity', v: fm(userBalance), c: 'text-text-primary' },
+            { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
+            { l: 'Return', v: fp(userRetPct), c: userRetPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Risk/Trade', v: fm(k.risk_per_trade || 500), c: 'text-text-primary' },
             { l: 'Open', v: `${k.open_positions || 0}`, c: 'text-accent-cyan' },
             { l: 'Closed', v: `${k.closed_trades || 0}`, c: 'text-text-primary' },
