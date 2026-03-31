@@ -215,15 +215,24 @@ def _save_position(pos: TrainingPosition):
                      position_id=pos.position_id, error=str(e))
 
 
-def _remove_position(position_id: str):
-    """Remove a closed position from Redis + mark CLOSED in DB."""
-    # Redis
+def _remove_position(position_id: str) -> bool:
+    """Remove a closed position from Redis + mark CLOSED in DB.
+    Returns True if position was actually removed (first caller wins).
+    Returns False if already removed (duplicate close attempt)."""
+    removed = False
+
+    # Redis: hdel returns count of keys removed — 0 means already gone
     r = _get_redis()
     if r:
         try:
-            r.hdel(REDIS_KEY_POSITIONS, position_id)
+            count = r.hdel(REDIS_KEY_POSITIONS, position_id)
+            removed = count > 0
         except Exception:
             pass
+
+    if not removed:
+        # Position wasn't in Redis — already closed by another call
+        return False
 
     # DB: mark as CLOSED (don't delete — keep for audit)
     try:
@@ -237,6 +246,8 @@ def _remove_position(position_id: str):
     except Exception as e:
         logger.error("training_remove_position_db_failed",
                      position_id=position_id, error=str(e))
+
+    return True
 
 
 def get_open_position_count() -> int:
@@ -540,7 +551,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 regime=pos.regime,
             )
 
-            _remove_position(pos.position_id)
+            actually_removed = _remove_position(pos.position_id)
+            if not actually_removed:
+                # Another call already closed this position — skip to avoid duplicate trade
+                logger.info("training_position_already_closed",
+                            asset=pos.asset, position_id=pos.position_id)
+                continue
+
             _already_closed.add(pos.position_id)
             update_positions_for_asset._already_closed = _already_closed
             _persist_trade(trade)
@@ -708,7 +725,7 @@ def _feed_learning(trade: TrainingTrade):
             stats["wins"] += 1
         elif trade.pnl < -0.01:
             stats["losses"] += 1
-        stats["win_rate"] = round(stats["wins"] / max(1, stats["trades"]), 4)
+        stats["win_rate"] = round(stats["wins"] / max(1, stats["wins"] + stats["losses"]), 4)
         stats["last_trade"] = trade.exit_time
         stats["last_asset"] = trade.asset
         stats["last_pnl"] = trade.pnl
@@ -727,7 +744,7 @@ def _feed_learning(trade: TrainingTrade):
             stats["wins"] += 1
         elif trade.pnl < -0.01:
             stats["losses"] += 1
-        stats["win_rate"] = round(stats["wins"] / max(1, stats["trades"]), 4)
+        stats["win_rate"] = round(stats["wins"] / max(1, stats["wins"] + stats["losses"]), 4)
         r.set(ac_key, json.dumps(stats))
     except Exception:
         pass

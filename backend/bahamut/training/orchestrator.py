@@ -288,6 +288,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     # Inject regime into indicators so strategies (v10) can read it
     indicators["_regime"] = regime
+    indicators["_asset_class"] = asset_class
     result["regime"] = regime  # For orchestrator regime collection
 
     # Evaluate strategies and collect as PendingSignals (don't execute)

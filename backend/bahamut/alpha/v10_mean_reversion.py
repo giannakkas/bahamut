@@ -234,13 +234,17 @@ class V10MeanReversion:
 
         bar_ts = candles[-1].get("datetime", "") if candles else ""
 
+        # Forex moves slowly — extend hold time
+        asset_class = indicators.get("_asset_class", "")
+        hold = 30 if asset_class == "forex" else self.max_hold
+
         return Signal(
             strategy=self.name,
             asset=asset,
             direction=sig.direction,
             sl_pct=round(sl_pct, 4),
             tp_pct=round(tp_pct, 4),
-            max_hold_bars=self.max_hold,
+            max_hold_bars=hold,
             quality=sig.confidence,
             reason=sig.reason,
             signal_id=f"{self.name}:{asset}:{bar_ts}",
