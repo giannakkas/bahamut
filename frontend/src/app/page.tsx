@@ -149,8 +149,14 @@ export default function Dashboard() {
   const traderClosed = k.closed_trades || 0;
   const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
   const userAllocation = tradingMode === 'demo' ? demoAllocation : liveAllocation;
-  const userPnl = 0; // Trader's personal P&L — will be calculated from their trades once per-user portfolios are built
-  const userRetPct = userBalance > 0 ? (userPnl / userBalance) * 100 : 0;
+
+  // Trader's P&L = proportional share of system P&L based on allocation
+  const systemCapital = 100000;
+  const systemPnl = k.net_pnl || 0;
+  const allocRatio = systemCapital > 0 ? userAllocation / systemCapital : 0;
+  const userPnl = Math.round(systemPnl * allocRatio * 100) / 100;
+  const userEquity = userAllocation + userPnl;  // Equity = allocation + P&L
+  const userRetPct = userAllocation > 0 ? (userPnl / userAllocation) * 100 : 0;
 
   return (
     <AppShell>
@@ -261,7 +267,7 @@ export default function Dashboard() {
         {/* KPI ROW */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { l: 'Equity', v: fm(userBalance), c: 'text-text-primary' },
+            { l: 'Equity', v: fm(userEquity), c: 'text-text-primary' },
             { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Return', v: fp(userRetPct), c: userRetPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Risk/Trade', v: fm(userAllocation * 0.005), c: 'text-text-primary' },
