@@ -190,7 +190,7 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-center gap-3 sm:gap-6 flex-1 min-w-0">
               <div className="min-w-0">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
-                <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(userBalance)}</div>
+                <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(userBalance + userPnl)}</div>
               </div>
               <div className="hidden sm:block w-px h-8 bg-border-default" />
               <div className="min-w-0 relative">
