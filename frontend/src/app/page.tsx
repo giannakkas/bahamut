@@ -53,6 +53,9 @@ export default function Dashboard() {
   const [fundAmount, setFundAmount] = useState('');
   const [editingAlloc, setEditingAlloc] = useState(false);
   const [allocInput, setAllocInput] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 
   const k = data.kpi || {};
   const strats = data.strategy_breakdown || {};
@@ -113,13 +116,13 @@ export default function Dashboard() {
     const newBal = Math.min(100000, demoBalance + amount);
     setDemoBalance(newBal);
     localStorage.setItem('bahamut_demo_balance', String(newBal));
-    // Auto-set allocation to balance if allocation was 0 or exceeded
     if (demoAllocation === 0 || demoAllocation > newBal) {
       setDemoAllocation(newBal);
       localStorage.setItem('bahamut_demo_allocation', String(newBal));
     }
     setShowAddFunds(false);
     setFundAmount('');
+    showToast('Funds added! Your money will be invested in the next trade.');
   };
 
   const saveAllocation = (val: number) => {
@@ -130,6 +133,7 @@ export default function Dashboard() {
     localStorage.setItem(key, String(capped));
     setEditingAlloc(false);
     setAllocInput('');
+    showToast(`Allocation updated to ${fm(capped)}. Your money will be invested in the next trade.`);
   };
 
   if (loading) return (
@@ -140,7 +144,9 @@ export default function Dashboard() {
     </AppShell>
   );
 
-  // Balance logic per mode — trader's own numbers, not system training data
+  // Trader's personal stats — starts at 0, will be populated from per-user portfolio
+  const traderPositions = 0;
+  const traderClosed = 0;
   const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
   const userAllocation = tradingMode === 'demo' ? demoAllocation : liveAllocation;
   const userPnl = 0; // Trader's personal P&L — will be calculated from their trades once per-user portfolios are built
@@ -149,6 +155,16 @@ export default function Dashboard() {
   return (
     <AppShell>
       <div className="max-w-[1400px] mx-auto space-y-4">
+
+        {/* TOAST */}
+        {toast && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in">
+            <div className="bg-accent-violet/90 text-white px-5 py-3 rounded-xl shadow-lg shadow-accent-violet/20 text-sm font-semibold flex items-center gap-2 backdrop-blur-sm">
+              <span>💰</span> {toast}
+              <button onClick={() => setToast(null)} className="ml-2 text-white/60 hover:text-white text-xs">✕</button>
+            </div>
+          </div>
+        )}
 
         {/* TOP BAR */}
         <div className="bg-bg-secondary/80 border border-border-default rounded-xl px-5 py-3">
@@ -249,8 +265,8 @@ export default function Dashboard() {
             { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Return', v: fp(userRetPct), c: userRetPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
             { l: 'Risk/Trade', v: fm(k.risk_per_trade || 500), c: 'text-text-primary' },
-            { l: 'Open', v: `${k.open_positions || 0}`, c: 'text-accent-cyan' },
-            { l: 'Closed', v: `${k.closed_trades || 0}`, c: 'text-text-primary' },
+            { l: 'Open', v: `${traderPositions}`, c: 'text-accent-cyan' },
+            { l: 'Closed', v: `${traderClosed}`, c: 'text-text-primary' },
           ].map((s, i) => (
             <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-3 text-center">
               <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
@@ -342,7 +358,7 @@ export default function Dashboard() {
         <div className="flex border-b border-border-default overflow-x-auto">
           {(['overview', 'positions', 'trades', 'rejected'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? 'border-accent-violet text-accent-violet' : 'border-transparent text-text-muted hover:text-text-secondary'}`}>
-              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${k.open_positions || 0})` : t === 'trades' ? `🔁 Trades (${k.closed_trades || 0})` : `🚫 Rejected (${failedSignals.length})`}
+              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${traderPositions})` : t === 'trades' ? `🔁 Trades (${traderClosed})` : `🚫 Rejected (${failedSignals.length})`}
             </button>
           ))}
         </div>
