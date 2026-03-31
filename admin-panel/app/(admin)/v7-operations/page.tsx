@@ -151,7 +151,7 @@ export default function DailyOperations() {
   const resultClr = (r: string) => r === "EXECUTED" ? "text-green-400" : r === "BLOCKED" ? "text-amber-400" : r === "NO_SIGNAL" ? "text-bah-muted" : r === "SIGNAL" ? "text-bah-cyan" : "text-bah-muted";
 
   return (
-    <div className="p-2 sm:p-4 max-w-[1440px] space-y-3 pt-12 lg:pt-4">
+    <div className="p-2 sm:p-4 max-w-[1440px] mx-auto space-y-3 pt-12 lg:pt-4">
       {/* ═══ HEADER ═══ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
