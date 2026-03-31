@@ -46,13 +46,20 @@ export default function Dashboard() {
   const [data, setData] = useState<any>({});
   const [candidates, setCandidates] = useState<any[]>([]);
   const [decisions, setDecisions] = useState<any>(null);
-  const [tab, setTab] = useState<'overview' | 'positions' | 'trades'>('overview');
+  const [tab, setTab] = useState<'overview' | 'positions' | 'trades' | 'rejected'>('overview');
   const [loading, setLoading] = useState(true);
   const [showAllDec, setShowAllDec] = useState(false);
+  const [showAddFunds, setShowAddFunds] = useState(false);
+  const [fundAmount, setFundAmount] = useState('');
+  const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
 
   const k = data.kpi || {};
   const strats = data.strategy_breakdown || {};
   const classes = data.class_breakdown || {};
+  const failedSignals = [
+    ...(decisions?.rejected || []).map((s: any) => ({ ...s, _group: 'REJECT' })),
+    ...(decisions?.watchlist || []).filter((s: any) => !(decisions?.execute || []).find((e: any) => e.asset === s.asset)).map((s: any) => ({ ...s, _group: 'WATCHLIST' })),
+  ];
 
   const load = useCallback(async () => {
     try {
@@ -76,13 +83,23 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, [load]);
 
-  // Demo state
+  // Demo/Live state
   const [demoBalance, setDemoBalance] = useState(50000);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const saved = localStorage.getItem('bahamut_demo_balance');
     if (saved) setDemoBalance(parseFloat(saved));
+    const mode = localStorage.getItem('bahamut_trading_mode');
+    if (mode === 'live' || mode === 'demo') setTradingMode(mode);
   }, []);
+
+  const addVirtualFunds = (amount: number) => {
+    const newBal = Math.min(100000, demoBalance + amount);
+    setDemoBalance(newBal);
+    localStorage.setItem('bahamut_demo_balance', String(newBal));
+    setShowAddFunds(false);
+    setFundAmount('');
+  };
 
   if (loading) return (
     <AppShell>
@@ -102,27 +119,72 @@ export default function Dashboard() {
       <div className="max-w-[1400px] mx-auto space-y-4">
 
         {/* TOP BAR */}
-        <div className="flex items-center gap-4 bg-bg-secondary/80 border border-border-default rounded-xl px-5 py-3">
-          <div className="flex items-center gap-6 flex-1">
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
-              <div className="text-xl font-bold text-text-primary">{fm(demoBalance + pnl)}</div>
+        <div className="bg-bg-secondary/80 border border-border-default rounded-xl px-5 py-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6 flex-1">
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
+                <div className="text-xl font-bold text-text-primary">{fm(demoBalance + pnl)}</div>
+              </div>
+              <div className="w-px h-8 bg-border-default" />
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Trading Allocation</div>
+                <div className="text-xl font-bold text-accent-violet">{fm(demoBalance)}</div>
+              </div>
+              <div className="w-px h-8 bg-border-default" />
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">P&L</div>
+                <div className={`text-lg font-bold ${pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(pnl)} <span className="text-xs text-text-muted">{fp(retPct)}</span></div>
+              </div>
             </div>
-            <div className="w-px h-8 bg-border-default" />
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Trading Allocation</div>
-              <div className="text-xl font-bold text-accent-violet">{fm(demoBalance)}</div>
-            </div>
-            <div className="w-px h-8 bg-border-default" />
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">P&L</div>
-              <div className={`text-lg font-bold ${pnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(pnl)} <span className="text-xs text-text-muted">{fp(retPct)}</span></div>
+
+            {/* Mode toggle + Add Funds */}
+            <div className="flex items-center gap-2">
+              <div className="flex bg-bg-tertiary rounded-lg border border-border-default p-0.5">
+                <button onClick={() => { setTradingMode('demo'); localStorage.setItem('bahamut_trading_mode', 'demo'); }}
+                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${tradingMode === 'demo' ? 'bg-accent-violet text-white' : 'text-text-muted hover:text-text-secondary'}`}>Demo</button>
+                <button onClick={() => { setTradingMode('live'); localStorage.setItem('bahamut_trading_mode', 'live'); }}
+                  className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${tradingMode === 'live' ? 'bg-accent-emerald text-white' : 'text-text-muted hover:text-text-secondary'}`}>Live</button>
+              </div>
+              {tradingMode === 'demo' ? (
+                <button onClick={() => setShowAddFunds(!showAddFunds)}
+                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet/15 text-accent-violet border border-accent-violet/30 hover:bg-accent-violet/25 transition-all">
+                  + Add Virtual Funds
+                </button>
+              ) : (
+                <button className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all">
+                  💳 Add Funds via Stripe
+                </button>
+              )}
+              <span className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
+              <span className="text-[10px] text-text-muted font-mono">{wsStatus === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
-            <span className="text-[10px] text-text-muted font-mono">{wsStatus === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
-          </div>
+
+          {/* Add Virtual Funds Panel */}
+          {showAddFunds && tradingMode === 'demo' && (
+            <div className="mt-3 pt-3 border-t border-border-default flex items-center gap-3">
+              <span className="text-[10px] text-text-muted">Add virtual funds (max $100K total):</span>
+              <div className="flex gap-2">
+                {[5000, 10000, 25000, 50000].map(amt => (
+                  <button key={amt} onClick={() => addVirtualFunds(amt)} disabled={demoBalance >= 100000}
+                    className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
+                    +{fm(amt)}
+                  </button>
+                ))}
+              </div>
+              <input type="number" placeholder="Custom amount" value={fundAmount}
+                onChange={e => setFundAmount(e.target.value)}
+                className="w-28 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
+              {fundAmount && (
+                <button onClick={() => addVirtualFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - demoBalance))}
+                  className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">
+                  Add
+                </button>
+              )}
+              <span className="text-[9px] text-text-muted ml-auto">Balance: {fm(demoBalance)} / {fm(100000)}</span>
+            </div>
+          )}
         </div>
 
         {/* KPI ROW */}
@@ -224,10 +286,10 @@ export default function Dashboard() {
         })()}
 
         {/* TABS */}
-        <div className="flex border-b border-border-default">
-          {(['overview', 'positions', 'trades'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all ${tab === t ? 'border-accent-violet text-accent-violet' : 'border-transparent text-text-muted hover:text-text-secondary'}`}>
-              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${k.open_positions || 0})` : `🔁 Trades (${k.closed_trades || 0})`}
+        <div className="flex border-b border-border-default overflow-x-auto">
+          {(['overview', 'positions', 'trades', 'rejected'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? 'border-accent-violet text-accent-violet' : 'border-transparent text-text-muted hover:text-text-secondary'}`}>
+              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${k.open_positions || 0})` : t === 'trades' ? `🔁 Trades (${k.closed_trades || 0})` : `🚫 Rejected (${failedSignals.length})`}
             </button>
           ))}
         </div>
@@ -336,6 +398,29 @@ export default function Dashboard() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {tab === 'rejected' && (
+          <Section title={`Rejected / Watchlisted (${failedSignals.length})`}>
+            {failedSignals.length === 0 ? (
+              <p className="text-xs text-text-muted py-4 text-center">No rejected signals in current window</p>
+            ) : (
+              <div className="space-y-1.5">
+                {failedSignals.slice(0, 30).map((s: any, i: number) => (
+                  <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border-default/50">
+                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${
+                      s._group === 'REJECT' ? 'bg-accent-crimson/15 text-accent-crimson border-accent-crimson/30' : 'bg-accent-amber/15 text-accent-amber border-accent-amber/30'
+                    }`}>{s._group}</span>
+                    <span className="text-xs text-text-primary font-bold w-[70px] shrink-0">{s.asset}</span>
+                    <span className="text-[10px] text-text-muted w-[80px] shrink-0">{s.strategy}</span>
+                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{s.direction}</span>
+                    <span className="text-[10px] text-text-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
+                    <span className="text-[10px] text-text-muted flex-1 truncate">{(s.reasons || []).join(' · ')}</span>
+                  </div>
+                ))}
               </div>
             )}
           </Section>
