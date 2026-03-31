@@ -665,20 +665,20 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
         </div>
       </Section>
 
-      <Section title="Asset Class Breakdown">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {Object.entries(classes).map(([cls, s]: [string, any], i) => (
-            <div key={cls} className="bg-bah-surface border border-bah-border rounded-lg p-3 anim-slide" style={{ animationDelay: `${i * 0.04}s` }}>
-              <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold mb-1">{cls}</div>
-              <div className="text-xs text-bah-heading font-semibold">{s.closed_trades} closed · {s.open_trades} open</div>
-              <div className={`text-[11px] font-bold mt-0.5 ${pnlC(s.pnl)}`}>{fmtPnl(s.pnl)} · {fmtPct(s.win_rate)} WR</div>
-            </div>
-          ))}
-        </div>
-      </Section>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Section title="Asset Class Breakdown">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {Object.entries(classes).map(([cls, s]: [string, any], i) => (
+              <div key={cls} className="bg-bah-surface border border-bah-border rounded-lg p-3 anim-slide" style={{ animationDelay: `${i * 0.04}s` }}>
+                <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold mb-1">{cls}</div>
+                <div className="text-xs text-bah-heading font-semibold">{s.closed_trades} closed · {s.open_trades} open</div>
+                <div className={`text-[11px] font-bold mt-0.5 ${pnlC(s.pnl)}`}>{fmtPnl(s.pnl)} · {fmtPct(s.win_rate)} WR</div>
+              </div>
+            ))}
+          </div>
+        </Section>
 
-      {(rankings.best?.length > 0 || rankings.worst?.length > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-4">
           {rankings.best?.length > 0 && <Section title="🏆 Best Assets">{rankings.best.map((a: any, i: number) => (
             <div key={i} className="flex justify-between items-center py-2 text-xs border-b border-bah-border hover-row px-1 rounded">
               <div><span className="text-bah-heading font-semibold">{a.asset}</span> <span className="text-bah-muted ml-1 text-[10px]">{a.class}</span></div>
@@ -692,7 +692,7 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
             </div>
           ))}</Section>}
         </div>
-      )}
+      </div>
     </div>
   );
 }
