@@ -9,6 +9,8 @@ const getH = (): Record<string, string> => {
 };
 const fm = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmS = (n: number) => `${n >= 0 ? '+' : '-'}${fm(n)}`;
+const STRAT_NAMES: Record<string, string> = { v5_base: "S1 · EMA Trend", v5_tuned: "S2 · EMA Tuned", v9_breakout: "S3 · Breakout", v10_mean_reversion: "S4 · Mean Reversion" };
+const sn = (s: string) => STRAT_NAMES[s] || s;
 
 interface WalletEntry {
   type: string; amount: number; balance_after: number; allocation_after: number; timestamp: string; mode: string;
@@ -110,7 +112,7 @@ export default function ActivityPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-text-primary font-bold">{t.asset}</span>
-                        <span className="text-[9px] text-text-muted">{t.strategy}</span>
+                        <span className="text-[9px] text-text-muted">{sn(t.strategy)}</span>
                         <span className={`text-[9px] font-bold ${t.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{t.direction}</span>
                         <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
                           isFlat ? 'bg-border-default text-text-muted' : pnl > 0 ? 'bg-accent-emerald/15 text-accent-emerald' : 'bg-accent-crimson/15 text-accent-crimson'

@@ -4,6 +4,14 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiBase } from "@/lib/utils";
 import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
+const STRAT_NAMES: Record<string, string> = {
+  v5_base: "S1 · EMA Trend",
+  v5_tuned: "S2 · EMA Tuned",
+  v9_breakout: "S3 · Breakout",
+  v10_mean_reversion: "S4 · Mean Reversion",
+};
+const sn = (s: string) => STRAT_NAMES[s] || s;
+
 /* ═══════════════════════════════════════════
    COUNTDOWN HOOK — ticks every second
    ═══════════════════════════════════════════ */
@@ -567,7 +575,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
                       </div>
                       <div style={{fontSize: "9px", color: "rgba(255,255,255,0.4)", marginTop: "2px"}}>{c.asset_class}</div>
                     </td>
-                    <td className="px-3 py-2.5" style={{color: "white", fontWeight: 500}}>{c.strategy}</td>
+                    <td className="px-3 py-2.5" style={{color: "white", fontWeight: 500}}>{sn(c.strategy)}</td>
                     <td className="px-3 py-2.5"><span style={{color: c.direction === "LONG" ? "#4ade80" : "#f87171", fontWeight: 700}}>{c.direction}</span></td>
                     <td className="px-3 py-2.5">
                       <span style={{
@@ -602,6 +610,12 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
    OVERVIEW TAB
    ═══════════════════════════════════════════ */
 function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtPct, fmtT, pnlC }: any) {
+  const stratName: Record<string, string> = {
+    v5_base: "S1 · EMA Trend",
+    v5_tuned: "S2 · EMA Tuned",
+    v9_breakout: "S3 · Breakout",
+    v10_mean_reversion: "S4 · Mean Reversion",
+  };
   return (
     <div className="space-y-4">
       <Section title="Cycle Health">
@@ -650,7 +664,7 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
             <tbody>
               {Object.entries(strats).map(([name, s]: [string, any]) => (
                 <tr key={name} className="border-b border-bah-border hover-row">
-                  <td className="py-2.5 pr-3 text-bah-heading font-semibold">{name}</td>
+                  <td className="py-2.5 pr-3 text-bah-heading font-semibold">{stratName[name] || name} <span className="text-[8px] text-bah-muted font-normal">{name}</span></td>
                   <td className="py-2.5 pr-3 text-bah-text">{s.open_trades}</td>
                   <td className="py-2.5 pr-3 text-bah-text">{s.closed_trades}</td>
                   <td className="py-2.5 pr-3 text-bah-heading">{fmtPct(s.win_rate)}</td>
@@ -725,7 +739,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                   <div className="text-bah-heading font-bold">{p.asset}</div>
                   <div className="text-[9px] text-bah-muted">{p.asset_class}</div>
                 </td>
-                <td className="py-2.5 pr-2 text-bah-text">{p.strategy}</td>
+                <td className="py-2.5 pr-2 text-bah-text">{sn(p.strategy)}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
                 <td className="py-2.5 pr-2"><ExecBadge type={p.execution_type} /></td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(p.entry_price || 0)}</td>
@@ -777,7 +791,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                   <div className="text-bah-heading font-bold">{t.asset}</div>
                   <div className="text-[9px] text-bah-muted">{t.asset_class || ""}</div>
                 </td>
-                <td className="py-2.5 pr-2 text-bah-text">{t.strategy}</td>
+                <td className="py-2.5 pr-2 text-bah-text">{sn(t.strategy)}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.entry_price || 0)}</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.exit_price || 0)}</td>
@@ -908,7 +922,7 @@ function FailedTab({ signals }: { signals: any[] }) {
                   <button onClick={() => toggle(idx)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-bah-border bg-bah-surface hover:bg-bah-surface transition-colors text-left cursor-pointer">
                     <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.REJECT}`}>{s._group}</span>
                     <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{s.asset}</span>
-                    <span className="text-[10px] text-bah-muted w-[55px] shrink-0">{s.strategy}</span>
+                    <span className="text-[10px] text-bah-muted w-[55px] shrink-0">{sn(s.strategy)}</span>
                     <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
                     <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
                     <span className="text-[10px] text-bah-muted flex-1 truncate">{(s.reasons || []).join(" · ")}</span>
@@ -918,7 +932,7 @@ function FailedTab({ signals }: { signals: any[] }) {
                     <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-bah-border space-y-1.5 text-[10px] font-mono">
                       <div className="text-bah-muted uppercase text-[8px] tracking-widest font-bold mb-2">Decision Trace</div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Asset</span><span className="text-bah-heading">{s.asset} ({s.asset_class})</span></div>
-                      <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Strategy</span><span className="text-bah-heading">{s.strategy}</span></div>
+                      <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Strategy</span><span className="text-bah-heading">{sn(s.strategy)}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-green-400" : "text-red-400"}>{s.direction}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Readiness</span><span className="text-bah-heading">{s.readiness_score}/100</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Priority</span><span className="text-bah-heading">{s.priority_score}</span></div>
@@ -1326,7 +1340,7 @@ function AssetsTab({ data }: { data: any }) {
                     <td className="py-2 px-3">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${st.cls}`}>{st.label}</span>
                     </td>
-                    <td className="py-2 px-3 text-bah-muted">{a.strategy}</td>
+                    <td className="py-2 px-3 text-bah-muted">{sn(a.strategy)}</td>
                     <td className="py-2 px-3">
                       {a.direction !== "—" ? <span className={`font-bold ${a.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{a.direction}</span> : <span className="text-bah-muted/60">—</span>}
                     </td>
@@ -1414,7 +1428,7 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
           <div key={i} className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border min-w-[600px] ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
             <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
             <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{d.asset}</span>
-            <span className="text-[10px] text-bah-muted w-[50px] shrink-0">{d.strategy}</span>
+            <span className="text-[10px] text-bah-muted w-[50px] shrink-0">{sn(d.strategy)}</span>
             <span className={`text-[10px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{d.direction}</span>
             <ExecBadge type={d.execution_type} />
             <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center">{d.readiness_score}</span>

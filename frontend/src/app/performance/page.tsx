@@ -10,6 +10,8 @@ const getH = (): Record<string, string> => {
 const fm = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmS = (n: number) => `${n >= 0 ? '+' : '-'}${fm(n)}`;
 const fp = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+const STRAT_NAMES: Record<string, string> = { v5_base: "S1 · EMA Trend", v5_tuned: "S2 · EMA Tuned", v9_breakout: "S3 · Breakout", v10_mean_reversion: "S4 · Mean Reversion" };
+const sn = (s: string) => STRAT_NAMES[s] || s;
 
 export default function PerformancePage() {
   const [data, setData] = useState<any>({});
@@ -91,7 +93,7 @@ export default function PerformancePage() {
               <tbody>
                 {Object.entries(strats).map(([name, s]: [string, any]) => (
                   <tr key={name} className="border-b border-border-default/50">
-                    <td className="py-2 pr-3 text-text-primary font-semibold">{name}</td>
+                    <td className="py-2 pr-3 text-text-primary font-semibold">{sn(name)}</td>
                     <td className="py-2 pr-3 text-text-secondary">{s.closed_trades}</td>
                     <td className="py-2 pr-3 text-text-primary">{(s.win_rate * 100).toFixed(1)}%</td>
                     <td className="py-2 pr-3 text-text-primary">{s.profit_factor?.toFixed(2)}</td>
