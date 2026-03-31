@@ -68,8 +68,11 @@ def run_training_cycle():
 
     # Reset per-cycle dedup tracking
     try:
-        from bahamut.training.engine import reset_cycle_dedup
+        from bahamut.training.engine import reset_cycle_dedup, cleanup_invalid_positions
         reset_cycle_dedup()
+        cleaned = cleanup_invalid_positions()
+        if cleaned:
+            logger.info("training_cleanup", removed=cleaned)
     except Exception:
         pass
 
@@ -475,6 +478,18 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 strat_sl = getattr(strat_obj, "sl_pct", 0.05) if strat_obj else 0.05
                 strat_tp = getattr(strat_obj, "tp_pct", 0.10) if strat_obj else 0.10
                 strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
+
+                # Context gate check — even debug exploration must not open in invalid regimes
+                try:
+                    from bahamut.training.context_gate import validate_strategy_context
+                    gate = validate_strategy_context(strat, regime)
+                    if not gate["valid"]:
+                        logger.info("debug_exploration_context_blocked",
+                                    asset=asset, strategy=strat, regime=regime,
+                                    reason=gate["reason"])
+                        continue  # Skip to next asset, don't append signal
+                except Exception:
+                    pass
 
                 result["signals"].append(PendingSignal(
                     asset=asset,

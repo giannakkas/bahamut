@@ -135,7 +135,7 @@ def compute_learning_context(trade_dict: dict) -> LearningContext:
         if pnl > 0:
             score = min(0.5, 0.1 + r_multiple * 0.2)
         elif abs(r_multiple) < 0.2:
-            score = -0.05
+            score = 0.0  # True scratch — economically neutral, don't penalize
         else:
             score = max(-0.5, -0.15 - abs(r_multiple) * 0.1)
     else:

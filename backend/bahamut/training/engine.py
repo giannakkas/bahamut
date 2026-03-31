@@ -293,6 +293,15 @@ def open_training_position(
         return None
 
     # Check no duplicate (same asset + strategy + direction)
+    # Two-layer check: Redis positions + in-process set for same-cycle race condition
+    _opened_this_cycle: set = getattr(open_training_position, "_opened_this_cycle", set())
+    dedup_key = f"{asset}:{strategy}:{direction}"
+    if dedup_key in _opened_this_cycle:
+        logger.warning("training_position_rejected",
+                       asset=asset, reason="DUPLICATE_SAME_CYCLE",
+                       strategy=strategy, direction=direction)
+        return None
+
     existing = _load_positions()
     for p in existing:
         if p.asset == asset and p.strategy == strategy and p.direction == direction:
@@ -308,7 +317,7 @@ def open_training_position(
         "crypto": (0.0001, 200000),    # XRP ~2, BTC ~85K
         "stock": (1, 100000),          # AAPL ~220, BRK.A ~600K
         "commodity": (0.5, 15000),     # Gold ~3100, Oil ~70
-        "index": (100, 100000),        # SPX ~5600, IXIC ~17K
+        "index": (100, 25000),          # SPX ~5600, IXIC ~17K, DJI ~40K
     }
     limits = PRICE_SANITY.get(asset_class, (0, 1000000))
     if entry_price < limits[0] or entry_price > limits[1]:
@@ -358,6 +367,8 @@ def open_training_position(
     )
 
     _save_position(pos)
+    _opened_this_cycle.add(dedup_key)
+    open_training_position._opened_this_cycle = _opened_this_cycle
     logger.info("training_position_opened",
                 asset=asset, strategy=strategy, direction=direction,
                 entry=entry_price, sl=stop_price, tp=tp_price,
@@ -391,8 +402,61 @@ def open_training_position(
 # ═══════════════════════════════════════════
 
 def reset_cycle_dedup():
-    """Reset the per-cycle dedup set. Call once at cycle start."""
+    """Reset the per-cycle dedup sets. Call once at cycle start."""
     update_positions_for_asset._already_closed = set()
+    open_training_position._opened_this_cycle = set()
+
+
+def cleanup_invalid_positions() -> list[str]:
+    """Remove invalid positions at cycle start. Returns list of removed position descriptions."""
+    positions = _load_positions()
+    removed = []
+    seen: dict[str, str] = {}  # dedup key → position_id (keep first, remove later duplicates)
+
+    PRICE_SANITY = {
+        "forex": (0.001, 300),
+        "crypto": (0.0001, 200000),
+        "stock": (1, 100000),
+        "commodity": (0.5, 15000),
+        "index": (100, 25000),
+    }
+
+    VALID_REGIMES = {
+        "v5_base": {"TREND"}, "v5_tuned": {"TREND"},
+        "v9_breakout": {"TREND", "BREAKOUT", "RANGE"},
+        "v10_mean_reversion": {"RANGE"},
+    }
+
+    for pos in positions:
+        remove_reason = None
+
+        # 1. Price sanity
+        limits = PRICE_SANITY.get(pos.asset_class, (0, 1000000))
+        if pos.entry_price < limits[0] or pos.entry_price > limits[1]:
+            remove_reason = f"bad_price: {pos.entry_price} outside {limits} for {pos.asset_class}"
+
+        # 2. Invalid regime (if regime is set)
+        if not remove_reason and pos.regime:
+            allowed = VALID_REGIMES.get(pos.strategy, set())
+            if allowed and pos.regime not in allowed:
+                remove_reason = f"invalid_regime: {pos.strategy} in {pos.regime}"
+
+        # 3. Duplicate (same asset+strategy+direction)
+        dedup_key = f"{pos.asset}:{pos.strategy}:{pos.direction}"
+        if not remove_reason:
+            if dedup_key in seen:
+                remove_reason = f"duplicate: {dedup_key} (keeping {seen[dedup_key]})"
+            else:
+                seen[dedup_key] = pos.position_id
+
+        if remove_reason:
+            _remove_position(pos.position_id)
+            removed.append(f"{pos.asset} {pos.strategy} {pos.regime}: {remove_reason}")
+            logger.info("training_position_cleaned",
+                        asset=pos.asset, strategy=pos.strategy,
+                        position_id=pos.position_id, reason=remove_reason)
+
+    return removed
 
 
 def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
