@@ -329,7 +329,7 @@ export default function TrainingOperationsPage() {
             { l: "Equity", v: `$${eq.toLocaleString(undefined,{maximumFractionDigits:0})}`, c: "text-bah-heading" },
             { l: "P&L", v: `${pnl>=0?"+":""}$${Math.abs(pnl).toLocaleString(undefined,{maximumFractionDigits:0})}`, c: pnl>=0?"text-green-400":"text-red-400" },
             { l: "Return", v: `${ret>=0?"+":""}${ret.toFixed(2)}%`, c: ret>=0?"text-green-400":"text-red-400" },
-            { l: "Win Rate", v: `${wr.toFixed(1)}%`, c: wr>=60?"text-green-400":wr>=45?"text-amber-400":wr>0?"text-red-400":"text-bah-muted", sub: `${k.closed_trades||0} trades` },
+            { l: "Win Rate", v: `${wr.toFixed(1)}%`, c: wr>=60?"text-green-400":wr>=45?"text-amber-400":wr>0?"text-red-400":"text-bah-muted", sub: `${k.wins||0}W ${k.losses||0}L ${k.flat_trades||0}F` },
             { l: "Risk/Trade", v: `$${(k.risk_per_trade||500).toLocaleString()}`, c: "text-bah-cyan", sub: `${k.risk_per_trade_pct||0.5}%` },
             { l: "Open", v: `${k.open_positions||0}`, c: (k.open_positions||0)>0?"text-bah-cyan":"text-bah-muted", sub: `of ${k.universe_size||40}` },
             { l: "Closed", v: `${k.closed_trades||0}`, c: (k.closed_trades||0)>0?"text-green-400":"text-bah-muted", sub: `${(k.avg_duration_bars||0).toFixed(1)} avg bars` },

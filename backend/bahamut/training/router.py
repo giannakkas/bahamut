@@ -74,6 +74,7 @@ def _aggregate_training_trades() -> dict:
             SELECT strategy, asset_class,
                    COUNT(*) as cnt,
                    SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as total_pnl,
                    COALESCE(AVG(pnl), 0) as avg_pnl,
                    COALESCE(AVG(bars_held), 0) as avg_bars,
@@ -85,12 +86,14 @@ def _aggregate_training_trades() -> dict:
             total_cnt = 0
             total_pnl = 0.0
             total_wins = 0
+            total_losses = 0
             total_bars = 0.0
             for row in rows:
                 s = row.get("strategy", "")
                 c = row.get("asset_class", "")
                 cnt = int(row.get("cnt", 0))
                 wins = int(row.get("wins", 0))
+                losses = int(row.get("losses", 0))
                 pnl = float(row.get("total_pnl", 0) or 0)
                 avg_pnl = float(row.get("avg_pnl", 0) or 0)
                 avg_bars = float(row.get("avg_bars", 0) or 0)
@@ -100,17 +103,18 @@ def _aggregate_training_trades() -> dict:
                 total_cnt += cnt
                 total_pnl += pnl
                 total_wins += wins
+                total_losses += losses
                 total_bars += avg_bars * cnt
 
                 if s not in result["by_strategy"]:
-                    result["by_strategy"][s] = {"cnt": 0, "wins": 0, "pnl": 0, "avg_pnl": 0, "avg_bars": 0, "gp": 0, "gl": 0}
+                    result["by_strategy"][s] = {"cnt": 0, "wins": 0, "losses": 0, "pnl": 0, "avg_pnl": 0, "avg_bars": 0, "gp": 0, "gl": 0}
                 bs = result["by_strategy"][s]
-                bs["cnt"] += cnt; bs["wins"] += wins; bs["pnl"] += pnl; bs["gp"] += gp; bs["gl"] += gl
+                bs["cnt"] += cnt; bs["wins"] += wins; bs["losses"] += losses; bs["pnl"] += pnl; bs["gp"] += gp; bs["gl"] += gl
 
                 if c not in result["by_class"]:
-                    result["by_class"][c] = {"cnt": 0, "wins": 0, "pnl": 0}
+                    result["by_class"][c] = {"cnt": 0, "wins": 0, "losses": 0, "pnl": 0}
                 bc = result["by_class"][c]
-                bc["cnt"] += cnt; bc["wins"] += wins; bc["pnl"] += pnl
+                bc["cnt"] += cnt; bc["wins"] += wins; bc["losses"] += losses; bc["pnl"] += pnl
 
             # Compute averages for strategies
             for s, bs in result["by_strategy"].items():
@@ -118,6 +122,7 @@ def _aggregate_training_trades() -> dict:
                 bs["avg_bars"] = total_bars / max(1, total_cnt) if total_cnt else 0
 
             result["total"] = {"cnt": total_cnt, "pnl": total_pnl, "wins": total_wins,
+                               "losses": total_losses,
                                "avg_bars": total_bars / max(1, total_cnt)}
     except Exception:
         pass
@@ -246,6 +251,8 @@ def _build_kpi(r, db_agg: dict) -> dict:
     net_pnl = round(totals.get("pnl", 0), 2)
     closed = totals.get("cnt", 0)
     wins = totals.get("wins", 0)
+    losses = totals.get("losses", 0)
+    decisive = wins + losses  # Trades with actual P&L (excludes flat scratches)
     equity = round(TRAINING_VIRTUAL_CAPITAL + net_pnl, 2)
     risk_per_trade = round(TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT, 2)
 
@@ -266,7 +273,10 @@ def _build_kpi(r, db_agg: dict) -> dict:
         "assets_scanned": 0,
         "open_positions": get_open_position_count(),
         "closed_trades": closed,
-        "win_rate": round(wins / max(1, closed), 4),
+        "win_rate": round(wins / max(1, decisive), 4),  # Excludes flat trades from denominator
+        "wins": wins,
+        "losses": losses,
+        "flat_trades": closed - decisive,
         "avg_duration_bars": round(totals.get("avg_bars", 0), 1),
         "last_cycle": None,
         "cycle_status": "unknown",
@@ -389,12 +399,14 @@ def _build_strategy_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
         bs = db_agg.get("by_strategy", {}).get(strat, {})
         cnt = bs.get("cnt", 0)
         wins = bs.get("wins", 0)
+        losses = bs.get("losses", 0)
+        decisive = wins + losses
         gp = bs.get("gp", 0)
         gl = bs.get("gl", 0)
         strategies[strat] = {
             "open_trades": sum(1 for p in positions if p.strategy == strat),
             "closed_trades": cnt,
-            "win_rate": round(wins / max(1, cnt), 4) if cnt else 0,
+            "win_rate": round(wins / max(1, decisive), 4) if decisive else 0,
             "profit_factor": round(gp / max(gl, 0.01), 2) if cnt else 0,
             "avg_pnl": round(bs.get("avg_pnl", 0), 2),
             "total_pnl": round(bs.get("pnl", 0), 2),
@@ -412,11 +424,13 @@ def _build_class_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
         bc = db_agg.get("by_class", {}).get(cls, {})
         cnt = bc.get("cnt", 0)
         wins = bc.get("wins", 0)
+        losses = bc.get("losses", 0)
+        decisive = wins + losses
         classes[cls] = {
             "open_trades": sum(1 for p in positions if ASSET_CLASS_MAP.get(p.asset) == cls),
             "closed_trades": cnt,
             "pnl": round(bc.get("pnl", 0), 2),
-            "win_rate": round(wins / max(1, cnt), 4) if cnt else 0,
+            "win_rate": round(wins / max(1, decisive), 4) if decisive else 0,
             "signals": cnt,
         }
     return classes
@@ -465,6 +479,7 @@ def _build_strategy_breakdown(r) -> dict:
             row = run_query_one("""
                 SELECT COUNT(*) as cnt,
                        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        COALESCE(SUM(pnl), 0) as total_pnl,
                        COALESCE(AVG(pnl), 0) as avg_pnl,
                        COALESCE(AVG(bars_held), 0) as avg_bars,
@@ -475,8 +490,10 @@ def _build_strategy_breakdown(r) -> dict:
             if row and int(row.get("cnt", 0)) > 0:
                 cnt = int(row["cnt"])
                 wins = int(row.get("wins", 0))
+                losses = int(row.get("losses", 0))
+                decisive = wins + losses
                 stats["closed_trades"] = cnt
-                stats["win_rate"] = round(wins / max(1, cnt), 4)
+                stats["win_rate"] = round(wins / max(1, decisive), 4)
                 stats["total_pnl"] = round(float(row.get("total_pnl", 0) or 0), 2)
                 stats["avg_pnl"] = round(float(row.get("avg_pnl", 0) or 0), 2)
                 stats["avg_hold_bars"] = round(float(row.get("avg_bars", 0) or 0), 1)
@@ -520,14 +537,18 @@ def _build_class_breakdown(r) -> dict:
             row = run_query_one("""
                 SELECT COUNT(*) as cnt,
                        SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        COALESCE(SUM(pnl), 0) as total_pnl
                 FROM training_trades WHERE asset_class = :c
             """, {"c": cls})
             if row and int(row.get("cnt", 0)) > 0:
                 cnt = int(row["cnt"])
+                wins = int(row.get("wins", 0))
+                losses = int(row.get("losses", 0))
+                decisive = wins + losses
                 stats["closed_trades"] = cnt
                 stats["pnl"] = round(float(row.get("total_pnl", 0) or 0), 2)
-                stats["win_rate"] = round(int(row.get("wins", 0)) / max(1, cnt), 4)
+                stats["win_rate"] = round(wins / max(1, decisive), 4)
                 stats["signals"] = cnt
         except Exception:
             pass
