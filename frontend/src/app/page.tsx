@@ -236,11 +236,11 @@ export default function Dashboard() {
               <div className="hidden sm:block w-px h-8 bg-border-default" />
               <div className="min-w-0">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Your P&L</div>
-                <div className={`text-base sm:text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)} <span className="text-[10px] text-text-muted">{fp(userRetPct)}</span></div>
+                <div className={`text-base sm:text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)}</div>
               </div>
               <div className="hidden sm:block w-px h-8 bg-border-default" />
               <div className="min-w-0">
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Platform Winnings</div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Your Winnings</div>
                 <div className={`text-base sm:text-lg font-bold ${systemPnl >= 0 ? 'text-accent-cyan' : 'text-accent-crimson'}`}>{fmS(systemPnl)}</div>
               </div>
             </div>
