@@ -1,47 +1,34 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AppShell from '@/components/layout/AppShell';
+import { fetchWallet, depositFunds, setAllocation, WalletTransaction } from '@/lib/walletApi';
 
 const fm = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmS = (n: number) => `${n >= 0 ? '+' : '-'}${fm(n)}`;
 
-const HISTORY_KEY = 'bahamut_wallet_history';
-const BALANCE_KEY = 'bahamut_demo_balance';
-const ALLOC_KEY = 'bahamut_demo_allocation';
-
-interface WalletEntry {
-  type: 'deposit' | 'allocation' | 'withdrawal';
-  amount: number;
-  balance_after: number;
-  allocation_after: number;
-  timestamp: string;
-  mode: 'demo' | 'live';
-}
-
-function loadHistory(): WalletEntry[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
-}
-function saveHistory(h: WalletEntry[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 100)));
-}
-
 export default function WalletPage() {
   const [balance, setBalance] = useState(0);
-  const [allocation, setAllocation] = useState(0);
-  const [history, setHistory] = useState<WalletEntry[]>([]);
+  const [allocation, setAlloc] = useState(0);
+  const [history, setHistory] = useState<WalletTransaction[]>([]);
   const [fundAmount, setFundAmount] = useState('');
   const [allocInput, setAllocInput] = useState('');
   const [mode, setMode] = useState<'demo' | 'live'>('demo');
   const [toast, setToast] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadWallet = useCallback(async () => {
+    const w = await fetchWallet();
+    if (w) {
+      setBalance(w.balance);
+      setAlloc(w.allocation);
+      setHistory(w.transactions);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
+    loadWallet();
     if (typeof window === 'undefined') return;
-    const b = localStorage.getItem(BALANCE_KEY);
-    if (b) setBalance(parseFloat(b));
-    const a = localStorage.getItem(ALLOC_KEY);
-    if (a) setAllocation(parseFloat(a));
-    setHistory(loadHistory());
     const m = localStorage.getItem('bahamut_trading_mode');
     if (m === 'live' || m === 'demo') setMode(m);
     const iv = setInterval(() => {
@@ -49,39 +36,35 @@ export default function WalletPage() {
       if (m2 === 'live' || m2 === 'demo') setMode(m2);
     }, 1000);
     return () => clearInterval(iv);
-  }, []);
+  }, [loadWallet]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-  const addFunds = (amount: number) => {
-    const newBal = Math.min(100000, balance + amount);
-    setBalance(newBal);
-    localStorage.setItem(BALANCE_KEY, String(newBal));
-    if (allocation === 0) {
-      setAllocation(newBal);
-      localStorage.setItem(ALLOC_KEY, String(newBal));
+  const addFunds = async (amount: number) => {
+    const result = await depositFunds(amount, mode);
+    if (result) {
+      setBalance(result.balance);
+      setAlloc(result.allocation);
+      showToast(`${fm(result.deposited)} deposited! Will be invested in the next trade.`);
+      loadWallet(); // Refresh history
     }
-    const entry: WalletEntry = { type: 'deposit', amount, balance_after: newBal, allocation_after: allocation || newBal, timestamp: new Date().toISOString(), mode };
-    const h = [entry, ...history];
-    setHistory(h);
-    saveHistory(h);
     setFundAmount('');
-    showToast(`${fm(amount)} deposited! Will be invested in the next trade.`);
   };
 
-  const updateAllocation = () => {
-    const val = Math.min(parseFloat(allocInput) || 0, balance);
-    setAllocation(val);
-    localStorage.setItem(ALLOC_KEY, String(val));
-    const entry: WalletEntry = { type: 'allocation', amount: val, balance_after: balance, allocation_after: val, timestamp: new Date().toISOString(), mode };
-    const h = [entry, ...history];
-    setHistory(h);
-    saveHistory(h);
+  const updateAllocation = async () => {
+    const val = parseFloat(allocInput) || 0;
+    const result = await setAllocation(val, mode);
+    if (result) {
+      setBalance(result.balance);
+      setAlloc(result.allocation);
+      showToast(`Allocation set to ${fm(result.allocation)}. Will be invested in the next trade.`);
+      loadWallet();
+    }
     setAllocInput('');
-    showToast(`Allocation set to ${fm(val)}. Will be invested in the next trade.`);
   };
 
   const timeAgo = (iso: string) => {
+    if (!iso) return '';
     const d = Date.now() - new Date(iso).getTime();
     const m = Math.floor(d / 60000);
     if (m < 1) return 'just now';
@@ -90,6 +73,8 @@ export default function WalletPage() {
     if (h < 24) return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
   };
+
+  if (loading) return <AppShell><div className="flex items-center justify-center min-h-[60vh]"><div className="w-8 h-8 border-2 border-accent-violet/30 border-t-accent-violet rounded-full animate-spin" /></div></AppShell>;
 
   return (
     <AppShell>
@@ -137,7 +122,7 @@ export default function WalletPage() {
               <input type="number" placeholder="Custom" value={fundAmount} onChange={e => setFundAmount(e.target.value)}
                 className="w-24 px-2 py-1.5 text-[11px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
               {fundAmount && (
-                <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - balance))}
+                <button onClick={() => addFunds(parseFloat(fundAmount) || 0)}
                   className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80">Add</button>
               )}
               <span className="text-[10px] text-text-muted ml-auto">{fm(balance)} / {fm(100000)}</span>
@@ -182,15 +167,13 @@ export default function WalletPage() {
                 {history.map((e, i) => (
                   <div key={i} className="flex items-center gap-3 py-2 border-b border-border-default/30 last:border-0">
                     <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      e.type === 'deposit' ? 'bg-accent-emerald/15 text-accent-emerald' :
-                      e.type === 'allocation' ? 'bg-accent-violet/15 text-accent-violet' :
-                      'bg-accent-crimson/15 text-accent-crimson'
+                      e.type === 'deposit' ? 'bg-accent-emerald/15 text-accent-emerald' : 'bg-accent-violet/15 text-accent-violet'
                     }`}>
-                      {e.type === 'deposit' ? '↓' : e.type === 'allocation' ? '↕' : '↑'}
+                      {e.type === 'deposit' ? '↓' : '↕'}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-text-primary font-semibold">
-                        {e.type === 'deposit' ? 'Deposit' : e.type === 'allocation' ? 'Allocation Change' : 'Withdrawal'}
+                        {e.type === 'deposit' ? 'Deposit' : 'Allocation Change'}
                       </div>
                       <div className="text-[10px] text-text-muted">
                         {e.type === 'deposit' ? `Added ${fm(e.amount)}` : `Set to ${fm(e.amount)}`} · Balance: {fm(e.balance_after)}

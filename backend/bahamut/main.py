@@ -275,6 +275,12 @@ try:
 except Exception:
     pass
 
+try:
+    from bahamut.wallet.router import router as wallet_router
+    app.include_router(wallet_router, prefix="/api/v1/wallet", tags=["wallet"])
+except Exception:
+    pass
+
 
 @app.get("/health")
 @app.get("/api/v1/health")

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AppShell from '@/components/layout/AppShell';
+import { fetchWallet, depositFunds, setAllocation as apiSetAllocation } from '@/lib/walletApi';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 const getH = (): Record<string, string> => {
@@ -87,22 +88,22 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, [load]);
 
-  // Demo/Live state — mode is controlled by sidebar toggle
-  const [demoBalance, setDemoBalance] = useState(0);
-  const [liveBalance, setLiveBalance] = useState(0);
-  const [demoAllocation, setDemoAllocation] = useState(0);
-  const [liveAllocation, setLiveAllocation] = useState(0);
+  // Wallet state — persisted on backend
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletAllocation, setWalletAllocation] = useState(0);
   const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
+
+  const loadWallet = useCallback(async () => {
+    const w = await fetchWallet();
+    if (w) {
+      setWalletBalance(w.balance);
+      setWalletAllocation(w.allocation);
+    }
+  }, []);
+
   useEffect(() => {
+    loadWallet();
     if (typeof window === 'undefined') return;
-    const savedDemo = localStorage.getItem('bahamut_demo_balance');
-    if (savedDemo) setDemoBalance(parseFloat(savedDemo));
-    const savedLive = localStorage.getItem('bahamut_live_balance');
-    if (savedLive) setLiveBalance(parseFloat(savedLive));
-    const savedDemoAlloc = localStorage.getItem('bahamut_demo_allocation');
-    if (savedDemoAlloc) setDemoAllocation(parseFloat(savedDemoAlloc));
-    const savedLiveAlloc = localStorage.getItem('bahamut_live_allocation');
-    if (savedLiveAlloc) setLiveAllocation(parseFloat(savedLiveAlloc));
     const syncMode = () => {
       const mode = localStorage.getItem('bahamut_trading_mode');
       if (mode === 'live' || mode === 'demo') setTradingMode(mode);
@@ -110,42 +111,28 @@ export default function Dashboard() {
     syncMode();
     const iv = setInterval(syncMode, 1000);
     return () => clearInterval(iv);
-  }, []);
+  }, [loadWallet]);
 
-  const addFunds = (amount: number) => {
-    const newBal = Math.min(100000, demoBalance + amount);
-    setDemoBalance(newBal);
-    localStorage.setItem('bahamut_demo_balance', String(newBal));
-    if (demoAllocation === 0 || demoAllocation > newBal) {
-      setDemoAllocation(newBal);
-      localStorage.setItem('bahamut_demo_allocation', String(newBal));
+  const addFunds = async (amount: number) => {
+    const result = await depositFunds(amount, tradingMode);
+    if (result) {
+      setWalletBalance(result.balance);
+      setWalletAllocation(result.allocation);
     }
-    // Save to wallet history
-    try {
-      const hist = JSON.parse(localStorage.getItem('bahamut_wallet_history') || '[]');
-      hist.unshift({ type: 'deposit', amount, balance_after: newBal, allocation_after: demoAllocation || newBal, timestamp: new Date().toISOString(), mode: tradingMode });
-      localStorage.setItem('bahamut_wallet_history', JSON.stringify(hist.slice(0, 100)));
-    } catch {}
     setShowAddFunds(false);
     setFundAmount('');
     showToast('Funds added! Your money will be invested in the next trade.');
   };
 
-  const saveAllocation = (val: number) => {
-    const capped = Math.min(val, userBalance);
-    const key = tradingMode === 'demo' ? 'bahamut_demo_allocation' : 'bahamut_live_allocation';
-    if (tradingMode === 'demo') setDemoAllocation(capped);
-    else setLiveAllocation(capped);
-    localStorage.setItem(key, String(capped));
-    // Save to wallet history
-    try {
-      const hist = JSON.parse(localStorage.getItem('bahamut_wallet_history') || '[]');
-      hist.unshift({ type: 'allocation', amount: capped, balance_after: userBalance, allocation_after: capped, timestamp: new Date().toISOString(), mode: tradingMode });
-      localStorage.setItem('bahamut_wallet_history', JSON.stringify(hist.slice(0, 100)));
-    } catch {}
+  const saveAllocation = async (val: number) => {
+    const result = await apiSetAllocation(val, tradingMode);
+    if (result) {
+      setWalletBalance(result.balance);
+      setWalletAllocation(result.allocation);
+    }
     setEditingAlloc(false);
     setAllocInput('');
-    showToast(`Allocation updated to ${fm(capped)}. Your money will be invested in the next trade.`);
+    showToast(`Allocation updated to ${fm(val)}. Your money will be invested in the next trade.`);
   };
 
   if (loading) return (
@@ -159,8 +146,9 @@ export default function Dashboard() {
   // Trader sees system trades live — "watch the magic happen"
   const traderPositions = k.open_positions || 0;
   const traderClosed = k.closed_trades || 0;
-  const userBalance = tradingMode === 'demo' ? demoBalance : liveBalance;
-  const userAllocation = tradingMode === 'demo' ? demoAllocation : liveAllocation;
+  // Balance logic — from backend wallet
+  const userBalance = walletBalance;
+  const userAllocation = walletAllocation;
 
   // Trader's P&L = proportional share of system P&L based on allocation
   const systemCapital = 100000;

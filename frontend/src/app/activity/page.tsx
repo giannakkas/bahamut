@@ -29,7 +29,16 @@ export default function ActivityPage() {
       }
     } catch {}
     if (typeof window !== 'undefined') {
-      try { setWalletHistory(JSON.parse(localStorage.getItem('bahamut_wallet_history') || '[]')); } catch {}
+      try {
+        import('@/lib/walletApi').then(({ fetchWallet }) => {
+          fetchWallet().then(w => {
+            if (w) setWalletHistory(w.transactions.map(t => ({
+              type: t.type, amount: t.amount, balance_after: t.balance_after,
+              allocation_after: t.allocation_after, timestamp: t.timestamp, mode: t.mode,
+            })));
+          });
+        });
+      } catch {}
     }
     setLoading(false);
   }, []);
