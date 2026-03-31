@@ -480,6 +480,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
 
                 # Context gate check — even debug exploration must not open in invalid regimes
+                context_blocked = False
                 try:
                     from bahamut.training.context_gate import validate_strategy_context
                     gate = validate_strategy_context(strat, regime)
@@ -487,28 +488,29 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         logger.info("debug_exploration_context_blocked",
                                     asset=asset, strategy=strat, regime=regime,
                                     reason=gate["reason"])
-                        continue  # Skip to next asset, don't append signal
+                        context_blocked = True
                 except Exception:
                     pass
 
-                result["signals"].append(PendingSignal(
-                    asset=asset,
-                    asset_class=asset_class,
-                    strategy=strat,
-                    direction=direction,
-                    readiness_score=best_score,
-                    regime=regime,
-                    entry_price=bar["close"],
-                    sl_pct=strat_sl,
-                    tp_pct=strat_tp,
-                    max_hold_bars=strat_hold,
-                    reasons=best_candidate.reasons if hasattr(best_candidate, 'reasons') else ["debug_exploration_override"],
-                    execution_type="debug_exploration",
-                    confidence_score=float(best_score),
-                    trigger_reason="debug_exploration_override",
-                    risk_multiplier=0.5,
-                    indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
-                ))
+                if not context_blocked:
+                    result["signals"].append(PendingSignal(
+                        asset=asset,
+                        asset_class=asset_class,
+                        strategy=strat,
+                        direction=direction,
+                        readiness_score=best_score,
+                        regime=regime,
+                        entry_price=bar["close"],
+                        sl_pct=strat_sl,
+                        tp_pct=strat_tp,
+                        max_hold_bars=strat_hold,
+                        reasons=best_candidate.reasons if hasattr(best_candidate, 'reasons') else ["debug_exploration_override"],
+                        execution_type="debug_exploration",
+                        confidence_score=float(best_score),
+                        trigger_reason="debug_exploration_override",
+                        risk_multiplier=0.5,
+                        indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
+                    ))
             else:
                 logger.info("debug_override_no_qualifying_candidate",
                             asset=asset, min_score=debug_min_score,
