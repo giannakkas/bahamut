@@ -193,20 +193,43 @@ export default function Dashboard() {
                 <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(userBalance)}</div>
               </div>
               <div className="hidden sm:block w-px h-8 bg-border-default" />
-              <div className="min-w-0">
+              <div className="min-w-0 relative">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Allocation</div>
-                {editingAlloc ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-lg text-text-muted">$</span>
-                    <input type="number" autoFocus value={allocInput}
-                      onChange={e => setAllocInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') saveAllocation(parseFloat(allocInput) || 0); if (e.key === 'Escape') setEditingAlloc(false); }}
-                      onBlur={() => { if (allocInput) saveAllocation(parseFloat(allocInput) || 0); else setEditingAlloc(false); }}
-                      className="w-24 text-lg font-bold bg-transparent border-b border-accent-violet text-accent-violet outline-none" />
-                  </div>
-                ) : (
-                  <div className="text-lg sm:text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => { setEditingAlloc(true); setAllocInput(String(userAllocation)); }}>
-                    {fm(userAllocation)} <span className="text-[9px] text-text-muted">✎</span>
+                <div className="text-lg sm:text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => setEditingAlloc(!editingAlloc)}>
+                  {fm(userAllocation)}
+                </div>
+                {editingAlloc && (
+                  <div className="absolute top-full left-0 mt-2 z-50 bg-bg-secondary border border-accent-violet/30 rounded-xl p-3 shadow-xl shadow-black/30 min-w-[240px]">
+                    <div className="text-[10px] text-text-muted mb-2">Set allocation (max {fm(userBalance)})</div>
+                    <div className="grid grid-cols-3 gap-1.5 mb-2">
+                      {[25, 50, 75, 100].map(pct => {
+                        const val = Math.round(userBalance * pct / 100);
+                        return (
+                          <button key={pct} onClick={() => { saveAllocation(val); }}
+                            className={`px-2 py-1.5 text-[10px] font-bold rounded-lg border transition-all ${
+                              userAllocation === val
+                                ? 'bg-accent-violet/20 border-accent-violet/40 text-accent-violet'
+                                : 'border-border-default bg-bg-tertiary text-text-secondary hover:border-accent-violet/30 hover:text-accent-violet'
+                            }`}>
+                            {pct}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center flex-1 bg-bg-tertiary border border-border-default rounded-lg overflow-hidden focus-within:border-accent-violet">
+                        <span className="text-[11px] text-text-muted pl-2">$</span>
+                        <input type="number" autoFocus value={allocInput} placeholder="Custom"
+                          onChange={e => setAllocInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && allocInput) { saveAllocation(parseFloat(allocInput) || 0); } if (e.key === 'Escape') setEditingAlloc(false); }}
+                          className="w-full px-1 py-1.5 text-[11px] font-bold bg-transparent text-text-primary outline-none" />
+                      </div>
+                      <button onClick={() => { if (allocInput) saveAllocation(parseFloat(allocInput) || 0); }}
+                        disabled={!allocInput}
+                        className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 disabled:opacity-30 transition-all shrink-0">
+                        Set
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
