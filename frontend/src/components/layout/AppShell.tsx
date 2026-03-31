@@ -5,10 +5,9 @@ import { useAuthStore } from '@/stores/auth';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: '◉', minRole: 'user' },
-  { href: '/top-picks', label: 'Top Picks', icon: '🔥', minRole: 'user' },
-  { href: '/portfolio', label: 'Portfolio', icon: '◧', minRole: 'user' },
-  { href: '/trades', label: 'Trades', icon: '⇄', minRole: 'user' },
-  { href: '/news', label: 'News Feed', icon: '◈', minRole: 'user' },
+  { href: '/wallet', label: 'Wallet', icon: '💰', minRole: 'user' },
+  { href: '/performance', label: 'Performance', icon: '📈', minRole: 'user' },
+  { href: '/activity', label: 'Activity', icon: '📋', minRole: 'user' },
 ];
 
 const ROLE_LEVELS: Record<string, number> = {

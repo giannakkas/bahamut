@@ -120,6 +120,12 @@ export default function Dashboard() {
       setDemoAllocation(newBal);
       localStorage.setItem('bahamut_demo_allocation', String(newBal));
     }
+    // Save to wallet history
+    try {
+      const hist = JSON.parse(localStorage.getItem('bahamut_wallet_history') || '[]');
+      hist.unshift({ type: 'deposit', amount, balance_after: newBal, allocation_after: demoAllocation || newBal, timestamp: new Date().toISOString(), mode: tradingMode });
+      localStorage.setItem('bahamut_wallet_history', JSON.stringify(hist.slice(0, 100)));
+    } catch {}
     setShowAddFunds(false);
     setFundAmount('');
     showToast('Funds added! Your money will be invested in the next trade.');
@@ -131,6 +137,12 @@ export default function Dashboard() {
     if (tradingMode === 'demo') setDemoAllocation(capped);
     else setLiveAllocation(capped);
     localStorage.setItem(key, String(capped));
+    // Save to wallet history
+    try {
+      const hist = JSON.parse(localStorage.getItem('bahamut_wallet_history') || '[]');
+      hist.unshift({ type: 'allocation', amount: capped, balance_after: userBalance, allocation_after: capped, timestamp: new Date().toISOString(), mode: tradingMode });
+      localStorage.setItem('bahamut_wallet_history', JSON.stringify(hist.slice(0, 100)));
+    } catch {}
     setEditingAlloc(false);
     setAllocInput('');
     showToast(`Allocation updated to ${fm(capped)}. Your money will be invested in the next trade.`);
