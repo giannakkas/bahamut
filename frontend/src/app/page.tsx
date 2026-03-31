@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import AppShell from '@/components/layout/AppShell';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
-const getH = () => {
+const getH = (): Record<string, string> => {
   const t = typeof window !== 'undefined' ? localStorage.getItem('bahamut_token') : null;
   return t ? { Authorization: `Bearer ${t}` } : {};
 };
