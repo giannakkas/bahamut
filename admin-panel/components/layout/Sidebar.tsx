@@ -12,7 +12,6 @@ import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const OPERATIONAL_NAV = [
   { href: "/training-operations", label: "Training Operations", icon: "🧪" },
-  { href: "/v7-operations", label: "Daily Operations", icon: "📊" },
   { href: "/settings-notifications", label: "Notifications", icon: "🔔" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
   { href: "/users", label: "Users", icon: "👥" },
