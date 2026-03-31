@@ -160,7 +160,7 @@ export default function Dashboard() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] mx-auto space-y-4">
+      <div className="max-w-[1400px] mx-auto space-y-3 sm:space-y-4 px-2 sm:px-0">
 
         {/* TOAST */}
         {toast && (
@@ -173,16 +173,16 @@ export default function Dashboard() {
         )}
 
         {/* TOP BAR */}
-        <div className="bg-bg-secondary/80 border border-border-default rounded-xl px-5 py-3">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-6 flex-1">
-              <div>
+        <div className="bg-bg-secondary/80 border border-border-default rounded-xl px-3 sm:px-5 py-3">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-6 flex-1 min-w-0">
+              <div className="min-w-0">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
-                <div className="text-xl font-bold text-text-primary">{fm(userBalance)}</div>
+                <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(userBalance)}</div>
               </div>
-              <div className="w-px h-8 bg-border-default" />
-              <div>
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Trading Allocation</div>
+              <div className="hidden sm:block w-px h-8 bg-border-default" />
+              <div className="min-w-0">
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Allocation</div>
                 {editingAlloc ? (
                   <div className="flex items-center gap-1">
                     <span className="text-lg text-text-muted">$</span>
@@ -190,58 +190,57 @@ export default function Dashboard() {
                       onChange={e => setAllocInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') saveAllocation(parseFloat(allocInput) || 0); if (e.key === 'Escape') setEditingAlloc(false); }}
                       onBlur={() => { if (allocInput) saveAllocation(parseFloat(allocInput) || 0); else setEditingAlloc(false); }}
-                      className="w-28 text-lg font-bold bg-transparent border-b border-accent-violet text-accent-violet outline-none" />
+                      className="w-24 text-lg font-bold bg-transparent border-b border-accent-violet text-accent-violet outline-none" />
                   </div>
                 ) : (
-                  <div className="text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => { setEditingAlloc(true); setAllocInput(String(userAllocation)); }}>
+                  <div className="text-lg sm:text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => { setEditingAlloc(true); setAllocInput(String(userAllocation)); }}>
                     {fm(userAllocation)} <span className="text-[9px] text-text-muted">✎</span>
                   </div>
                 )}
               </div>
-              <div className="w-px h-8 bg-border-default" />
-              <div>
+              <div className="hidden sm:block w-px h-8 bg-border-default" />
+              <div className="min-w-0">
                 <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">P&L</div>
-                <div className={`text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)} <span className="text-xs text-text-muted">{fp(userRetPct)}</span></div>
+                <div className={`text-base sm:text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)} <span className="text-[10px] text-text-muted">{fp(userRetPct)}</span></div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               {tradingMode === 'demo' ? (
                 <button onClick={() => setShowAddFunds(!showAddFunds)}
-                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet/15 text-accent-violet border border-accent-violet/30 hover:bg-accent-violet/25 transition-all">
-                  + Add Virtual Funds
+                  className="px-2 sm:px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet/15 text-accent-violet border border-accent-violet/30 hover:bg-accent-violet/25 transition-all whitespace-nowrap">
+                  + Add Funds
                 </button>
               ) : (
                 <button onClick={() => setShowAddFunds(!showAddFunds)}
-                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all">
-                  💳 Add Real Funds
+                  className="px-2 sm:px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all whitespace-nowrap">
+                  💳 Add Funds
                 </button>
               )}
-              <span className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
-              <span className="text-[10px] text-text-muted font-mono">{wsStatus === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
+              <span className="text-[10px] text-text-muted font-mono hidden sm:inline">{wsStatus === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
             </div>
           </div>
 
           {/* Add Funds Panel — Demo */}
           {showAddFunds && tradingMode === 'demo' && (
-            <div className="mt-3 pt-3 border-t border-border-default flex items-center gap-3 flex-wrap">
-              <span className="text-[10px] text-text-muted">Add virtual funds (max $100K):</span>
-              <div className="flex gap-2">
+            <div className="mt-3 pt-3 border-t border-border-default flex flex-wrap items-center gap-2 sm:gap-3">
+              <span className="text-[10px] text-text-muted">Virtual funds (max $100K):</span>
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 {[5000, 10000, 25000, 50000].map(amt => (
                   <button key={amt} onClick={() => addFunds(amt)} disabled={userBalance >= 100000}
-                    className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
+                    className="px-2 sm:px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
                     +{fm(amt)}
                   </button>
                 ))}
               </div>
               <input type="number" placeholder="Custom" value={fundAmount}
                 onChange={e => setFundAmount(e.target.value)}
-                className="w-24 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
+                className="w-20 sm:w-24 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
               {fundAmount && (
                 <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - userBalance))}
                   className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">Add</button>
               )}
-              <span className="text-[9px] text-text-muted ml-auto">{fm(userBalance)} / {fm(100000)}</span>
             </div>
           )}
 
