@@ -1218,7 +1218,7 @@ async def risk_metrics():
 
         trades = run_query("""
             SELECT asset, strategy, direction, pnl, pnl_pct, exit_reason,
-                   bars_held, entry_time, exit_time, r_multiple
+                   bars_held, entry_time, exit_time
             FROM training_trades ORDER BY exit_time ASC
         """)
         if not trades:
@@ -1283,8 +1283,8 @@ async def risk_metrics():
                 biggest_win = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
             if pnl < biggest_loss["pnl"]:
                 biggest_loss = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
-            # R-multiples
-            r = t.get("r_multiple", 0) or 0
+            # R-multiples (approximate from pnl_pct / ~3% risk per trade)
+            r = (t.get("pnl_pct", 0) or 0) / 0.03  # ~3% risk baseline
             total_r += r
             if r > 0:
                 win_r.append(r)
@@ -1306,7 +1306,7 @@ async def risk_metrics():
             elif p < -0.01:
                 strat_stats[s]["losses"] += 1
                 strat_stats[s]["max_loss"] = min(strat_stats[s]["max_loss"], p)
-            strat_stats[s]["r_sum"] = round(strat_stats[s]["r_sum"] + (t.get("r_multiple", 0) or 0), 2)
+            strat_stats[s]["r_sum"] = round(strat_stats[s]["r_sum"] + ((t.get("pnl_pct", 0) or 0) / 0.03), 2)
 
         # Per-class risk
         class_stats = {}
@@ -1392,7 +1392,7 @@ async def trust_dashboard():
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as total_pnl,
-                   COALESCE(AVG(r_multiple), 0) as avg_r
+                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
             FROM training_trades GROUP BY asset ORDER BY total_pnl DESC
         """)
 
@@ -1407,7 +1407,7 @@ async def trust_dashboard():
                 "losses": r["losses"],
                 "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
                 "pnl": round(r["total_pnl"], 2),
-                "avg_r": round(r["avg_r"], 3),
+                "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
             }
             if r["total_pnl"] > 0:
                 best_assets.append(entry)
@@ -1419,11 +1419,11 @@ async def trust_dashboard():
         exit_rows = run_query("""
             SELECT exit_reason, COUNT(*) as count,
                    COALESCE(AVG(pnl), 0) as avg_pnl,
-                   COALESCE(AVG(r_multiple), 0) as avg_r
+                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
             FROM training_trades GROUP BY exit_reason
         """)
         exit_stats = {r["exit_reason"]: {"count": r["count"], "avg_pnl": round(r["avg_pnl"], 2),
-                      "avg_r": round(r["avg_r"], 3)} for r in (exit_rows or [])}
+                      "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3)} for r in (exit_rows or [])}
 
         # Direction performance
         dir_rows = run_query("""
@@ -1445,14 +1445,14 @@ async def trust_dashboard():
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as pnl,
-                   COALESCE(AVG(r_multiple), 0) as avg_r
+                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
             FROM training_trades GROUP BY regime
         """)
         regime_stats = {}
         for r in (regime_rows or []):
             regime_stats[r["regime"]] = {
                 "trades": r["trades"], "wins": r["wins"], "losses": r["losses"],
-                "pnl": round(r["pnl"], 2), "avg_r": round(r["avg_r"], 3),
+                "pnl": round(r["pnl"], 2), "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
                 "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
             }
 
