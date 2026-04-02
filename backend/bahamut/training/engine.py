@@ -56,6 +56,8 @@ class TrainingPosition:
     confidence_score: float = 0.0
     trigger_reason: str = "4h_close"      # "4h_close" | "early_signal"
     regime: str = ""                      # TREND / RANGE / BREAKOUT — preserved for learning
+    exchange_order_id: str = ""           # Binance/Alpaca order ID
+    execution_platform: str = "internal"  # "binance" | "alpaca" | "internal"
 
     @property
     def unrealized_pnl(self):
@@ -88,6 +90,8 @@ class TrainingTrade:
     execution_type: str = "standard"
     confidence_score: float = 0.0
     trigger_reason: str = "4h_close"
+    exchange_order_id: str = ""           # Binance/Alpaca order ID
+    execution_platform: str = "internal"  # "binance" | "alpaca" | "internal"
 
 
 # ═══════════════════════════════════════════
@@ -380,6 +384,40 @@ def open_training_position(
     _save_position(pos)
     _opened_this_cycle.add(dedup_key)
     open_training_position._opened_this_cycle = _opened_this_cycle
+
+    # ── Execute on exchange (Binance/Alpaca) ──
+    try:
+        from bahamut.execution.router import execute_open as exec_open
+        exec_result = exec_open(
+            asset=asset, asset_class=asset_class, direction=direction,
+            size=pos.size, risk_amount=risk_amount,
+        )
+        pos.execution_platform = exec_result.get("platform", "internal")
+        pos.exchange_order_id = exec_result.get("order_id", "")
+        if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
+            # Use actual fill price from exchange
+            old_entry = pos.entry_price
+            pos.entry_price = round(exec_result["fill_price"], 6)
+            # Recalculate SL/TP based on actual fill
+            if direction == "LONG":
+                pos.stop_price = round(pos.entry_price * (1 - sl_pct), 6)
+                pos.tp_price = round(pos.entry_price * (1 + tp_pct), 6)
+            else:
+                pos.stop_price = round(pos.entry_price * (1 + sl_pct), 6)
+                pos.tp_price = round(pos.entry_price * (1 - tp_pct), 6)
+            pos.current_price = pos.entry_price
+            _save_position(pos)  # Update with real fill price
+            logger.info("exchange_fill_applied",
+                        asset=asset, platform=pos.execution_platform,
+                        old_entry=old_entry, fill_price=pos.entry_price,
+                        order_id=pos.exchange_order_id)
+        elif exec_result.get("status") == "error":
+            logger.warning("exchange_execution_failed_using_internal",
+                           asset=asset, platform=exec_result.get("platform"),
+                           error=exec_result.get("error", "")[:100])
+    except Exception as e:
+        logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
+
     logger.info("training_position_opened",
                 asset=asset, strategy=strategy, direction=direction,
                 entry=entry_price, sl=stop_price, tp=tp_price,
@@ -560,6 +598,31 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
             _already_closed.add(pos.position_id)
             update_positions_for_asset._already_closed = _already_closed
+
+            # ── Execute close on exchange (Binance/Alpaca) ──
+            try:
+                from bahamut.execution.router import execute_close as exec_close
+                exec_result = exec_close(
+                    asset=pos.asset, asset_class=pos.asset_class,
+                    direction=pos.direction, size=pos.size,
+                    entry_price=pos.entry_price,
+                )
+                trade.execution_platform = exec_result.get("platform", "internal")
+                trade.exchange_order_id = exec_result.get("order_id", "")
+                if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
+                    trade.exit_price = round(exec_result["fill_price"], 6)
+                    # Recalculate PnL with actual fill
+                    if pos.direction == "LONG":
+                        trade.pnl = round((trade.exit_price - pos.entry_price) * pos.size, 2)
+                    else:
+                        trade.pnl = round((pos.entry_price - trade.exit_price) * pos.size, 2)
+                    trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
+                    logger.info("exchange_close_fill_applied",
+                                asset=pos.asset, platform=trade.execution_platform,
+                                fill_price=trade.exit_price, pnl=trade.pnl)
+            except Exception as e:
+                logger.warning("exchange_close_exception", asset=pos.asset, error=str(e)[:100])
+
             _persist_trade(trade)
             _record_recent(trade)
             closed_trades.append(trade)

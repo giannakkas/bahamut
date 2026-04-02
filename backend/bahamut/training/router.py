@@ -1102,3 +1102,13 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
     diag["sections"].append(floors_section)
 
     return diag
+
+
+@router.get("/execution-status")
+async def execution_status():
+    """Get status of connected execution platforms (Binance/Alpaca)."""
+    try:
+        from bahamut.execution.router import get_execution_status
+        return get_execution_status()
+    except Exception as e:
+        return {"error": str(e)}
