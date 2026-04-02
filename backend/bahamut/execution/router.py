@@ -335,23 +335,40 @@ async def alpaca_live_data():
     positions = get_all_positions()
     fills = get_activities("FILL")
 
-    # Pair buy/sell fills to compute PnL per round-trip
+    # Build round-trips from FILLED ORDERS (more reliable than Activities)
+    filled_orders = [o for o in orders if o.get("status") == "filled" and o.get("filled_avg_price", 0) > 0]
+
     asset_buys: dict[str, list] = {}
     asset_sells: dict[str, list] = {}
-    for f in fills:
-        a = f["asset"]
-        if f["side"] == "buy":
-            asset_buys.setdefault(a, []).append(f)
-        else:
-            asset_sells.setdefault(a, []).append(f)
+
+    # Try fills first, fall back to filled orders
+    source_data = fills if fills else filled_orders
+    side_key = "side"  # both use "side"
+
+    for f in source_data:
+        a = f.get("asset") or f.get("symbol", "")
+        side = (f.get(side_key, "") or "").lower()
+        price = f.get("price", 0) or f.get("filled_avg_price", 0)
+        qty = f.get("qty", 0) or f.get("filled_qty", 0)
+        ts = f.get("transaction_time", "") or f.get("filled_at", "") or f.get("created_at", "")
+
+        if not a or not price:
+            continue
+
+        entry = {"asset": a, "side": side, "price": float(price), "qty": float(qty), "time": ts}
+
+        if side == "buy":
+            asset_buys.setdefault(a, []).append(entry)
+        elif side == "sell":
+            asset_sells.setdefault(a, []).append(entry)
 
     round_trips = []
     asset_stats: dict[str, dict] = {}
 
     all_assets = set(list(asset_buys.keys()) + list(asset_sells.keys()))
     for asset in all_assets:
-        buys = sorted(asset_buys.get(asset, []), key=lambda x: x.get("transaction_time", ""))
-        sells = sorted(asset_sells.get(asset, []), key=lambda x: x.get("transaction_time", ""))
+        buys = sorted(asset_buys.get(asset, []), key=lambda x: x.get("time", ""))
+        sells = sorted(asset_sells.get(asset, []), key=lambda x: x.get("time", ""))
 
         if asset not in asset_stats:
             asset_stats[asset] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0}
@@ -367,8 +384,8 @@ async def alpaca_live_data():
                 "exit_price": s["price"],
                 "qty": min(b["qty"], s["qty"]),
                 "pnl": round(pnl, 2),
-                "entry_time": b.get("transaction_time", ""),
-                "exit_time": s.get("transaction_time", ""),
+                "entry_time": b.get("time", ""),
+                "exit_time": s.get("time", ""),
             }
             round_trips.append(rt)
             asset_stats[asset]["trades"] += 1
@@ -391,6 +408,11 @@ async def alpaca_live_data():
 
     unrealized_pnl = sum(p.get("unrealized_pl", 0) for p in positions)
 
+    # Account-level PnL (most accurate — from Alpaca's own accounting)
+    starting_capital = 100000  # Alpaca paper starts at $100K
+    account_equity = account.get("equity", starting_capital) if account else starting_capital
+    account_pnl = round(account_equity - starting_capital, 2)
+
     result = {
         "platform": "alpaca_paper",
         "connected": True,
@@ -402,10 +424,13 @@ async def alpaca_live_data():
             "losses": len(losses),
             "flats": len(round_trips) - len(wins) - len(losses),
             "win_rate": round(wr, 4),
-            "total_pnl": round(total_pnl, 2),
+            "total_pnl": round(account_pnl, 2),
+            "realized_pnl": round(total_pnl, 2),
             "unrealized_pnl": round(unrealized_pnl, 2),
-            "combined_pnl": round(total_pnl + unrealized_pnl, 2),
+            "combined_pnl": round(account_pnl, 2),
             "open_positions": len(positions),
+            "total_orders": len(filled_orders),
+            "total_fills": len(source_data),
             "gross_profit": round(gross_profit, 2),
             "gross_loss": round(gross_loss, 2),
             "profit_factor": round(pf, 2),

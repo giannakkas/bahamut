@@ -144,20 +144,18 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
-          { l: platform === "alpaca" && s.combined_pnl ? "Combined PnL" : "Total PnL",
-            v: fmS(platform === "alpaca" && s.combined_pnl ? s.combined_pnl : (s.total_pnl || 0)),
-            c: pnlC(platform === "alpaca" && s.combined_pnl ? s.combined_pnl : (s.total_pnl || 0)) },
-          ...(platform === "alpaca" && s.unrealized_pnl !== undefined ? [
-            { l: "Unrealized", v: fmS(s.unrealized_pnl || 0), c: pnlC(s.unrealized_pnl || 0) },
-          ] : [
-            { l: "Win Rate", v: `${((s.win_rate || 0) * 100).toFixed(1)}%`, c: (s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400" },
-          ]),
-          { l: "Profit Factor", v: (s.profit_factor || 0).toFixed(2), c: (s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400" },
-          { l: "Trades", v: String(s.total_trades || 0), c: "text-bah-heading" },
-          { l: platform === "alpaca" ? "Open Pos" : "Wins", v: String(platform === "alpaca" ? (s.open_positions || 0) : (s.wins || 0)), c: platform === "alpaca" ? "text-bah-cyan" : "text-green-400" },
+          { l: "Account PnL", v: fmS(s.total_pnl || s.combined_pnl || 0), c: pnlC(s.total_pnl || s.combined_pnl || 0) },
+          { l: platform === "alpaca" ? "Unrealized" : "Win Rate",
+            v: platform === "alpaca" ? fmS(s.unrealized_pnl || 0) : `${((s.win_rate || 0) * 100).toFixed(1)}%`,
+            c: platform === "alpaca" ? pnlC(s.unrealized_pnl || 0) : ((s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400") },
+          { l: platform === "alpaca" ? "Open Pos" : "Profit Factor",
+            v: platform === "alpaca" ? String(s.open_positions || 0) : (s.profit_factor || 0).toFixed(2),
+            c: platform === "alpaca" ? "text-bah-cyan" : ((s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400") },
+          { l: "Round Trips", v: String(s.total_trades || 0), c: "text-bah-heading" },
+          { l: platform === "alpaca" ? "Orders" : "Wins", v: String(platform === "alpaca" ? (s.total_orders || 0) : (s.wins || 0)), c: platform === "alpaca" ? "text-bah-heading" : "text-green-400" },
           { l: "Wins", v: String(s.wins || 0), c: "text-green-400" },
           { l: "Losses", v: String(s.losses || 0), c: "text-red-400" },
-          { l: "Avg Win", v: fm(s.avg_win || 0), c: "text-green-400" },
+          { l: platform === "alpaca" ? "Fills" : "Avg Win", v: platform === "alpaca" ? String(s.total_fills || 0) : fm(s.avg_win || 0), c: platform === "alpaca" ? "text-bah-heading" : "text-green-400" },
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-sm sm:text-base font-bold ${card.c}`}>{card.v}</div>
