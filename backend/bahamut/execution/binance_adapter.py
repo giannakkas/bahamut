@@ -1,11 +1,12 @@
 """
 Bahamut.AI — Binance Testnet Execution Adapter
 
-Executes crypto trades on Binance Spot Testnet.
-Same API as production — just swap keys + base URL to go live.
+Executes crypto trades on Binance Testnet.
+Supports both Spot (LONG only) and Futures (LONG + SHORT).
 
-Testnet base: https://testnet.binance.vision
-Production:   https://api.binance.com
+Spot Testnet:    https://testnet.binance.vision
+Futures Testnet: https://testnet.binancefuture.com
+Production:      https://api.binance.com / https://fapi.binance.com
 """
 import os
 import time
@@ -17,9 +18,15 @@ from urllib.parse import urlencode
 
 logger = structlog.get_logger()
 
-BASE_URL = os.environ.get("BINANCE_BASE_URL", "https://testnet.binance.vision")
+# Spot config
+SPOT_URL = os.environ.get("BINANCE_BASE_URL", "https://testnet.binance.vision")
+# Futures config
+FUTURES_URL = os.environ.get("BINANCE_FUTURES_URL", "https://testnet.binancefuture.com")
+# Use same keys for both (testnet keys work on both)
 API_KEY = os.environ.get("BINANCE_TESTNET_API_KEY", "")
 API_SECRET = os.environ.get("BINANCE_TESTNET_API_SECRET", "")
+# Enable futures for SHORT trades
+USE_FUTURES = os.environ.get("BINANCE_USE_FUTURES", "true").lower() == "true"
 
 # Bahamut symbol → Binance symbol map
 SYMBOL_MAP = {
@@ -69,7 +76,7 @@ def get_account() -> dict | None:
         return None
     try:
         params = _sign({})
-        r = httpx.get(f"{BASE_URL}/api/v3/account", params=params,
+        r = httpx.get(f"{SPOT_URL}/api/v3/account", params=params,
                       headers=_headers(), timeout=10)
         if r.status_code == 200:
             return r.json()
@@ -94,7 +101,7 @@ def place_market_buy(asset: str, quantity: float) -> dict | None:
     })
 
     try:
-        r = httpx.post(f"{BASE_URL}/api/v3/order", params=params,
+        r = httpx.post(f"{SPOT_URL}/api/v3/order", params=params,
                        headers=_headers(), timeout=10)
         data = r.json()
         if r.status_code == 200:
@@ -132,7 +139,7 @@ def place_market_sell(asset: str, quantity: float) -> dict | None:
     })
 
     try:
-        r = httpx.post(f"{BASE_URL}/api/v3/order", params=params,
+        r = httpx.post(f"{SPOT_URL}/api/v3/order", params=params,
                        headers=_headers(), timeout=10)
         data = r.json()
         if r.status_code == 200:
@@ -156,11 +163,113 @@ def place_market_sell(asset: str, quantity: float) -> dict | None:
         return {"error": str(e)}
 
 
+def place_futures_open_short(asset: str, quantity: float) -> dict | None:
+    """Open a SHORT position on Binance Futures Testnet."""
+    if not _configured() or not USE_FUTURES:
+        return {"error": "Futures not configured"}
+
+    symbol = _to_binance_symbol(asset)
+    params = _sign({
+        "symbol": symbol,
+        "side": "SELL",
+        "type": "MARKET",
+        "quantity": _format_qty(asset, quantity),
+    })
+
+    try:
+        r = httpx.post(f"{FUTURES_URL}/fapi/v1/order", params=params,
+                       headers=_headers(), timeout=10)
+        data = r.json()
+        if r.status_code == 200:
+            fill_price = float(data.get("avgPrice", 0)) or _avg_fill_price(data)
+            fill_qty = float(data.get("executedQty", quantity))
+            logger.info("binance_futures_short_opened",
+                        asset=asset, symbol=symbol, qty=fill_qty,
+                        fill_price=fill_price, order_id=data.get("orderId"))
+            return {
+                "order_id": str(data.get("orderId", "")),
+                "fill_price": fill_price,
+                "fill_qty": fill_qty,
+                "status": data.get("status", "FILLED"),
+                "raw": data,
+            }
+        logger.error("binance_futures_short_error", asset=asset,
+                     status=r.status_code, body=str(data)[:300])
+        return {"error": str(data), "status_code": r.status_code}
+    except Exception as e:
+        logger.error("binance_futures_short_exception", asset=asset, error=str(e))
+        return {"error": str(e)}
+
+
+def place_futures_close_short(asset: str, quantity: float) -> dict | None:
+    """Close a SHORT position on Binance Futures (buy to cover)."""
+    if not _configured() or not USE_FUTURES:
+        return {"error": "Futures not configured"}
+
+    symbol = _to_binance_symbol(asset)
+    params = _sign({
+        "symbol": symbol,
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": _format_qty(asset, quantity),
+    })
+
+    try:
+        r = httpx.post(f"{FUTURES_URL}/fapi/v1/order", params=params,
+                       headers=_headers(), timeout=10)
+        data = r.json()
+        if r.status_code == 200:
+            fill_price = float(data.get("avgPrice", 0)) or _avg_fill_price(data)
+            fill_qty = float(data.get("executedQty", quantity))
+            logger.info("binance_futures_short_closed",
+                        asset=asset, symbol=symbol, qty=fill_qty,
+                        fill_price=fill_price, order_id=data.get("orderId"))
+            return {
+                "order_id": str(data.get("orderId", "")),
+                "fill_price": fill_price,
+                "fill_qty": fill_qty,
+                "status": data.get("status", "FILLED"),
+                "raw": data,
+            }
+        logger.error("binance_futures_close_short_error", asset=asset,
+                     status=r.status_code, body=str(data)[:300])
+        return {"error": str(data), "status_code": r.status_code}
+    except Exception as e:
+        logger.error("binance_futures_close_short_exception", asset=asset, error=str(e))
+        return {"error": str(e)}
+
+
+def get_futures_positions() -> list[dict]:
+    """Get open futures positions."""
+    if not _configured() or not USE_FUTURES:
+        return []
+    try:
+        params = _sign({})
+        r = httpx.get(f"{FUTURES_URL}/fapi/v2/positionRisk", params=params,
+                      headers=_headers(), timeout=10)
+        if r.status_code == 200:
+            return [
+                {
+                    "symbol": p.get("symbol", ""),
+                    "side": "SHORT" if float(p.get("positionAmt", 0)) < 0 else "LONG",
+                    "qty": abs(float(p.get("positionAmt", 0))),
+                    "entry_price": float(p.get("entryPrice", 0)),
+                    "unrealized_pnl": float(p.get("unRealizedProfit", 0)),
+                    "leverage": int(p.get("leverage", 1)),
+                }
+                for p in r.json()
+                if abs(float(p.get("positionAmt", 0))) > 0
+            ]
+    except Exception as e:
+        logger.warning("binance_futures_positions_error", error=str(e)[:50])
+    return []
+
+
 def get_price(asset: str) -> float | None:
     """Get current price from Binance."""
     symbol = _to_binance_symbol(asset)
     try:
-        r = httpx.get(f"{BASE_URL}/api/v3/ticker/price",
+        r = httpx.get(f"{SPOT_URL}/api/v3/ticker/price",
                       params={"symbol": symbol}, timeout=5)
         if r.status_code == 200:
             return float(r.json().get("price", 0))
@@ -213,7 +322,7 @@ def get_all_trades() -> list[dict]:
     for bahamut_symbol, binance_symbol in active_symbols.items():
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
-            r = httpx.get(f"{BASE_URL}/api/v3/myTrades", params=params,
+            r = httpx.get(f"{SPOT_URL}/api/v3/myTrades", params=params,
                           headers=_headers(), timeout=10)
             if r.status_code == 200:
                 for t in r.json():
@@ -254,7 +363,7 @@ def get_all_orders() -> list[dict]:
     for bahamut_symbol, binance_symbol in active_symbols.items():
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
-            r = httpx.get(f"{BASE_URL}/api/v3/allOrders", params=params,
+            r = httpx.get(f"{SPOT_URL}/api/v3/allOrders", params=params,
                           headers=_headers(), timeout=10)
             if r.status_code == 200:
                 for o in r.json():

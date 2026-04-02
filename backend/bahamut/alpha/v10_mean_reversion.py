@@ -300,6 +300,95 @@ def detect_mean_reversion_short(
     sig.reason = " · ".join(reasons)
 
     return sig
+
+
+def detect_crash_short(
+    candles: list,
+    indicators: dict,
+    prev_indicators: dict | None = None,
+    min_candles: int = 25,
+) -> MeanReversionSignal:
+    """Detect a SHORT setup during CRASH — sell bear market rallies.
+
+    Entry logic:
+      1. Price below EMA200 (confirms downtrend)
+      2. Price rallied close to EMA20 (within 1.5%) or above
+      3. RSI recovered above 40 (rally happened)
+      4. Rejection: close < prev close OR bearish candle
+    """
+    sig = MeanReversionSignal()
+
+    if not candles or len(candles) < min_candles:
+        sig.reason = "insufficient data"
+        return sig
+
+    close = indicators.get("close", 0)
+    ema_20 = indicators.get("ema_20", 0)
+    ema_200 = indicators.get("ema_200", 0)
+    bb_mid = indicators.get("bollinger_mid", ema_20)
+    rsi = indicators.get("rsi_14", 50)
+
+    if close <= 0 or ema_20 <= 0 or ema_200 <= 0:
+        sig.reason = "missing indicators"
+        return sig
+
+    if close >= ema_200:
+        sig.reason = "price above EMA200 — not a crash"
+        return sig
+
+    dist_to_ema20 = (ema_20 - close) / ema_20
+    if dist_to_ema20 > 0.015:
+        sig.reason = f"price still far below EMA20: {dist_to_ema20*100:.1f}%"
+        return sig
+
+    if rsi < 40:
+        sig.reason = f"RSI too low ({rsi:.0f}) — still oversold"
+        return sig
+
+    prev_close = candles[-2]["close"] if len(candles) >= 2 else close
+    bar_open = candles[-1].get("open", close)
+    rejection_lower = close < prev_close
+    bearish_candle = close < bar_open
+
+    if not rejection_lower and not bearish_candle:
+        sig.reason = "no rejection — price still rallying"
+        return sig
+
+    quality = 0.55
+    if dist_to_ema20 <= 0.005:
+        quality += 0.10
+    elif close > ema_20:
+        quality += 0.15
+    if 45 <= rsi <= 55:
+        quality += 0.10
+    elif rsi > 55:
+        quality += 0.05
+    if rejection_lower and bearish_candle:
+        quality += 0.05
+
+    quality = round(min(1.0, quality), 3)
+
+    reasons = [
+        f"CRASH short: bear rally to EMA20 (dist {dist_to_ema20*100:.1f}%)",
+        f"RSI recovered to {rsi:.0f}",
+    ]
+    if rejection_lower:
+        reasons.append("rejection (close < prev)")
+    if bearish_candle:
+        reasons.append("bearish candle")
+
+    sig.valid = True
+    sig.direction = "SHORT"
+    sig.confidence = quality
+    sig.distance_from_mean_pct = round(dist_to_ema20 * 100, 2)
+    sig.rsi = round(rsi, 1)
+    sig.target_price = round(bb_mid * 0.97, 6)
+    sig.reason = " · ".join(reasons)
+
+    return sig
+
+
+class V10MeanReversion:
     """Strategy wrapper for the execution framework.
 
     Integrates with the same interface as V5Base, V5Tuned, V9Breakout:
@@ -312,19 +401,24 @@ def detect_mean_reversion_short(
         self.risk_pct = 0.015       # 1.5% risk per trade (slightly lower than trend strategies)
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
-        """Evaluate for mean reversion setup — both LONG and SHORT.
+        """Evaluate for mean reversion setup — LONG, SHORT, and CRASH SHORT.
 
-        LONG: price oversold below EMA20, RSI low, bounce confirmed
-        SHORT: price overbought above EMA20, RSI high, rejection confirmed
+        LONG:  oversold in RANGE → bounce to mean
+        SHORT: overbought in RANGE → rejection to mean
+        CRASH SHORT: bear rally in CRASH → sell into resistance
         """
         regime = indicators.get("_regime", "UNKNOWN")
 
-        # Try LONG first (oversold → bounce)
+        # Try LONG first (oversold → bounce) — only in RANGE
         sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
 
-        # If no LONG, try SHORT (overbought → rejection)
+        # If no LONG, try SHORT (overbought → rejection) — only in RANGE
         if not sig.valid:
             sig = detect_mean_reversion_short(candles, indicators, prev_indicators, regime=regime)
+
+        # If no RANGE signal, try CRASH SHORT (bear rally → sell resistance)
+        if not sig.valid and regime == "CRASH":
+            sig = detect_crash_short(candles, indicators, prev_indicators)
 
         if not sig.valid:
             return None

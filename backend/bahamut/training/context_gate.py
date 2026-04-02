@@ -30,15 +30,16 @@ STRATEGY_REGIME_MAP = {
     "v5_base": {"TREND"},
     "v5_tuned": {"TREND"},
     "v9_breakout": {"TREND", "BREAKOUT", "RANGE"},  # RANGE allowed but penalized
-    "v10_mean_reversion": {"RANGE"},
+    "v10_mean_reversion": {"RANGE", "CRASH"},        # CRASH allowed for SHORTs only
 }
 
-# Regimes that are ALWAYS blocked for ALL strategies
-UNIVERSALLY_BLOCKED_REGIMES = {"CRASH"}
+# Regimes that block LONGs for ALL strategies (SHORTs still allowed)
+CRASH_LONG_BLOCKED = True
 
 # Soft penalties: strategy+regime combos that are allowed but penalized
 SOFT_PENALTY_COMBOS = {
     ("v9_breakout", "RANGE"): 10,  # v9 in RANGE = 10pt penalty
+    ("v10_mean_reversion", "CRASH"): 5,  # v10 SHORT in CRASH = 5pt penalty (slightly risky)
 }
 
 
@@ -54,14 +55,24 @@ def validate_strategy_context(strategy: str, regime: str, direction: str = "LONG
     """
     result = {"valid": True, "reason": "", "penalty": 0, "gate": ""}
 
-    # 1. Universal crash block
-    if regime in UNIVERSALLY_BLOCKED_REGIMES:
-        return {
-            "valid": False,
-            "reason": f"Regime {regime} universally blocked for all strategies",
-            "penalty": 0,
-            "gate": "crash_block",
-        }
+    # 1. CRASH regime: block LONGs, allow SHORTs for eligible strategies
+    if regime == "CRASH":
+        if direction == "LONG":
+            return {
+                "valid": False,
+                "reason": f"CRASH regime blocks all LONGs (use SHORT direction)",
+                "penalty": 0,
+                "gate": "crash_long_block",
+            }
+        # SHORT in CRASH — check if strategy is allowed
+        allowed = STRATEGY_REGIME_MAP.get(strategy)
+        if allowed and "CRASH" not in allowed:
+            return {
+                "valid": False,
+                "reason": f"{strategy} not valid in CRASH (even for SHORTs)",
+                "penalty": 0,
+                "gate": "crash_strategy_block",
+            }
 
     # 2. Strategy-specific regime check
     allowed = STRATEGY_REGIME_MAP.get(strategy)

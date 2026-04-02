@@ -484,7 +484,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 context_blocked = False
                 try:
                     from bahamut.training.context_gate import validate_strategy_context
-                    gate = validate_strategy_context(strat, regime)
+                    gate = validate_strategy_context(strat, regime, direction)
                     if not gate["valid"]:
                         logger.info("debug_exploration_context_blocked",
                                     asset=asset, strategy=strat, regime=regime,
