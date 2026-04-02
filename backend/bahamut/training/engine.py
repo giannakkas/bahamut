@@ -379,11 +379,13 @@ def open_training_position(
         except Exception:
             pass  # If check fails, allow the trade
 
-    # Sentiment gate — block crypto LONGs when sentiment is heavily bearish
+    # Sentiment gate — block crypto LONGs in fear markets
+    # Layer 1: Fear & Greed Index (free, no key) — blocks when market fearful
+    # Layer 2: CryptoPanic (per-asset) — blocks when specific asset bearish
     if asset_class == "crypto" and direction == "LONG":
         try:
-            from bahamut.sentiment.cryptopanic import should_block_long
-            blocked, reason = should_block_long(asset)
+            from bahamut.sentiment.gate import check_sentiment
+            blocked, reason = check_sentiment(asset, direction, asset_class)
             if blocked:
                 logger.info("training_position_rejected_sentiment",
                             asset=asset, strategy=strategy, reason=reason)
