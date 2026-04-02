@@ -38,6 +38,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"trades" | "orders" | "fills">("trades");
+  const [sentiment, setSentiment] = useState<any>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +47,11 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
       // Pull DIRECTLY from exchange API
       const r = await fetch(`${apiBase()}/execution/${platform}/live`, { headers: h });
       if (r.ok) setData(await r.json());
+      // Fetch sentiment for Binance page
+      if (platform === "binance") {
+        const sr = await fetch(`${apiBase()}/training/sentiment`, { headers: h });
+        if (sr.ok) setSentiment(await sr.json());
+      }
     } catch {}
     setLoading(false);
   }, [platform]);
@@ -296,6 +302,124 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           </div>
         </Section>
       </div>
+
+      {/* Sentiment — only on Binance page */}
+      {platform === "binance" && sentiment && (
+        <div className="space-y-4">
+          {/* Fear & Greed Index */}
+          {sentiment.fear_greed && (
+            <Section title="Fear & Greed Index">
+              <div className="flex items-center gap-6">
+                {/* Score circle */}
+                <div className="relative w-24 h-24 shrink-0">
+                  <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
+                    <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8"
+                      strokeDasharray={`${(sentiment.fear_greed.value / 100) * 264} 264`}
+                      strokeLinecap="round"
+                      className={
+                        sentiment.fear_greed.value <= 24 ? "text-red-500" :
+                        sentiment.fear_greed.value <= 39 ? "text-orange-500" :
+                        sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
+                        sentiment.fear_greed.value <= 74 ? "text-green-400" :
+                        "text-green-500"
+                      } />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className={`text-2xl font-black ${
+                      sentiment.fear_greed.value <= 24 ? "text-red-500" :
+                      sentiment.fear_greed.value <= 39 ? "text-orange-500" :
+                      sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
+                      "text-green-400"
+                    }`}>{sentiment.fear_greed.value}</span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className={`text-lg font-bold ${
+                    sentiment.fear_greed.value <= 24 ? "text-red-500" :
+                    sentiment.fear_greed.value <= 39 ? "text-orange-500" :
+                    sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
+                    "text-green-400"
+                  }`}>{sentiment.fear_greed.classification}</div>
+                  <div className="text-[10px] text-bah-muted mt-1">
+                    Source: alternative.me · Free · No API key
+                  </div>
+                  <div className="mt-2">
+                    {sentiment.fear_greed.should_block_longs ? (
+                      <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                        🛑 ALL CRYPTO LONGS BLOCKED
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                        ✅ CRYPTO LONGS ALLOWED
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-bah-muted mt-2">
+                    0-24: Extreme Fear (block) · 25-39: Fear (block) · 40-60: Neutral · 61-74: Greed · 75-100: Extreme Greed
+                  </div>
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {/* CryptoPanic per-asset sentiment */}
+          {sentiment.cryptopanic && sentiment.cryptopanic.assets && Object.keys(sentiment.cryptopanic.assets).length > 0 && (
+            <Section title="CryptoPanic — Per-Asset Sentiment">
+              <div className="flex items-center gap-3 mb-3">
+                <span className={`text-sm font-bold ${
+                  sentiment.cryptopanic.overall === "extreme_fear" ? "text-red-500" :
+                  sentiment.cryptopanic.overall === "bearish" ? "text-orange-400" :
+                  sentiment.cryptopanic.overall === "bullish" ? "text-green-400" :
+                  sentiment.cryptopanic.overall === "extreme_greed" ? "text-green-500" :
+                  "text-yellow-400"
+                }`}>
+                  Market: {sentiment.cryptopanic.overall?.toUpperCase()} (score: {sentiment.cryptopanic.score?.toFixed(2)})
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {Object.entries(sentiment.cryptopanic.assets).map(([code, s]: [string, any]) => (
+                  <div key={code} className={`border rounded-lg p-2.5 text-center ${
+                    s.mood === "bearish" ? "bg-red-500/10 border-red-500/20" :
+                    s.mood === "bullish" ? "bg-green-500/10 border-green-500/20" :
+                    "bg-bah-surface border-bah-border"
+                  }`}>
+                    <div className="text-xs font-bold text-bah-heading">{code}</div>
+                    <div className={`text-lg font-black mt-0.5 ${
+                      s.score > 0.15 ? "text-green-400" :
+                      s.score < -0.15 ? "text-red-400" :
+                      "text-yellow-400"
+                    }`}>{s.score > 0 ? "+" : ""}{(s.score * 100).toFixed(0)}%</div>
+                    <div className="text-[8px] text-bah-muted mt-0.5">
+                      {s.bullish}↑ {s.bearish}↓ · {s.posts}p
+                    </div>
+                    <div className={`text-[8px] font-bold mt-0.5 ${
+                      s.mood === "bearish" ? "text-red-400" :
+                      s.mood === "bullish" ? "text-green-400" :
+                      "text-yellow-400"
+                    }`}>{s.mood.toUpperCase()}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[9px] text-bah-muted mt-2">
+                Source: CryptoPanic API · Cached 30 min · Per-asset bearish score {"<"} -0.4 blocks that asset
+              </div>
+            </Section>
+          )}
+
+          {/* Combined action */}
+          {sentiment.combined_action && (
+            <div className={`rounded-xl p-3 border text-center text-xs font-bold ${
+              sentiment.combined_action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" :
+              sentiment.combined_action === "block_longs" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" :
+              sentiment.combined_action === "caution_greed" ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400" :
+              "bg-green-500/15 border-green-500/30 text-green-400"
+            }`}>
+              SENTIMENT GATE: {sentiment.combined_action.replace(/_/g, " ").toUpperCase()} — {sentiment.combined_reason}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
