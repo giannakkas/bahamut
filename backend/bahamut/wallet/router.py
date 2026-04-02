@@ -47,7 +47,13 @@ def _ensure_tables():
     except Exception as e:
         logger.error("wallet_tables_failed", error=str(e))
 
-_ensure_tables()
+_tables_created = False
+
+def _lazy_ensure_tables():
+    global _tables_created
+    if not _tables_created:
+        _ensure_tables()
+        _tables_created = True
 
 
 # ── Models ──
@@ -66,6 +72,7 @@ class AllocationRequest(BaseModel):
 @router.get("")
 async def get_wallet(user=Depends(get_current_user)):
     """Get user's wallet state + recent transaction history."""
+    _lazy_ensure_tables()
     uid = str(user.id)
 
     wallet = run_query_one(
@@ -105,6 +112,7 @@ async def get_wallet(user=Depends(get_current_user)):
 @router.post("/deposit")
 async def deposit(req: DepositRequest, user=Depends(get_current_user)):
     """Add funds to wallet. Demo max $100K."""
+    _lazy_ensure_tables()
     uid = str(user.id)
     amount = max(0, req.amount)
 
@@ -159,6 +167,7 @@ async def deposit(req: DepositRequest, user=Depends(get_current_user)):
 @router.post("/allocation")
 async def set_allocation(req: AllocationRequest, user=Depends(get_current_user)):
     """Set trading allocation. Cannot exceed balance."""
+    _lazy_ensure_tables()
     uid = str(user.id)
 
     wallet = run_query_one(
