@@ -454,12 +454,20 @@ def get_all_strategy_trusts() -> dict:
         try:
             import json, os, redis
             rc = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-            for key in rc.scan_iter("bahamut:trust:strategy:*"):
+            for key in rc.scan_iter("bahamut:training:trust:strategy:*"):
                 raw = rc.get(key)
                 if raw:
                     data = json.loads(raw)
                     name = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
-                    strategies[name] = data
+                    strategies[name] = {
+                        "trust": round(data.get("trust", 0.5), 4),
+                        "samples": data.get("samples", 0),
+                        "maturity": data.get("maturity", "provisional"),
+                        "confidence": round(data.get("confidence", 0), 3),
+                        "wins": data.get("wins", 0),
+                        "losses": data.get("losses", 0),
+                        "wr": round(data.get("wins", 0) / max(1, data.get("wins", 0) + data.get("losses", 0)), 3),
+                    }
         except Exception:
             pass
     return strategies
@@ -489,12 +497,19 @@ def get_all_pattern_trusts() -> dict:
         try:
             import json, os, redis
             rc = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-            for key in rc.scan_iter("bahamut:trust:pattern:*"):
+            for key in rc.scan_iter("bahamut:training:trust:pattern:*"):
                 raw = rc.get(key)
                 if raw:
                     data = json.loads(raw)
-                    name = key.decode().replace("bahamut:trust:pattern:", "") if isinstance(key, bytes) else key.replace("bahamut:trust:pattern:", "")
-                    patterns[name] = data
+                    name = key.decode().replace("bahamut:training:trust:pattern:", "") if isinstance(key, bytes) else key.replace("bahamut:training:trust:pattern:", "")
+                    patterns[name] = {
+                        "blended_trust": round(data.get("trust", 0.5), 4),
+                        "blended_confidence": round(data.get("confidence", 0), 3),
+                        "maturity": data.get("maturity", "provisional"),
+                        "total_trades": data.get("samples", 0),
+                        "expectancy": round(data.get("expectancy", 0), 4),
+                        "quick_stops": data.get("quick_stops", 0),
+                    }
         except Exception:
             pass
     return patterns
