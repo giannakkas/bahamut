@@ -142,3 +142,28 @@ def _alpaca_close(asset: str, direction: str, size: float) -> dict:
     except Exception as e:
         return {"platform": "alpaca", "status": "error", "error": str(e)[:200],
                 "order_id": "", "fill_price": 0, "fill_qty": 0}
+
+
+# ═══════════════════════════════════════════
+# FastAPI Router (for /api/v1/execution endpoints)
+# ═══════════════════════════════════════════
+from fastapi import APIRouter
+router = APIRouter()
+
+
+@router.get("/status")
+async def execution_status():
+    """Get status of connected execution platforms (Binance/Alpaca)."""
+    return get_execution_status()
+
+
+@router.get("/platforms")
+async def execution_platforms():
+    """Show which platform each asset class routes to."""
+    return {
+        "crypto": "binance_testnet",
+        "stock": "alpaca_paper",
+        "forex": "internal",
+        "commodity": "internal",
+        "index": "internal",
+    }
