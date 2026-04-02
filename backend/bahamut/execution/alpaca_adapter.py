@@ -236,3 +236,109 @@ def _wait_for_fill(order_id: str, max_wait: int = 5) -> dict | None:
         except Exception:
             pass
     return None
+
+
+# ═══════════════════════════════════════════
+# HISTORY — Pull trades directly from Alpaca
+# ═══════════════════════════════════════════
+
+def get_all_orders(status: str = "all", limit: int = 500) -> list[dict]:
+    """Fetch all orders from Alpaca paper trading."""
+    if not _configured():
+        return []
+    try:
+        params = {"status": status, "limit": limit, "direction": "desc"}
+        r = httpx.get(f"{BASE_URL}/v2/orders", params=params,
+                      headers=_headers(), timeout=15)
+        if r.status_code == 200:
+            orders = []
+            for o in r.json():
+                orders.append({
+                    "order_id": o.get("id", ""),
+                    "asset": o.get("symbol", ""),
+                    "side": o.get("side", "").upper(),
+                    "type": o.get("type", ""),
+                    "status": o.get("status", ""),
+                    "qty": float(o.get("qty") or o.get("filled_qty") or 0),
+                    "filled_qty": float(o.get("filled_qty") or 0),
+                    "filled_avg_price": float(o.get("filled_avg_price") or 0),
+                    "submitted_at": o.get("submitted_at", ""),
+                    "filled_at": o.get("filled_at", ""),
+                    "created_at": o.get("created_at", ""),
+                })
+            return orders
+        logger.error("alpaca_orders_error", status=r.status_code, body=r.text[:200])
+    except Exception as e:
+        logger.error("alpaca_orders_exception", error=str(e))
+    return []
+
+
+def get_all_positions() -> list[dict]:
+    """Fetch all open positions from Alpaca."""
+    if not _configured():
+        return []
+    try:
+        r = httpx.get(f"{BASE_URL}/v2/positions", headers=_headers(), timeout=10)
+        if r.status_code == 200:
+            positions = []
+            for p in r.json():
+                positions.append({
+                    "asset": p.get("symbol", ""),
+                    "qty": float(p.get("qty", 0)),
+                    "side": p.get("side", ""),
+                    "avg_entry_price": float(p.get("avg_entry_price", 0)),
+                    "current_price": float(p.get("current_price", 0)),
+                    "market_value": float(p.get("market_value", 0)),
+                    "cost_basis": float(p.get("cost_basis", 0)),
+                    "unrealized_pl": float(p.get("unrealized_pl", 0)),
+                    "unrealized_plpc": float(p.get("unrealized_plpc", 0)),
+                    "change_today": float(p.get("change_today", 0)),
+                })
+            return positions
+    except Exception as e:
+        logger.error("alpaca_positions_exception", error=str(e))
+    return []
+
+
+def get_activities(activity_type: str = "FILL", limit: int = 500) -> list[dict]:
+    """Fetch account activities (fills, dividends, etc.) from Alpaca."""
+    if not _configured():
+        return []
+    try:
+        params = {"activity_type": activity_type, "page_size": limit, "direction": "desc"}
+        r = httpx.get(f"{BASE_URL}/v2/account/activities/{activity_type}",
+                      params=params, headers=_headers(), timeout=15)
+        if r.status_code == 200:
+            activities = []
+            for a in r.json():
+                activities.append({
+                    "id": a.get("id", ""),
+                    "activity_type": a.get("activity_type", ""),
+                    "asset": a.get("symbol", ""),
+                    "side": a.get("side", ""),
+                    "qty": float(a.get("qty", 0)),
+                    "price": float(a.get("price", 0)),
+                    "cum_qty": float(a.get("cum_qty") or a.get("qty") or 0),
+                    "order_id": a.get("order_id", ""),
+                    "transaction_time": a.get("transaction_time", ""),
+                    "type": a.get("type", ""),
+                })
+            return activities
+    except Exception as e:
+        logger.error("alpaca_activities_exception", error=str(e))
+    return []
+
+
+def get_portfolio_history(period: str = "1M") -> dict | None:
+    """Fetch portfolio history from Alpaca."""
+    if not _configured():
+        return None
+    try:
+        params = {"period": period, "timeframe": "1D"}
+        r = httpx.get(f"{BASE_URL}/v2/account/portfolio/history",
+                      params=params, headers=_headers(), timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None

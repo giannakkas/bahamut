@@ -191,3 +191,94 @@ def _format_qty(asset: str, quantity: float) -> str:
         return f"{quantity:.4f}"
     else:
         return f"{quantity:.2f}"
+
+
+# ═══════════════════════════════════════════
+# HISTORY — Pull trades directly from Binance
+# ═══════════════════════════════════════════
+
+def get_all_trades() -> list[dict]:
+    """Fetch all trades from Binance testnet across all symbols we trade."""
+    if not _configured():
+        return []
+
+    all_trades = []
+    for bahamut_symbol, binance_symbol in SYMBOL_MAP.items():
+        try:
+            params = _sign({"symbol": binance_symbol, "limit": 500})
+            r = httpx.get(f"{BASE_URL}/api/v3/myTrades", params=params,
+                          headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                for t in r.json():
+                    all_trades.append({
+                        "id": t.get("id"),
+                        "order_id": t.get("orderId"),
+                        "asset": bahamut_symbol,
+                        "symbol": binance_symbol,
+                        "side": t.get("isBuyer") and "BUY" or "SELL",
+                        "price": float(t.get("price", 0)),
+                        "qty": float(t.get("qty", 0)),
+                        "quote_qty": float(t.get("quoteQty", 0)),
+                        "commission": float(t.get("commission", 0)),
+                        "commission_asset": t.get("commissionAsset", ""),
+                        "time": t.get("time", 0),
+                        "is_maker": t.get("isMaker", False),
+                    })
+        except Exception as e:
+            logger.warning("binance_trades_fetch_failed", symbol=binance_symbol, error=str(e)[:50])
+
+    # Sort by time descending
+    all_trades.sort(key=lambda x: x.get("time", 0), reverse=True)
+    return all_trades
+
+
+def get_all_orders() -> list[dict]:
+    """Fetch all orders from Binance testnet across all symbols."""
+    if not _configured():
+        return []
+
+    all_orders = []
+    for bahamut_symbol, binance_symbol in SYMBOL_MAP.items():
+        try:
+            params = _sign({"symbol": binance_symbol, "limit": 500})
+            r = httpx.get(f"{BASE_URL}/api/v3/allOrders", params=params,
+                          headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                for o in r.json():
+                    all_orders.append({
+                        "order_id": o.get("orderId"),
+                        "asset": bahamut_symbol,
+                        "symbol": binance_symbol,
+                        "side": o.get("side"),
+                        "type": o.get("type"),
+                        "status": o.get("status"),
+                        "price": float(o.get("price", 0)),
+                        "orig_qty": float(o.get("origQty", 0)),
+                        "executed_qty": float(o.get("executedQty", 0)),
+                        "time": o.get("time", 0),
+                        "update_time": o.get("updateTime", 0),
+                    })
+        except Exception as e:
+            logger.warning("binance_orders_fetch_failed", symbol=binance_symbol, error=str(e)[:50])
+
+    all_orders.sort(key=lambda x: x.get("time", 0), reverse=True)
+    return all_orders
+
+
+def get_balances() -> list[dict]:
+    """Get all non-zero balances from Binance testnet."""
+    acc = get_account()
+    if not acc:
+        return []
+    balances = []
+    for b in acc.get("balances", []):
+        free = float(b.get("free", 0))
+        locked = float(b.get("locked", 0))
+        if free > 0 or locked > 0:
+            balances.append({
+                "asset": b.get("asset", ""),
+                "free": free,
+                "locked": locked,
+                "total": free + locked,
+            })
+    return balances

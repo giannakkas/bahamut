@@ -9,7 +9,6 @@ const STRAT_NAMES: Record<string, string> = {
 const sn = (s: string) => STRAT_NAMES[s] || s;
 const fm = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmS = (n: number) => `${n >= 0 ? "+" : "-"}${fm(n)}`;
-const fp = (n: number) => `${n >= 0 ? "+" : ""}${(n * 100).toFixed(1)}%`;
 const pnlC = (v: number) => v > 0.01 ? "text-green-400" : v < -0.01 ? "text-red-400" : "text-bah-muted";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -23,70 +22,114 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function fmtTime(iso: string) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " " +
+           d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  } catch { return iso; }
+}
+
 export default function PlatformTradesPage({ platform, icon, label, color }: {
   platform: string; icon: string; label: string; color: string;
 }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"trades" | "orders" | "fills">("trades");
 
   const load = useCallback(async () => {
     try {
       const t = localStorage.getItem("bahamut_admin_token");
       const h: Record<string, string> = t ? { Authorization: `Bearer ${t}` } : {};
-      const r = await fetch(`${apiBase()}/training/platform-trades/${platform}`, { headers: h });
+      // Pull DIRECTLY from exchange API
+      const r = await fetch(`${apiBase()}/execution/${platform}/live`, { headers: h });
       if (r.ok) setData(await r.json());
     } catch {}
     setLoading(false);
   }, [platform]);
 
-  useEffect(() => { load(); const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
+  useEffect(() => { load(); const iv = setInterval(load, 60000); return () => clearInterval(iv); }, [load]);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center">
         <div className="inline-block w-8 h-8 border-2 border-bah-cyan/30 border-t-bah-cyan rounded-full animate-spin mb-4" />
-        <div className="text-bah-muted text-xs">Loading {label} trades...</div>
+        <div className="text-bah-muted text-xs">Connecting to {label}...</div>
       </div>
     </div>
   );
 
   if (!data || data.error) return (
     <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="text-bah-muted text-sm">No data available. {data?.error || ""}</div>
+      <div className="text-center">
+        <div className="text-bah-muted text-sm mb-2">{data?.error || `Cannot connect to ${label}`}</div>
+        <div className="text-bah-muted text-[10px]">Check API keys in Railway environment variables</div>
+      </div>
     </div>
   );
 
-  const s = data.summary;
+  const s = data.summary || {};
   const trades = data.trades || [];
   const byAsset = data.by_asset || {};
-  const byStrat = data.by_strategy || {};
+  const rawOrders = data.raw_orders || [];
+  const rawFills = data.raw_fills || [];
+  const account = data.account || {};
+  const positions = data.positions || [];
 
   return (
     <div className="p-2 sm:p-4 max-w-[1440px] mx-auto space-y-4 pt-12 lg:pt-4">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        {icon.startsWith("/") ? (
-          <img src={icon} alt={label} className="w-7 h-7 rounded-md" />
-        ) : (
-          <span className="text-2xl">{icon}</span>
-        )}
-        <div>
-          <h1 className="text-lg font-bold text-bah-heading">{label} Trades</h1>
-          <p className="text-[10px] text-bah-muted">{s.total_trades} trades · {data.asset_class} assets · Last updated: {new Date().toLocaleTimeString()}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {icon.startsWith("/") ? (
+            <img src={icon} alt={label} className="w-7 h-7 rounded-md" />
+          ) : (
+            <span className="text-2xl">{icon}</span>
+          )}
+          <div>
+            <h1 className="text-lg font-bold text-bah-heading">{label} Trades</h1>
+            <p className="text-[10px] text-bah-muted">
+              Live from {label} API · {s.total_trades || 0} round-trip trades · Last refresh: {new Date().toLocaleTimeString()}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-[10px] text-green-400 font-bold">LIVE</span>
         </div>
       </div>
+
+      {/* Account Info */}
+      {platform === "alpaca" && account && (
+        <div className="bg-bah-card border border-bah-border rounded-xl p-3 flex flex-wrap gap-4 text-xs">
+          <div><span className="text-bah-muted">Cash:</span> <span className="text-bah-heading font-bold">{fm(account.cash || 0)}</span></div>
+          <div><span className="text-bah-muted">Equity:</span> <span className="text-bah-heading font-bold">{fm(account.equity || 0)}</span></div>
+          <div><span className="text-bah-muted">Buying Power:</span> <span className="text-bah-heading font-bold">{fm(account.buying_power || 0)}</span></div>
+        </div>
+      )}
+      {platform === "binance" && account?.balances && (
+        <div className="bg-bah-card border border-bah-border rounded-xl p-3">
+          <div className="text-[9px] text-bah-muted uppercase tracking-wider mb-2 font-bold">Balances</div>
+          <div className="flex flex-wrap gap-3 text-xs">
+            {(account.balances as any[]).slice(0, 10).map((b: any) => (
+              <div key={b.asset}><span className="text-bah-muted">{b.asset}:</span> <span className="text-bah-heading font-bold">{b.total.toFixed(b.total >= 1 ? 2 : 6)}</span></div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
-          { l: "Total PnL", v: fmS(s.total_pnl), c: pnlC(s.total_pnl) },
-          { l: "Win Rate", v: `${(s.win_rate * 100).toFixed(1)}%`, c: s.win_rate >= 0.5 ? "text-green-400" : "text-amber-400" },
-          { l: "Profit Factor", v: s.profit_factor.toFixed(2), c: s.profit_factor >= 1 ? "text-green-400" : "text-red-400" },
-          { l: "Trades", v: String(s.total_trades), c: "text-bah-heading" },
-          { l: "Wins", v: String(s.wins), c: "text-green-400" },
-          { l: "Losses", v: String(s.losses), c: "text-red-400" },
-          { l: "Avg Win", v: fm(s.avg_win), c: "text-green-400" },
-          { l: "Avg Loss", v: fm(s.avg_loss), c: "text-red-400" },
+          { l: "Total PnL", v: fmS(s.total_pnl || 0), c: pnlC(s.total_pnl || 0) },
+          { l: "Win Rate", v: `${((s.win_rate || 0) * 100).toFixed(1)}%`, c: (s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400" },
+          { l: "Profit Factor", v: (s.profit_factor || 0).toFixed(2), c: (s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400" },
+          { l: "Trades", v: String(s.total_trades || 0), c: "text-bah-heading" },
+          { l: "Wins", v: String(s.wins || 0), c: "text-green-400" },
+          { l: "Losses", v: String(s.losses || 0), c: "text-red-400" },
+          { l: "Avg Win", v: fm(s.avg_win || 0), c: "text-green-400" },
+          { l: "Avg Loss", v: fm(s.avg_loss || 0), c: "text-red-400" },
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-sm sm:text-base font-bold ${card.c}`}>{card.v}</div>
@@ -95,14 +138,14 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         ))}
       </div>
 
-      {/* Best / Worst Trade */}
+      {/* Best / Worst */}
       {(s.best_trade || s.worst_trade) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {s.best_trade && (
             <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 flex justify-between items-center">
               <div>
                 <div className="text-[9px] text-green-400/60 uppercase font-bold">Best Trade</div>
-                <div className="text-sm text-bah-heading font-bold">{s.best_trade.asset} <span className="text-[10px] text-bah-muted">{sn(s.best_trade.strategy)}</span></div>
+                <div className="text-sm text-bah-heading font-bold">{s.best_trade.asset}</div>
               </div>
               <div className="text-lg font-bold text-green-400">{fmS(s.best_trade.pnl)}</div>
             </div>
@@ -111,7 +154,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex justify-between items-center">
               <div>
                 <div className="text-[9px] text-red-400/60 uppercase font-bold">Worst Trade</div>
-                <div className="text-sm text-bah-heading font-bold">{s.worst_trade.asset} <span className="text-[10px] text-bah-muted">{sn(s.worst_trade.strategy)}</span></div>
+                <div className="text-sm text-bah-heading font-bold">{s.worst_trade.asset}</div>
               </div>
               <div className="text-lg font-bold text-red-400">{fmS(s.worst_trade.pnl)}</div>
             </div>
@@ -119,7 +162,32 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         </div>
       )}
 
-      {/* Asset + Strategy Breakdown Side by Side */}
+      {/* Open Positions (Alpaca) */}
+      {positions.length > 0 && (
+        <Section title={`Open Positions (${positions.length})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
+                <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">Qty</th>
+                <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">Current</th>
+                <th className="py-2 pr-2">Market Value</th><th className="py-2">Unrealized P&L</th>
+              </tr></thead>
+              <tbody>{positions.map((p: any, i: number) => (
+                <tr key={i} className="border-b border-bah-border/30">
+                  <td className="py-2 pr-2 text-bah-heading font-bold">{p.asset}</td>
+                  <td className="py-2 pr-2 text-bah-text">{p.qty}</td>
+                  <td className="py-2 pr-2 text-bah-text">{fm(p.avg_entry_price)}</td>
+                  <td className="py-2 pr-2 text-bah-text">{fm(p.current_price)}</td>
+                  <td className="py-2 pr-2 text-bah-text">{fm(p.market_value)}</td>
+                  <td className={`py-2 font-bold ${pnlC(p.unrealized_pl)}`}>{fmS(p.unrealized_pl)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {/* Asset Breakdown + Volume */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Section title="By Asset">
           <div className="space-y-1">
@@ -130,88 +198,86 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
                   <div className="flex items-center gap-2">
                     <span className="text-bah-heading font-bold w-[70px]">{asset}</span>
                     <span className="text-bah-muted">{st.trades}t</span>
-                    <span className="text-bah-muted">{(wr * 100).toFixed(0)}% WR</span>
+                    <span className="text-bah-muted">{st.wins}W {st.losses}L</span>
+                    <span className="text-bah-muted">{(wr * 100).toFixed(0)}%</span>
                   </div>
                   <span className={`font-bold ${pnlC(st.pnl)}`}>{fmS(st.pnl)}</span>
                 </div>
               );
             })}
+            {Object.keys(byAsset).length === 0 && <div className="text-bah-muted text-xs text-center py-4">No trades yet on {label}</div>}
           </div>
         </Section>
 
-        <Section title="By Strategy">
-          <div className="space-y-1">
-            {Object.entries(byStrat).map(([strat, st]: [string, any]) => {
-              const wr = st.wins + st.losses > 0 ? st.wins / (st.wins + st.losses) : 0;
-              return (
-                <div key={strat} className="flex items-center justify-between py-1.5 border-b border-bah-border/30 last:border-0 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-bah-heading font-bold">{sn(strat)}</span>
-                    <span className="text-bah-muted">{st.trades}t</span>
-                    <span className="text-bah-muted">{(wr * 100).toFixed(0)}% WR</span>
-                  </div>
-                  <span className={`font-bold ${pnlC(st.pnl)}`}>{fmS(st.pnl)}</span>
-                </div>
-              );
-            })}
+        {/* Raw data tabs */}
+        <Section title="Exchange Data">
+          <div className="flex gap-1 mb-3">
+            {(["trades", "orders", "fills"] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-3 py-1 text-[10px] font-bold rounded-md capitalize ${tab === t ? "bg-bah-cyan/20 text-bah-cyan" : "text-bah-muted hover:text-bah-text"}`}>
+                {t} ({t === "trades" ? trades.length : t === "orders" ? rawOrders.length : rawFills.length})
+              </button>
+            ))}
+          </div>
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            {tab === "trades" && (
+              <table className="w-full text-[10px]">
+                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+                  <th className="py-1.5 pr-2 text-left">Time</th><th className="py-1.5 pr-2 text-left">Asset</th>
+                  <th className="py-1.5 pr-2 text-left">Entry</th><th className="py-1.5 pr-2 text-left">Exit</th>
+                  <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 text-left">PnL</th>
+                </tr></thead>
+                <tbody>{trades.map((t: any, i: number) => (
+                  <tr key={i} className="border-b border-bah-border/20">
+                    <td className="py-1.5 pr-2 text-bah-muted">{fmtTime(t.exit_time)}</td>
+                    <td className="py-1.5 pr-2 text-bah-heading font-bold">{t.asset}</td>
+                    <td className="py-1.5 pr-2 text-bah-text">{fm(t.entry_price)}</td>
+                    <td className="py-1.5 pr-2 text-bah-text">{fm(t.exit_price)}</td>
+                    <td className="py-1.5 pr-2 text-bah-muted">{t.qty}</td>
+                    <td className={`py-1.5 font-bold ${pnlC(t.pnl)}`}>{fmS(t.pnl)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+            {tab === "orders" && (
+              <table className="w-full text-[10px]">
+                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+                  <th className="py-1.5 pr-2 text-left">Asset</th><th className="py-1.5 pr-2 text-left">Side</th>
+                  <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 pr-2 text-left">Price</th>
+                  <th className="py-1.5 text-left">Status</th>
+                </tr></thead>
+                <tbody>{rawOrders.map((o: any, i: number) => (
+                  <tr key={i} className="border-b border-bah-border/20">
+                    <td className="py-1.5 pr-2 text-bah-heading font-bold">{o.asset || o.symbol}</td>
+                    <td className={`py-1.5 pr-2 font-bold ${o.side === "BUY" || o.side === "buy" ? "text-green-400" : "text-red-400"}`}>{(o.side || "").toUpperCase()}</td>
+                    <td className="py-1.5 pr-2 text-bah-text">{o.filled_qty || o.executed_qty || o.qty || o.orig_qty}</td>
+                    <td className="py-1.5 pr-2 text-bah-text">{fm(o.filled_avg_price || o.price || 0)}</td>
+                    <td className="py-1.5"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${o.status === "filled" || o.status === "FILLED" ? "bg-green-500/15 text-green-400" : "bg-bah-surface text-bah-muted"}`}>{(o.status || "").toUpperCase()}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+            {tab === "fills" && (
+              <table className="w-full text-[10px]">
+                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+                  <th className="py-1.5 pr-2 text-left">Time</th><th className="py-1.5 pr-2 text-left">Asset</th>
+                  <th className="py-1.5 pr-2 text-left">Side</th><th className="py-1.5 pr-2 text-left">Price</th>
+                  <th className="py-1.5 text-left">Qty</th>
+                </tr></thead>
+                <tbody>{rawFills.map((f: any, i: number) => (
+                  <tr key={i} className="border-b border-bah-border/20">
+                    <td className="py-1.5 pr-2 text-bah-muted">{fmtTime(f.transaction_time || (f.time ? new Date(f.time).toISOString() : ""))}</td>
+                    <td className="py-1.5 pr-2 text-bah-heading font-bold">{f.asset || f.symbol}</td>
+                    <td className={`py-1.5 pr-2 font-bold ${f.side === "BUY" || f.side === "buy" ? "text-green-400" : "text-red-400"}`}>{(f.side || "").toUpperCase()}</td>
+                    <td className="py-1.5 pr-2 text-bah-text">{fm(f.price || 0)}</td>
+                    <td className="py-1.5 text-bah-text">{f.qty}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
           </div>
         </Section>
       </div>
-
-      {/* Full Trade List */}
-      <Section title={`All Trades (${trades.length})`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[10px] sm:text-xs min-w-[900px]">
-            <thead>
-              <tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
-                <th className="py-2 pr-2">Time</th>
-                <th className="py-2 pr-2">Asset</th>
-                <th className="py-2 pr-2">Strategy</th>
-                <th className="py-2 pr-2">Dir</th>
-                <th className="py-2 pr-2">Entry</th>
-                <th className="py-2 pr-2">Exit</th>
-                <th className="py-2 pr-2">Bars</th>
-                <th className="py-2 pr-2">Reason</th>
-                <th className="py-2 pr-2">PnL</th>
-                <th className="py-2">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trades.map((t: any, i: number) => {
-                const isWin = t.pnl > 0.01;
-                const isLoss = t.pnl < -0.01;
-                const isFlat = !isWin && !isLoss;
-                return (
-                  <tr key={i} className="border-b border-bah-border/30 hover:bg-bah-surface/50">
-                    <td className="py-2 pr-2 text-bah-muted">{t.exit_time ? new Date(t.exit_time).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " " + new Date(t.exit_time).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}</td>
-                    <td className="py-2 pr-2 text-bah-heading font-bold">{t.asset}</td>
-                    <td className="py-2 pr-2 text-bah-muted">{sn(t.strategy)}</td>
-                    <td className={`py-2 pr-2 font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</td>
-                    <td className="py-2 pr-2 text-bah-text">{fm(t.entry_price)}</td>
-                    <td className="py-2 pr-2 text-bah-text">{fm(t.exit_price)}</td>
-                    <td className="py-2 pr-2 text-bah-muted">{t.bars_held}</td>
-                    <td className="py-2 pr-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
-                        t.exit_reason === "TP" ? "bg-green-500/15 text-green-400" :
-                        t.exit_reason === "SL" ? "bg-red-500/15 text-red-400" :
-                        "bg-bah-surface text-bah-muted"
-                      }`}>{t.exit_reason}</span>
-                    </td>
-                    <td className={`py-2 pr-2 font-bold ${pnlC(t.pnl)}`}>{fmS(t.pnl)}</td>
-                    <td className="py-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
-                        isWin ? "bg-green-500/15 text-green-400" :
-                        isLoss ? "bg-red-500/15 text-red-400" :
-                        "bg-bah-surface text-bah-muted"
-                      }`}>{isWin ? "WIN" : isLoss ? "LOSS" : "FLAT"}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Section>
     </div>
   );
 }

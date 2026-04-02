@@ -167,3 +167,205 @@ async def execution_platforms():
         "commodity": "internal",
         "index": "internal",
     }
+
+
+@router.get("/binance/live")
+async def binance_live_data():
+    """Pull all data directly from Binance Testnet API."""
+    from bahamut.execution.binance_adapter import (
+        get_account, get_all_trades, get_all_orders, get_balances, _configured
+    )
+    from datetime import datetime, timezone
+
+    if not _configured():
+        return {"error": "Binance not configured. Set BINANCE_TESTNET_API_KEY."}
+
+    # Pull everything from Binance
+    balances = get_balances()
+    trades = get_all_trades()
+    orders = get_all_orders()
+
+    # Pair buy/sell trades to compute PnL per round-trip
+    # Group trades by asset, pair BUY→SELL sequences
+    asset_trades: dict[str, list] = {}
+    for t in trades:
+        a = t["asset"]
+        if a not in asset_trades:
+            asset_trades[a] = []
+        asset_trades[a].append(t)
+
+    round_trips = []
+    asset_stats: dict[str, dict] = {}
+
+    for asset, at in asset_trades.items():
+        # Sort by time ascending for pairing
+        at.sort(key=lambda x: x["time"])
+        buys = [t for t in at if t["side"] == "BUY"]
+        sells = [t for t in at if t["side"] == "SELL"]
+
+        if asset not in asset_stats:
+            asset_stats[asset] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0, "volume": 0}
+
+        # Pair buys with sells
+        for i in range(min(len(buys), len(sells))):
+            b = buys[i]
+            s = sells[i]
+            pnl = (s["price"] - b["price"]) * min(b["qty"], s["qty"])
+            rt = {
+                "asset": asset,
+                "direction": "LONG",
+                "entry_price": b["price"],
+                "exit_price": s["price"],
+                "qty": min(b["qty"], s["qty"]),
+                "pnl": round(pnl, 2),
+                "entry_time": datetime.fromtimestamp(b["time"] / 1000, tz=timezone.utc).isoformat() if b["time"] else "",
+                "exit_time": datetime.fromtimestamp(s["time"] / 1000, tz=timezone.utc).isoformat() if s["time"] else "",
+                "buy_commission": b["commission"],
+                "sell_commission": s["commission"],
+            }
+            round_trips.append(rt)
+            asset_stats[asset]["trades"] += 1
+            asset_stats[asset]["pnl"] = round(asset_stats[asset]["pnl"] + pnl, 2)
+            asset_stats[asset]["volume"] = round(asset_stats[asset]["volume"] + b["quote_qty"] + s["quote_qty"], 2)
+            if pnl > 0.01:
+                asset_stats[asset]["wins"] += 1
+            elif pnl < -0.01:
+                asset_stats[asset]["losses"] += 1
+
+    round_trips.sort(key=lambda x: x.get("exit_time", ""), reverse=True)
+
+    # Summary
+    total_pnl = sum(rt["pnl"] for rt in round_trips)
+    wins = [rt for rt in round_trips if rt["pnl"] > 0.01]
+    losses = [rt for rt in round_trips if rt["pnl"] < -0.01]
+    wr = len(wins) / max(1, len(wins) + len(losses))
+    gross_profit = sum(rt["pnl"] for rt in wins)
+    gross_loss = abs(sum(rt["pnl"] for rt in losses))
+    pf = gross_profit / max(0.01, gross_loss)
+
+    return {
+        "platform": "binance_testnet",
+        "connected": True,
+        "account": {
+            "balances": balances,
+        },
+        "summary": {
+            "total_trades": len(round_trips),
+            "wins": len(wins),
+            "losses": len(losses),
+            "flats": len(round_trips) - len(wins) - len(losses),
+            "win_rate": round(wr, 4),
+            "total_pnl": round(total_pnl, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "profit_factor": round(pf, 2),
+            "avg_win": round(gross_profit / max(1, len(wins)), 2),
+            "avg_loss": round(gross_loss / max(1, len(losses)), 2),
+            "best_trade": max(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
+            "worst_trade": min(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
+            "total_volume": round(sum(a["volume"] for a in asset_stats.values()), 2),
+            "total_commissions": round(sum(t.get("commission", 0) for t in trades), 4),
+        },
+        "by_asset": dict(sorted(asset_stats.items(), key=lambda x: x[1]["pnl"], reverse=True)),
+        "trades": round_trips,
+        "raw_fills": trades[:100],
+        "raw_orders": orders[:100],
+    }
+
+
+@router.get("/alpaca/live")
+async def alpaca_live_data():
+    """Pull all data directly from Alpaca Paper Trading API."""
+    from bahamut.execution.alpaca_adapter import (
+        get_account, get_all_orders, get_all_positions, get_activities,
+        get_portfolio_history, _configured
+    )
+
+    if not _configured():
+        return {"error": "Alpaca not configured. Set ALPACA_API_KEY."}
+
+    # Pull everything from Alpaca
+    account = get_account()
+    orders = get_all_orders(status="all")
+    positions = get_all_positions()
+    fills = get_activities("FILL")
+
+    # Pair buy/sell fills to compute PnL per round-trip
+    asset_buys: dict[str, list] = {}
+    asset_sells: dict[str, list] = {}
+    for f in fills:
+        a = f["asset"]
+        if f["side"] == "buy":
+            asset_buys.setdefault(a, []).append(f)
+        else:
+            asset_sells.setdefault(a, []).append(f)
+
+    round_trips = []
+    asset_stats: dict[str, dict] = {}
+
+    all_assets = set(list(asset_buys.keys()) + list(asset_sells.keys()))
+    for asset in all_assets:
+        buys = sorted(asset_buys.get(asset, []), key=lambda x: x.get("transaction_time", ""))
+        sells = sorted(asset_sells.get(asset, []), key=lambda x: x.get("transaction_time", ""))
+
+        if asset not in asset_stats:
+            asset_stats[asset] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0}
+
+        for i in range(min(len(buys), len(sells))):
+            b = buys[i]
+            s = sells[i]
+            pnl = (s["price"] - b["price"]) * min(b["qty"], s["qty"])
+            rt = {
+                "asset": asset,
+                "direction": "LONG",
+                "entry_price": b["price"],
+                "exit_price": s["price"],
+                "qty": min(b["qty"], s["qty"]),
+                "pnl": round(pnl, 2),
+                "entry_time": b.get("transaction_time", ""),
+                "exit_time": s.get("transaction_time", ""),
+            }
+            round_trips.append(rt)
+            asset_stats[asset]["trades"] += 1
+            asset_stats[asset]["pnl"] = round(asset_stats[asset]["pnl"] + pnl, 2)
+            if pnl > 0.01:
+                asset_stats[asset]["wins"] += 1
+            elif pnl < -0.01:
+                asset_stats[asset]["losses"] += 1
+
+    round_trips.sort(key=lambda x: x.get("exit_time", ""), reverse=True)
+
+    # Summary
+    total_pnl = sum(rt["pnl"] for rt in round_trips)
+    wins = [rt for rt in round_trips if rt["pnl"] > 0.01]
+    losses = [rt for rt in round_trips if rt["pnl"] < -0.01]
+    wr = len(wins) / max(1, len(wins) + len(losses))
+    gross_profit = sum(rt["pnl"] for rt in wins)
+    gross_loss = abs(sum(rt["pnl"] for rt in losses))
+    pf = gross_profit / max(0.01, gross_loss)
+
+    return {
+        "platform": "alpaca_paper",
+        "connected": True,
+        "account": account,
+        "positions": positions,
+        "summary": {
+            "total_trades": len(round_trips),
+            "wins": len(wins),
+            "losses": len(losses),
+            "flats": len(round_trips) - len(wins) - len(losses),
+            "win_rate": round(wr, 4),
+            "total_pnl": round(total_pnl, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "profit_factor": round(pf, 2),
+            "avg_win": round(gross_profit / max(1, len(wins)), 2),
+            "avg_loss": round(gross_loss / max(1, len(losses)), 2),
+            "best_trade": max(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
+            "worst_trade": min(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
+        },
+        "by_asset": dict(sorted(asset_stats.items(), key=lambda x: x[1]["pnl"], reverse=True)),
+        "trades": round_trips,
+        "raw_orders": orders[:100],
+        "raw_fills": fills[:100],
+    }
