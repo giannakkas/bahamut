@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 logger = structlog.get_logger()
 
-BASE_URL = os.environ.get("BINANCE_FUTURES_BASE_URL", "https://testnet.binancefuture.com")
+BASE_URL = os.environ.get("BINANCE_FUTURES_BASE_URL", "https://demo-fapi.binance.com")
 API_KEY = os.environ.get("BINANCE_FUTURES_API_KEY", "")
 API_SECRET = os.environ.get("BINANCE_FUTURES_API_SECRET", "")
 
