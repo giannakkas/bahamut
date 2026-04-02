@@ -351,6 +351,34 @@ def open_training_position(
                        strategy=strategy, count=strat_count, max=MAX_PER_STRATEGY)
         return None
 
+    # Per-strategy-per-class cap (prevent v10 from stacking 5 crypto LONGs in a down market)
+    STRATEGY_CLASS_CAPS = {
+        ("v10_mean_reversion", "crypto"): 2,
+        ("v10_mean_reversion", "stock"): 3,
+        ("v9_breakout", "crypto"): 2,
+    }
+    sc_cap = STRATEGY_CLASS_CAPS.get((strategy, asset_class))
+    if sc_cap:
+        sc_count = sum(1 for p in existing if p.strategy == strategy and p.asset_class == asset_class)
+        if sc_count >= sc_cap:
+            logger.warning("training_position_rejected",
+                           asset=asset, reason="STRATEGY_CLASS_CAP",
+                           strategy=strategy, asset_class=asset_class,
+                           count=sc_count, max=sc_cap)
+            return None
+
+    # Stock trades only during US market hours (avoid $0 flat exits)
+    if asset_class == "stock":
+        try:
+            from bahamut.data.live_data import _is_us_market_open
+            if not _is_us_market_open():
+                logger.info("training_position_rejected_market_closed",
+                            asset=asset, strategy=strategy,
+                            reason="US market closed — stock trades blocked outside hours")
+                return None
+        except Exception:
+            pass  # If check fails, allow the trade
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)

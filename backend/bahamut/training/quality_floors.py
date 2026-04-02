@@ -124,6 +124,19 @@ def check_quality_floors(
                 "maturity": maturity,
             })
 
+        # ── D2) Mature pattern auto-suppress ──
+        # If a pattern has 50+ samples and negative expectancy, auto-block
+        # regardless of training/production mode. Enough data to be confident
+        # this pattern is losing money.
+        if total_trades >= 50 and expectancy < -0.05:
+            failures.append({
+                "floor": "expectancy_mature",
+                "value": round(expectancy, 3),
+                "threshold": -0.05,
+                "reason": f"Mature pattern ({total_trades} trades) negative expectancy {expectancy:.3f}R — auto-suppressed",
+                "maturity": maturity,
+            })
+
     except Exception:
         pass  # Trust unavailable — skip trust/expectancy floors
 
@@ -138,7 +151,7 @@ def check_quality_floors(
 
     # Determine action: reject vs watchlist
     # In training mode, borderline failures → watchlist. Hard failures → reject.
-    hard_failures = [f for f in failures if f["floor"] in ("trust", "expectancy")]
+    hard_failures = [f for f in failures if f["floor"] in ("trust", "expectancy", "expectancy_mature")]
     soft_failures = [f for f in failures if f["floor"] in ("readiness", "reward_risk")]
 
     if hard_failures:

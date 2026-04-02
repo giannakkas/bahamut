@@ -83,6 +83,19 @@ def detect_regime(indicators: dict, candles: list = None) -> RegimeResult:
         )
 
     # ═══════════════════════════════════════════════════
+    # CRASH (soft): below EMA200 + negative slope = slow bleed
+    # Catches crypto downtrends that don't spike in volatility
+    # ═══════════════════════════════════════════════════
+    if dist_to_ema200_pct < -2 and ema50_slope < -0.15:
+        confidence = min(1.0, 0.5 + abs(dist_to_ema200_pct) * 0.03 + abs(ema50_slope) * 0.1)
+        return RegimeResult(
+            regime="CRASH",
+            confidence=round(confidence, 3),
+            reason=f"price {dist_to_ema200_pct:+.1f}% below EMA200, slope {ema50_slope:+.2f}% (slow bleed)",
+            features=features,
+        )
+
+    # ═══════════════════════════════════════════════════
     # TREND: price above EMA200, positive slope, trending
     # ═══════════════════════════════════════════════════
     if dist_to_ema200_pct > 3 and ema50_slope > 0.1:
