@@ -47,11 +47,9 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
       // Pull DIRECTLY from exchange API
       const r = await fetch(`${apiBase()}/execution/${platform}/live`, { headers: h });
       if (r.ok) setData(await r.json());
-      // Fetch sentiment for Binance page
-      if (platform === "binance") {
-        const sr = await fetch(`${apiBase()}/training/sentiment`, { headers: h });
-        if (sr.ok) setSentiment(await sr.json());
-      }
+      // Fetch sentiment for both pages
+      const sr = await fetch(`${apiBase()}/training/sentiment`, { headers: h });
+      if (sr.ok) setSentiment(await sr.json());
     } catch {}
     setLoading(false);
   }, [platform]);
@@ -146,14 +144,20 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
-          { l: "Total PnL", v: fmS(s.total_pnl || 0), c: pnlC(s.total_pnl || 0) },
-          { l: "Win Rate", v: `${((s.win_rate || 0) * 100).toFixed(1)}%`, c: (s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400" },
+          { l: platform === "alpaca" && s.combined_pnl ? "Combined PnL" : "Total PnL",
+            v: fmS(platform === "alpaca" && s.combined_pnl ? s.combined_pnl : (s.total_pnl || 0)),
+            c: pnlC(platform === "alpaca" && s.combined_pnl ? s.combined_pnl : (s.total_pnl || 0)) },
+          ...(platform === "alpaca" && s.unrealized_pnl !== undefined ? [
+            { l: "Unrealized", v: fmS(s.unrealized_pnl || 0), c: pnlC(s.unrealized_pnl || 0) },
+          ] : [
+            { l: "Win Rate", v: `${((s.win_rate || 0) * 100).toFixed(1)}%`, c: (s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400" },
+          ]),
           { l: "Profit Factor", v: (s.profit_factor || 0).toFixed(2), c: (s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400" },
           { l: "Trades", v: String(s.total_trades || 0), c: "text-bah-heading" },
+          { l: platform === "alpaca" ? "Open Pos" : "Wins", v: String(platform === "alpaca" ? (s.open_positions || 0) : (s.wins || 0)), c: platform === "alpaca" ? "text-bah-cyan" : "text-green-400" },
           { l: "Wins", v: String(s.wins || 0), c: "text-green-400" },
           { l: "Losses", v: String(s.losses || 0), c: "text-red-400" },
           { l: "Avg Win", v: fm(s.avg_win || 0), c: "text-green-400" },
-          { l: "Avg Loss", v: fm(s.avg_loss || 0), c: "text-red-400" },
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-sm sm:text-base font-bold ${card.c}`}>{card.v}</div>
@@ -408,17 +412,87 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           )}
 
           {/* Combined action */}
-          {sentiment.combined_action && (
-            <div className={`rounded-xl p-3 border text-center text-xs font-bold ${
-              sentiment.combined_action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" :
-              sentiment.combined_action === "block_longs" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" :
-              sentiment.combined_action === "caution_greed" ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400" :
-              "bg-green-500/15 border-green-500/30 text-green-400"
-            }`}>
-              SENTIMENT GATE: {sentiment.combined_action.replace(/_/g, " ").toUpperCase()} — {sentiment.combined_reason}
-            </div>
-          )}
+          {(() => {
+            const action = platform === "binance" ? sentiment.combined_crypto_action : sentiment.combined_stock_action;
+            return action && (
+              <div className={`rounded-xl p-3 border text-center text-xs font-bold ${
+                action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" :
+                action === "block_longs" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" :
+                "bg-green-500/15 border-green-500/30 text-green-400"
+              }`}>
+                SENTIMENT GATE: {action.replace(/_/g, " ").toUpperCase()} {sentiment.combined_reason ? `— ${sentiment.combined_reason}` : ""}
+              </div>
+            );
+          })()}
         </div>
+      )}
+
+      {/* Alpaca — CNN Fear & Greed for Stocks */}
+      {platform === "alpaca" && sentiment && sentiment.cnn_fear_greed && (
+        <Section title="CNN Fear & Greed Index — US Stock Market">
+          <div className="flex items-center gap-6">
+            <div className="relative w-24 h-24 shrink-0">
+              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
+                <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8"
+                  strokeDasharray={`${(sentiment.cnn_fear_greed.value / 100) * 264} 264`}
+                  strokeLinecap="round"
+                  className={
+                    sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
+                    sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
+                    sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
+                    sentiment.cnn_fear_greed.value <= 74 ? "text-green-400" :
+                    "text-green-500"
+                  } />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-2xl font-black ${
+                  sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
+                  sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
+                  sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
+                  "text-green-400"
+                }`}>{sentiment.cnn_fear_greed.value}</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className={`text-lg font-bold ${
+                sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
+                sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
+                sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
+                "text-green-400"
+              }`}>{sentiment.cnn_fear_greed.classification}</div>
+              <div className="text-[10px] text-bah-muted mt-1">Source: CNN · Free · No API key</div>
+              <div className="mt-2">
+                {sentiment.cnn_fear_greed.should_block_longs ? (
+                  <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                    🛑 STOCK LONGS BLOCKED (Extreme Fear)
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                    ✅ STOCK LONGS ALLOWED
+                  </span>
+                )}
+              </div>
+              {/* Sub-indicators */}
+              {sentiment.cnn_fear_greed.indicators && Object.keys(sentiment.cnn_fear_greed.indicators).length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3">
+                  {Object.entries(sentiment.cnn_fear_greed.indicators).map(([key, ind]: [string, any]) => (
+                    <div key={key} className={`rounded-md px-2 py-1 text-[9px] border ${
+                      ind.rating === "extreme fear" ? "bg-red-500/10 border-red-500/20 text-red-400" :
+                      ind.rating === "fear" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" :
+                      ind.rating === "greed" ? "bg-green-500/10 border-green-500/20 text-green-400" :
+                      ind.rating === "extreme greed" ? "bg-green-500/15 border-green-500/25 text-green-500" :
+                      "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+                    }`}>
+                      <div className="font-bold">{ind.score}</div>
+                      <div className="text-[7px] opacity-70">{key.replace(/_/g, " ")}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Section>
       )}
     </div>
   );

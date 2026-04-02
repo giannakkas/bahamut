@@ -389,6 +389,8 @@ async def alpaca_live_data():
     gross_loss = abs(sum(rt["pnl"] for rt in losses))
     pf = gross_profit / max(0.01, gross_loss)
 
+    unrealized_pnl = sum(p.get("unrealized_pl", 0) for p in positions)
+
     result = {
         "platform": "alpaca_paper",
         "connected": True,
@@ -401,6 +403,9 @@ async def alpaca_live_data():
             "flats": len(round_trips) - len(wins) - len(losses),
             "win_rate": round(wr, 4),
             "total_pnl": round(total_pnl, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "combined_pnl": round(total_pnl + unrealized_pnl, 2),
+            "open_positions": len(positions),
             "gross_profit": round(gross_profit, 2),
             "gross_loss": round(gross_loss, 2),
             "profit_factor": round(pf, 2),
