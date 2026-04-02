@@ -14,6 +14,8 @@ const OPERATIONAL_NAV = [
   { href: "/training-operations", label: "Training Operations", icon: "🧪" },
   { href: "/binance-trades", label: "Binance Trades", icon: "/binance-logo.png" },
   { href: "/alpaca-trades", label: "Alpaca Trades", icon: "🦙" },
+  { href: "/risk", label: "Risk Dashboard", icon: "📉" },
+  { href: "/trust", label: "Trust & Learning", icon: "🧠" },
   { href: "/settings-notifications", label: "Notifications", icon: "🔔" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
   { href: "/users", label: "Users", icon: "👥" },
@@ -24,7 +26,6 @@ const OPERATIONAL_NAV = [
 const LEGACY_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "◉" },
   { href: "/top-picks", label: "Top Picks", icon: "🔥" },
-  { href: "/risk", label: "Risk & Kill Switch", icon: "⚡" },
   { href: "/alerts", label: "Alerts", icon: "🔔" },
   { href: "/paper-trading", label: "Paper Trading", icon: "💰" },
   { href: "/agent-council", label: "Agent Council", icon: "◎" },
@@ -33,8 +34,6 @@ const LEGACY_NAV = [
   { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
   { href: "/execution", label: "Execution Monitor", icon: "⚡" },
   { href: "/trade-journal", label: "Trade Journal", icon: "☰" },
-  { href: "/trust", label: "Trust & Intelligence", icon: "🧠", minRole: "super_admin" },
-  { href: "/adaptive-risk", label: "Adaptive Risk", icon: "📊", minRole: "super_admin" },
   { href: "/agent-ranking", label: "Agent Ranking", icon: "🏆", minRole: "super_admin" },
 ];
 

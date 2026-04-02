@@ -428,3 +428,73 @@ def get_rejection_stats() -> dict:
         return json.loads(raw) if raw else {}
     except Exception:
         return {}
+
+
+def get_all_strategy_trusts() -> dict:
+    """Get trust scores for all strategies."""
+    strategies = {}
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT strategy, trust, samples, maturity, confidence, wins, losses
+            FROM trust_state WHERE key_type = 'strategy'
+        """)
+        for r in (rows or []):
+            strategies[r["strategy"]] = {
+                "trust": round(r.get("trust", 0.5), 4),
+                "samples": r.get("samples", 0),
+                "maturity": r.get("maturity", "provisional"),
+                "confidence": round(r.get("confidence", 0), 3),
+                "wins": r.get("wins", 0),
+                "losses": r.get("losses", 0),
+                "wr": round(r.get("wins", 0) / max(1, r.get("wins", 0) + r.get("losses", 0)), 3),
+            }
+    except Exception:
+        # Fallback: read from Redis
+        try:
+            import json, os, redis
+            rc = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            for key in rc.scan_iter("bahamut:trust:strategy:*"):
+                raw = rc.get(key)
+                if raw:
+                    data = json.loads(raw)
+                    name = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
+                    strategies[name] = data
+        except Exception:
+            pass
+    return strategies
+
+
+def get_all_pattern_trusts() -> dict:
+    """Get trust scores for all patterns (strategy:regime:class)."""
+    patterns = {}
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT pattern_key, blended_trust, blended_confidence, maturity,
+                   total_trades, expectancy, quick_stops
+            FROM trust_patterns
+        """)
+        for r in (rows or []):
+            patterns[r["pattern_key"]] = {
+                "blended_trust": round(r.get("blended_trust", 0.5), 4),
+                "blended_confidence": round(r.get("blended_confidence", 0), 3),
+                "maturity": r.get("maturity", "provisional"),
+                "total_trades": r.get("total_trades", 0),
+                "expectancy": round(r.get("expectancy", 0), 4),
+                "quick_stops": r.get("quick_stops", 0),
+            }
+    except Exception:
+        # Fallback: read from Redis
+        try:
+            import json, os, redis
+            rc = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            for key in rc.scan_iter("bahamut:trust:pattern:*"):
+                raw = rc.get(key)
+                if raw:
+                    data = json.loads(raw)
+                    name = key.decode().replace("bahamut:trust:pattern:", "") if isinstance(key, bytes) else key.replace("bahamut:trust:pattern:", "")
+                    patterns[name] = data
+        except Exception:
+            pass
+    return patterns

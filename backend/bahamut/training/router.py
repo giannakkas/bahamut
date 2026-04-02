@@ -1207,3 +1207,263 @@ async def crypto_sentiment():
         return get_full_sentiment()
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/risk-metrics")
+async def risk_metrics():
+    """Historical risk metrics — drawdown, streaks, daily PnL, exposure history."""
+    try:
+        from bahamut.db.query import run_query
+        from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
+
+        trades = run_query("""
+            SELECT asset, strategy, direction, pnl, pnl_pct, exit_reason,
+                   bars_held, entry_time, exit_time, r_multiple
+            FROM training_trades ORDER BY exit_time ASC
+        """)
+        if not trades:
+            return {"error": "no trades"}
+
+        capital = TRAINING_VIRTUAL_CAPITAL
+        equity_curve = [capital]
+        running = capital
+        peak = capital
+        max_dd = 0
+        max_dd_pct = 0
+        daily_pnl = {}
+        streak_wins = 0
+        streak_losses = 0
+        best_streak = 0
+        worst_streak = 0
+        current_streak = 0
+        current_streak_type = ""
+        biggest_win = {"pnl": 0}
+        biggest_loss = {"pnl": 0}
+        total_bars = 0
+        total_r = 0
+        win_r = []
+        loss_r = []
+
+        for t in trades:
+            pnl = t.get("pnl", 0) or 0
+            running += pnl
+            equity_curve.append(round(running, 2))
+
+            if running > peak:
+                peak = running
+            dd = peak - running
+            dd_pct = dd / max(1, peak) * 100
+            if dd > max_dd:
+                max_dd = dd
+            if dd_pct > max_dd_pct:
+                max_dd_pct = dd_pct
+
+            # Daily PnL
+            exit_t = str(t.get("exit_time", ""))[:10]
+            if exit_t:
+                daily_pnl[exit_t] = round(daily_pnl.get(exit_t, 0) + pnl, 2)
+
+            # Streaks
+            if pnl > 0.01:
+                if current_streak_type == "win":
+                    current_streak += 1
+                else:
+                    current_streak = 1
+                    current_streak_type = "win"
+                best_streak = max(best_streak, current_streak)
+            elif pnl < -0.01:
+                if current_streak_type == "loss":
+                    current_streak += 1
+                else:
+                    current_streak = 1
+                    current_streak_type = "loss"
+                worst_streak = max(worst_streak, current_streak)
+            # Biggest
+            if pnl > biggest_win["pnl"]:
+                biggest_win = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
+            if pnl < biggest_loss["pnl"]:
+                biggest_loss = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
+            # R-multiples
+            r = t.get("r_multiple", 0) or 0
+            total_r += r
+            if r > 0:
+                win_r.append(r)
+            elif r < 0:
+                loss_r.append(r)
+            total_bars += t.get("bars_held", 0) or 0
+
+        # Per-strategy risk
+        strat_stats = {}
+        for t in trades:
+            s = t.get("strategy", "")
+            if s not in strat_stats:
+                strat_stats[s] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0, "max_loss": 0, "r_sum": 0}
+            strat_stats[s]["trades"] += 1
+            p = t.get("pnl", 0) or 0
+            strat_stats[s]["pnl"] = round(strat_stats[s]["pnl"] + p, 2)
+            if p > 0.01:
+                strat_stats[s]["wins"] += 1
+            elif p < -0.01:
+                strat_stats[s]["losses"] += 1
+                strat_stats[s]["max_loss"] = min(strat_stats[s]["max_loss"], p)
+            strat_stats[s]["r_sum"] = round(strat_stats[s]["r_sum"] + (t.get("r_multiple", 0) or 0), 2)
+
+        # Per-class risk
+        class_stats = {}
+        for t in trades:
+            cls = ASSET_CLASS_MAP.get(t.get("asset", ""), "unknown")
+            if cls not in class_stats:
+                class_stats[cls] = {"trades": 0, "pnl": 0, "wins": 0, "losses": 0}
+            class_stats[cls]["trades"] += 1
+            p = t.get("pnl", 0) or 0
+            class_stats[cls]["pnl"] = round(class_stats[cls]["pnl"] + p, 2)
+            if p > 0.01:
+                class_stats[cls]["wins"] += 1
+            elif p < -0.01:
+                class_stats[cls]["losses"] += 1
+
+        # Daily PnL last 14 days
+        sorted_days = sorted(daily_pnl.items(), reverse=True)[:14]
+        sorted_days.reverse()
+
+        n = len(trades)
+        return {
+            "total_trades": n,
+            "total_pnl": round(running - capital, 2),
+            "return_pct": round((running - capital) / capital * 100, 2),
+            "current_equity": round(running, 2),
+            "max_drawdown": round(max_dd, 2),
+            "max_drawdown_pct": round(max_dd_pct, 2),
+            "current_drawdown": round(peak - running, 2),
+            "current_drawdown_pct": round((peak - running) / max(1, peak) * 100, 2),
+            "best_streak": best_streak,
+            "worst_streak": worst_streak,
+            "current_streak": current_streak,
+            "current_streak_type": current_streak_type,
+            "biggest_win": biggest_win,
+            "biggest_loss": biggest_loss,
+            "avg_r_multiple": round(total_r / max(1, n), 3),
+            "avg_win_r": round(sum(win_r) / max(1, len(win_r)), 3),
+            "avg_loss_r": round(sum(loss_r) / max(1, len(loss_r)), 3),
+            "avg_bars_held": round(total_bars / max(1, n), 1),
+            "profit_factor": round(sum(t.get("pnl", 0) for t in trades if (t.get("pnl", 0) or 0) > 0) /
+                                    max(0.01, abs(sum(t.get("pnl", 0) for t in trades if (t.get("pnl", 0) or 0) < 0))), 2),
+            "daily_pnl": [{"date": d, "pnl": p} for d, p in sorted_days],
+            "equity_curve_sample": equity_curve[::max(1, len(equity_curve) // 50)],
+            "by_strategy": strat_stats,
+            "by_class": class_stats,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/trust-dashboard")
+async def trust_dashboard():
+    """Trust scores, pattern performance, and learning metrics for admin monitoring."""
+    try:
+        from bahamut.training.learning_engine import (
+            get_all_strategy_trusts, get_all_pattern_trusts,
+        )
+        from bahamut.db.query import run_query
+        from bahamut.config_assets import ASSET_CLASS_MAP
+
+        strategies = get_all_strategy_trusts()
+        patterns = get_all_pattern_trusts()
+
+        # Best/worst patterns
+        pattern_list = []
+        for key, p in patterns.items():
+            pattern_list.append({
+                "key": key,
+                "trust": round(p.get("blended_trust", 0.5), 4),
+                "confidence": round(p.get("blended_confidence", 0), 3),
+                "maturity": p.get("maturity", "unknown"),
+                "expectancy": round(p.get("expectancy", 0), 4),
+                "trades": p.get("total_trades", 0),
+            })
+
+        best_patterns = sorted(pattern_list, key=lambda x: x["expectancy"], reverse=True)[:10]
+        worst_patterns = sorted(pattern_list, key=lambda x: x["expectancy"])[:10]
+        most_traded = sorted(pattern_list, key=lambda x: x["trades"], reverse=True)[:10]
+
+        # Per-asset performance
+        asset_rows = run_query("""
+            SELECT asset, COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as total_pnl,
+                   COALESCE(AVG(r_multiple), 0) as avg_r
+            FROM training_trades GROUP BY asset ORDER BY total_pnl DESC
+        """)
+
+        best_assets = []
+        worst_assets = []
+        for r in (asset_rows or []):
+            entry = {
+                "asset": r["asset"],
+                "class": ASSET_CLASS_MAP.get(r["asset"], "unknown"),
+                "trades": r["trades"],
+                "wins": r["wins"],
+                "losses": r["losses"],
+                "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
+                "pnl": round(r["total_pnl"], 2),
+                "avg_r": round(r["avg_r"], 3),
+            }
+            if r["total_pnl"] > 0:
+                best_assets.append(entry)
+            else:
+                worst_assets.append(entry)
+        worst_assets.sort(key=lambda x: x["pnl"])
+
+        # Exit reason distribution
+        exit_rows = run_query("""
+            SELECT exit_reason, COUNT(*) as count,
+                   COALESCE(AVG(pnl), 0) as avg_pnl,
+                   COALESCE(AVG(r_multiple), 0) as avg_r
+            FROM training_trades GROUP BY exit_reason
+        """)
+        exit_stats = {r["exit_reason"]: {"count": r["count"], "avg_pnl": round(r["avg_pnl"], 2),
+                      "avg_r": round(r["avg_r"], 3)} for r in (exit_rows or [])}
+
+        # Direction performance
+        dir_rows = run_query("""
+            SELECT direction, COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   COALESCE(SUM(pnl), 0) as pnl
+            FROM training_trades GROUP BY direction
+        """)
+        direction_stats = {}
+        for r in (dir_rows or []):
+            direction_stats[r["direction"]] = {
+                "trades": r["trades"], "wins": r["wins"],
+                "pnl": round(r["pnl"], 2),
+            }
+
+        # Regime performance
+        regime_rows = run_query("""
+            SELECT regime, COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as pnl,
+                   COALESCE(AVG(r_multiple), 0) as avg_r
+            FROM training_trades GROUP BY regime
+        """)
+        regime_stats = {}
+        for r in (regime_rows or []):
+            regime_stats[r["regime"]] = {
+                "trades": r["trades"], "wins": r["wins"], "losses": r["losses"],
+                "pnl": round(r["pnl"], 2), "avg_r": round(r["avg_r"], 3),
+                "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
+            }
+
+        return {
+            "strategies": strategies,
+            "patterns": {"best": best_patterns, "worst": worst_patterns, "most_traded": most_traded},
+            "best_assets": best_assets[:10],
+            "worst_assets": worst_assets[:10],
+            "exit_stats": exit_stats,
+            "direction_stats": direction_stats,
+            "regime_stats": regime_stats,
+        }
+    except Exception as e:
+        return {"error": str(e)}
