@@ -411,6 +411,12 @@ def open_training_position(
                         asset=asset, platform=pos.execution_platform,
                         old_entry=old_entry, fill_price=pos.entry_price,
                         order_id=pos.exchange_order_id)
+            # Invalidate platform cache so pages refresh
+            try:
+                from bahamut.execution.router import invalidate_platform_cache
+                invalidate_platform_cache(pos.execution_platform)
+            except Exception:
+                pass
         elif exec_result.get("status") == "error":
             logger.warning("exchange_execution_failed_using_internal",
                            asset=asset, platform=exec_result.get("platform"),
@@ -620,6 +626,12 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     logger.info("exchange_close_fill_applied",
                                 asset=pos.asset, platform=trade.execution_platform,
                                 fill_price=trade.exit_price, pnl=trade.pnl)
+                    # Invalidate platform cache so pages refresh
+                    try:
+                        from bahamut.execution.router import invalidate_platform_cache
+                        invalidate_platform_cache(trade.execution_platform)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning("exchange_close_exception", asset=pos.asset, error=str(e)[:100])
 

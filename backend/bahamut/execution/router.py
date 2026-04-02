@@ -8,6 +8,39 @@ Routes trade execution to the correct platform:
 """
 import structlog
 
+import json
+import os
+import time as _time
+
+# ── Redis cache for exchange data ──
+_cache: dict[str, tuple[any, float]] = {}
+_CACHE_TTL = 30  # seconds
+
+def _cache_get(key: str):
+    """Try Redis first, then in-memory."""
+    try:
+        import redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        raw = r.get(f"bahamut:exec_cache:{key}")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    entry = _cache.get(key)
+    if entry and entry[1] > _time.time():
+        return entry[0]
+    return None
+
+def _cache_set(key: str, data):
+    """Write to both Redis and in-memory."""
+    try:
+        import redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.setex(f"bahamut:exec_cache:{key}", _CACHE_TTL, json.dumps(data, default=str))
+    except Exception:
+        pass
+    _cache[key] = (data, _time.time() + _CACHE_TTL)
+
 logger = structlog.get_logger()
 
 
@@ -171,7 +204,12 @@ async def execution_platforms():
 
 @router.get("/binance/live")
 async def binance_live_data():
-    """Pull all data directly from Binance Testnet API."""
+    """Pull all data directly from Binance Testnet API. Cached 30s."""
+    cached = _cache_get("binance_live")
+    if cached:
+        cached["_from_cache"] = True
+        return cached
+
     from bahamut.execution.binance_adapter import (
         get_account, get_all_trades, get_all_orders, get_balances, _configured
     )
@@ -243,7 +281,7 @@ async def binance_live_data():
     gross_loss = abs(sum(rt["pnl"] for rt in losses))
     pf = gross_profit / max(0.01, gross_loss)
 
-    return {
+    result = {
         "platform": "binance_testnet",
         "connected": True,
         "account": {
@@ -271,11 +309,18 @@ async def binance_live_data():
         "raw_fills": trades[:100],
         "raw_orders": orders[:100],
     }
+    _cache_set("binance_live", result)
+    return result
 
 
 @router.get("/alpaca/live")
 async def alpaca_live_data():
-    """Pull all data directly from Alpaca Paper Trading API."""
+    """Pull all data directly from Alpaca Paper Trading API. Cached 30s."""
+    cached = _cache_get("alpaca_live")
+    if cached:
+        cached["_from_cache"] = True
+        return cached
+
     from bahamut.execution.alpaca_adapter import (
         get_account, get_all_orders, get_all_positions, get_activities,
         get_portfolio_history, _configured
@@ -344,7 +389,7 @@ async def alpaca_live_data():
     gross_loss = abs(sum(rt["pnl"] for rt in losses))
     pf = gross_profit / max(0.01, gross_loss)
 
-    return {
+    result = {
         "platform": "alpaca_paper",
         "connected": True,
         "account": account,
@@ -369,3 +414,18 @@ async def alpaca_live_data():
         "raw_orders": orders[:100],
         "raw_fills": fills[:100],
     }
+    _cache_set("alpaca_live", result)
+    return result
+
+
+def invalidate_platform_cache(platform: str):
+    """Invalidate cached data after a trade executes. Called from training engine."""
+    key = f"{platform}_live"
+    try:
+        import redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        r.delete(f"bahamut:exec_cache:{key}")
+    except Exception:
+        pass
+    if key in _cache:
+        del _cache[key]

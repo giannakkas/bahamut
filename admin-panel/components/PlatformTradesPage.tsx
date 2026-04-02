@@ -1,6 +1,7 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { apiBase } from "@/lib/utils";
+import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const STRAT_NAMES: Record<string, string> = {
   v5_base: "S1 · EMA Trend", v5_tuned: "S2 · EMA Tuned",
@@ -49,7 +50,22 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
     setLoading(false);
   }, [platform]);
 
+  const { lastEvent, status: wsStatus } = useAdminSocket();
+  const lastEventRef = useRef(lastEvent);
+
   useEffect(() => { load(); const iv = setInterval(load, 60000); return () => clearInterval(iv); }, [load]);
+
+  // Auto-refresh when a trade event comes through WebSocket
+  useEffect(() => {
+    if (lastEvent && lastEvent !== lastEventRef.current) {
+      lastEventRef.current = lastEvent;
+      const evt = (lastEvent as any)?.type || "";
+      if (evt === "position_opened" || evt === "position_closed" || evt === "cycle_complete") {
+        // Delay slightly to let cache invalidate
+        setTimeout(load, 2000);
+      }
+    }
+  }, [lastEvent, load]);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -95,8 +111,10 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[10px] text-green-400 font-bold">LIVE</span>
+          <span className={`w-2 h-2 rounded-full ${wsStatus === "connected" ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
+          <span className={`text-[10px] font-bold ${wsStatus === "connected" ? "text-green-400" : "text-red-400"}`}>
+            {wsStatus === "connected" ? "LIVE" : "OFFLINE"}
+          </span>
         </div>
       </div>
 

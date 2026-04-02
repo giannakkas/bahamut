@@ -198,12 +198,19 @@ def _format_qty(asset: str, quantity: float) -> str:
 # ═══════════════════════════════════════════
 
 def get_all_trades() -> list[dict]:
-    """Fetch all trades from Binance testnet across all symbols we trade."""
+    """Fetch all trades from Binance testnet for actively traded symbols."""
     if not _configured():
         return []
 
+    # Only query symbols we actually trade (not all 40)
+    try:
+        from bahamut.config_assets import TRAINING_CRYPTO
+        active_symbols = {s: SYMBOL_MAP[s] for s in TRAINING_CRYPTO if s in SYMBOL_MAP}
+    except Exception:
+        active_symbols = SYMBOL_MAP
+
     all_trades = []
-    for bahamut_symbol, binance_symbol in SYMBOL_MAP.items():
+    for bahamut_symbol, binance_symbol in active_symbols.items():
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
             r = httpx.get(f"{BASE_URL}/api/v3/myTrades", params=params,
@@ -233,12 +240,18 @@ def get_all_trades() -> list[dict]:
 
 
 def get_all_orders() -> list[dict]:
-    """Fetch all orders from Binance testnet across all symbols."""
+    """Fetch all orders from Binance testnet for actively traded symbols."""
     if not _configured():
         return []
 
+    try:
+        from bahamut.config_assets import TRAINING_CRYPTO
+        active_symbols = {s: SYMBOL_MAP[s] for s in TRAINING_CRYPTO if s in SYMBOL_MAP}
+    except Exception:
+        active_symbols = SYMBOL_MAP
+
     all_orders = []
-    for bahamut_symbol, binance_symbol in SYMBOL_MAP.items():
+    for bahamut_symbol, binance_symbol in active_symbols.items():
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
             r = httpx.get(f"{BASE_URL}/api/v3/allOrders", params=params,
