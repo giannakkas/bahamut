@@ -1112,3 +1112,88 @@ async def execution_status():
         return get_execution_status()
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/platform-trades/{platform}")
+async def platform_trades(platform: str):
+    """Get trades for a specific execution platform.
+    platform: 'binance' (crypto) or 'alpaca' (stocks)"""
+    from bahamut.db.query import run_query
+
+    class_filter = {"binance": "crypto", "alpaca": "stock"}.get(platform)
+    if not class_filter:
+        return {"error": f"Unknown platform: {platform}. Use 'binance' or 'alpaca'."}
+
+    trades = run_query("""
+        SELECT trade_id, asset, asset_class, strategy, direction,
+               entry_price, exit_price, stop_price, tp_price, size, risk_amount,
+               pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime
+        FROM training_trades
+        WHERE asset_class = :cls
+        ORDER BY exit_time DESC
+        LIMIT 500
+    """, {"cls": class_filter})
+
+    # Summary stats
+    total = len(trades)
+    wins = [t for t in trades if t["pnl"] and t["pnl"] > 0.01]
+    losses = [t for t in trades if t["pnl"] and t["pnl"] < -0.01]
+    flats = [t for t in trades if not t["pnl"] or abs(t["pnl"]) <= 0.01]
+    total_pnl = sum(t["pnl"] or 0 for t in trades)
+    gross_profit = sum(t["pnl"] for t in wins) if wins else 0
+    gross_loss = abs(sum(t["pnl"] for t in losses)) if losses else 0
+    win_rate = len(wins) / max(1, len(wins) + len(losses))
+    profit_factor = gross_profit / max(0.01, gross_loss)
+    avg_win = gross_profit / max(1, len(wins))
+    avg_loss = gross_loss / max(1, len(losses))
+    best = max(trades, key=lambda t: t["pnl"] or 0) if trades else None
+    worst = min(trades, key=lambda t: t["pnl"] or 0) if trades else None
+
+    # Per-asset breakdown
+    asset_stats = {}
+    for t in trades:
+        a = t["asset"]
+        if a not in asset_stats:
+            asset_stats[a] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0}
+        asset_stats[a]["trades"] += 1
+        asset_stats[a]["pnl"] = round(asset_stats[a]["pnl"] + (t["pnl"] or 0), 2)
+        if t["pnl"] and t["pnl"] > 0.01:
+            asset_stats[a]["wins"] += 1
+        elif t["pnl"] and t["pnl"] < -0.01:
+            asset_stats[a]["losses"] += 1
+
+    # Per-strategy breakdown
+    strat_stats = {}
+    for t in trades:
+        s = t["strategy"]
+        if s not in strat_stats:
+            strat_stats[s] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0}
+        strat_stats[s]["trades"] += 1
+        strat_stats[s]["pnl"] = round(strat_stats[s]["pnl"] + (t["pnl"] or 0), 2)
+        if t["pnl"] and t["pnl"] > 0.01:
+            strat_stats[s]["wins"] += 1
+        elif t["pnl"] and t["pnl"] < -0.01:
+            strat_stats[s]["losses"] += 1
+
+    return {
+        "platform": platform,
+        "asset_class": class_filter,
+        "summary": {
+            "total_trades": total,
+            "wins": len(wins),
+            "losses": len(losses),
+            "flats": len(flats),
+            "win_rate": round(win_rate, 4),
+            "total_pnl": round(total_pnl, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "profit_factor": round(profit_factor, 2),
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2),
+            "best_trade": {"asset": best["asset"], "pnl": best["pnl"], "strategy": best["strategy"]} if best else None,
+            "worst_trade": {"asset": worst["asset"], "pnl": worst["pnl"], "strategy": worst["strategy"]} if worst else None,
+        },
+        "by_asset": dict(sorted(asset_stats.items(), key=lambda x: x[1]["pnl"], reverse=True)),
+        "by_strategy": strat_stats,
+        "trades": trades,
+    }
