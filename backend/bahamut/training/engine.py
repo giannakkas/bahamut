@@ -379,6 +379,18 @@ def open_training_position(
         except Exception:
             pass  # If check fails, allow the trade
 
+    # Sentiment gate — block crypto LONGs when sentiment is heavily bearish
+    if asset_class == "crypto" and direction == "LONG":
+        try:
+            from bahamut.sentiment.cryptopanic import should_block_long
+            blocked, reason = should_block_long(asset)
+            if blocked:
+                logger.info("training_position_rejected_sentiment",
+                            asset=asset, strategy=strategy, reason=reason)
+                return None
+        except Exception:
+            pass  # If sentiment check fails, allow the trade
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)

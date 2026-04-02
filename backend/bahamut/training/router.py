@@ -1197,3 +1197,15 @@ async def platform_trades(platform: str):
         "by_strategy": strat_stats,
         "trades": trades,
     }
+
+
+@router.get("/sentiment")
+async def crypto_sentiment():
+    """Get current crypto sentiment from CryptoPanic."""
+    try:
+        from bahamut.sentiment.cryptopanic import get_market_mood, _configured
+        if not _configured():
+            return {"error": "CryptoPanic not configured. Set CRYPTOPANIC_API_KEY."}
+        return get_market_mood()
+    except Exception as e:
+        return {"error": str(e)}
