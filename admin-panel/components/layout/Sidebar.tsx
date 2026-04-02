@@ -12,7 +12,7 @@ import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const OPERATIONAL_NAV = [
   { href: "/training-operations", label: "Training Operations", icon: "🧪" },
-  { href: "/binance-trades", label: "Binance Trades", icon: "🟡" },
+  { href: "/binance-trades", label: "Binance Trades", icon: "/binance-logo.png" },
   { href: "/alpaca-trades", label: "Alpaca Trades", icon: "🦙" },
   { href: "/settings-notifications", label: "Notifications", icon: "🔔" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
@@ -83,7 +83,11 @@ export function Sidebar() {
             ? "border-bah-cyan bg-bah-cyan/[0.08] text-bah-cyan font-semibold"
             : "border-transparent text-bah-subtle hover:bg-white/[0.02] hover:text-bah-text"
         )}>
-        <span className="text-sm w-5 text-center">{item.icon}</span>
+        {item.icon.startsWith("/") ? (
+                  <img src={item.icon} alt="" className="w-4 h-4 rounded-sm" />
+                ) : (
+                  <span className="text-sm w-5 text-center">{item.icon}</span>
+                )}
         <span>{item.label}</span>
         {item.href === "/alerts" && activeAlerts > 0 && (
           <span className="ml-auto bg-bah-red text-white text-[9px] font-bold px-1.5 py-px rounded-full">{activeAlerts}</span>

@@ -65,7 +65,11 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
     <div className="p-2 sm:p-4 max-w-[1440px] mx-auto space-y-4 pt-12 lg:pt-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="text-2xl">{icon}</span>
+        {icon.startsWith("/") ? (
+          <img src={icon} alt={label} className="w-7 h-7 rounded-md" />
+        ) : (
+          <span className="text-2xl">{icon}</span>
+        )}
         <div>
           <h1 className="text-lg font-bold text-bah-heading">{label} Trades</h1>
           <p className="text-[10px] text-bah-muted">{s.total_trades} trades · {data.asset_class} assets · Last updated: {new Date().toLocaleTimeString()}</p>
