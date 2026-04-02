@@ -188,7 +188,118 @@ def detect_mean_reversion(
     return sig
 
 
-class V10MeanReversion:
+def detect_mean_reversion_short(
+    candles: list,
+    indicators: dict,
+    prev_indicators: dict | None = None,
+    regime: str = "RANGE",
+    min_ema_distance_pct: float = 0.02,
+    bb_tolerance: float = 0.995,
+    rsi_threshold: float = 65.0,
+    rsi_cross_level: float = 70.0,
+    min_candles: int = 25,
+) -> MeanReversionSignal:
+    """Detect a mean reversion SHORT setup — mirror of LONG detection.
+
+    Entry logic (ALL must pass):
+      1. Regime is RANGE
+      2. Price stretched ABOVE EMA20 by at least min_ema_distance_pct
+      3. Price near or above upper Bollinger Band
+      4. RSI >= threshold OR RSI crossed down from above cross_level
+      5. Rejection confirmation: current close < previous close OR close < upper band
+    """
+    sig = MeanReversionSignal()
+
+    if not candles or len(candles) < min_candles:
+        sig.reason = f"insufficient data ({len(candles) if candles else 0} < {min_candles})"
+        return sig
+
+    close = indicators.get("close", 0)
+    ema_20 = indicators.get("ema_20", 0)
+    bb_upper = indicators.get("bollinger_upper", 0)
+    bb_mid = indicators.get("bollinger_mid", 0)
+    rsi = indicators.get("rsi_14", 50)
+    atr = indicators.get("atr_14", 0)
+
+    if close <= 0 or ema_20 <= 0 or bb_upper <= 0 or atr <= 0:
+        sig.reason = "missing indicators"
+        return sig
+
+    if regime not in ("RANGE",):
+        sig.reason = f"wrong regime: {regime} (need RANGE)"
+        return sig
+
+    # Price stretched ABOVE EMA20
+    distance_from_ema = (close - ema_20) / ema_20
+    if distance_from_ema < min_ema_distance_pct:
+        sig.reason = f"not stretched enough above: {distance_from_ema:.3f} < {min_ema_distance_pct}"
+        return sig
+
+    # Price near or above upper Bollinger Band
+    bb_condition = close >= bb_upper * bb_tolerance
+    if not bb_condition:
+        sig.reason = f"below upper band: close {close:.2f} < band {bb_upper * bb_tolerance:.2f}"
+        return sig
+
+    # RSI overbought or crossing down
+    prev_rsi = prev_indicators.get("rsi_14", 50) if prev_indicators else 50
+    rsi_overbought = rsi >= rsi_threshold
+    rsi_crossed_down = prev_rsi > rsi_cross_level and rsi <= rsi_cross_level
+
+    if not rsi_overbought and not rsi_crossed_down:
+        sig.reason = f"RSI not overbought: {rsi:.1f} (need >={rsi_threshold} or cross down from >{rsi_cross_level})"
+        return sig
+
+    # Rejection confirmation
+    prev_close = candles[-2]["close"] if len(candles) >= 2 else close
+    rejection_lower = close < prev_close
+    below_band = close < bb_upper
+
+    if not rejection_lower and not below_band:
+        sig.reason = f"no rejection: close {close:.2f} >= prev {prev_close:.2f} and above band {bb_upper:.2f}"
+        return sig
+
+    # Quality score
+    quality = 0.5
+    stretch_bonus = min(0.15, (distance_from_ema - min_ema_distance_pct) * 5)
+    quality += stretch_bonus
+
+    if rsi >= 75:
+        quality += 0.15
+    elif rsi >= 70:
+        quality += 0.10
+    elif rsi >= 65:
+        quality += 0.05
+
+    if rsi_crossed_down:
+        quality += 0.10
+
+    bar_range = candles[-1].get("high", close) - candles[-1].get("low", close)
+    if bar_range > 0:
+        close_position = (close - candles[-1].get("low", close)) / bar_range
+        if close_position < 0.3:
+            quality += 0.05
+
+    quality = round(min(1.0, quality), 3)
+
+    reasons = []
+    reasons.append(f"RANGE mean reversion SHORT: {distance_from_ema*100:.1f}% above EMA20")
+    if rsi_crossed_down:
+        reasons.append(f"RSI crossed down from {prev_rsi:.0f} to {rsi:.0f}")
+    else:
+        reasons.append(f"RSI overbought at {rsi:.0f}")
+    if rejection_lower:
+        reasons.append("rejection confirmed (close < prev close)")
+
+    sig.valid = True
+    sig.direction = "SHORT"
+    sig.confidence = quality
+    sig.distance_from_mean_pct = round(distance_from_ema * 100, 2)
+    sig.rsi = round(rsi, 1)
+    sig.target_price = round(bb_mid, 6)
+    sig.reason = " · ".join(reasons)
+
+    return sig
     """Strategy wrapper for the execution framework.
 
     Integrates with the same interface as V5Base, V5Tuned, V9Breakout:
@@ -201,16 +312,19 @@ class V10MeanReversion:
         self.risk_pct = 0.015       # 1.5% risk per trade (slightly lower than trend strategies)
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
-        """Evaluate for mean reversion setup.
+        """Evaluate for mean reversion setup — both LONG and SHORT.
 
-        Unlike v5/v9, this strategy also needs the regime to decide whether to fire.
-        The regime is extracted from indicators (set by the orchestrator) or defaults to RANGE.
+        LONG: price oversold below EMA20, RSI low, bounce confirmed
+        SHORT: price overbought above EMA20, RSI high, rejection confirmed
         """
-        # Regime: injected by orchestrator. Default to UNKNOWN to prevent
-        # accidental firing when regime isn't set.
         regime = indicators.get("_regime", "UNKNOWN")
 
+        # Try LONG first (oversold → bounce)
         sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
+
+        # If no LONG, try SHORT (overbought → rejection)
+        if not sig.valid:
+            sig = detect_mean_reversion_short(candles, indicators, prev_indicators, regime=regime)
 
         if not sig.valid:
             return None
@@ -227,8 +341,13 @@ class V10MeanReversion:
         sl_pct = min(sl_pct, 0.08)  # Cap at 8% to prevent absurd stops
 
         # Take profit: distance to mean (EMA20 / Bollinger midline)
-        target = max(bb_mid, ema_20)  # Use whichever is higher
-        tp_pct = (target - close) / close if close > 0 else 0.03
+        if sig.direction == "LONG":
+            target = max(bb_mid, ema_20)
+            tp_pct = (target - close) / close if close > 0 else 0.03
+        else:  # SHORT
+            target = min(bb_mid, ema_20)
+            tp_pct = (close - target) / close if close > 0 else 0.03
+
         tp_pct = max(tp_pct, 0.02)   # Minimum 2% TP
         tp_pct = min(tp_pct, 0.08)   # Cap at 8%
 
