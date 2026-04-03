@@ -337,11 +337,11 @@ def detect_crash_short(
         return sig
 
     dist_to_ema20 = (ema_20 - close) / ema_20
-    if dist_to_ema20 > 0.015:
+    if dist_to_ema20 > 0.04:
         sig.reason = f"price still far below EMA20: {dist_to_ema20*100:.1f}%"
         return sig
 
-    if rsi < 40:
+    if rsi < 35:
         sig.reason = f"RSI too low ({rsi:.0f}) — still oversold"
         return sig
 
@@ -354,12 +354,17 @@ def detect_crash_short(
         sig.reason = "no rejection — price still rallying"
         return sig
 
-    quality = 0.55
-    if dist_to_ema20 <= 0.005:
-        quality += 0.10
-    elif close > ema_20:
-        quality += 0.15
-    if 45 <= rsi <= 55:
+    quality = 0.50
+    # Closer to EMA20 = better entry
+    if dist_to_ema20 <= 0.01:
+        quality += 0.15  # Within 1% — right at resistance
+    elif dist_to_ema20 <= 0.02:
+        quality += 0.10  # Within 2%
+    elif dist_to_ema20 <= 0.03:
+        quality += 0.05  # Within 3%
+    if close > ema_20:
+        quality += 0.15  # Above EMA20 — best entry
+    if 40 <= rsi <= 55:
         quality += 0.10
     elif rsi > 55:
         quality += 0.05

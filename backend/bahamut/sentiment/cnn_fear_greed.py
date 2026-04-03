@@ -104,7 +104,7 @@ def get_stock_fear_greed() -> dict:
             result = {
                 "value": score,
                 "classification": classification,
-                "should_block_longs": score <= 39,
+                "should_block_longs": score <= 10,
                 "indicators": indicators,
                 "source": "CNN Fear & Greed",
             }

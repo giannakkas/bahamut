@@ -62,8 +62,8 @@ def check_sentiment(asset: str, direction: str, asset_class: str) -> tuple[bool,
             value = cnn.get("value", 50)
             classification = cnn.get("classification", "Neutral")
 
-            if value <= 24:
-                return True, f"CNN Fear & Greed: {value} ({classification}) — extreme fear, stock LONGs blocked"
+            if value <= 10:
+                return True, f"CNN Fear & Greed: {value} ({classification}) — market crash, stock LONGs blocked"
         except Exception as e:
             logger.warning("sentiment_cnn_check_failed", error=str(e)[:50])
 
@@ -118,9 +118,9 @@ def get_full_sentiment() -> dict:
     # Determine stock action
     cnn = result.get("cnn_fear_greed") or {}
     cnn_value = cnn.get("value", 50)
-    if cnn_value <= 24:
+    if cnn_value <= 10:
         result["combined_stock_action"] = "block_all_longs"
-        result["combined_reason"] += f" | Stock Extreme Fear ({cnn_value})"
+        result["combined_reason"] += f" | Stock Market Crash ({cnn_value})"
     else:
         result["combined_stock_action"] = "allow"
 
