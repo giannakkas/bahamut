@@ -14,7 +14,7 @@ import time as _time
 
 # ── Redis cache for exchange data ──
 _cache: dict[str, tuple[any, float]] = {}
-_CACHE_TTL = 30  # seconds
+_CACHE_TTL = 300  # 5 minutes (invalidated on trade events)
 
 def _cache_get(key: str):
     """Try Redis first, then in-memory."""

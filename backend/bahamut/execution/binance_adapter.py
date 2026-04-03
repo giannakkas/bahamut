@@ -307,49 +307,50 @@ def _format_qty(asset: str, quantity: float) -> str:
 # ═══════════════════════════════════════════
 
 def get_all_trades() -> list[dict]:
-    """Fetch all trades from Binance testnet for actively traded symbols."""
+    """Fetch all trades from Binance testnet — concurrent across all symbols."""
     if not _configured():
         return []
 
-    # Only query symbols we actually trade (not all 40)
     try:
         from bahamut.config_assets import TRAINING_CRYPTO
         active_symbols = {s: SYMBOL_MAP[s] for s in TRAINING_CRYPTO if s in SYMBOL_MAP}
     except Exception:
         active_symbols = SYMBOL_MAP
 
-    all_trades = []
-    for bahamut_symbol, binance_symbol in active_symbols.items():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_trades(bahamut_symbol: str, binance_symbol: str) -> list[dict]:
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
             r = httpx.get(f"{SPOT_URL}/api/v3/myTrades", params=params,
-                          headers=_headers(), timeout=10)
+                          headers=_headers(), timeout=8)
             if r.status_code == 200:
-                for t in r.json():
-                    all_trades.append({
-                        "id": t.get("id"),
-                        "order_id": t.get("orderId"),
-                        "asset": bahamut_symbol,
-                        "symbol": binance_symbol,
-                        "side": t.get("isBuyer") and "BUY" or "SELL",
-                        "price": float(t.get("price", 0)),
-                        "qty": float(t.get("qty", 0)),
-                        "quote_qty": float(t.get("quoteQty", 0)),
-                        "commission": float(t.get("commission", 0)),
-                        "commission_asset": t.get("commissionAsset", ""),
-                        "time": t.get("time", 0),
-                        "is_maker": t.get("isMaker", False),
-                    })
-        except Exception as e:
-            logger.warning("binance_trades_fetch_failed", symbol=binance_symbol, error=str(e)[:50])
+                return [{
+                    "id": t.get("id"), "order_id": t.get("orderId"),
+                    "asset": bahamut_symbol, "symbol": binance_symbol,
+                    "side": "BUY" if t.get("isBuyer") else "SELL",
+                    "price": float(t.get("price", 0)), "qty": float(t.get("qty", 0)),
+                    "quote_qty": float(t.get("quoteQty", 0)),
+                    "commission": float(t.get("commission", 0)),
+                    "commission_asset": t.get("commissionAsset", ""),
+                    "time": t.get("time", 0), "is_maker": t.get("isMaker", False),
+                } for t in r.json()]
+        except Exception:
+            pass
+        return []
 
-    # Sort by time descending
+    all_trades = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch_trades, bs, bn): bs for bs, bn in active_symbols.items()}
+        for f in as_completed(futures):
+            all_trades.extend(f.result())
+
     all_trades.sort(key=lambda x: x.get("time", 0), reverse=True)
     return all_trades
 
 
 def get_all_orders() -> list[dict]:
-    """Fetch all orders from Binance testnet for actively traded symbols."""
+    """Fetch all orders from Binance testnet — concurrent across all symbols."""
     if not _configured():
         return []
 
@@ -359,29 +360,32 @@ def get_all_orders() -> list[dict]:
     except Exception:
         active_symbols = SYMBOL_MAP
 
-    all_orders = []
-    for bahamut_symbol, binance_symbol in active_symbols.items():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_orders(bahamut_symbol: str, binance_symbol: str) -> list[dict]:
         try:
             params = _sign({"symbol": binance_symbol, "limit": 500})
             r = httpx.get(f"{SPOT_URL}/api/v3/allOrders", params=params,
-                          headers=_headers(), timeout=10)
+                          headers=_headers(), timeout=8)
             if r.status_code == 200:
-                for o in r.json():
-                    all_orders.append({
-                        "order_id": o.get("orderId"),
-                        "asset": bahamut_symbol,
-                        "symbol": binance_symbol,
-                        "side": o.get("side"),
-                        "type": o.get("type"),
-                        "status": o.get("status"),
-                        "price": float(o.get("price", 0)),
-                        "orig_qty": float(o.get("origQty", 0)),
-                        "executed_qty": float(o.get("executedQty", 0)),
-                        "time": o.get("time", 0),
-                        "update_time": o.get("updateTime", 0),
-                    })
-        except Exception as e:
-            logger.warning("binance_orders_fetch_failed", symbol=binance_symbol, error=str(e)[:50])
+                return [{
+                    "order_id": o.get("orderId"), "asset": bahamut_symbol,
+                    "symbol": binance_symbol, "side": o.get("side"),
+                    "type": o.get("type"), "status": o.get("status"),
+                    "price": float(o.get("price", 0)),
+                    "orig_qty": float(o.get("origQty", 0)),
+                    "executed_qty": float(o.get("executedQty", 0)),
+                    "time": o.get("time", 0), "update_time": o.get("updateTime", 0),
+                } for o in r.json()]
+        except Exception:
+            pass
+        return []
+
+    all_orders = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch_orders, bs, bn): bs for bs, bn in active_symbols.items()}
+        for f in as_completed(futures):
+            all_orders.extend(f.result())
 
     all_orders.sort(key=lambda x: x.get("time", 0), reverse=True)
     return all_orders
