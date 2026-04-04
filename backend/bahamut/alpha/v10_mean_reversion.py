@@ -328,13 +328,14 @@ def detect_crash_short(
     bb_mid = indicators.get("bollinger_mid", ema_20)
     rsi = indicators.get("rsi_14", 50)
 
-    if close <= 0 or ema_20 <= 0 or ema_200 <= 0:
+    if close <= 0 or ema_20 <= 0:
         sig.reason = "missing indicators"
         return sig
 
-    if close >= ema_200:
-        sig.reason = "price above EMA200 — not a crash"
-        return sig
+    # NOTE: We do NOT check close vs EMA200 here.
+    # The regime detector already confirmed CRASH using 4H candles.
+    # On 15m candles, EMA200 only covers ~50 hours and price may be
+    # above it even during a macro crash. Trust the regime classification.
 
     dist_to_ema20 = (ema_20 - close) / ema_20
     if dist_to_ema20 > 0.06:
