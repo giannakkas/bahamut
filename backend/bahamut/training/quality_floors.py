@@ -125,17 +125,30 @@ def check_quality_floors(
             })
 
         # ── D2) Mature pattern auto-suppress ──
-        # If a pattern has 50+ samples and negative expectancy, auto-block
-        # regardless of training/production mode. Enough data to be confident
-        # this pattern is losing money.
-        if total_trades >= 50 and expectancy < -0.05:
-            failures.append({
-                "floor": "expectancy_mature",
-                "value": round(expectancy, 3),
-                "threshold": -0.05,
-                "reason": f"Mature pattern ({total_trades} trades) negative expectancy {expectancy:.3f}R — auto-suppressed",
-                "maturity": maturity,
-            })
+        # Only auto-suppress when the SPECIFIC pattern (strategy+regime+class)
+        # has 50+ trades. Don't use blended total_trades which inherits from
+        # parent buckets — that blocks new pattern combos (like CRASH SHORTs)
+        # using data from old patterns (like RANGE LONGs).
+        pattern_trades = 0
+        pattern_expectancy = 0.0
+        buckets = trust.get("buckets", {})
+        if "pattern" in buckets:
+            pattern_trades = buckets["pattern"].get("samples", 0)
+        # Also check class bucket as secondary
+        if pattern_trades == 0 and "class" in buckets:
+            pattern_trades = buckets["class"].get("samples", 0)
+
+        if pattern_trades >= 50:
+            # Use pattern-level expectancy if available, else blended
+            pattern_expectancy = trust.get("expectancy", 0.0)
+            if pattern_expectancy < -0.05:
+                failures.append({
+                    "floor": "expectancy_mature",
+                    "value": round(pattern_expectancy, 3),
+                    "threshold": -0.05,
+                    "reason": f"Mature pattern ({pattern_trades} trades) negative expectancy {pattern_expectancy:.3f}R — auto-suppressed",
+                    "maturity": maturity,
+                })
 
     except Exception:
         pass  # Trust unavailable — skip trust/expectancy floors
