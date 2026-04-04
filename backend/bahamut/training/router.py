@@ -1471,10 +1471,10 @@ async def trust_dashboard():
 
 @router.get("/asset-leaderboard")
 async def asset_leaderboard():
-    """Per-asset performance sorted by PnL. Used by Binance + Alpaca pages."""
+    """Per-asset performance sorted by PnL. Shows ALL configured assets."""
     try:
         from bahamut.db.query import run_query
-        from bahamut.config_assets import ASSET_CLASS_MAP
+        from bahamut.config_assets import ASSET_CLASS_MAP, TRAINING_CRYPTO, TRAINING_STOCKS
 
         rows = run_query("""
             SELECT asset,
@@ -1488,32 +1488,38 @@ async def asset_leaderboard():
                    MIN(pnl) as worst_trade
             FROM training_trades GROUP BY asset ORDER BY total_pnl DESC
         """)
-        if not rows:
-            return {"crypto": [], "stock": []}
 
-        crypto = []
-        stock = []
-        for r in rows:
-            asset = r["asset"]
-            cls = ASSET_CLASS_MAP.get(asset, "unknown")
-            wins = r["wins"] or 0
-            losses = r["losses"] or 0
-            entry = {
-                "asset": asset,
-                "trades": r["trades"],
-                "wins": wins,
-                "losses": losses,
-                "wr": round(wins / max(1, wins + losses) * 100, 1),
-                "pnl": round(r["total_pnl"], 2),
-                "avg_pnl": round(r["avg_pnl"], 2),
-                "avg_pnl_pct": round((r["avg_pnl_pct"] or 0) * 100, 2),
-                "best": round(r["best_trade"] or 0, 2),
-                "worst": round(r["worst_trade"] or 0, 2),
+        # Build lookup from DB results
+        db_map = {}
+        for r in (rows or []):
+            db_map[r["asset"]] = r
+
+        def _make_entry(asset: str) -> dict:
+            r = db_map.get(asset)
+            if r:
+                wins = r["wins"] or 0
+                losses = r["losses"] or 0
+                return {
+                    "asset": asset,
+                    "trades": r["trades"],
+                    "wins": wins,
+                    "losses": losses,
+                    "wr": round(wins / max(1, wins + losses) * 100, 1),
+                    "pnl": round(r["total_pnl"], 2),
+                    "avg_pnl": round(r["avg_pnl"], 2),
+                    "avg_pnl_pct": round((r["avg_pnl_pct"] or 0) * 100, 2),
+                    "best": round(r["best_trade"] or 0, 2),
+                    "worst": round(r["worst_trade"] or 0, 2),
+                }
+            return {
+                "asset": asset, "trades": 0, "wins": 0, "losses": 0,
+                "wr": 0, "pnl": 0, "avg_pnl": 0, "avg_pnl_pct": 0,
+                "best": 0, "worst": 0,
             }
-            if cls == "crypto":
-                crypto.append(entry)
-            elif cls == "stock":
-                stock.append(entry)
+
+        crypto = sorted([_make_entry(a) for a in TRAINING_CRYPTO], key=lambda x: x["pnl"], reverse=True)
+        stock = sorted([_make_entry(a) for a in TRAINING_STOCKS], key=lambda x: x["pnl"], reverse=True)
+
         return {"crypto": crypto, "stock": stock}
     except Exception as e:
         return {"error": str(e)}

@@ -521,7 +521,11 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               </thead>
               <tbody>
                 {assets.map((a: any, i: number) => (
-                  <tr key={a.asset} className={`border-b border-bah-border/20 ${i === 0 ? "bg-green-500/5" : i === assets.length - 1 && a.pnl < 0 ? "bg-red-500/5" : ""}`}>
+                  <tr key={a.asset} className={`border-b border-bah-border/20 ${
+                    i === 0 && a.pnl > 0 ? "bg-green-500/5" : 
+                    a.pnl < 0 ? "bg-red-500/5" : 
+                    a.trades === 0 ? "opacity-40" : ""
+                  }`}>
                     <td className="py-1.5 text-bah-muted">{i + 1}</td>
                     <td className="py-1.5 font-bold text-bah-heading">{a.asset}</td>
                     <td className="text-right text-bah-muted">{a.trades}</td>
@@ -547,7 +551,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               </tbody>
             </table>
             <div className="flex justify-between mt-3 pt-2 border-t border-bah-border text-[10px]">
-              <span className="text-bah-muted">{assets.length} assets · Sorted by total PnL</span>
+              <span className="text-bah-muted">{assets.filter((a: any) => a.trades > 0).length} active / {assets.length} total · Sorted by PnL</span>
               <span className={`font-bold ${assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
                 Total: {assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "+" : ""}
                 {fm(assets.reduce((s: number, a: any) => s + a.pnl, 0))}
