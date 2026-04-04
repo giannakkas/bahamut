@@ -279,8 +279,29 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     regime = "RANGE"
     try:
         from bahamut.regime.v8_detector import detect_regime
-        regime_result = detect_regime(indicators, candles[-15:])
-        regime = regime_result.regime
+        from bahamut.data.binance_data import is_crypto
+
+        if is_crypto(asset):
+            # DUAL TIMEFRAME: Use 4H candles for macro regime detection
+            # 15m candles oscillate and look like RANGE even during crashes.
+            # 4H gives the true macro picture (CRASH/TREND/RANGE).
+            from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+            candles_4h = get_candles(asset, interval="4h", limit=100)
+            if candles_4h and len(candles_4h) >= 30:
+                ind_4h = binance_ind(candles_4h)
+                regime_result = detect_regime(ind_4h, candles_4h[-15:])
+                regime = regime_result.regime
+                logger.debug("training_crypto_dual_regime",
+                             asset=asset, regime=regime,
+                             reason=regime_result.reason)
+            else:
+                # Fallback to 15m indicators
+                regime_result = detect_regime(indicators, candles[-15:])
+                regime = regime_result.regime
+        else:
+            # Stocks: standard regime from 4H indicators
+            regime_result = detect_regime(indicators, candles[-15:])
+            regime = regime_result.regime
     except Exception:
         pass
 
