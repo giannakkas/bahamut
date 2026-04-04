@@ -277,14 +277,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 pass
 
         # 1. Hard threshold (debug_exploration signals bypass this)
-        # SHORT signals in CRASH get a lower threshold — they're new patterns
-        # that need trades to build trust. Can't require 88 readiness when
-        # the pattern has zero history.
+        # SHORT signals get minimum threshold — they're new patterns in training.
+        # The readiness scorer was designed for LONGs and gives low scores to SHORTs.
+        # Quality floors (min_readiness=25) already filter garbage.
         effective_threshold = threshold
         if sig.direction == "SHORT":
-            effective_threshold = min(threshold, 50)  # Floor at 50 for SHORTs
+            effective_threshold = 25  # Match quality floor minimum
         elif sig.regime == "CRASH":
-            effective_threshold = min(threshold, 55)  # Slightly relaxed for CRASH
+            effective_threshold = 35  # Relaxed for CRASH regime
 
         if sig.readiness_score < effective_threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {effective_threshold}")
