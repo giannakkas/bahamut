@@ -135,15 +135,26 @@ class V9Breakout:
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         sig = detect_confirmed_breakout(candles, indicators)
         if sig.valid:
-            # Deterministic signal_id: prevents duplicate orders if same bar replayed
             bar_ts = candles[-1].get("datetime", "") if candles else ""
+            interval = indicators.get("_interval", "4h") if indicators else "4h"
+
+            # Tighter SL/TP for faster timeframes
+            if interval in ("15m", "5m", "1m"):
+                sl = 0.02    # 2% SL (was 10%)
+                tp = 0.05    # 5% TP (was 25%)
+                hold = 40    # 40 × 15m = 10 hours
+            else:
+                sl = self.sl_pct   # 10%
+                tp = self.tp_pct   # 25%
+                hold = self.max_hold  # 40 × 4H = 6.7 days
+
             return Signal(
                 strategy=self.name,
                 asset=asset,
                 direction=sig.direction,
-                sl_pct=self.sl_pct,
-                tp_pct=self.tp_pct,
-                max_hold_bars=self.max_hold,
+                sl_pct=sl,
+                tp_pct=tp,
+                max_hold_bars=hold,
                 quality=sig.confidence,
                 reason=sig.reason,
                 signal_id=f"{self.name}:{asset}:{bar_ts}",

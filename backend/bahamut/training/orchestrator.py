@@ -269,9 +269,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     # Always compute indicators (needed for both standard and early eval)
     try:
-        from bahamut.features.indicators import compute_indicators
-        indicators = compute_indicators(candles)
-        prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
+        indicators, prev_indicators = _compute_training_indicators(asset, candles)
     except Exception:
         return result
 
@@ -289,6 +287,11 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # Inject regime into indicators so strategies (v10) can read it
     indicators["_regime"] = regime
     indicators["_asset_class"] = asset_class
+
+    # Inject timeframe so strategies can adjust SL/TP
+    from bahamut.data.binance_data import is_crypto
+    indicators["_interval"] = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
+
     result["regime"] = regime  # For orchestrator regime collection
 
     # Evaluate strategies and collect as PendingSignals (don't execute)
@@ -545,17 +548,53 @@ def _make_bar(candle: dict) -> dict:
 
 
 # ═══════════════════════════════════════════
-# DATA FETCHING (uses same TwelveData adapter)
+# DATA FETCHING
+#   Crypto: Binance public API (free, unlimited, 15m candles)
+#   Stocks: Twelve Data (4H candles, 55 req/min)
 # ═══════════════════════════════════════════
 
+# Crypto candle interval — can go as tight as 1m
+CRYPTO_INTERVAL = "15m"
+CRYPTO_CANDLE_COUNT = 200  # 200 × 15m = ~50 hours of data
+
 def _fetch_training_candles(asset: str, count: int = 100) -> list[dict]:
-    """Fetch candles for a training asset. Fewer candles than production (100 vs 260)."""
+    """Fetch candles for a training asset.
+    Crypto → Binance public API (free, 15m candles)
+    Stocks → Twelve Data (4H candles, metered)
+    """
+    try:
+        from bahamut.data.binance_data import is_crypto
+        if is_crypto(asset):
+            from bahamut.data.binance_data import get_candles
+            return get_candles(asset, interval=CRYPTO_INTERVAL, limit=CRYPTO_CANDLE_COUNT)
+    except Exception as e:
+        logger.debug("binance_data_failed", asset=asset, error=str(e)[:50])
+
+    # Fallback: Twelve Data (stocks, or crypto if Binance fails)
     try:
         from bahamut.data.live_data import fetch_candles
         return fetch_candles(asset, count=count)
     except Exception as e:
         logger.debug("training_fetch_failed", asset=asset, error=str(e))
         return []
+
+
+def _compute_training_indicators(asset: str, candles: list[dict]):
+    """Compute indicators — use Binance indicators for crypto, standard for stocks."""
+    try:
+        from bahamut.data.binance_data import is_crypto, compute_indicators as binance_indicators
+        if is_crypto(asset) and candles:
+            indicators = binance_indicators(candles)
+            prev_indicators = binance_indicators(candles[:-1]) if len(candles) > 1 else None
+            return indicators, prev_indicators
+    except Exception:
+        pass
+
+    # Standard Twelve Data indicators
+    from bahamut.features.indicators import compute_indicators
+    indicators = compute_indicators(candles)
+    prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
+    return indicators, prev_indicators
 
 
 # ═══════════════════════════════════════════

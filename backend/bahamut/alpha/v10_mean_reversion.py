@@ -431,27 +431,42 @@ class V10MeanReversion:
         if not sig.valid:
             return None
 
-        # ── Dynamic SL/TP based on ATR ──
+        # ── Dynamic SL/TP based on ATR and timeframe ──
         close = indicators.get("close", 0)
         atr = indicators.get("atr_14", 0)
         ema_20 = indicators.get("ema_20", close)
         bb_mid = indicators.get("bollinger_mid", ema_20)
+        interval = indicators.get("_interval", "4h")
 
-        # Stop loss: max(1.5 * ATR, 3.5% of price)
-        atr_stop = (1.5 * atr) / close if close > 0 else 0.035
-        sl_pct = max(atr_stop, 0.035)
-        sl_pct = min(sl_pct, 0.08)  # Cap at 8% to prevent absurd stops
+        # Tighter floors for faster timeframes (15m crypto)
+        if interval in ("15m", "5m", "1m"):
+            sl_floor = 0.008     # 0.8% min SL (was 3.5%)
+            sl_cap = 0.03        # 3% max SL (was 8%)
+            tp_floor = 0.005     # 0.5% min TP (was 2%)
+            tp_cap = 0.04        # 4% max TP (was 8%)
+            atr_mult = 2.0       # 2×ATR for stop (was 1.5×)
+        else:
+            sl_floor = 0.035     # 3.5% min SL
+            sl_cap = 0.08        # 8% max SL
+            tp_floor = 0.02      # 2% min TP
+            tp_cap = 0.08        # 8% max TP
+            atr_mult = 1.5       # 1.5×ATR for stop
+
+        # Stop loss: max(atr_mult * ATR, floor)
+        atr_stop = (atr_mult * atr) / close if close > 0 else sl_floor
+        sl_pct = max(atr_stop, sl_floor)
+        sl_pct = min(sl_pct, sl_cap)
 
         # Take profit: distance to mean (EMA20 / Bollinger midline)
         if sig.direction == "LONG":
             target = max(bb_mid, ema_20)
-            tp_pct = (target - close) / close if close > 0 else 0.03
+            tp_pct = (target - close) / close if close > 0 else tp_floor
         else:  # SHORT
             target = min(bb_mid, ema_20)
-            tp_pct = (close - target) / close if close > 0 else 0.03
+            tp_pct = (close - target) / close if close > 0 else tp_floor
 
-        tp_pct = max(tp_pct, 0.02)   # Minimum 2% TP
-        tp_pct = min(tp_pct, 0.08)   # Cap at 8%
+        tp_pct = max(tp_pct, tp_floor)
+        tp_pct = min(tp_pct, tp_cap)
 
         bar_ts = candles[-1].get("datetime", "") if candles else ""
 
