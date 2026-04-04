@@ -729,6 +729,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
             <th className="py-2.5 pr-2 text-right">Size</th><th className="py-2.5 pr-2 text-right">Risk</th>
             <th className="py-2.5 pr-2 text-right">Value</th>
             <th className="py-2.5 pr-2 text-right">Unreal P&L</th><th className="py-2.5">Bars</th>
+            <th className="py-2.5">Opened</th>
           </tr></thead>
           <tbody>{positions.map((p: any, i: number) => {
             const unreal = p.unrealized_pnl || 0;
@@ -751,6 +752,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(value)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(unreal)}`}>{fmtPnl(unreal)}</td>
                 <td className="py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
+                <td className="py-2.5 text-bah-muted text-[10px]">{p.entry_time ? new Date(p.entry_time).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
               </tr>
             );
           })}</tbody>
@@ -775,7 +777,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
             <th className="py-2.5 pr-2 text-right">Risk</th><th className="py-2.5 pr-2 text-right">P&L</th>
             <th className="py-2.5 pr-2 text-right">R-Mult</th>
             <th className="py-2.5 pr-2">Result</th><th className="py-2.5 pr-2">Reason</th>
-            <th className="py-2.5 pr-2 text-center">Bars</th><th className="py-2.5">Closed</th>
+            <th className="py-2.5 pr-2 text-center">Bars</th><th className="py-2.5 pr-2">Opened</th><th className="py-2.5">Closed</th>
           </tr></thead>
           <tbody>{trades.map((t: any, i: number) => {
             const pnl = t.pnl || 0;
@@ -811,6 +813,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                   }`}>{t.exit_reason}</span>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-muted text-center">{t.bars_held}</td>
+                <td className="py-2.5 pr-2 text-bah-muted text-[10px]">{fmtT(t.entry_time)}</td>
                 <td className="py-2.5 text-bah-muted text-[10px]">{fmtT(t.exit_time)}</td>
               </tr>
             );
