@@ -388,6 +388,7 @@ def detect_crash_short(
 
     sig.valid = True
     sig.direction = "SHORT"
+    sig.entry_type = "crash_short"
     sig.confidence = quality
     sig.distance_from_mean_pct = round(dist_to_ema20 * 100, 2)
     sig.rsi = round(rsi, 1)
@@ -458,13 +459,23 @@ class V10MeanReversion:
         sl_pct = max(atr_stop, sl_floor)
         sl_pct = min(sl_pct, sl_cap)
 
-        # Take profit: distance to mean (EMA20 / Bollinger midline)
+        # Take profit based on direction and signal type
         if sig.direction == "LONG":
             target = max(bb_mid, ema_20)
             tp_pct = (target - close) / close if close > 0 else tp_floor
         else:  # SHORT
-            target = min(bb_mid, ema_20)
-            tp_pct = (close - target) / close if close > 0 else tp_floor
+            bb_lower = indicators.get("bollinger_lower", 0)
+            if sig.entry_type == "crash_short" or regime == "CRASH":
+                # CRASH SHORT: target lower Bollinger Band (expect drop to range bottom)
+                # Price is near EMA20 (resistance) — target is lower BB (support)
+                target = bb_lower if bb_lower > 0 else close * 0.98
+                tp_pct = (close - target) / close if close > 0 else tp_floor
+                # Ensure minimum 1.5:1 R:R for crash shorts
+                tp_pct = max(tp_pct, sl_pct * 1.5)
+            else:
+                # RANGE SHORT: target midline
+                target = min(bb_mid, ema_20)
+                tp_pct = (close - target) / close if close > 0 else tp_floor
 
         tp_pct = max(tp_pct, tp_floor)
         tp_pct = min(tp_pct, tp_cap)

@@ -388,7 +388,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             risk_mult = 1.0
 
             if not is_new_bar and readiness >= 90:
-                # Not a new 4H bar — evaluate for early execution
+                # Not a new bar — evaluate for early execution
                 early = evaluate_early_execution(
                     asset=asset,
                     readiness_score=readiness,
@@ -404,8 +404,16 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                     risk_mult = early["risk_multiplier"]
                     logger.info("training_early_eligible",
                                 asset=asset, score=readiness, confidence=confidence)
+            elif not is_new_bar and signal.direction == "SHORT":
+                # SHORT signals bypass new-bar check — in a crash,
+                # we want to execute as soon as the rejection is confirmed,
+                # not wait for the next 15m bar close.
+                exec_type = "crash_short"
+                trigger = "crash_rejection"
+                logger.info("training_crash_short_immediate",
+                            asset=asset, readiness=readiness, regime=regime)
             elif not is_new_bar:
-                # Not a new bar and not early-eligible — skip (wait for 4H close)
+                # Not a new bar and not early-eligible — skip
                 logger.debug("training_signal_skipped_not_new_bar",
                              asset=asset, strategy=strat_name, readiness=readiness)
                 continue
