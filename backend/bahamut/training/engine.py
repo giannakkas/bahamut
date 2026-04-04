@@ -319,10 +319,13 @@ def open_training_position(
 
     existing = _load_positions()
     for p in existing:
-        if p.asset == asset and p.strategy == strategy and p.direction == direction:
+        if p.asset == asset:
+            # Block ANY position on same asset (not just same strategy+direction)
+            # Prevents duplicates from SHORT bypass firing every cycle
             logger.warning("training_position_rejected",
-                           asset=asset, reason="DUPLICATE",
-                           strategy=strategy, direction=direction)
+                           asset=asset, reason="DUPLICATE_ASSET",
+                           strategy=strategy, direction=direction,
+                           existing_strategy=p.strategy, existing_direction=p.direction)
             return None
 
     # Entry price sanity check — reject obviously wrong prices
@@ -521,7 +524,7 @@ def cleanup_invalid_positions() -> list[str]:
     VALID_REGIMES = {
         "v5_base": {"TREND"}, "v5_tuned": {"TREND"},
         "v9_breakout": {"TREND", "BREAKOUT", "RANGE"},
-        "v10_mean_reversion": {"RANGE"},
+        "v10_mean_reversion": {"RANGE", "CRASH"},
     }
 
     for pos in positions:
@@ -538,11 +541,11 @@ def cleanup_invalid_positions() -> list[str]:
             if allowed and pos.regime not in allowed:
                 remove_reason = f"invalid_regime: {pos.strategy} in {pos.regime}"
 
-        # 3. Duplicate (same asset+strategy+direction)
-        dedup_key = f"{pos.asset}:{pos.strategy}:{pos.direction}"
+        # 3. Duplicate — only one position per asset allowed
+        dedup_key = pos.asset  # one position per asset, not per strategy
         if not remove_reason:
             if dedup_key in seen:
-                remove_reason = f"duplicate: {dedup_key} (keeping {seen[dedup_key]})"
+                remove_reason = f"duplicate_asset: {pos.asset} (keeping {seen[dedup_key]})"
             else:
                 seen[dedup_key] = pos.position_id
 
