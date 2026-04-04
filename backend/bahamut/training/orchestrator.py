@@ -309,6 +309,24 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     indicators["_regime"] = regime
     indicators["_asset_class"] = asset_class
 
+    # Sentiment-driven regime override for crypto:
+    # If 4H says RANGE but Fear & Greed is extreme fear, override to CRASH.
+    # This allows CRASH SHORTs to fire even when 4H technicals show RANGE.
+    # The sentiment data captures macro fear that price action hasn't fully reflected.
+    if asset_class == "crypto" and regime == "RANGE":
+        try:
+            from bahamut.sentiment.fear_greed import get_fear_greed
+            fng = get_fear_greed()
+            fng_value = fng.get("value", 50)
+            if fng_value <= 25:
+                regime = "CRASH"
+                indicators["_regime"] = "CRASH"
+                logger.info("training_sentiment_regime_override",
+                            asset=asset, original="RANGE", override="CRASH",
+                            fear_greed=fng_value)
+        except Exception:
+            pass
+
     # Inject timeframe so strategies can adjust SL/TP
     from bahamut.data.binance_data import is_crypto
     indicators["_interval"] = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
