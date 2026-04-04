@@ -38,8 +38,16 @@ MAX_TOTAL_OPEN_POSITIONS = 4
 # ═══════════════════════════════════════════
 
 TRAINING_CRYPTO = [
-    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
-    "ADAUSD", "DOGEUSD", "AVAXUSD", "MATICUSD", "LINKUSD",
+    # Tier 1: Large caps (high liquidity, tighter spreads)
+    "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
+    # Tier 2: Major alts
+    "ADAUSD", "DOGEUSD", "AVAXUSD", "LINKUSD", "MATICUSD",
+    # Tier 3: High-volume mid caps (free on Binance, good volatility)
+    "DOTUSD", "ATOMUSD", "UNIUSD", "LTCUSD", "NEARUSD",
+    "ARBUSD", "OPUSD", "FILUSD", "APTUSD", "INJUSD",
+    # Tier 4: High volatility (great for mean reversion)
+    "PEPEUSD", "WIFUSD", "RNDRUSD", "FETUSD", "TIAUSD",
+    "SUIUSD", "SEIUSD", "JUPUSD", "WUSD", "ENAUSD",
 ]
 
 # Forex DISABLED — 4H bars move 0.1-0.2%, SL/TP at 3-8% = never hits.

@@ -277,8 +277,17 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 pass
 
         # 1. Hard threshold (debug_exploration signals bypass this)
-        if sig.readiness_score < threshold and sig.execution_type != "debug_exploration":
-            reasons.append(f"Readiness {sig.readiness_score} < threshold {threshold}")
+        # SHORT signals in CRASH get a lower threshold — they're new patterns
+        # that need trades to build trust. Can't require 88 readiness when
+        # the pattern has zero history.
+        effective_threshold = threshold
+        if sig.direction == "SHORT":
+            effective_threshold = min(threshold, 50)  # Floor at 50 for SHORTs
+        elif sig.regime == "CRASH":
+            effective_threshold = min(threshold, 55)  # Slightly relaxed for CRASH
+
+        if sig.readiness_score < effective_threshold and sig.execution_type != "debug_exploration":
+            reasons.append(f"Readiness {sig.readiness_score} < threshold {effective_threshold}")
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
             _track_rejection("threshold")
             continue
