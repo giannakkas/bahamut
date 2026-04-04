@@ -394,6 +394,21 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
 
     constraints = get_portfolio_constraints_summary(open_positions)
 
+    # Store last cycle decisions in Redis for diagnostics
+    try:
+        import os, redis as _redis
+        rc = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        all_decisions = []
+        for d in execute[:5]:
+            all_decisions.append({**d, "_action": "EXECUTE"})
+        for d in rejected[:10]:
+            all_decisions.append({**d, "_action": "REJECTED"})
+        for d in watchlist[:5]:
+            all_decisions.append({**d, "_action": "WATCHLIST"})
+        rc.setex("bahamut:training:last_cycle_decisions", 300, json.dumps(all_decisions, default=str))
+    except Exception:
+        pass
+
     return {
         "execute": execute,
         "watchlist": watchlist,

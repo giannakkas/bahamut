@@ -1101,6 +1101,164 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         floors_section["error"] = str(e)
     diag["sections"].append(floors_section)
 
+    # ── 11. SENTIMENT STATE ──
+    sentiment_section = {"title": "SENTIMENT STATE", "data": {}}
+    try:
+        from bahamut.sentiment.gate import get_full_sentiment
+        sentiment_section["data"] = get_full_sentiment()
+    except Exception as e:
+        sentiment_section["error"] = str(e)
+    diag["sections"].append(sentiment_section)
+
+    # ── 12. CURRENT REGIMES PER ASSET ──
+    regime_section = {"title": "CURRENT REGIMES", "rows": []}
+    try:
+        from bahamut.data.binance_data import is_crypto, get_candles, compute_indicators as binance_ind
+        from bahamut.regime.v8_detector import detect_regime
+        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
+        from bahamut.sentiment.fear_greed import get_fear_greed
+
+        fng = get_fear_greed()
+        fng_value = fng.get("value", 50)
+
+        # Sample top 5 crypto + check sentiment override
+        for asset in TRAINING_CRYPTO[:5]:
+            try:
+                candles_4h = get_candles(asset, interval="4h", limit=100)
+                if candles_4h and len(candles_4h) >= 30:
+                    ind_4h = binance_ind(candles_4h)
+                    rr = detect_regime(ind_4h, candles_4h[-15:])
+                    original = rr.regime
+                    effective = original
+                    override = ""
+                    if original == "RANGE" and fng_value <= 25:
+                        effective = "CRASH"
+                        override = f"F&G={fng_value} override"
+                    regime_section["rows"].append({
+                        "asset": asset, "regime_4h": original,
+                        "effective": effective, "override": override,
+                        "reason": rr.reason,
+                        "features": rr.features,
+                    })
+            except Exception:
+                pass
+    except Exception as e:
+        regime_section["error"] = str(e)
+    diag["sections"].append(regime_section)
+
+    # ── 13. INDICATOR SNAPSHOT (top crypto + stocks) ──
+    indicator_section = {"title": "INDICATOR SNAPSHOT", "rows": []}
+    try:
+        from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+        from bahamut.config_assets import TRAINING_CRYPTO
+
+        for asset in TRAINING_CRYPTO[:8]:
+            try:
+                candles_15m = get_candles(asset, interval="15m", limit=200)
+                if candles_15m and len(candles_15m) >= 30:
+                    ind = binance_ind(candles_15m)
+                    close = ind.get("close", 0)
+                    ema20 = ind.get("ema_20", 0)
+                    ema200 = ind.get("ema_200", 0)
+                    dist_ema20 = round((ema20 - close) / max(ema20, 0.001) * 100, 2) if ema20 > 0 else 0
+                    dist_ema200 = round((close - ema200) / max(ema200, 0.001) * 100, 2) if ema200 > 0 else 0
+                    indicator_section["rows"].append({
+                        "asset": asset,
+                        "close": round(close, 4),
+                        "ema20": round(ema20, 4),
+                        "dist_ema20_pct": dist_ema20,
+                        "ema200": round(ema200, 4),
+                        "dist_ema200_pct": dist_ema200,
+                        "rsi": ind.get("rsi_14", 0),
+                        "atr": round(ind.get("atr_14", 0), 4),
+                        "adx": ind.get("adx_14", 0),
+                        "bb_upper": round(ind.get("bollinger_upper", 0), 4),
+                        "bb_lower": round(ind.get("bollinger_lower", 0), 4),
+                    })
+            except Exception:
+                pass
+    except Exception as e:
+        indicator_section["error"] = str(e)
+    diag["sections"].append(indicator_section)
+
+    # ── 14. LAST CYCLE SIGNALS (from Redis) ──
+    signals_section = {"title": "LAST CYCLE SIGNALS", "rows": []}
+    try:
+        if r:
+            raw = r.get("bahamut:training:last_cycle_decisions")
+            if raw:
+                decisions = json.loads(raw)
+                for d in decisions[:20]:
+                    signals_section["rows"].append(d)
+    except Exception as e:
+        signals_section["error"] = str(e)
+    diag["sections"].append(signals_section)
+
+    # ── 15. EXECUTION PLATFORM STATUS ──
+    exec_section = {"title": "EXECUTION STATUS", "data": {}}
+    try:
+        from bahamut.execution.router import get_execution_status
+        exec_section["data"] = get_execution_status()
+    except Exception as e:
+        exec_section["error"] = str(e)
+    diag["sections"].append(exec_section)
+
+    # ── 16. SHORT SIGNAL DEBUG ──
+    short_debug = {"title": "SHORT SIGNAL DEBUG", "rows": []}
+    try:
+        from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+        from bahamut.alpha.v10_mean_reversion import detect_crash_short
+        from bahamut.config_assets import TRAINING_CRYPTO
+
+        for asset in TRAINING_CRYPTO[:10]:
+            try:
+                candles_15m = get_candles(asset, interval="15m", limit=200)
+                if candles_15m and len(candles_15m) >= 30:
+                    ind = binance_ind(candles_15m)
+                    prev_ind = binance_ind(candles_15m[:-1]) if len(candles_15m) > 1 else None
+                    sig = detect_crash_short(candles_15m, ind, prev_ind)
+                    short_debug["rows"].append({
+                        "asset": asset,
+                        "signal_valid": sig.valid,
+                        "direction": sig.direction if sig.valid else "NONE",
+                        "confidence": sig.confidence,
+                        "reason": sig.reason,
+                        "rsi": sig.rsi,
+                        "dist_from_mean": sig.distance_from_mean_pct,
+                    })
+            except Exception as ex:
+                short_debug["rows"].append({"asset": asset, "error": str(ex)[:100]})
+    except Exception as e:
+        short_debug["error"] = str(e)
+    diag["sections"].append(short_debug)
+
+    # ── 17. SYSTEM HEALTH ──
+    health_section = {"title": "SYSTEM HEALTH", "data": {}}
+    try:
+        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS, TRAINING_ASSETS
+        from bahamut.training.orchestrator import CRYPTO_INTERVAL
+
+        health_section["data"] = {
+            "total_assets": len(TRAINING_ASSETS),
+            "crypto_assets": len(TRAINING_CRYPTO),
+            "stock_assets": len(TRAINING_STOCKS),
+            "crypto_interval": CRYPTO_INTERVAL,
+            "stock_interval": "4h",
+            "redis_connected": r is not None,
+        }
+
+        # Check last scan time
+        if r:
+            last_scan = r.get("bahamut:training:last_scan_time")
+            if last_scan:
+                health_section["data"]["last_scan"] = last_scan.decode() if isinstance(last_scan, bytes) else str(last_scan)
+            cycle_count = r.get("bahamut:training:cycle_count")
+            if cycle_count:
+                health_section["data"]["total_cycles"] = int(cycle_count)
+    except Exception as e:
+        health_section["error"] = str(e)
+    diag["sections"].append(health_section)
+
     return diag
 
 
