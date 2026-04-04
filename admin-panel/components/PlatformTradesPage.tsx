@@ -39,6 +39,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"trades" | "orders" | "fills">("trades");
   const [sentiment, setSentiment] = useState<any>(null);
+  const [leaderboard, setLeaderboard] = useState<any>(null);
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +51,9 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
       // Fetch sentiment for both pages
       const sr = await fetch(`${apiBase()}/training/sentiment`, { headers: h });
       if (sr.ok) setSentiment(await sr.json());
+      // Fetch asset leaderboard
+      const lr = await fetch(`${apiBase()}/training/asset-leaderboard`, { headers: h });
+      if (lr.ok) setLeaderboard(await lr.json());
     } catch {}
     setLoading(false);
   }, [platform]);
@@ -492,6 +496,66 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           </div>
         </Section>
       )}
+
+      {/* Asset Leaderboard */}
+      {leaderboard && (() => {
+        const assets = platform === "binance" ? (leaderboard.crypto || []) : (leaderboard.stock || []);
+        if (!assets.length) return null;
+        const title = platform === "binance" ? "Crypto Asset Leaderboard" : "Stock Asset Leaderboard";
+        return (
+          <Section title={title}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-bah-muted text-[9px] uppercase border-b border-bah-border">
+                  <th className="text-left py-1.5">#</th>
+                  <th className="text-left py-1.5">Asset</th>
+                  <th className="text-right py-1.5">Trades</th>
+                  <th className="text-right py-1.5">W/L</th>
+                  <th className="text-right py-1.5">WR</th>
+                  <th className="text-right py-1.5">Total PnL</th>
+                  <th className="text-right py-1.5">Avg PnL</th>
+                  <th className="text-right py-1.5">Avg %</th>
+                  <th className="text-right py-1.5">Best</th>
+                  <th className="text-right py-1.5">Worst</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((a: any, i: number) => (
+                  <tr key={a.asset} className={`border-b border-bah-border/20 ${i === 0 ? "bg-green-500/5" : i === assets.length - 1 && a.pnl < 0 ? "bg-red-500/5" : ""}`}>
+                    <td className="py-1.5 text-bah-muted">{i + 1}</td>
+                    <td className="py-1.5 font-bold text-bah-heading">{a.asset}</td>
+                    <td className="text-right text-bah-muted">{a.trades}</td>
+                    <td className="text-right">
+                      <span className="text-green-400">{a.wins}</span>
+                      <span className="text-bah-muted">/</span>
+                      <span className="text-red-400">{a.losses}</span>
+                    </td>
+                    <td className={`text-right font-bold ${a.wr >= 55 ? "text-green-400" : a.wr >= 45 ? "text-yellow-400" : "text-red-400"}`}>{a.wr}%</td>
+                    <td className={`text-right font-bold ${a.pnl > 0 ? "text-green-400" : a.pnl < 0 ? "text-red-400" : "text-bah-muted"}`}>
+                      {a.pnl >= 0 ? "+" : ""}{fm(a.pnl)}
+                    </td>
+                    <td className={`text-right ${a.avg_pnl > 0 ? "text-green-400" : a.avg_pnl < 0 ? "text-red-400" : "text-bah-muted"}`}>
+                      {a.avg_pnl >= 0 ? "+" : ""}{fm(a.avg_pnl)}
+                    </td>
+                    <td className={`text-right ${a.avg_pnl_pct > 0 ? "text-green-400" : a.avg_pnl_pct < 0 ? "text-red-400" : "text-bah-muted"}`}>
+                      {a.avg_pnl_pct >= 0 ? "+" : ""}{a.avg_pnl_pct}%
+                    </td>
+                    <td className="text-right text-green-400/70">{fm(a.best)}</td>
+                    <td className="text-right text-red-400/70">{fm(a.worst)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex justify-between mt-3 pt-2 border-t border-bah-border text-[10px]">
+              <span className="text-bah-muted">{assets.length} assets · Sorted by total PnL</span>
+              <span className={`font-bold ${assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                Total: {assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "+" : ""}
+                {fm(assets.reduce((s: number, a: any) => s + a.pnl, 0))}
+              </span>
+            </div>
+          </Section>
+        );
+      })()}
     </div>
   );
 }

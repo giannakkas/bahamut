@@ -1467,3 +1467,53 @@ async def trust_dashboard():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/asset-leaderboard")
+async def asset_leaderboard():
+    """Per-asset performance sorted by PnL. Used by Binance + Alpaca pages."""
+    try:
+        from bahamut.db.query import run_query
+        from bahamut.config_assets import ASSET_CLASS_MAP
+
+        rows = run_query("""
+            SELECT asset,
+                   COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as total_pnl,
+                   COALESCE(AVG(pnl), 0) as avg_pnl,
+                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct,
+                   MAX(pnl) as best_trade,
+                   MIN(pnl) as worst_trade
+            FROM training_trades GROUP BY asset ORDER BY total_pnl DESC
+        """)
+        if not rows:
+            return {"crypto": [], "stock": []}
+
+        crypto = []
+        stock = []
+        for r in rows:
+            asset = r["asset"]
+            cls = ASSET_CLASS_MAP.get(asset, "unknown")
+            wins = r["wins"] or 0
+            losses = r["losses"] or 0
+            entry = {
+                "asset": asset,
+                "trades": r["trades"],
+                "wins": wins,
+                "losses": losses,
+                "wr": round(wins / max(1, wins + losses) * 100, 1),
+                "pnl": round(r["total_pnl"], 2),
+                "avg_pnl": round(r["avg_pnl"], 2),
+                "avg_pnl_pct": round((r["avg_pnl_pct"] or 0) * 100, 2),
+                "best": round(r["best_trade"] or 0, 2),
+                "worst": round(r["worst_trade"] or 0, 2),
+            }
+            if cls == "crypto":
+                crypto.append(entry)
+            elif cls == "stock":
+                stock.append(entry)
+        return {"crypto": crypto, "stock": stock}
+    except Exception as e:
+        return {"error": str(e)}
