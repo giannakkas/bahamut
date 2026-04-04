@@ -33,28 +33,33 @@ MAX_TOTAL_OPEN_POSITIONS = 4
 # TRAINING UNIVERSE (paper trading only)
 # ═══════════════════════════════════════════
 
+# ═══════════════════════════════════════════
+# TRAINING UNIVERSE (paper trading only)
+# ═══════════════════════════════════════════
+
 TRAINING_CRYPTO = [
     "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
     "ADAUSD", "DOGEUSD", "AVAXUSD", "MATICUSD", "LINKUSD",
 ]
 
-TRAINING_FOREX = [
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
-    "USDCAD", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP",
-]
+# Forex DISABLED — 4H bars move 0.1-0.2%, SL/TP at 3-8% = never hits.
+# 13 trades, 0 wins, $0 PnL. Dead weight wasting API calls.
+TRAINING_FOREX = []
 
-TRAINING_INDICES = [
-    "SPX", "IXIC", "DJI",  # TwelveData tickers for S&P500, Nasdaq, Dow
-]
+# Indices DISABLED — similar volatility mismatch on 4H.
+# 22 trades, 0 wins, -$500. Only losses from wide swings.
+TRAINING_INDICES = []
 
-TRAINING_COMMODITIES = [
-    "XAUUSD", "XAGUSD",  # Gold, Silver — available on TwelveData
-]
+# Commodities DISABLED — 7 trades, 0 wins, -$250. Same issue.
+TRAINING_COMMODITIES = []
 
 TRAINING_STOCKS = [
+    # Core performers (proven profitable)
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
     "META", "TSLA", "AMD", "NFLX", "COIN",
     "SPY", "QQQ", "JPM", "BAC", "GS",
+    # New additions — high-volume stocks that move well on 4H
+    "CRM", "ORCL", "UBER", "SQ", "SHOP",
 ]
 
 # Flatten all training assets

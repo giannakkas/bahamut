@@ -312,7 +312,7 @@ def detect_crash_short(
 
     Entry logic:
       1. Price below EMA200 (confirms downtrend)
-      2. Price rallied close to EMA20 (within 1.5%) or above
+      2. Price rallied within 6% of EMA20 (or above it)
       3. RSI recovered above 40 (rally happened)
       4. Rejection: close < prev close OR bearish candle
     """
@@ -337,7 +337,7 @@ def detect_crash_short(
         return sig
 
     dist_to_ema20 = (ema_20 - close) / ema_20
-    if dist_to_ema20 > 0.04:
+    if dist_to_ema20 > 0.06:
         sig.reason = f"price still far below EMA20: {dist_to_ema20*100:.1f}%"
         return sig
 
@@ -359,12 +359,15 @@ def detect_crash_short(
     if dist_to_ema20 <= 0.01:
         quality += 0.15  # Within 1% — right at resistance
     elif dist_to_ema20 <= 0.02:
-        quality += 0.10  # Within 2%
+        quality += 0.12  # Within 2%
     elif dist_to_ema20 <= 0.03:
-        quality += 0.05  # Within 3%
+        quality += 0.08  # Within 3%
+    elif dist_to_ema20 <= 0.04:
+        quality += 0.05  # Within 4%
+    # 4-6% = base quality only (lower conviction)
     if close > ema_20:
         quality += 0.15  # Above EMA20 — best entry
-    if 40 <= rsi <= 55:
+    if 35 <= rsi <= 55:
         quality += 0.10
     elif rsi > 55:
         quality += 0.05
