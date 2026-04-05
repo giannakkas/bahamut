@@ -466,12 +466,19 @@ class V10MeanReversion:
         else:  # SHORT
             bb_lower = indicators.get("bollinger_lower", 0)
             if sig.entry_type == "crash_short" or regime == "CRASH":
-                # CRASH SHORT: target lower Bollinger Band (expect drop to range bottom)
-                # Price is near EMA20 (resistance) — target is lower BB (support)
-                target = bb_lower if bb_lower > 0 else close * 0.98
-                tp_pct = (close - target) / close if close > 0 else tp_floor
-                # Ensure minimum 1.5:1 R:R for crash shorts
-                tp_pct = max(tp_pct, sl_pct * 1.5)
+                if interval in ("15m", "5m", "1m"):
+                    # 15m CRASH SHORT: use BB midline (not lower BB)
+                    # On 15m, BB lower is ~0.3% away but price only moves 0.1-0.5%
+                    # in 10 bars. BB midline is a realistic 2.5h target.
+                    target = bb_mid if bb_mid > 0 else close * 0.995
+                    tp_pct = (close - target) / close if close > 0 else tp_floor
+                    # 1:1 R:R minimum for 15m (was 1.5:1 — too aggressive)
+                    tp_pct = max(tp_pct, sl_pct)
+                else:
+                    # 4H CRASH SHORT: target lower BB (more time for move)
+                    target = bb_lower if bb_lower > 0 else close * 0.98
+                    tp_pct = (close - target) / close if close > 0 else tp_floor
+                    tp_pct = max(tp_pct, sl_pct * 1.5)
             else:
                 # RANGE SHORT: target midline
                 target = min(bb_mid, ema_20)

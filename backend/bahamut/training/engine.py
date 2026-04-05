@@ -307,11 +307,13 @@ def open_training_position(
                        current=current_count, max=TRAINING_MAX_POSITIONS)
         return None
 
-    # Check no duplicate (same asset + strategy + direction)
-    # Two-layer check: Redis positions + in-process set for same-cycle race condition
+    # Check no duplicate — two layers:
+    # 1. In-process set for same-cycle race condition
+    # 2. DB positions for cross-cycle dedup
     _opened_this_cycle: set = getattr(open_training_position, "_opened_this_cycle", set())
     dedup_key = f"{asset}:{strategy}:{direction}"
-    if dedup_key in _opened_this_cycle:
+    asset_key = f"ASSET:{asset}"
+    if dedup_key in _opened_this_cycle or asset_key in _opened_this_cycle:
         logger.warning("training_position_rejected",
                        asset=asset, reason="DUPLICATE_SAME_CYCLE",
                        strategy=strategy, direction=direction)
@@ -320,8 +322,6 @@ def open_training_position(
     existing = _load_positions()
     for p in existing:
         if p.asset == asset:
-            # Block ANY position on same asset (not just same strategy+direction)
-            # Prevents duplicates from SHORT bypass firing every cycle
             logger.warning("training_position_rejected",
                            asset=asset, reason="DUPLICATE_ASSET",
                            strategy=strategy, direction=direction,
@@ -428,6 +428,7 @@ def open_training_position(
 
     _save_position(pos)
     _opened_this_cycle.add(dedup_key)
+    _opened_this_cycle.add(asset_key)
     open_training_position._opened_this_cycle = _opened_this_cycle
 
     # ── Execute on exchange (Binance/Alpaca) ──
