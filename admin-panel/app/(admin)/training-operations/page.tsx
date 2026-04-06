@@ -351,6 +351,47 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
+      {/* ═══ OPEN POSITIONS ═══ */}
+      {(data.positions || []).length > 0 && (
+        <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
+          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3.5 flex items-center gap-3">
+              <span className="text-sm font-bold text-bah-heading tracking-tight">📦 Open Positions</span>
+              <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-green-500/15 text-green-400 border border-green-500/30">{(data.positions || []).length}</span>
+            </div>
+            <div className="border-t border-bah-border overflow-x-auto">
+              <table className="w-full text-[11px] min-w-[900px]">
+                <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-[0.1em] text-left">
+                  <th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th><th className="px-3 py-2.5">Dir</th>
+                  <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Current</th>
+                  <th className="px-3 py-2.5 text-right">SL</th><th className="px-3 py-2.5 text-right">TP</th>
+                  <th className="px-3 py-2.5 text-right">Risk</th><th className="px-3 py-2.5 text-right">Unreal P&L</th>
+                  <th className="px-3 py-2.5">Bars</th>
+                </tr></thead>
+                <tbody>{(data.positions || []).map((p: any, i: number) => {
+                  const unreal = p.unrealized_pnl || 0;
+                  const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  return (
+                    <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
+                      <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[9px] text-bah-muted">{p.asset_class}</div></td>
+                      <td className="px-3 py-2.5 text-bah-text">{sn(p.strategy)}</td>
+                      <td className="px-3 py-2.5"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
+                      <td className="px-3 py-2.5 font-mono text-right text-bah-text">{fmtM(p.entry_price || 0)}</td>
+                      <td className="px-3 py-2.5 font-mono text-right text-bah-heading">{fmtM(p.current_price || 0)}</td>
+                      <td className="px-3 py-2.5 font-mono text-right text-red-400/60">{fmtM(p.stop_price || p.stop_loss || 0)}</td>
+                      <td className="px-3 py-2.5 font-mono text-right text-green-400/60">{fmtM(p.tp_price || p.take_profit || 0)}</td>
+                      <td className="px-3 py-2.5 font-mono text-right text-amber-400/70">{fmtM(p.risk_amount || 0)}</td>
+                      <td className={`px-3 py-2.5 font-mono font-bold text-right ${unreal >= 0 ? "text-green-400" : "text-red-400"}`}>{`${unreal >= 0 ? "+" : "-"}$${Math.abs(unreal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                      <td className="px-3 py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ TRADE CANDIDATES ═══ */}
       <div className="anim-slide" style={{ animationDelay: "0.12s" }}>
         <CandidatesSection candidates={candidates} />

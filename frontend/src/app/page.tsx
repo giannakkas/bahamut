@@ -151,6 +151,40 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {/* OPEN POSITIONS */}
+        {(data.positions || []).length > 0 && (
+          <div className="bg-bg-secondary/60 border border-border-default rounded-xl overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3 border-b border-border-default">
+              <span className="text-sm font-bold text-text-primary">📦 Open Positions</span>
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30">{(data.positions || []).length}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px] sm:text-[11px] min-w-[700px]">
+                <thead><tr className="border-b border-border-default text-[9px] text-text-muted uppercase tracking-wider text-left">
+                  <th className="py-2 px-3">Asset</th><th className="py-2 px-3">Strategy</th><th className="py-2 px-3">Dir</th>
+                  <th className="py-2 px-3">Entry</th><th className="py-2 px-3">SL</th><th className="py-2 px-3">TP</th>
+                  <th className="py-2 px-3">Risk</th><th className="py-2 px-3">Bars</th><th className="py-2 px-3">PnL</th>
+                </tr></thead>
+                <tbody>
+                  {(data.positions || []).map((p: any, i: number) => (
+                    <tr key={i} className="border-b border-border-default/50 hover:bg-bg-tertiary/30">
+                      <td className="py-2 px-3 text-text-primary font-bold">{p.asset}</td>
+                      <td className="py-2 px-3 text-text-secondary">{sn(p.strategy)}</td>
+                      <td className="py-2 px-3"><span className={`font-bold ${p.direction === 'LONG' ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{p.direction}</span></td>
+                      <td className="py-2 px-3 text-text-primary font-mono">{fm(p.entry_price)}</td>
+                      <td className="py-2 px-3 text-accent-crimson font-mono">{fm(p.stop_price)}</td>
+                      <td className="py-2 px-3 text-accent-emerald font-mono">{fm(p.tp_price)}</td>
+                      <td className="py-2 px-3 text-text-secondary font-mono">{fm(p.risk_amount)}</td>
+                      <td className="py-2 px-3 text-text-muted">{p.bars_held}/{p.max_hold_bars}</td>
+                      <td className={`py-2 px-3 font-bold ${(p.unrealized_pnl || 0) >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(p.unrealized_pnl || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* TRADE CANDIDATES */}
         {candidates.length > 0 && (
           <div className="bg-bg-secondary/60 border border-border-default rounded-xl overflow-hidden">
