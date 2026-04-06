@@ -268,7 +268,7 @@ export default function Dashboard() {
         <div className="flex border-b border-border-default overflow-x-auto">
           {(['overview', 'positions', 'trades', 'rejected'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? 'border-accent-violet text-accent-violet' : 'border-transparent text-text-muted hover:text-text-secondary'}`}>
-              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${traderPositions})` : t === 'trades' ? `🔁 Trades (${traderClosed})` : `🚫 Rejected (${failedSignals.length})`}
+              {t === 'overview' ? '📊 Overview' : t === 'positions' ? `📦 Positions (${sysOpen})` : t === 'trades' ? `🔁 Trades (${sysClosed})` : `🚫 Rejected (${failedSignals.length})`}
             </button>
           ))}
         </div>
