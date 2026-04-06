@@ -8,6 +8,11 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 body {
   font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
   background: #0a0e17;

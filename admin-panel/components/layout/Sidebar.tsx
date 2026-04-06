@@ -49,6 +49,7 @@ export function Sidebar() {
   const { status: wsStatus } = useAdminSocket();
   const [showLegacy, setShowLegacy] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hideHamburger, setHideHamburger] = useState(false);
 
   const activeAlerts = alerts?.filter((a) => !a.dismissed).length ?? 0;
   const activeOverrides = overrides?.length ?? 0;
@@ -66,6 +67,25 @@ export function Sidebar() {
     else document.body.style.overflow = "";
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
+
+  // Hide hamburger on scroll down, show on scroll up
+  useEffect(() => {
+    let lastY = 0;
+    const onScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const y = target.scrollTop || 0;
+      setHideHamburger(y > lastY && y > 60);
+      lastY = y;
+    };
+    // The scrollable container is <main>
+    const main = document.querySelector("main");
+    if (main) main.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      if (main) main.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   const canSee = (item: { minRole?: string }) =>
     userLevel >= (ROLE_LEVELS[item.minRole || "admin"] ?? 0);
@@ -169,10 +189,10 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger — fixed top-left */}
+      {/* Mobile hamburger — fixed top-left, hides on scroll down */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-bah-surface border border-bah-border text-bah-heading shadow-lg"
+        className={`lg:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-bah-surface border border-bah-border text-bah-heading shadow-lg transition-all duration-300 ${hideHamburger && !mobileOpen ? 'opacity-0 pointer-events-none -translate-y-4' : 'opacity-100 translate-y-0'}`}
         aria-label="Toggle menu"
       >
         {mobileOpen ? (
