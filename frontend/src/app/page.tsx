@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState<'overview' | 'positions' | 'trades' | 'rejected'>('overview');
   const [loading, setLoading] = useState(true);
   const [showAllDec, setShowAllDec] = useState(false);
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
   const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletAllocation, setWalletAllocation] = useState(0);
@@ -344,7 +345,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.slice(0, 10).map((c: any, i: number) => (
+                  {candidates.slice(0, showAllCandidates ? candidates.length : 5).map((c: any, i: number) => (
                     <tr key={i} className="border-b border-border-default/50 hover:bg-bg-tertiary/30">
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -370,6 +371,12 @@ export default function Dashboard() {
                 </tbody>
               </table>
             </div>
+            {candidates.length > 5 && (
+              <button onClick={() => setShowAllCandidates(!showAllCandidates)}
+                className="w-full py-2.5 text-[11px] font-bold text-accent-cyan hover:bg-accent-cyan/5 border-t border-border-default transition-all flex items-center justify-center gap-1.5">
+                {showAllCandidates ? '▲ Show Less' : `▼ Show All ${candidates.length} Candidates`}
+              </button>
+            )}
           </div>
         )}
 

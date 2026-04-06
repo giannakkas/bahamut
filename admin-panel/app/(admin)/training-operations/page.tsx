@@ -544,6 +544,7 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
    TRADE CANDIDATES (upgraded)
    ═══════════════════════════════════════════ */
 function CandidatesSection({ candidates }: { candidates: any[] }) {
+  const [expanded, setExpanded] = useState(false);
   const THRESHOLD = 80;
 
   const urgency = (s: number) => s >= THRESHOLD ? { label: "READY", cls: "bg-green-500/25 text-green-400 border-green-500/40" } :
@@ -595,7 +596,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
               </tr>
             </thead>
             <tbody>
-              {candidates.map((c: any, i: number) => {
+              {(expanded ? candidates : candidates.slice(0, 5)).map((c: any, i: number) => {
                 const u = urgency(c.score);
                 const isTop = i === 0;
                 const isAbove = c.score >= THRESHOLD;
@@ -643,6 +644,12 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
             </tbody>
           </table>
         </div>
+        {candidates.length > 5 && (
+          <button onClick={() => setExpanded(!expanded)}
+            className="w-full py-2.5 text-[11px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5">
+            {expanded ? '▲ Show Less' : `▼ Show All ${candidates.length} Candidates`}
+          </button>
+        )}
     </div>
   );
 }
