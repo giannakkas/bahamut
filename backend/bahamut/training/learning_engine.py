@@ -132,7 +132,7 @@ def compute_learning_context(trade_dict: dict) -> LearningContext:
     elif exit_reason == "SL":
         score = max(-1.0, -0.8 - abs(r_multiple) * 0.1) if quick_stop else max(-1.0, -0.4 - abs(r_multiple) * 0.1)
     elif exit_reason == "TIMEOUT":
-        if pnl > 0:
+        if pnl > 0.01:
             score = min(0.5, 0.1 + r_multiple * 0.2)
         elif abs(r_multiple) < 0.2:
             score = 0.0  # True scratch — economically neutral, don't penalize
@@ -182,7 +182,7 @@ def update_trust_from_trade(ctx: LearningContext):
             }
 
             trust["trades"] += 1
-            if ctx.pnl > 0:
+            if ctx.pnl > 0.01:
                 trust["wins"] += 1
             elif ctx.pnl < -0.01:  # Only count real losses, not breakeven scratches
                 trust["losses"] += 1

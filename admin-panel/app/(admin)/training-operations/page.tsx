@@ -783,7 +783,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
             const pnl = t.pnl || 0;
             const risk = t.risk_amount || 0;
             const rMult = risk > 0 ? pnl / risk : 0;
-            const isWin = pnl > 0;
+            const isWin = pnl > 0.01;
             const isFlat = Math.abs(pnl) < 0.01;
             const resultLabel = isFlat ? "FLAT" : isWin ? "WIN" : "LOSS";
             const resultCls = isFlat ? "bg-white/10 text-white/50 border border-white/15" : isWin ? "bg-green-500/15 text-green-400 border border-green-500/25" : "bg-red-500/15 text-red-400 border border-red-500/25";

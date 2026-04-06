@@ -73,12 +73,12 @@ def _aggregate_training_trades() -> dict:
         rows = run_query("""
             SELECT strategy, asset_class,
                    COUNT(*) as cnt,
-                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as total_pnl,
                    COALESCE(AVG(pnl), 0) as avg_pnl,
                    COALESCE(AVG(bars_held), 0) as avg_bars,
-                   COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) as gp,
+                   COALESCE(SUM(CASE WHEN pnl > 0.01 THEN pnl ELSE 0 END), 0) as gp,
                    COALESCE(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0) as gl
             FROM training_trades GROUP BY strategy, asset_class
         """)
@@ -107,19 +107,20 @@ def _aggregate_training_trades() -> dict:
                 total_bars += avg_bars * cnt
 
                 if s not in result["by_strategy"]:
-                    result["by_strategy"][s] = {"cnt": 0, "wins": 0, "losses": 0, "pnl": 0, "avg_pnl": 0, "avg_bars": 0, "gp": 0, "gl": 0}
+                    result["by_strategy"][s] = {"cnt": 0, "wins": 0, "losses": 0, "pnl": 0, "avg_pnl": 0, "avg_bars": 0, "gp": 0, "gl": 0, "_total_bars": 0}
                 bs = result["by_strategy"][s]
                 bs["cnt"] += cnt; bs["wins"] += wins; bs["losses"] += losses; bs["pnl"] += pnl; bs["gp"] += gp; bs["gl"] += gl
+                bs["_total_bars"] += avg_bars * cnt  # weighted sum for per-strategy average
 
                 if c not in result["by_class"]:
                     result["by_class"][c] = {"cnt": 0, "wins": 0, "losses": 0, "pnl": 0}
                 bc = result["by_class"][c]
                 bc["cnt"] += cnt; bc["wins"] += wins; bc["losses"] += losses; bc["pnl"] += pnl
 
-            # Compute averages for strategies
+            # Compute per-strategy averages
             for s, bs in result["by_strategy"].items():
                 bs["avg_pnl"] = bs["pnl"] / max(1, bs["cnt"])
-                bs["avg_bars"] = total_bars / max(1, total_cnt) if total_cnt else 0
+                bs["avg_bars"] = bs.get("_total_bars", 0) / max(1, bs["cnt"])
 
             result["total"] = {"cnt": total_cnt, "pnl": total_pnl, "wins": total_wins,
                                "losses": total_losses,
@@ -478,12 +479,12 @@ def _build_strategy_breakdown(r) -> dict:
             from bahamut.db.query import run_query_one
             row = run_query_one("""
                 SELECT COUNT(*) as cnt,
-                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                        SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        COALESCE(SUM(pnl), 0) as total_pnl,
                        COALESCE(AVG(pnl), 0) as avg_pnl,
                        COALESCE(AVG(bars_held), 0) as avg_bars,
-                       COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) as gp,
+                       COALESCE(SUM(CASE WHEN pnl > 0.01 THEN pnl ELSE 0 END), 0) as gp,
                        COALESCE(SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END), 0) as gl
                 FROM training_trades WHERE strategy = :s
             """, {"s": strat})
@@ -536,7 +537,7 @@ def _build_class_breakdown(r) -> dict:
             from bahamut.db.query import run_query_one
             row = run_query_one("""
                 SELECT COUNT(*) as cnt,
-                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                        SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        COALESCE(SUM(pnl), 0) as total_pnl
                 FROM training_trades WHERE asset_class = :c
@@ -584,7 +585,7 @@ def _build_asset_rankings() -> dict:
         best = run_query("""
             SELECT asset, asset_class, COUNT(*) as trades,
                    SUM(pnl) as total_pnl, AVG(pnl) as avg_pnl,
-                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END)::float / COUNT(*) as wr
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END)::float / COUNT(*) as wr
             FROM training_trades GROUP BY asset, asset_class
             HAVING COUNT(*) >= 2 ORDER BY total_pnl DESC LIMIT 10
         """)
@@ -987,24 +988,45 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         trades_section["error"] = str(e)
     diag["sections"].append(trades_section)
 
-    # ── 3. STRATEGY PERFORMANCE ──
+    # ── 3. STRATEGY PERFORMANCE (from DB — single source of truth) ──
     perf_section = {"title": "STRATEGY PERFORMANCE", "rows": []}
     try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT strategy,
+                   COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as total_pnl
+            FROM training_trades GROUP BY strategy ORDER BY total_pnl DESC
+        """)
+        # Get last trade per strategy from Redis for recency info
+        last_trade_info = {}
         if r:
-            for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+            for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
                 raw = r.get(f"bahamut:training:strategy_stats:{strat}")
                 if raw:
                     s = json.loads(raw)
-                    perf_section["rows"].append({
-                        "strategy": strat,
-                        "trades": s.get("trades", 0),
-                        "wins": s.get("wins", 0),
-                        "losses": s.get("losses", 0),
-                        "win_rate": s.get("win_rate", 0),
-                        "total_pnl": s.get("total_pnl", 0),
-                        "last_pnl": s.get("last_pnl", 0),
-                        "last_asset": s.get("last_asset", ""),
-                    })
+                    last_trade_info[strat] = {"last_pnl": s.get("last_pnl", 0), "last_asset": s.get("last_asset", "")}
+
+        for row in (rows or []):
+            strat = row["strategy"]
+            trades = row["trades"]
+            wins = row["wins"] or 0
+            losses = row["losses"] or 0
+            decisive = wins + losses
+            pnl = row["total_pnl"] or 0
+            lt = last_trade_info.get(strat, {})
+            perf_section["rows"].append({
+                "strategy": strat,
+                "trades": trades,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": round(wins / max(1, decisive), 4),
+                "total_pnl": round(pnl, 2),
+                "last_pnl": lt.get("last_pnl", 0),
+                "last_asset": lt.get("last_asset", ""),
+            })
     except Exception as e:
         perf_section["error"] = str(e)
     diag["sections"].append(perf_section)
@@ -1052,23 +1074,30 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         pos_section["error"] = str(e)
     diag["sections"].append(pos_section)
 
-    # ── 7. ASSET CLASS PERFORMANCE ──
+    # ── 7. ASSET CLASS PERFORMANCE (from DB — single source of truth) ──
     class_section = {"title": "ASSET CLASS PERFORMANCE", "rows": []}
     try:
-        if r:
-            for ac in ["crypto", "stock", "forex", "commodity", "index"]:
-                raw = r.get(f"bahamut:training:class_stats:{ac}")
-                if raw:
-                    s = json.loads(raw)
-                    if s.get("trades", 0) > 0:
-                        class_section["rows"].append({
-                            "class": ac,
-                            "trades": s.get("trades", 0),
-                            "wins": s.get("wins", 0),
-                            "losses": s.get("losses", 0),
-                            "win_rate": s.get("win_rate", 0),
-                            "total_pnl": s.get("total_pnl", 0),
-                        })
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT asset_class,
+                   COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl), 0) as total_pnl
+            FROM training_trades GROUP BY asset_class ORDER BY total_pnl DESC
+        """)
+        for row in (rows or []):
+            wins = row["wins"] or 0
+            losses = row["losses"] or 0
+            decisive = wins + losses
+            class_section["rows"].append({
+                "class": row["asset_class"],
+                "trades": row["trades"],
+                "wins": wins,
+                "losses": losses,
+                "win_rate": round(wins / max(1, decisive), 4),
+                "total_pnl": round(row["total_pnl"] or 0, 2),
+            })
     except Exception as e:
         class_section["error"] = str(e)
     diag["sections"].append(class_section)

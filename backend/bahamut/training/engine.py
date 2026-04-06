@@ -711,7 +711,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 publish_event("position_closed", {
                     "mode": "training", "asset": pos.asset,
                     "strategy": pos.strategy, "position_id": pos.position_id,
-                    "pnl": trade.pnl, "result": "WIN" if trade.pnl > 0 else ("FLAT" if abs(trade.pnl) < 0.01 else "LOSS"),
+                    "pnl": trade.pnl, "result": "WIN" if trade.pnl > 0.01 else ("FLAT" if abs(trade.pnl) < 0.01 else "LOSS"),
                     "exit_reason": exit_reason,
                 })
             except Exception:
@@ -845,7 +845,7 @@ def _feed_learning(trade: TrainingTrade):
         stats = json.loads(raw) if raw else {"wins": 0, "losses": 0, "total_pnl": 0, "trades": 0}
         stats["trades"] += 1
         stats["total_pnl"] = round(stats["total_pnl"] + trade.pnl, 2)
-        if trade.pnl > 0:
+        if trade.pnl > 0.01:
             stats["wins"] += 1
         elif trade.pnl < -0.01:
             stats["losses"] += 1
@@ -864,7 +864,7 @@ def _feed_learning(trade: TrainingTrade):
         stats = json.loads(raw) if raw else {"wins": 0, "losses": 0, "total_pnl": 0, "trades": 0}
         stats["trades"] += 1
         stats["total_pnl"] = round(stats["total_pnl"] + trade.pnl, 2)
-        if trade.pnl > 0:
+        if trade.pnl > 0.01:
             stats["wins"] += 1
         elif trade.pnl < -0.01:
             stats["losses"] += 1
@@ -966,7 +966,8 @@ def _rebuild_stats_from_db() -> tuple[dict, dict]:
             rows = conn.execute(text("""
                 SELECT strategy, asset_class,
                        COUNT(*) as cnt,
-                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        COALESCE(SUM(pnl), 0) as total_pnl
                 FROM training_trades GROUP BY strategy, asset_class
             """)).mappings().all()
@@ -976,25 +977,27 @@ def _rebuild_stats_from_db() -> tuple[dict, dict]:
                 ac = row["asset_class"]
                 cnt = int(row["cnt"])
                 wins = int(row["wins"])
+                losses = int(row["losses"])
                 pnl = float(row["total_pnl"])
+                decisive = wins + losses
 
                 if s not in strategy_stats:
                     strategy_stats[s] = {"trades": 0, "wins": 0, "losses": 0, "total_pnl": 0, "win_rate": 0}
                 ss = strategy_stats[s]
                 ss["trades"] += cnt
                 ss["wins"] += wins
-                ss["losses"] += cnt - wins
+                ss["losses"] += losses
                 ss["total_pnl"] = round(ss["total_pnl"] + pnl, 2)
-                ss["win_rate"] = round(ss["wins"] / max(1, ss["trades"]), 4)
+                ss["win_rate"] = round(ss["wins"] / max(1, ss["wins"] + ss["losses"]), 4)
 
                 if ac not in class_stats:
                     class_stats[ac] = {"trades": 0, "wins": 0, "losses": 0, "total_pnl": 0, "win_rate": 0}
                 cs = class_stats[ac]
                 cs["trades"] += cnt
                 cs["wins"] += wins
-                cs["losses"] += cnt - wins
+                cs["losses"] += losses
                 cs["total_pnl"] = round(cs["total_pnl"] + pnl, 2)
-                cs["win_rate"] = round(cs["wins"] / max(1, cs["trades"]), 4)
+                cs["win_rate"] = round(cs["wins"] / max(1, cs["wins"] + cs["losses"]), 4)
 
         # Write back to Redis for next fast read
         r = _get_redis()
