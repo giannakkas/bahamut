@@ -127,7 +127,7 @@ def get_execution_status() -> dict:
 
 def _get_platform(asset: str, asset_class: str) -> str:
     if asset_class == "crypto":
-        from bahamut.execution.binance_adapter import _configured
+        from bahamut.execution.binance_futures import _configured
         return "binance" if _configured() else "internal"
     elif asset_class in ("stock",):
         from bahamut.execution.alpaca_adapter import _configured
@@ -137,87 +137,50 @@ def _get_platform(asset: str, asset_class: str) -> str:
 
 
 def _get_crypto_platform(direction: str) -> str:
-    """For crypto: LONG uses Spot, SHORT uses Futures."""
-    if direction == "SHORT":
-        from bahamut.execution.binance_futures import _configured as fut_cfg
-        if fut_cfg():
-            return "binance_futures"
-    from bahamut.execution.binance_adapter import _configured as spot_cfg
-    return "binance" if spot_cfg() else "internal"
+    """All crypto uses Futures (supports both LONG and SHORT with one key)."""
+    from bahamut.execution.binance_futures import _configured as fut_cfg
+    return "binance_futures" if fut_cfg() else "internal"
 
 
 def _binance_open(asset: str, direction: str, size: float) -> dict:
-    # SHORT crypto → use Futures
-    if direction == "SHORT":
-        try:
-            from bahamut.execution.binance_futures import open_short, _configured
-            if _configured():
-                result = open_short(asset, size)
-                if result and "error" not in result:
-                    return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
-                            "fill_price": result.get("fill_price", 0),
-                            "fill_qty": result.get("fill_qty", size), "status": "filled"}
-                error = result.get("error", "Unknown") if result else "No response"
-                logger.error("binance_futures_open_short_failed", asset=asset, error=error)
-                return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
-                        "order_id": "", "fill_price": 0, "fill_qty": 0}
-        except Exception as e:
-            logger.error("binance_futures_import_failed", error=str(e)[:100])
-        # Fall through to internal
-        return {"platform": "internal", "order_id": "", "fill_price": 0,
-                "fill_qty": size, "status": "internal"}
-
-    # LONG crypto → use Spot
-    from bahamut.execution.binance_adapter import place_market_buy
+    # ALL crypto → Futures (one key for LONG + SHORT)
     try:
-        result = place_market_buy(asset, size)
-        if result and "error" not in result:
-            return {"platform": "binance", "order_id": result.get("order_id", ""),
-                    "fill_price": result.get("fill_price", 0),
-                    "fill_qty": result.get("fill_qty", size), "status": "filled"}
-        error = result.get("error", "Unknown") if result else "No response"
-        logger.error("binance_open_failed", asset=asset, error=error)
-        return {"platform": "binance", "status": "error", "error": str(error)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        from bahamut.execution.binance_futures import _configured, place_market_order
+        if _configured():
+            side = "BUY" if direction == "LONG" else "SELL"
+            result = place_market_order(asset, side, size)
+            if result and "error" not in result:
+                return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
+                        "fill_price": result.get("fill_price", 0),
+                        "fill_qty": result.get("fill_qty", size), "status": "filled"}
+            error = result.get("error", "Unknown") if result else "No response"
+            logger.error("binance_futures_open_failed", asset=asset, direction=direction, error=error)
+            return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
+                    "order_id": "", "fill_price": 0, "fill_qty": 0}
     except Exception as e:
-        return {"platform": "binance", "status": "error", "error": str(e)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        logger.error("binance_futures_exception", asset=asset, error=str(e)[:100])
+    return {"platform": "internal", "order_id": "", "fill_price": 0,
+            "fill_qty": size, "status": "internal"}
 
 
 def _binance_close(asset: str, direction: str, size: float) -> dict:
-    # Closing a SHORT → buy back on Futures
-    if direction == "SHORT":
-        try:
-            from bahamut.execution.binance_futures import close_short, _configured
-            if _configured():
-                result = close_short(asset, size)
-                if result and "error" not in result:
-                    return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
-                            "fill_price": result.get("fill_price", 0),
-                            "fill_qty": result.get("fill_qty", size), "status": "filled"}
-                error = result.get("error", "Unknown") if result else "No response"
-                return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
-                        "order_id": "", "fill_price": 0, "fill_qty": 0}
-        except Exception as e:
-            return {"platform": "binance_futures", "status": "error", "error": str(e)[:200],
-                    "order_id": "", "fill_price": 0, "fill_qty": 0}
-        return {"platform": "internal", "order_id": "", "fill_price": 0,
-                "fill_qty": size, "status": "internal"}
-
-    # Closing a LONG → sell on Spot
-    from bahamut.execution.binance_adapter import place_market_sell
+    # Close: opposite side on Futures
     try:
-        result = place_market_sell(asset, size)
-        if result and "error" not in result:
-            return {"platform": "binance", "order_id": result.get("order_id", ""),
-                    "fill_price": result.get("fill_price", 0),
-                    "fill_qty": result.get("fill_qty", size), "status": "filled"}
-        error = result.get("error", "Unknown") if result else "No response"
-        return {"platform": "binance", "status": "error", "error": str(error)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        from bahamut.execution.binance_futures import _configured, place_market_order
+        if _configured():
+            side = "SELL" if direction == "LONG" else "BUY"
+            result = place_market_order(asset, side, size)
+            if result and "error" not in result:
+                return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
+                        "fill_price": result.get("fill_price", 0),
+                        "fill_qty": result.get("fill_qty", size), "status": "filled"}
+            error = result.get("error", "Unknown") if result else "No response"
+            return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
+                    "order_id": "", "fill_price": 0, "fill_qty": 0}
     except Exception as e:
-        return {"platform": "binance", "status": "error", "error": str(e)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        logger.error("binance_futures_close_exception", asset=asset, error=str(e)[:100])
+    return {"platform": "internal", "order_id": "", "fill_price": 0,
+            "fill_qty": size, "status": "internal"}
 
 
 def _alpaca_open(asset: str, direction: str, size: float, risk_amount: float) -> dict:
