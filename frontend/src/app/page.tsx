@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AppShell from '@/components/layout/AppShell';
-import { fetchWallet, depositFunds, setAllocation as apiSetAllocation } from '@/lib/walletApi';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 const getH = (): Record<string, string> => {
@@ -52,13 +51,6 @@ export default function Dashboard() {
   const [tab, setTab] = useState<'overview' | 'positions' | 'trades' | 'rejected'>('overview');
   const [loading, setLoading] = useState(true);
   const [showAllDec, setShowAllDec] = useState(false);
-  const [showAddFunds, setShowAddFunds] = useState(false);
-  const [fundAmount, setFundAmount] = useState('');
-  const [editingAlloc, setEditingAlloc] = useState(false);
-  const [allocInput, setAllocInput] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 
   const k = data.kpi || {};
   const strats = data.strategy_breakdown || {};
@@ -90,53 +82,6 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, [load]);
 
-  // Wallet state — persisted on backend
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [walletAllocation, setWalletAllocation] = useState(0);
-  const [tradingMode, setTradingMode] = useState<'demo' | 'live'>('demo');
-
-  const loadWallet = useCallback(async () => {
-    const w = await fetchWallet();
-    if (w) {
-      setWalletBalance(w.balance);
-      setWalletAllocation(w.allocation);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadWallet();
-    if (typeof window === 'undefined') return;
-    const syncMode = () => {
-      const mode = localStorage.getItem('bahamut_trading_mode');
-      if (mode === 'live' || mode === 'demo') setTradingMode(mode);
-    };
-    syncMode();
-    const iv = setInterval(syncMode, 1000);
-    return () => clearInterval(iv);
-  }, [loadWallet]);
-
-  const addFunds = async (amount: number) => {
-    const result = await depositFunds(amount, tradingMode);
-    if (result) {
-      setWalletBalance(result.balance);
-      setWalletAllocation(result.allocation);
-    }
-    setShowAddFunds(false);
-    setFundAmount('');
-    showToast('Funds added! Your money will be invested in the next trade.');
-  };
-
-  const saveAllocation = async (val: number) => {
-    const result = await apiSetAllocation(val, tradingMode);
-    if (result) {
-      setWalletBalance(result.balance);
-      setWalletAllocation(result.allocation);
-    }
-    setEditingAlloc(false);
-    setAllocInput('');
-    showToast(`Allocation updated to ${fm(val)}. Your money will be invested in the next trade.`);
-  };
-
   if (loading) return (
     <AppShell>
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -145,163 +90,59 @@ export default function Dashboard() {
     </AppShell>
   );
 
-  // Trader sees system trades live — "watch the magic happen"
-  const traderPositions = k.open_positions || 0;
-  const traderClosed = k.closed_trades || 0;
-  // Balance logic — from backend wallet
-  const userBalance = walletBalance;
-  const userAllocation = walletAllocation;
-
-  // Trader's P&L = proportional share of system P&L based on allocation
-  const systemCapital = 100000;
-  const systemPnl = k.net_pnl || 0;
-  const allocRatio = systemCapital > 0 ? userAllocation / systemCapital : 0;
-  const userPnl = Math.round(systemPnl * allocRatio * 100) / 100;
-  const userEquity = userAllocation + userPnl;  // Equity = allocation + P&L
-  const userRetPct = userAllocation > 0 ? (userPnl / userAllocation) * 100 : 0;
+  // Use exact same values as backend/admin panel
+  const sysEquity = k.equity || k.virtual_capital || 100000;
+  const sysPnl = (k.net_pnl || 0) + (k.unrealized_pnl || 0);
+  const sysReturn = k.return_pct || 0;
+  const sysWinRate = (k.win_rate || 0) * 100;
+  const sysRiskPerTrade = k.risk_per_trade || 500;
+  const sysOpen = k.open_positions || 0;
+  const sysClosed = k.closed_trades || 0;
 
   return (
     <AppShell>
       <div className="max-w-[1400px] mx-auto space-y-3 sm:space-y-4 px-2 sm:px-0">
 
-        {/* TOAST */}
-        {toast && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in w-[90vw] sm:w-auto">
-            <div className="bg-accent-violet/90 text-white px-3 sm:px-5 py-2 sm:py-3 rounded-xl shadow-lg shadow-accent-violet/20 text-xs sm:text-sm font-semibold flex items-center gap-2 backdrop-blur-sm">
-              <span>💰</span> {toast}
-              <button onClick={() => setToast(null)} className="ml-2 text-white/60 hover:text-white text-xs">✕</button>
-            </div>
-          </div>
-        )}
-
-        {/* TOP BAR */}
+        {/* TOP BAR — matches admin panel */}
         <div className="bg-bg-secondary/80 border border-border-default rounded-xl px-3 sm:px-5 py-3">
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-6">
             <div className="flex flex-wrap items-center gap-3 sm:gap-6 flex-1 min-w-0">
               <div className="min-w-0">
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Total Balance</div>
-                <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(userBalance + userPnl)}</div>
-              </div>
-              <div className="hidden sm:block w-px h-8 bg-border-default" />
-              <div className="min-w-0 relative">
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Allocation</div>
-                <div className="text-lg sm:text-xl font-bold text-accent-violet cursor-pointer hover:text-accent-violet/70 transition-all" onClick={() => setEditingAlloc(!editingAlloc)}>
-                  {fm(userAllocation)}
-                </div>
-                {editingAlloc && (
-                  <div className="absolute top-full left-0 mt-2 z-50 bg-bg-secondary border border-accent-violet/30 rounded-xl p-3 shadow-xl shadow-black/30 min-w-[240px]">
-                    <div className="text-[10px] text-text-muted mb-2">Set allocation (max {fm(userBalance)})</div>
-                    <div className="grid grid-cols-3 gap-1.5 mb-2">
-                      {[25, 50, 75, 100].map(pct => {
-                        const val = Math.round(userBalance * pct / 100);
-                        return (
-                          <button key={pct} onClick={() => { saveAllocation(val); }}
-                            className={`px-2 py-1.5 text-[10px] font-bold rounded-lg border transition-all ${
-                              userAllocation === val
-                                ? 'bg-accent-violet/20 border-accent-violet/40 text-accent-violet'
-                                : 'border-border-default bg-bg-tertiary text-text-secondary hover:border-accent-violet/30 hover:text-accent-violet'
-                            }`}>
-                            {pct}%
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="flex items-center flex-1 bg-bg-tertiary border border-border-default rounded-lg overflow-hidden focus-within:border-accent-violet">
-                        <span className="text-[11px] text-text-muted pl-2">$</span>
-                        <input type="number" autoFocus value={allocInput} placeholder="Custom"
-                          onChange={e => setAllocInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter' && allocInput) { saveAllocation(parseFloat(allocInput) || 0); } if (e.key === 'Escape') setEditingAlloc(false); }}
-                          className="w-full px-1 py-1.5 text-[11px] font-bold bg-transparent text-text-primary outline-none" />
-                      </div>
-                      <button onClick={() => { if (allocInput) saveAllocation(parseFloat(allocInput) || 0); }}
-                        disabled={!allocInput}
-                        className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 disabled:opacity-30 transition-all shrink-0">
-                        Set
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Equity</div>
+                <div className="text-lg sm:text-xl font-bold text-text-primary">{fm(sysEquity)}</div>
               </div>
               <div className="hidden sm:block w-px h-8 bg-border-default" />
               <div className="min-w-0">
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Your P&L</div>
-                <div className={`text-base sm:text-lg font-bold ${userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(userPnl)}</div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">P&L</div>
+                <div className={`text-base sm:text-lg font-bold ${sysPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(sysPnl)}</div>
               </div>
               <div className="hidden sm:block w-px h-8 bg-border-default" />
               <div className="min-w-0">
-                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Your Winnings</div>
-                <div className={`text-base sm:text-lg font-bold ${systemPnl >= 0 ? 'text-accent-cyan' : 'text-accent-crimson'}`}>{fmS(systemPnl)}</div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Return</div>
+                <div className={`text-base sm:text-lg font-bold ${sysReturn >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fp(sysReturn)}</div>
+              </div>
+              <div className="hidden sm:block w-px h-8 bg-border-default" />
+              <div className="min-w-0">
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Win Rate</div>
+                <div className="text-base sm:text-lg font-bold text-text-primary">{sysWinRate.toFixed(1)}%</div>
               </div>
             </div>
-
             <div className="flex items-center gap-2">
-              {tradingMode === 'demo' ? (
-                <button onClick={() => setShowAddFunds(!showAddFunds)}
-                  className="px-2 sm:px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-violet/15 text-accent-violet border border-accent-violet/30 hover:bg-accent-violet/25 transition-all whitespace-nowrap">
-                  + Add Funds
-                </button>
-              ) : (
-                <button onClick={() => setShowAddFunds(!showAddFunds)}
-                  className="px-2 sm:px-3 py-1.5 text-[10px] font-bold rounded-lg bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30 hover:bg-accent-emerald/25 transition-all whitespace-nowrap">
-                  💳 Add Funds
-                </button>
-              )}
               <span className={`w-2 h-2 rounded-full shrink-0 ${wsStatus === 'connected' ? 'bg-accent-emerald animate-pulse' : 'bg-accent-crimson'}`} />
               <span className="text-[10px] text-text-muted font-mono hidden sm:inline">{wsStatus === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
             </div>
           </div>
-
-          {/* Add Funds Panel — Demo */}
-          {showAddFunds && tradingMode === 'demo' && (
-            <div className="mt-3 pt-3 border-t border-border-default flex flex-wrap items-center gap-2 sm:gap-3">
-              <span className="text-[10px] text-text-muted">Virtual funds (max $100K):</span>
-              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                {[5000, 10000, 25000, 50000].map(amt => (
-                  <button key={amt} onClick={() => addFunds(amt)} disabled={userBalance >= 100000}
-                    className="px-2 sm:px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary hover:bg-accent-violet/10 hover:text-accent-violet hover:border-accent-violet/30 transition-all disabled:opacity-30">
-                    +{fm(amt)}
-                  </button>
-                ))}
-              </div>
-              <input type="number" placeholder="Custom" value={fundAmount}
-                onChange={e => setFundAmount(e.target.value)}
-                className="w-20 sm:w-24 px-2 py-1 text-[10px] rounded-lg border border-border-default bg-bg-tertiary text-text-primary placeholder-text-muted outline-none focus:border-accent-violet" />
-              {fundAmount && (
-                <button onClick={() => addFunds(Math.min(parseFloat(fundAmount) || 0, 100000 - userBalance))}
-                  className="px-3 py-1 text-[10px] font-bold rounded-lg bg-accent-violet text-white hover:bg-accent-violet/80 transition-all">Add</button>
-              )}
-            </div>
-          )}
-
-          {/* Add Funds Panel — Live (Stripe placeholder) */}
-          {showAddFunds && tradingMode === 'live' && (
-            <div className="mt-3 pt-3 border-t border-border-default">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-[10px] text-text-muted">Add real funds via card:</span>
-                <div className="flex gap-2">
-                  {[100, 500, 1000, 5000].map(amt => (
-                    <button key={amt} disabled
-                      className="px-3 py-1 text-[10px] font-bold rounded-lg border border-border-default bg-bg-tertiary text-text-secondary opacity-50 cursor-not-allowed">
-                      ${amt.toLocaleString()}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[9px] text-accent-amber">Coming soon — Stripe integration</span>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* KPI ROW */}
         <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {[
-            { l: 'Equity', v: fm(userEquity), c: 'text-text-primary' },
-            { l: 'P&L', v: fmS(userPnl), c: userPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
-            { l: 'Return', v: fp(userRetPct), c: userRetPct >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
-            { l: 'Risk/Trade', v: fm(userAllocation * 0.005), c: 'text-text-primary' },
-            { l: 'Open', v: `${traderPositions}`, c: 'text-accent-cyan' },
-            { l: 'Closed', v: `${traderClosed}`, c: 'text-text-primary' },
+            { l: 'Equity', v: fm(sysEquity), c: 'text-text-primary' },
+            { l: 'P&L', v: fmS(sysPnl), c: sysPnl >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
+            { l: 'Return', v: fp(sysReturn), c: sysReturn >= 0 ? 'text-accent-emerald' : 'text-accent-crimson' },
+            { l: 'Risk/Trade', v: fm(sysRiskPerTrade), c: 'text-text-primary' },
+            { l: 'Open', v: `${sysOpen}`, c: 'text-accent-cyan' },
+            { l: 'Closed', v: `${sysClosed}`, c: 'text-text-primary' },
           ].map((s, i) => (
             <div key={i} className="bg-bg-secondary/60 border border-border-default rounded-xl p-2 sm:p-3 text-center">
               <div className={`text-sm sm:text-lg font-bold ${s.c}`}>{s.v}</div>
