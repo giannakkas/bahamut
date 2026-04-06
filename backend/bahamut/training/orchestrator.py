@@ -110,24 +110,20 @@ def run_training_cycle():
         except Exception:
             pass
 
-    # Pre-filter: Remove crypto LONGs when sentiment is extreme fear.
-    # Without this, LONGs fill all 3 cycle slots in the selector,
-    # then get killed by the engine's sentiment gate. SHORTs never
-    # get a chance because the cycle is already full.
+    # Pre-filter: Remove crypto LONGs in CRASH regime.
+    # Only filter signals where the regime was actually set to CRASH.
+    # If price action overrode the F&G crash signal (price above EMA200),
+    # the regime stays RANGE and LONGs should be allowed through.
     try:
-        from bahamut.sentiment.fear_greed import get_fear_greed
-        fng = get_fear_greed()
-        if fng.get("value", 50) <= 39:  # Fear or Extreme Fear
-            before = len(pending_signals)
-            pending_signals = [
-                s for s in pending_signals
-                if not (s.asset_class == "crypto" and s.direction == "LONG")
-            ]
-            removed = before - len(pending_signals)
-            if removed > 0:
-                logger.info("training_pre_filter_sentiment",
-                            removed=removed, fear_greed=fng["value"],
-                            remaining=len(pending_signals))
+        before = len(pending_signals)
+        pending_signals = [
+            s for s in pending_signals
+            if not (s.asset_class == "crypto" and s.direction == "LONG" and s.regime == "CRASH")
+        ]
+        removed = before - len(pending_signals)
+        if removed > 0:
+            logger.info("training_pre_filter_crash_longs",
+                        removed=removed, remaining=len(pending_signals))
     except Exception:
         pass
 
@@ -331,21 +327,36 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     indicators["_asset_class"] = asset_class
 
     # Sentiment-driven regime override for crypto:
-    # If Fear & Greed is extreme fear, override to CRASH regardless of 4H regime.
-    # Even if 4H technicals show TREND or RANGE, extreme fear means the market
-    # is crashing in sentiment. This blocks crypto LONGs and enables SHORTs.
+    # If Fear & Greed is extreme fear AND price action confirms crash,
+    # override to CRASH. But if price is rallying (above EMA200, RSI > 40),
+    # the crash may be over even if F&G hasn't updated yet (updates daily).
     if asset_class == "crypto" and regime != "CRASH":
         try:
             from bahamut.sentiment.fear_greed import get_fear_greed
             fng = get_fear_greed()
             fng_value = fng.get("value", 50)
             if fng_value <= 25:
-                original = regime
-                regime = "CRASH"
-                indicators["_regime"] = "CRASH"
-                logger.info("training_sentiment_regime_override",
-                            asset=asset, original=original, override="CRASH",
-                            fear_greed=fng_value)
+                # Check if price action CONTRADICTS the crash signal
+                close = indicators.get("close", 0)
+                ema200 = indicators.get("ema_200", 0)
+                rsi = indicators.get("rsi_14", 50)
+                price_above_ema200 = close > ema200 if ema200 > 0 else False
+
+                if price_above_ema200 and rsi > 40:
+                    # Price recovered above EMA200 with RSI > 40
+                    # F&G is stale — crash is over, keep RANGE regime
+                    logger.info("training_sentiment_override_SKIPPED",
+                                asset=asset, regime=regime,
+                                fear_greed=fng_value, rsi=round(rsi, 1),
+                                reason="price above EMA200 + RSI>40 contradicts crash")
+                else:
+                    # Price still below EMA200 or deeply oversold — crash confirmed
+                    original = regime
+                    regime = "CRASH"
+                    indicators["_regime"] = "CRASH"
+                    logger.info("training_sentiment_regime_override",
+                                asset=asset, original=original, override="CRASH",
+                                fear_greed=fng_value)
         except Exception:
             pass
 

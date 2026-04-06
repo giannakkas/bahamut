@@ -383,18 +383,21 @@ def open_training_position(
             pass  # If check fails, allow the trade
 
     # Sentiment gate — block LONGs in fear markets
-    # Crypto: Fear & Greed Index + CryptoPanic
-    # Stocks: CNN Fear & Greed Index
+    # BUT: skip for crypto if regime != CRASH. The orchestrator's
+    # price-action check already confirmed the crash is over for this asset
+    # (price above EMA200 + RSI > 40), even if F&G hasn't updated yet.
     if direction == "LONG" and asset_class in ("crypto", "stock"):
-        try:
-            from bahamut.sentiment.gate import check_sentiment
-            blocked, reason = check_sentiment(asset, direction, asset_class)
-            if blocked:
-                logger.info("training_position_rejected_sentiment",
-                            asset=asset, strategy=strategy, reason=reason)
-                return None
-        except Exception:
-            pass  # If sentiment check fails, allow the trade
+        skip_sentiment = (asset_class == "crypto" and regime != "CRASH")
+        if not skip_sentiment:
+            try:
+                from bahamut.sentiment.gate import check_sentiment
+                blocked, reason = check_sentiment(asset, direction, asset_class)
+                if blocked:
+                    logger.info("training_position_rejected_sentiment",
+                                asset=asset, strategy=strategy, reason=reason)
+                    return None
+            except Exception:
+                pass  # If sentiment check fails, allow the trade
 
     # Calculate SL/TP prices
     if direction == "LONG":
