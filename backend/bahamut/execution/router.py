@@ -73,37 +73,55 @@ def execute_close(asset: str, asset_class: str, direction: str,
 
 
 def get_execution_status() -> dict:
-    """Get status of all execution platforms."""
+    """Get status of all execution platforms with detailed errors."""
     status = {"binance_spot": "not_configured", "binance_futures": "not_configured", "alpaca": "not_configured"}
     try:
-        from bahamut.execution.binance_adapter import get_account
-        from bahamut.execution.binance_adapter import _configured as b_cfg
+        from bahamut.execution.binance_adapter import get_account, _configured as b_cfg, SPOT_URL, API_KEY as SPOT_KEY
         if b_cfg():
             acc = get_account()
-            status["binance_spot"] = "connected" if acc else "error"
+            if acc:
+                status["binance_spot"] = "connected"
+                status["binance_spot_balances"] = len(acc.get("balances", []))
+            else:
+                status["binance_spot"] = "error"
+                status["binance_spot_url"] = SPOT_URL
+                status["binance_spot_key_prefix"] = SPOT_KEY[:8] + "..." if SPOT_KEY else "MISSING"
+        else:
+            status["binance_spot"] = "not_configured (BINANCE_TESTNET_API_KEY missing)"
     except Exception as e:
-        status["binance_spot"] = f"error: {str(e)[:50]}"
+        status["binance_spot"] = f"error: {str(e)[:100]}"
+
     try:
-        from bahamut.execution.binance_futures import get_account as fut_acc
-        from bahamut.execution.binance_futures import _configured as f_cfg
+        from bahamut.execution.binance_futures import get_account as fut_acc, _configured as f_cfg, BASE_URL as FUT_URL, API_KEY as FUT_KEY
         if f_cfg():
             acc = fut_acc()
-            status["binance_futures"] = "connected" if acc else "error"
+            if acc:
+                status["binance_futures"] = "connected"
+                status["binance_futures_balance"] = acc.get("totalWalletBalance", "?")
+            else:
+                status["binance_futures"] = "error"
+                status["binance_futures_url"] = FUT_URL
+                status["binance_futures_key_prefix"] = FUT_KEY[:8] + "..." if FUT_KEY else "MISSING"
+        else:
+            status["binance_futures"] = "not_configured (BINANCE_FUTURES_API_KEY missing)"
     except Exception as e:
-        status["binance_futures"] = f"error: {str(e)[:50]}"
+        status["binance_futures"] = f"error: {str(e)[:100]}"
+
     try:
-        from bahamut.execution.alpaca_adapter import get_account
-        from bahamut.execution.alpaca_adapter import _configured as a_cfg
+        from bahamut.execution.alpaca_adapter import get_account, _configured as a_cfg
         if a_cfg():
             acc = get_account()
             if acc:
                 status["alpaca"] = "connected"
                 status["alpaca_cash"] = acc.get("cash", 0)
                 status["alpaca_equity"] = acc.get("equity", 0)
+                status["alpaca_buying_power"] = acc.get("buying_power", 0)
             else:
                 status["alpaca"] = "error"
+        else:
+            status["alpaca"] = "not_configured (ALPACA_API_KEY missing)"
     except Exception as e:
-        status["alpaca"] = f"error: {str(e)[:50]}"
+        status["alpaca"] = f"error: {str(e)[:100]}"
     return status
 
 
@@ -518,3 +536,94 @@ def invalidate_platform_cache(platform: str):
         pass
     if key in _cache:
         del _cache[key]
+
+
+@router.get("/test-connections")
+async def test_connections():
+    """Test all exchange connections with detailed error reporting."""
+    results = {}
+
+    # Test Binance Spot
+    try:
+        from bahamut.execution.binance_adapter import _configured, API_KEY, SPOT_URL
+        import httpx
+        results["binance_spot"] = {
+            "configured": _configured(),
+            "url": SPOT_URL,
+            "key_set": bool(API_KEY),
+            "key_prefix": API_KEY[:12] + "..." if API_KEY else "NOT SET",
+        }
+        if _configured():
+            r = httpx.get(f"{SPOT_URL}/api/v3/time", timeout=5)
+            results["binance_spot"]["ping_status"] = r.status_code
+            # Test authenticated endpoint
+            from bahamut.execution.binance_adapter import get_account
+            acc = get_account()
+            results["binance_spot"]["auth_ok"] = acc is not None
+            if not acc:
+                # Try raw request to see error
+                import time as _t, hmac as _hmac, hashlib as _hash
+                from bahamut.execution.binance_adapter import API_SECRET
+                params = {"timestamp": int(_t.time() * 1000)}
+                qs = "&".join(f"{k}={v}" for k, v in params.items())
+                sig = _hmac.new(API_SECRET.encode(), qs.encode(), _hash.sha256).hexdigest()
+                params["signature"] = sig
+                r2 = httpx.get(f"{SPOT_URL}/api/v3/account", params=params,
+                              headers={"X-MBX-APIKEY": API_KEY}, timeout=5)
+                results["binance_spot"]["error_status"] = r2.status_code
+                results["binance_spot"]["error_body"] = r2.text[:200]
+    except Exception as e:
+        results["binance_spot"] = {"error": str(e)[:200]}
+
+    # Test Binance Futures
+    try:
+        from bahamut.execution.binance_futures import _configured as f_cfg, API_KEY as F_KEY, BASE_URL as F_URL
+        import httpx
+        results["binance_futures"] = {
+            "configured": f_cfg(),
+            "url": F_URL,
+            "key_set": bool(F_KEY),
+            "key_prefix": F_KEY[:12] + "..." if F_KEY else "NOT SET",
+        }
+        if f_cfg():
+            r = httpx.get(f"{F_URL}/fapi/v1/time", timeout=5)
+            results["binance_futures"]["ping_status"] = r.status_code
+            from bahamut.execution.binance_futures import get_account as fut_acc
+            acc = fut_acc()
+            results["binance_futures"]["auth_ok"] = acc is not None
+            if not acc:
+                from bahamut.execution.binance_futures import API_SECRET as F_SECRET
+                import time as _t, hmac as _hmac, hashlib as _hash
+                params = {"timestamp": int(_t.time() * 1000)}
+                qs = "&".join(f"{k}={v}" for k, v in params.items())
+                sig = _hmac.new(F_SECRET.encode(), qs.encode(), _hash.sha256).hexdigest()
+                params["signature"] = sig
+                r2 = httpx.get(f"{F_URL}/fapi/v2/account", params=params,
+                              headers={"X-MBX-APIKEY": F_KEY}, timeout=5)
+                results["binance_futures"]["error_status"] = r2.status_code
+                results["binance_futures"]["error_body"] = r2.text[:200]
+    except Exception as e:
+        results["binance_futures"] = {"error": str(e)[:200]}
+
+    # Test Alpaca
+    try:
+        from bahamut.execution.alpaca_adapter import _configured as a_cfg, API_KEY as A_KEY, BASE_URL as A_URL
+        import httpx
+        results["alpaca"] = {
+            "configured": a_cfg(),
+            "url": A_URL,
+            "key_prefix": A_KEY[:12] + "..." if A_KEY else "NOT SET",
+        }
+        if a_cfg():
+            from bahamut.execution.alpaca_adapter import get_account
+            acc = get_account()
+            results["alpaca"]["auth_ok"] = acc is not None
+            if acc:
+                results["alpaca"]["equity"] = acc.get("equity")
+                results["alpaca"]["cash"] = acc.get("cash")
+                results["alpaca"]["buying_power"] = acc.get("buying_power")
+                results["alpaca"]["status"] = acc.get("status")
+    except Exception as e:
+        results["alpaca"] = {"error": str(e)[:200]}
+
+    return results

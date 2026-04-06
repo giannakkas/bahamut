@@ -1045,6 +1045,8 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 "tp_price": d.get("tp_price"),
                 "bars_held": d.get("bars_held"),
                 "unrealized_pnl": d.get("unrealized_pnl", 0),
+                "execution_platform": d.get("execution_platform", "internal"),
+                "exchange_order_id": d.get("exchange_order_id", ""),
             })
     except Exception as e:
         pos_section["error"] = str(e)

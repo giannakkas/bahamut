@@ -26,6 +26,7 @@ BASE_URL = PAPER_URL if IS_PAPER else LIVE_URL
 SUPPORTED_ASSETS = {
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AMD",
     "NFLX", "COIN", "SPY", "QQQ", "JPM", "BAC", "GS",
+    "CRM", "ORCL", "UBER", "SQ", "SHOP",
 }
 
 
