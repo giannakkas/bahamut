@@ -268,7 +268,7 @@ export default function TrainingOperationsPage() {
   const fmtT = (s: string) => { if (!s) return "—"; try { return new Date(s).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return s; } };
 
   return (
-    <div className="p-2 sm:p-4 max-w-[1440px] mx-auto space-y-3 pt-12 lg:pt-4 overflow-x-hidden">
+    <div className="p-2 sm:p-4 max-w-[1440px] mx-auto space-y-3 lg:pt-4 overflow-x-hidden">
       <style>{`
         @keyframes slideUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
