@@ -328,35 +328,50 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     # Sentiment-driven regime override for crypto:
     # If Fear & Greed is extreme fear AND price action confirms crash,
-    # override to CRASH. But if price is rallying (above EMA200, RSI > 40),
-    # the crash may be over even if F&G hasn't updated yet (updates daily).
+    # override to CRASH. But if price has CLEARLY recovered (3%+ above EMA200
+    # on 4H timeframe), the crash may be over even if F&G hasn't updated.
     if asset_class == "crypto" and regime != "CRASH":
         try:
             from bahamut.sentiment.fear_greed import get_fear_greed
             fng = get_fear_greed()
             fng_value = fng.get("value", 50)
             if fng_value <= 25:
-                # Check if price action CONTRADICTS the crash signal
-                close = indicators.get("close", 0)
-                ema200 = indicators.get("ema_200", 0)
-                rsi = indicators.get("rsi_14", 50)
-                price_above_ema200 = close > ema200 if ema200 > 0 else False
+                # Use 4H indicators for macro-level check (not 15m which is noisy)
+                # Fall back to 15m if 4H not available
+                check_close = indicators.get("close", 0)
+                check_ema200 = indicators.get("ema_200", 0)
+                check_rsi = indicators.get("rsi_14", 50)
+                try:
+                    from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+                    c4h = get_candles(asset, interval="4h", limit=100)
+                    if c4h and len(c4h) >= 50:
+                        i4h = binance_ind(c4h)
+                        check_close = i4h.get("close", check_close)
+                        check_ema200 = i4h.get("ema_200", check_ema200)
+                        check_rsi = i4h.get("rsi_14", check_rsi)
+                except Exception:
+                    pass
 
-                if price_above_ema200 and rsi > 40:
-                    # Price recovered above EMA200 with RSI > 40
+                dist_from_ema200 = (check_close - check_ema200) / check_ema200 * 100 if check_ema200 > 0 else 0
+
+                if dist_from_ema200 > 3.0 and check_rsi > 50:
+                    # Price clearly recovered: 3%+ above EMA200 AND RSI > 50
                     # F&G is stale — crash is over, keep RANGE regime
                     logger.info("training_sentiment_override_SKIPPED",
                                 asset=asset, regime=regime,
-                                fear_greed=fng_value, rsi=round(rsi, 1),
-                                reason="price above EMA200 + RSI>40 contradicts crash")
+                                fear_greed=fng_value, rsi=round(check_rsi, 1),
+                                dist_from_ema200=round(dist_from_ema200, 2),
+                                reason="price 3%+ above EMA200 on 4H + RSI>50")
                 else:
-                    # Price still below EMA200 or deeply oversold — crash confirmed
+                    # Price near or below EMA200 — crash confirmed
                     original = regime
                     regime = "CRASH"
                     indicators["_regime"] = "CRASH"
                     logger.info("training_sentiment_regime_override",
                                 asset=asset, original=original, override="CRASH",
-                                fear_greed=fng_value)
+                                fear_greed=fng_value,
+                                dist_from_ema200=round(dist_from_ema200, 2),
+                                rsi=round(check_rsi, 1))
         except Exception:
             pass
 
@@ -383,6 +398,13 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
         if signal:
             strategy_signals_found += 1
+
+            # DEBUG: Log SHORT signals explicitly
+            if signal.direction == "SHORT":
+                logger.info("training_SHORT_signal_detected",
+                            asset=asset, strategy=strat_name, regime=regime,
+                            is_new_bar=is_new_bar, reason=signal.reason[:100] if signal.reason else "")
+
             # Get readiness score + indicators from candidates scorer
             readiness = 50
             candidate_indicators = {}

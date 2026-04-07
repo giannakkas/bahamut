@@ -1291,6 +1291,152 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         health_section["error"] = str(e)
     diag["sections"].append(health_section)
 
+    # ── 18. AI ANALYSIS — automated audit for Claude ──
+    ai_section = {"title": "AI ANALYSIS", "data": {}}
+    try:
+        from bahamut.training.engine import _load_positions
+        from dataclasses import asdict
+        positions = _load_positions()
+
+        # Strategy health
+        strat_health = {}
+        try:
+            from bahamut.db.query import run_query
+            rows = run_query("""
+                SELECT strategy,
+                       COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       SUM(CASE WHEN ABS(pnl) <= 0.01 THEN 1 ELSE 0 END) as flats,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl,
+                       ROUND(AVG(bars_held)::numeric, 1) as avg_bars
+                FROM training_trades GROUP BY strategy ORDER BY SUM(pnl) DESC
+            """)
+            for row in rows:
+                s = dict(row)
+                name = s["strategy"]
+                total = s["trades"] or 0
+                wins = s["wins"] or 0
+                losses = s["losses"] or 0
+                flats = s["flats"] or 0
+                wr = wins / max(1, wins + losses)
+                flat_pct = flats / max(1, total) * 100
+                health = "HEALTHY" if wr >= 0.55 and flat_pct < 30 else \
+                         "WEAK" if wr >= 0.45 else "UNDERPERFORMING"
+                strat_health[name] = {
+                    "trades": total, "wins": wins, "losses": losses, "flats": flats,
+                    "flat_pct": round(flat_pct, 1), "win_rate": round(wr * 100, 1),
+                    "pnl": float(s["total_pnl"] or 0), "avg_pnl": float(s["avg_pnl"] or 0),
+                    "avg_bars": float(s["avg_bars"] or 0), "health": health,
+                }
+        except Exception:
+            pass
+        ai_section["data"]["strategy_health"] = strat_health
+
+        # Dead-weight asset detection (assets with 5+ trades and negative or zero PnL)
+        dead_weight = []
+        try:
+            rows = run_query("""
+                SELECT asset, strategy, COUNT(*) as trades,
+                       SUM(CASE WHEN ABS(pnl) <= 0.01 THEN 1 ELSE 0 END) as flats,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl
+                FROM training_trades GROUP BY asset, strategy
+                HAVING COUNT(*) >= 5 AND SUM(pnl) <= 0
+                ORDER BY SUM(pnl) ASC
+            """)
+            for row in rows:
+                r = dict(row)
+                dead_weight.append({
+                    "asset": r["asset"], "strategy": r["strategy"],
+                    "trades": r["trades"], "flats": r["flats"],
+                    "pnl": float(r["total_pnl"] or 0),
+                })
+        except Exception:
+            pass
+        ai_section["data"]["dead_weight_assets"] = dead_weight
+
+        # Open position analysis
+        pos_analysis = []
+        for p in positions:
+            age_info = "fresh" if p.bars_held <= 5 else "mid" if p.bars_held <= 15 else "aging"
+            pnl_status = "profit" if p.unrealized_pnl > 0.01 else "loss" if p.unrealized_pnl < -0.01 else "flat"
+            pos_analysis.append({
+                "asset": p.asset, "strategy": p.strategy, "direction": p.direction,
+                "bars_held": p.bars_held, "max_hold": p.max_hold_bars,
+                "age": age_info, "pnl_status": pnl_status,
+                "unrealized_pnl": round(p.unrealized_pnl, 2),
+                "execution_platform": p.execution_platform,
+                "regime": p.regime,
+            })
+        ai_section["data"]["open_positions_analysis"] = pos_analysis
+
+        # Cooldown status
+        cooldowns = []
+        if r:
+            try:
+                keys = r.keys("bahamut:training:cooldown:*")
+                for k in keys:
+                    asset_name = k.decode().split(":")[-1] if isinstance(k, bytes) else k.split(":")[-1]
+                    ttl = r.ttl(k)
+                    cooldowns.append({"asset": asset_name, "remaining_seconds": ttl})
+            except Exception:
+                pass
+        ai_section["data"]["active_cooldowns"] = cooldowns
+
+        # SHORT signal pipeline status
+        short_pipeline = {"status": "unknown"}
+        try:
+            from bahamut.sentiment.fear_greed import get_fear_greed
+            fng = get_fear_greed()
+            fng_val = fng.get("value", 50)
+            short_pipeline["fear_greed"] = fng_val
+            short_pipeline["crash_override_active"] = fng_val <= 25
+            # Count how many crypto assets have CRASH regime
+            crash_count = 0
+            from bahamut.config_assets import TRAINING_CRYPTO
+            for ca in TRAINING_CRYPTO[:10]:
+                try:
+                    from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+                    c4h = get_candles(ca, interval="4h", limit=100)
+                    if c4h and len(c4h) >= 30:
+                        i4h = binance_ind(c4h)
+                        close_4h = i4h.get("close", 0)
+                        ema200_4h = i4h.get("ema_200", 0)
+                        dist = (close_4h - ema200_4h) / ema200_4h * 100 if ema200_4h > 0 else 0
+                        if dist < 3.0 or i4h.get("rsi_14", 50) <= 50:
+                            crash_count += 1
+                except Exception:
+                    pass
+            short_pipeline["crypto_in_crash_regime"] = crash_count
+            short_pipeline["shorts_should_fire"] = fng_val <= 25 and crash_count > 0
+            short_pipeline["status"] = "active" if fng_val <= 25 and crash_count > 0 else "inactive"
+        except Exception as e:
+            short_pipeline["error"] = str(e)
+        ai_section["data"]["short_pipeline"] = short_pipeline
+
+        # Recommendations engine
+        recommendations = []
+        for name, sh in strat_health.items():
+            if sh["flat_pct"] > 40:
+                recommendations.append(f"STRATEGY {name}: {sh['flat_pct']}% flat trades — tighten entry filters or reduce hold time")
+            if sh["health"] == "UNDERPERFORMING":
+                recommendations.append(f"STRATEGY {name}: WR {sh['win_rate']}% — consider disabling or adding quality gates")
+        for dw in dead_weight[:5]:
+            recommendations.append(f"DEAD WEIGHT: {dw['asset']}+{dw['strategy']} — {dw['trades']} trades, PnL {dw['pnl']}, {dw['flats']} flats — suppress or filter")
+        for pa in pos_analysis:
+            if pa["age"] == "aging" and pa["pnl_status"] == "flat":
+                recommendations.append(f"AGING POSITION: {pa['asset']} {pa['direction']} — {pa['bars_held']}/{pa['max_hold']} bars, still flat — may timeout at $0")
+            if pa["execution_platform"] == "internal" and pa["direction"] in ("LONG", "SHORT"):
+                recommendations.append(f"UNMIRRORED: {pa['asset']} {pa['direction']} on internal — should be on exchange")
+        if not recommendations:
+            recommendations.append("System healthy — no critical issues detected")
+        ai_section["data"]["recommendations"] = recommendations
+
+    except Exception as e:
+        ai_section["error"] = str(e)
+    diag["sections"].append(ai_section)
+
     return diag
 
 
