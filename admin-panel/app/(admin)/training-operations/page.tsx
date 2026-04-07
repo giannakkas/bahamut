@@ -51,6 +51,7 @@ export default function TrainingOperationsPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showMoreClosed, setShowMoreClosed] = useState(false);
   const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevLastCycle = useRef<string | null>(null);
@@ -388,6 +389,53 @@ export default function TrainingOperationsPage() {
                 })}</tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ RECENT CLOSED TRADES ═══ */}
+      {(data.closed_trades || []).length > 0 && (
+        <div className="anim-slide" style={{ animationDelay: "0.10s" }}>
+          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3.5 flex items-center gap-3">
+              <span className="text-sm font-bold text-bah-heading tracking-tight">🔁 Recent Trades</span>
+              <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{(data.closed_trades || []).length}</span>
+            </div>
+            <div className="border-t border-bah-border overflow-x-auto">
+              <table className="w-full text-[12px] min-w-[800px]">
+                <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-[0.1em] text-left">
+                  <th className="px-3 py-2">Asset</th><th className="px-3 py-2">Strategy</th><th className="px-3 py-2">Dir</th>
+                  <th className="px-3 py-2 text-right">Entry</th><th className="px-3 py-2 text-right">Exit</th>
+                  <th className="px-3 py-2 text-right">P&L</th><th className="px-3 py-2">Result</th>
+                  <th className="px-3 py-2">Reason</th><th className="px-3 py-2 text-center">Bars</th>
+                </tr></thead>
+                <tbody>{(data.closed_trades || []).slice(0, showMoreClosed ? 35 : 5).map((t: any, i: number) => {
+                  const pnl = t.pnl || 0;
+                  const isFlat = Math.abs(pnl) < 0.01;
+                  const isWin = pnl > 0.01;
+                  const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  return (
+                    <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
+                      <td className="px-3 py-2 text-bah-heading font-bold">{t.asset}</td>
+                      <td className="px-3 py-2 text-bah-text">{sn(t.strategy)}</td>
+                      <td className="px-3 py-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
+                      <td className="px-3 py-2 font-mono text-right text-bah-text">{fmtM(t.entry_price || 0)}</td>
+                      <td className="px-3 py-2 font-mono text-right text-bah-text">{fmtM(t.exit_price || 0)}</td>
+                      <td className={`px-3 py-2 font-mono font-bold text-right ${isFlat ? "text-bah-muted" : isWin ? "text-green-400" : "text-red-400"}`}>{pnl >= 0 ? "+" : "-"}{fmtM(pnl)}</td>
+                      <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isFlat ? "bg-white/10 text-white/50" : isWin ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>{isFlat ? "FLAT" : isWin ? "WIN" : "LOSS"}</span></td>
+                      <td className="px-3 py-2 text-bah-muted text-[11px]">{t.exit_reason}</td>
+                      <td className="px-3 py-2 text-bah-muted text-center">{t.bars_held}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+            {(data.closed_trades || []).length > 5 && (
+              <button onClick={() => setShowMoreClosed(!showMoreClosed)}
+                className="w-full py-2.5 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5">
+                {showMoreClosed ? "▲ Show Less" : `▼ Show 30 More Trades`}
+              </button>
+            )}
           </div>
         </div>
       )}
