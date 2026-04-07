@@ -47,7 +47,7 @@ def get_account() -> dict | None:
     if not _configured():
         return None
     try:
-        r = httpx.get(f"{BASE_URL}/v2/account", headers=_headers(), timeout=10)
+        r = httpx.get(f"{BASE_URL}/v2/account", headers=_headers(), timeout=5)
         if r.status_code == 200:
             data = r.json()
             return {
@@ -95,7 +95,7 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None)
 
     try:
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
-                       headers=_headers(), timeout=10)
+                       headers=_headers(), timeout=5)
         data = r.json()
         if r.status_code in (200, 201):
             logger.info("alpaca_buy_submitted",
@@ -138,7 +138,7 @@ def place_market_sell(asset: str, quantity: float) -> dict | None:
 
     try:
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
-                       headers=_headers(), timeout=10)
+                       headers=_headers(), timeout=5)
         data = r.json()
         if r.status_code in (200, 201):
             logger.info("alpaca_sell_submitted",
@@ -279,7 +279,7 @@ def get_all_positions() -> list[dict]:
     if not _configured():
         return []
     try:
-        r = httpx.get(f"{BASE_URL}/v2/positions", headers=_headers(), timeout=10)
+        r = httpx.get(f"{BASE_URL}/v2/positions", headers=_headers(), timeout=5)
         if r.status_code == 200:
             positions = []
             for p in r.json():
@@ -337,7 +337,7 @@ def get_portfolio_history(period: str = "1M") -> dict | None:
     try:
         params = {"period": period, "timeframe": "1D"}
         r = httpx.get(f"{BASE_URL}/v2/account/portfolio/history",
-                      params=params, headers=_headers(), timeout=10)
+                      params=params, headers=_headers(), timeout=5)
         if r.status_code == 200:
             return r.json()
     except Exception:

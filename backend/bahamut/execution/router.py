@@ -258,15 +258,18 @@ async def binance_live_data():
     if not _configured():
         return {"error": "Binance Futures not configured. Set BINANCE_FUTURES_API_KEY."}
 
-    # Pull from Binance Futures
-    account_raw = get_account()
-    exchange_positions = get_positions()
+    # Pull account + positions in parallel
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_account = pool.submit(get_account)
+        f_positions = pool.submit(get_positions)
+    account_raw = f_account.result()
+    exchange_positions = f_positions.result()
 
-    # Only fetch trades/orders for symbols with positions or recent training activity
+    # Build active symbols from positions + training engine
     active_symbols = set()
     for ep in exchange_positions:
         active_symbols.add(ep.get("symbol", ""))
-    # Add training engine crypto positions
     training_positions = []
     try:
         from bahamut.training.engine import _load_positions
@@ -283,12 +286,15 @@ async def binance_live_data():
                 active_symbols.add(_to_symbol(p.asset))
     except Exception:
         pass
-    # Always include top 5 majors
     active_symbols.update(["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"])
     active_list = [s for s in active_symbols if s]
 
-    futures_trades = get_trades(symbols=active_list, limit=30)
-    futures_orders = get_orders(symbols=active_list, limit=10)
+    # Trades + orders in parallel (each internally parallelized too)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_trades = pool.submit(get_trades, active_list, 30)
+        f_orders = pool.submit(get_orders, active_list, 10)
+    futures_trades = f_trades.result()
+    futures_orders = f_orders.result()
 
     # Account summary
     balance = 0
@@ -371,11 +377,18 @@ async def alpaca_live_data():
     if not _configured():
         return {"error": "Alpaca not configured. Set ALPACA_API_KEY."}
 
-    # Pull everything from Alpaca
-    account = get_account()
-    orders = get_all_orders(status="all")
-    positions = get_all_positions()
-    fills = get_activities("FILL")
+    # Pull everything from Alpaca IN PARALLEL
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_account = pool.submit(get_account)
+        f_orders = pool.submit(get_all_orders, "all")
+        f_positions = pool.submit(get_all_positions)
+        f_fills = pool.submit(get_activities, "FILL")
+
+    account = f_account.result()
+    orders = f_orders.result()
+    positions = f_positions.result()
+    fills = f_fills.result()
 
     # Build round-trips from FILLED ORDERS (more reliable than Activities)
     filled_orders = [o for o in orders if o.get("status") == "filled" and o.get("filled_avg_price", 0) > 0]

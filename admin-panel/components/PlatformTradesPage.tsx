@@ -45,14 +45,14 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
     try {
       const t = localStorage.getItem("bahamut_admin_token");
       const h: Record<string, string> = t ? { Authorization: `Bearer ${t}` } : {};
-      // Pull DIRECTLY from exchange API
-      const r = await fetch(`${apiBase()}/execution/${platform}/live`, { headers: h });
+      // All 3 calls in parallel
+      const [r, sr, lr] = await Promise.all([
+        fetch(`${apiBase()}/execution/${platform}/live`, { headers: h }),
+        fetch(`${apiBase()}/training/sentiment`, { headers: h }),
+        fetch(`${apiBase()}/training/asset-leaderboard`, { headers: h }),
+      ]);
       if (r.ok) setData(await r.json());
-      // Fetch sentiment for both pages
-      const sr = await fetch(`${apiBase()}/training/sentiment`, { headers: h });
       if (sr.ok) setSentiment(await sr.json());
-      // Fetch asset leaderboard
-      const lr = await fetch(`${apiBase()}/training/asset-leaderboard`, { headers: h });
       if (lr.ok) setLeaderboard(await lr.json());
     } catch {}
     setLoading(false);
