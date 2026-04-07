@@ -328,6 +328,20 @@ def open_training_position(
                            existing_strategy=p.strategy, existing_direction=p.direction)
             return None
 
+    # Per-asset cooldown: skip if recently closed (avoid TSLA-style repeated entries)
+    COOLDOWN_SECONDS = 1800  # 30 minutes (3 cycles)
+    try:
+        r = _get_redis()
+        if r:
+            cooldown_key = f"bahamut:training:cooldown:{asset}"
+            if r.exists(cooldown_key):
+                logger.info("training_position_rejected_cooldown",
+                            asset=asset, strategy=strategy, direction=direction,
+                            reason="Asset on cooldown after recent close")
+                return None
+    except Exception:
+        pass
+
     # Entry price sanity check — reject obviously wrong prices
     # (e.g. BTC price leaking into EURUSD)
     PRICE_SANITY = {
@@ -455,7 +469,6 @@ def open_training_position(
                 pos.stop_price = round(pos.entry_price * (1 + sl_pct), 6)
                 pos.tp_price = round(pos.entry_price * (1 - tp_pct), 6)
             pos.current_price = pos.entry_price
-            _save_position(pos)  # Update with real fill price
             logger.info("exchange_fill_applied",
                         asset=asset, platform=pos.execution_platform,
                         old_entry=old_entry, fill_price=pos.entry_price,
@@ -470,6 +483,8 @@ def open_training_position(
             logger.warning("exchange_execution_failed_using_internal",
                            asset=asset, platform=exec_result.get("platform"),
                            error=exec_result.get("error", "")[:100])
+        # Always re-save to persist execution_platform + exchange_order_id
+        _save_position(pos)
     except Exception as e:
         logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
 
@@ -687,6 +702,14 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             _persist_trade(trade)
             _record_recent(trade)
             closed_trades.append(trade)
+
+            # Set per-asset cooldown to prevent immediate re-entry
+            try:
+                r = _get_redis()
+                if r:
+                    r.setex(f"bahamut:training:cooldown:{pos.asset}", 1800, "1")  # 30 min
+            except Exception:
+                pass
 
             logger.info("training_position_closed",
                         asset=pos.asset, strategy=pos.strategy,

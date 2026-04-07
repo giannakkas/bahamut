@@ -544,6 +544,48 @@ def score_mean_reversion(
     if close <= 0 or ema_20 <= 0 or atr <= 0 or len(candles) < 25:
         return None
 
+    # ── CRASH SHORT scoring (separate from LONG) ──
+    if regime == "CRASH":
+        crash_sig = detect_crash_short(candles, indicators, prev_indicators)
+        if crash_sig.valid:
+            # Score: confidence (0-1) → readiness (40-90)
+            crash_score = int(40 + crash_sig.confidence * 50)
+            crash_score = max(40, min(90, crash_score))
+            dist_to_ema20 = (ema_20 - close) / ema_20 if ema_20 > 0 else 0
+            dist_str = f"EMA20 {abs(dist_to_ema20)*100:.1f}% {'below' if dist_to_ema20 > 0 else 'above'} EMA20"
+            return Candidate(
+                asset=asset,
+                asset_class=asset_class,
+                strategy="v10_mean_reversion",
+                direction="SHORT",
+                score=crash_score,
+                regime=regime,
+                distance_to_trigger=dist_str,
+                reasons=[crash_sig.reason],
+                indicators={
+                    "rsi": round(rsi, 1),
+                    "ema_alignment": "crash short",
+                    "ema_20": round(ema_20, 6),
+                    "bb_lower": round(bb_lower, 6),
+                    "bb_mid": round(bb_mid, 6),
+                    "atr": round(atr, 6),
+                },
+                score_breakdown={"crash_short": crash_score},
+                missing_conditions=[],
+                explanation=f"CRASH SHORT score {crash_score}/100 — {crash_sig.reason}",
+            )
+        else:
+            # CRASH regime but no valid short signal — return low score
+            return Candidate(
+                asset=asset, asset_class=asset_class,
+                strategy="v10_mean_reversion", direction="SHORT",
+                score=5, regime=regime,
+                distance_to_trigger=f"CRASH: {crash_sig.reason}",
+                reasons=[crash_sig.reason], indicators={"rsi": round(rsi, 1)},
+                score_breakdown={}, missing_conditions=[crash_sig.reason],
+                explanation=f"CRASH SHORT not ready: {crash_sig.reason}",
+            )
+
     reasons = []
     missing = []
     bd = {"regime": 0, "ema_distance": 0, "bollinger": 0, "rsi": 0, "bounce": 0}

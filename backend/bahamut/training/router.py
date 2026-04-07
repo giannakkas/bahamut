@@ -1066,7 +1066,8 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 "stop_price": d.get("stop_price"),
                 "tp_price": d.get("tp_price"),
                 "bars_held": d.get("bars_held"),
-                "unrealized_pnl": d.get("unrealized_pnl", 0),
+                "unrealized_pnl": round(p.unrealized_pnl, 2),
+                "current_price": d.get("current_price", 0),
                 "execution_platform": d.get("execution_platform", "internal"),
                 "exchange_order_id": d.get("exchange_order_id", ""),
             })

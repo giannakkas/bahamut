@@ -25,11 +25,18 @@ class V5Base(BaseStrategy):
         ema_20 = indicators.get("ema_20", 0)
         ema_50 = indicators.get("ema_50", 0)
         ema_200 = indicators.get("ema_200", 0)
+        atr = indicators.get("atr_14", 0)
 
         if close <= 0 or ema_20 <= 0 or ema_50 <= 0 or ema_200 <= 0:
             return None
         if prev_indicators is None:
             return None
+
+        # ATR minimum volatility filter — skip dead-vol assets (e.g. RNDRUSD on 15m)
+        if atr > 0 and close > 0:
+            atr_pct = atr / close
+            if atr_pct < 0.005:  # 0.5% minimum ATR required
+                return None
 
         prev_20 = prev_indicators.get("ema_20", 0)
         prev_50 = prev_indicators.get("ema_50", 0)
