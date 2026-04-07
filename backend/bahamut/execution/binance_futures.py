@@ -175,3 +175,72 @@ def _format_qty(asset: str, quantity: float) -> str:
         return f"{quantity:.3f}"
     else:
         return f"{quantity:.2f}"
+
+
+# Reverse symbol map for display
+_REVERSE_MAP = {v: k for k, v in SYMBOL_MAP.items()}
+
+
+def get_trades(symbols: list[str] | None = None, limit: int = 50) -> list[dict]:
+    """Get recent account trades from Futures."""
+    if not _configured():
+        return []
+    if symbols is None:
+        symbols = list(SYMBOL_MAP.values())[:15]  # Top 15 symbols
+    all_trades = []
+    for sym in symbols:
+        try:
+            params = _sign({"symbol": sym, "limit": limit})
+            r = httpx.get(f"{BASE_URL}/fapi/v1/userTrades", params=params,
+                          headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                for t in r.json():
+                    all_trades.append({
+                        "symbol": sym,
+                        "asset": _REVERSE_MAP.get(sym, sym),
+                        "side": t.get("side", ""),
+                        "price": float(t.get("price", 0)),
+                        "qty": float(t.get("qty", 0)),
+                        "quote_qty": float(t.get("quoteQty", 0)),
+                        "commission": float(t.get("commission", 0)),
+                        "realized_pnl": float(t.get("realizedPnl", 0)),
+                        "time": t.get("time", 0),
+                        "order_id": t.get("orderId"),
+                    })
+        except Exception:
+            pass
+    all_trades.sort(key=lambda x: x.get("time", 0), reverse=True)
+    return all_trades
+
+
+def get_orders(symbols: list[str] | None = None, limit: int = 20) -> list[dict]:
+    """Get recent orders from Futures."""
+    if not _configured():
+        return []
+    if symbols is None:
+        symbols = list(SYMBOL_MAP.values())[:15]
+    all_orders = []
+    for sym in symbols:
+        try:
+            params = _sign({"symbol": sym, "limit": limit})
+            r = httpx.get(f"{BASE_URL}/fapi/v1/allOrders", params=params,
+                          headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                for o in r.json():
+                    all_orders.append({
+                        "symbol": sym,
+                        "asset": _REVERSE_MAP.get(sym, sym),
+                        "side": o.get("side", ""),
+                        "type": o.get("type", ""),
+                        "status": o.get("status", ""),
+                        "price": float(o.get("price", 0)),
+                        "avg_price": float(o.get("avgPrice", 0)),
+                        "qty": float(o.get("origQty", 0)),
+                        "filled_qty": float(o.get("executedQty", 0)),
+                        "time": o.get("time", 0),
+                        "order_id": o.get("orderId"),
+                    })
+        except Exception:
+            pass
+    all_orders.sort(key=lambda x: x.get("time", 0), reverse=True)
+    return all_orders

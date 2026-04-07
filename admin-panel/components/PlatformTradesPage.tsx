@@ -134,32 +134,25 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           <div><span className="text-bah-muted">Buying Power:</span> <span className="text-bah-heading font-bold">{fm(account.buying_power || 0)}</span></div>
         </div>
       )}
-      {platform === "binance" && account?.balances && (
-        <div className="bg-bah-card border border-bah-border rounded-xl p-3">
-          <div className="text-[9px] text-bah-muted uppercase tracking-wider mb-2 font-bold">Balances</div>
-          <div className="flex flex-wrap gap-3 text-xs">
-            {(account.balances as any[]).slice(0, 10).map((b: any) => (
-              <div key={b.asset}><span className="text-bah-muted">{b.asset}:</span> <span className="text-bah-heading font-bold">{b.total.toFixed(b.total >= 1 ? 2 : 6)}</span></div>
-            ))}
-          </div>
+      {platform === "binance" && account && (
+        <div className="bg-bah-card border border-bah-border rounded-xl p-3 flex flex-wrap gap-4 text-xs">
+          <div><span className="text-bah-muted">Balance:</span> <span className="text-bah-heading font-bold">{fm(account.balance || 0)}</span></div>
+          <div><span className="text-bah-muted">Equity:</span> <span className="text-bah-heading font-bold">{fm(account.equity || 0)}</span></div>
+          <div><span className="text-bah-muted">Unrealized:</span> <span className={`font-bold ${pnlC(account.unrealized_pnl || 0)}`}>{fmS(account.unrealized_pnl || 0)}</span></div>
         </div>
       )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
-          { l: "Account PnL", v: fmS(s.total_pnl || s.combined_pnl || 0), c: pnlC(s.total_pnl || s.combined_pnl || 0) },
-          { l: platform === "alpaca" ? "Unrealized" : "Win Rate",
-            v: platform === "alpaca" ? fmS(s.unrealized_pnl || 0) : `${((s.win_rate || 0) * 100).toFixed(1)}%`,
-            c: platform === "alpaca" ? pnlC(s.unrealized_pnl || 0) : ((s.win_rate || 0) >= 0.5 ? "text-green-400" : "text-amber-400") },
-          { l: platform === "alpaca" ? "Open Pos" : "Profit Factor",
-            v: platform === "alpaca" ? String(s.open_positions || 0) : (s.profit_factor || 0).toFixed(2),
-            c: platform === "alpaca" ? "text-bah-cyan" : ((s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400") },
-          { l: "Round Trips", v: String(s.total_trades || 0), c: "text-bah-heading" },
-          { l: platform === "alpaca" ? "Orders" : "Wins", v: String(platform === "alpaca" ? (s.total_orders || 0) : (s.wins || 0)), c: platform === "alpaca" ? "text-bah-heading" : "text-green-400" },
+          { l: "Realized PnL", v: fmS(s.total_pnl || 0), c: pnlC(s.total_pnl || 0) },
+          { l: "Unrealized", v: fmS(s.unrealized_pnl || 0), c: pnlC(s.unrealized_pnl || 0) },
+          { l: "Profit Factor", v: (s.profit_factor || 0).toFixed(2), c: (s.profit_factor || 0) >= 1 ? "text-green-400" : "text-red-400" },
+          { l: platform === "binance" ? "Fills" : "Round Trips", v: String(s.total_fills || s.total_trades || 0), c: "text-bah-heading" },
+          { l: "Open", v: String(positions.length + (data.training_positions || []).length), c: "text-bah-cyan" },
           { l: "Wins", v: String(s.wins || 0), c: "text-green-400" },
           { l: "Losses", v: String(s.losses || 0), c: "text-red-400" },
-          { l: platform === "alpaca" ? "Fills" : "Avg Win", v: platform === "alpaca" ? String(s.total_fills || 0) : fm(s.avg_win || 0), c: platform === "alpaca" ? "text-bah-heading" : "text-green-400" },
+          { l: "Volume", v: fm(s.total_volume || 0), c: "text-bah-heading" },
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-sm sm:text-base font-bold ${card.c}`}>{card.v}</div>
@@ -192,24 +185,62 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         </div>
       )}
 
-      {/* Open Positions (Alpaca) */}
+      {/* Open Positions (Exchange) */}
       {positions.length > 0 && (
-        <Section title={`Open Positions (${positions.length})`}>
+        <Section title={`Open Positions — Exchange (${positions.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
-                <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">Qty</th>
-                <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">Current</th>
-                <th className="py-2 pr-2">Market Value</th><th className="py-2">Unrealized P&L</th>
+                <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">{platform === "binance" ? "Side" : "Qty"}</th>
+                <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">{platform === "binance" ? "Mark" : "Current"}</th>
+                <th className="py-2 pr-2">{platform === "binance" ? "Qty" : "Market Value"}</th><th className="py-2">Unrealized P&L</th>
               </tr></thead>
-              <tbody>{positions.map((p: any, i: number) => (
+              <tbody>{positions.map((p: any, i: number) => {
+                const unreal = p.unrealized_pnl ?? p.unrealized_pl ?? 0;
+                return (
+                  <tr key={i} className="border-b border-bah-border/30">
+                    <td className="py-2 pr-2 text-bah-heading font-bold">{p.asset || p.symbol}</td>
+                    <td className="py-2 pr-2"><span className={`font-bold ${(p.side || "LONG") === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.side || (p.qty > 0 ? "LONG" : "SHORT")}</span></td>
+                    <td className="py-2 pr-2 text-bah-text font-mono">{fm(p.entry_price || p.avg_entry_price || 0)}</td>
+                    <td className="py-2 pr-2 text-bah-text font-mono">{fm(p.mark_price || p.current_price || 0)}</td>
+                    <td className="py-2 pr-2 text-bah-muted">{p.qty || p.market_value || 0}</td>
+                    <td className={`py-2 font-bold ${pnlC(unreal)}`}>{fmS(unreal)}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {/* Open Crypto Positions (Training Engine) — Binance only */}
+      {platform === "binance" && (data.training_positions || []).length > 0 && (
+        <Section title={`Open Crypto Positions — Training Engine (${data.training_positions.length})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
+                <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">Strategy</th><th className="py-2 pr-2">Dir</th>
+                <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">Current</th>
+                <th className="py-2 pr-2">SL</th><th className="py-2 pr-2">TP</th>
+                <th className="py-2 pr-2">Risk</th><th className="py-2 pr-2">Bars</th>
+                <th className="py-2 pr-2">Platform</th><th className="py-2">P&L</th>
+              </tr></thead>
+              <tbody>{(data.training_positions || []).map((p: any, i: number) => (
                 <tr key={i} className="border-b border-bah-border/30">
                   <td className="py-2 pr-2 text-bah-heading font-bold">{p.asset}</td>
-                  <td className="py-2 pr-2 text-bah-text">{p.qty}</td>
-                  <td className="py-2 pr-2 text-bah-text">{fm(p.avg_entry_price)}</td>
-                  <td className="py-2 pr-2 text-bah-text">{fm(p.current_price)}</td>
-                  <td className="py-2 pr-2 text-bah-text">{fm(p.market_value)}</td>
-                  <td className={`py-2 font-bold ${pnlC(p.unrealized_pl)}`}>{fmS(p.unrealized_pl)}</td>
+                  <td className="py-2 pr-2 text-bah-muted">{sn(p.strategy)}</td>
+                  <td className="py-2 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
+                  <td className="py-2 pr-2 text-bah-text font-mono">{fm(p.entry_price)}</td>
+                  <td className="py-2 pr-2 text-bah-text font-mono">{fm(p.current_price)}</td>
+                  <td className="py-2 pr-2 text-red-400/60 font-mono">{fm(p.stop_price)}</td>
+                  <td className="py-2 pr-2 text-green-400/60 font-mono">{fm(p.tp_price)}</td>
+                  <td className="py-2 pr-2 text-amber-400/70 font-mono">{fm(p.risk_amount)}</td>
+                  <td className="py-2 pr-2 text-bah-muted">{p.bars_held}/{p.max_hold_bars}</td>
+                  <td className="py-2 pr-2"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                    p.execution_platform === "binance_futures" ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/25" :
+                    "bg-bah-border/50 text-bah-muted border border-bah-border"
+                  }`}>{p.execution_platform === "binance_futures" ? "FUTURES" : "INTERNAL"}</span></td>
+                  <td className={`py-2 font-bold ${pnlC(p.unrealized_pnl)}`}>{fmS(p.unrealized_pnl)}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -222,16 +253,15 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         <Section title="By Asset">
           <div className="space-y-1">
             {Object.entries(byAsset).map(([asset, st]: [string, any]) => {
-              const wr = st.wins + st.losses > 0 ? st.wins / (st.wins + st.losses) : 0;
+              const pnl = st.realized_pnl ?? st.pnl ?? 0;
               return (
                 <div key={asset} className="flex items-center justify-between py-1.5 border-b border-bah-border/30 last:border-0 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="text-bah-heading font-bold w-[70px]">{asset}</span>
                     <span className="text-bah-muted">{st.trades}t</span>
-                    <span className="text-bah-muted">{st.wins}W {st.losses}L</span>
-                    <span className="text-bah-muted">{(wr * 100).toFixed(0)}%</span>
+                    {st.volume > 0 && <span className="text-bah-muted">{fm(st.volume)} vol</span>}
                   </div>
-                  <span className={`font-bold ${pnlC(st.pnl)}`}>{fmS(st.pnl)}</span>
+                  <span className={`font-bold ${pnlC(pnl)}`}>{fmS(pnl)}</span>
                 </div>
               );
             })}
@@ -254,19 +284,25 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               <table className="w-full text-[10px]">
                 <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
                   <th className="py-1.5 pr-2 text-left">Time</th><th className="py-1.5 pr-2 text-left">Asset</th>
-                  <th className="py-1.5 pr-2 text-left">Entry</th><th className="py-1.5 pr-2 text-left">Exit</th>
-                  <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 text-left">PnL</th>
+                  <th className="py-1.5 pr-2 text-left">Side</th><th className="py-1.5 pr-2 text-left">Price</th>
+                  <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 pr-2 text-left">Value</th>
+                  <th className="py-1.5 text-left">Realized PnL</th>
                 </tr></thead>
-                <tbody>{trades.map((t: any, i: number) => (
-                  <tr key={i} className="border-b border-bah-border/20">
-                    <td className="py-1.5 pr-2 text-bah-muted">{fmtTime(t.exit_time)}</td>
-                    <td className="py-1.5 pr-2 text-bah-heading font-bold">{t.asset}</td>
-                    <td className="py-1.5 pr-2 text-bah-text">{fm(t.entry_price)}</td>
-                    <td className="py-1.5 pr-2 text-bah-text">{fm(t.exit_price)}</td>
-                    <td className="py-1.5 pr-2 text-bah-muted">{t.qty}</td>
-                    <td className={`py-1.5 font-bold ${pnlC(t.pnl)}`}>{fmS(t.pnl)}</td>
-                  </tr>
-                ))}</tbody>
+                <tbody>{trades.map((t: any, i: number) => {
+                  const ts = t.time ? new Date(t.time).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : fmtTime(t.exit_time);
+                  const rpnl = t.realized_pnl ?? t.pnl ?? 0;
+                  return (
+                    <tr key={i} className="border-b border-bah-border/20">
+                      <td className="py-1.5 pr-2 text-bah-muted">{ts}</td>
+                      <td className="py-1.5 pr-2 text-bah-heading font-bold">{t.asset || t.symbol}</td>
+                      <td className="py-1.5 pr-2"><span className={`font-bold ${t.side === "BUY" ? "text-green-400" : "text-red-400"}`}>{t.side || t.direction}</span></td>
+                      <td className="py-1.5 pr-2 text-bah-text font-mono">{fm(t.price || t.entry_price || 0)}</td>
+                      <td className="py-1.5 pr-2 text-bah-muted">{t.qty}</td>
+                      <td className="py-1.5 pr-2 text-bah-muted">{fm(t.quote_qty || 0)}</td>
+                      <td className={`py-1.5 font-bold ${pnlC(rpnl)}`}>{fmS(rpnl)}</td>
+                    </tr>
+                  );
+                })}</tbody>
               </table>
             )}
             {tab === "orders" && (

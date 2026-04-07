@@ -244,110 +244,102 @@ async def execution_platforms():
 
 @router.get("/binance/live")
 async def binance_live_data():
-    """Pull all data directly from Binance Testnet API. Cached 30s."""
+    """Pull data from Binance Futures Demo + open crypto positions from training engine."""
     cached = _cache_get("binance_live")
     if cached:
         cached["_from_cache"] = True
         return cached
 
-    from bahamut.execution.binance_adapter import (
-        get_account, get_all_trades, get_all_orders, get_balances, _configured
+    from bahamut.execution.binance_futures import (
+        get_account, get_positions, get_trades, get_orders, _configured, BASE_URL
     )
     from datetime import datetime, timezone
 
     if not _configured():
-        return {"error": "Binance not configured. Set BINANCE_TESTNET_API_KEY."}
+        return {"error": "Binance Futures not configured. Set BINANCE_FUTURES_API_KEY."}
 
-    # Pull everything from Binance
-    balances = get_balances()
-    trades = get_all_trades()
-    orders = get_all_orders()
+    # Pull from Binance Futures
+    account_raw = get_account()
+    exchange_positions = get_positions()
+    futures_trades = get_trades()
+    futures_orders = get_orders()
 
-    # Pair buy/sell trades to compute PnL per round-trip
-    # Group trades by asset, pair BUY→SELL sequences
-    asset_trades: dict[str, list] = {}
-    for t in trades:
-        a = t["asset"]
-        if a not in asset_trades:
-            asset_trades[a] = []
-        asset_trades[a].append(t)
+    # Account summary
+    balance = 0
+    unrealized = 0
+    if account_raw:
+        balance = float(account_raw.get("totalWalletBalance", 0))
+        unrealized = float(account_raw.get("totalUnrealizedProfit", 0))
 
-    round_trips = []
+    # Open crypto positions from training engine (internal + exchange)
+    training_positions = []
+    try:
+        from bahamut.training.engine import _load_positions
+        from dataclasses import asdict
+        all_pos = _load_positions()
+        for p in all_pos:
+            if p.asset_class == "crypto":
+                training_positions.append({
+                    **asdict(p),
+                    "unrealized_pnl": round(p.unrealized_pnl, 2),
+                    "source": "training_engine",
+                })
+    except Exception:
+        pass
+
+    # Compute PnL from futures trades (realized)
+    realized_pnl = sum(t.get("realized_pnl", 0) for t in futures_trades)
+
+    # Group trades by asset for stats
     asset_stats: dict[str, dict] = {}
+    for t in futures_trades:
+        a = t["asset"]
+        if a not in asset_stats:
+            asset_stats[a] = {"trades": 0, "realized_pnl": 0, "volume": 0}
+        asset_stats[a]["trades"] += 1
+        asset_stats[a]["realized_pnl"] = round(asset_stats[a]["realized_pnl"] + t.get("realized_pnl", 0), 2)
+        asset_stats[a]["volume"] = round(asset_stats[a]["volume"] + t.get("quote_qty", 0), 2)
 
-    for asset, at in asset_trades.items():
-        # Sort by time ascending for pairing
-        at.sort(key=lambda x: x["time"])
-        buys = [t for t in at if t["side"] == "BUY"]
-        sells = [t for t in at if t["side"] == "SELL"]
-
-        if asset not in asset_stats:
-            asset_stats[asset] = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0, "volume": 0}
-
-        # Pair buys with sells
-        for i in range(min(len(buys), len(sells))):
-            b = buys[i]
-            s = sells[i]
-            pnl = (s["price"] - b["price"]) * min(b["qty"], s["qty"])
-            rt = {
-                "asset": asset,
-                "direction": "LONG",
-                "entry_price": b["price"],
-                "exit_price": s["price"],
-                "qty": min(b["qty"], s["qty"]),
-                "pnl": round(pnl, 2),
-                "entry_time": datetime.fromtimestamp(b["time"] / 1000, tz=timezone.utc).isoformat() if b["time"] else "",
-                "exit_time": datetime.fromtimestamp(s["time"] / 1000, tz=timezone.utc).isoformat() if s["time"] else "",
-                "buy_commission": b["commission"],
-                "sell_commission": s["commission"],
-            }
-            round_trips.append(rt)
-            asset_stats[asset]["trades"] += 1
-            asset_stats[asset]["pnl"] = round(asset_stats[asset]["pnl"] + pnl, 2)
-            asset_stats[asset]["volume"] = round(asset_stats[asset]["volume"] + b["quote_qty"] + s["quote_qty"], 2)
-            if pnl > 0.01:
-                asset_stats[asset]["wins"] += 1
-            elif pnl < -0.01:
-                asset_stats[asset]["losses"] += 1
-
-    round_trips.sort(key=lambda x: x.get("exit_time", ""), reverse=True)
-
-    # Summary
-    total_pnl = sum(rt["pnl"] for rt in round_trips)
-    wins = [rt for rt in round_trips if rt["pnl"] > 0.01]
-    losses = [rt for rt in round_trips if rt["pnl"] < -0.01]
-    wr = len(wins) / max(1, len(wins) + len(losses))
-    gross_profit = sum(rt["pnl"] for rt in wins)
-    gross_loss = abs(sum(rt["pnl"] for rt in losses))
+    # Count wins/losses from realized PnL
+    pnl_trades = [t for t in futures_trades if abs(t.get("realized_pnl", 0)) > 0.01]
+    wins = [t for t in pnl_trades if t["realized_pnl"] > 0.01]
+    losses = [t for t in pnl_trades if t["realized_pnl"] < -0.01]
+    total_trades = len(pnl_trades)
+    wr = len(wins) / max(1, total_trades) if total_trades > 0 else 0
+    gross_profit = sum(t["realized_pnl"] for t in wins)
+    gross_loss = abs(sum(t["realized_pnl"] for t in losses))
     pf = gross_profit / max(0.01, gross_loss)
 
     result = {
-        "platform": "binance_testnet",
+        "platform": "binance_futures",
+        "base_url": BASE_URL,
         "connected": True,
         "account": {
-            "balances": balances,
+            "balance": round(balance, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "equity": round(balance + unrealized, 2),
         },
         "summary": {
-            "total_trades": len(round_trips),
+            "total_trades": total_trades,
+            "total_fills": len(futures_trades),
             "wins": len(wins),
             "losses": len(losses),
-            "flats": len(round_trips) - len(wins) - len(losses),
             "win_rate": round(wr, 4),
-            "total_pnl": round(total_pnl, 2),
+            "total_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "combined_pnl": round(realized_pnl + unrealized, 2),
             "gross_profit": round(gross_profit, 2),
             "gross_loss": round(gross_loss, 2),
             "profit_factor": round(pf, 2),
-            "avg_win": round(gross_profit / max(1, len(wins)), 2),
-            "avg_loss": round(gross_loss / max(1, len(losses)), 2),
-            "best_trade": max(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
-            "worst_trade": min(round_trips, key=lambda x: x["pnl"]) if round_trips else None,
-            "total_volume": round(sum(a["volume"] for a in asset_stats.values()), 2),
-            "total_commissions": round(sum(t.get("commission", 0) for t in trades), 4),
+            "total_volume": round(sum(s.get("volume", 0) for s in asset_stats.values()), 2),
+            "total_commissions": round(sum(t.get("commission", 0) for t in futures_trades), 4),
         },
-        "by_asset": dict(sorted(asset_stats.items(), key=lambda x: x[1]["pnl"], reverse=True)),
-        "trades": round_trips,
-        "raw_fills": trades[:100],
-        "raw_orders": orders[:100],
+        "positions": exchange_positions,
+        "training_positions": training_positions,
+        "by_asset": dict(sorted(asset_stats.items(), key=lambda x: x[1]["realized_pnl"], reverse=True)),
+        "trades": futures_trades[:100],
+        "raw_orders": futures_orders[:100],
+        "raw_fills": futures_trades[:100],
     }
     _cache_set("binance_live", result)
     return result
