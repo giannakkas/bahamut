@@ -413,6 +413,37 @@ def open_training_position(
             except Exception:
                 pass  # If sentiment check fails, allow the trade
 
+    # CRASH SHORT safety limits
+    if direction == "SHORT" and regime == "CRASH":
+        # 1. Daily loss cap: max $1000 in CRASH SHORT losses per day
+        try:
+            from bahamut.database import sync_engine
+            from sqlalchemy import text as sql_text
+            with sync_engine.connect() as conn:
+                row = conn.execute(sql_text("""
+                    SELECT COALESCE(SUM(pnl), 0) as daily_short_pnl
+                    FROM training_trades
+                    WHERE direction = 'SHORT' AND regime = 'CRASH'
+                      AND exit_time > NOW() - INTERVAL '24 hours'
+                      AND pnl < 0
+                """)).mappings().first()
+                daily_loss = abs(float(row["daily_short_pnl"])) if row else 0
+                if daily_loss >= 1000:
+                    logger.warning("training_crash_short_daily_cap",
+                                   asset=asset, daily_loss=daily_loss,
+                                   reason="CRASH SHORT daily loss cap ($1000) reached")
+                    return None
+        except Exception:
+            pass
+
+        # 2. Max 2 concurrent CRASH SHORTs
+        crash_shorts = sum(1 for p in existing if p.direction == "SHORT" and p.regime == "CRASH")
+        if crash_shorts >= 2:
+            logger.info("training_crash_short_concurrent_cap",
+                        asset=asset, count=crash_shorts,
+                        reason="Max 2 concurrent CRASH SHORTs")
+            return None
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)

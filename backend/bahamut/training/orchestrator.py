@@ -336,42 +336,48 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             fng = get_fear_greed()
             fng_value = fng.get("value", 50)
             if fng_value <= 25:
-                # Use 4H indicators for macro-level check (not 15m which is noisy)
-                # Fall back to 15m if 4H not available
-                check_close = indicators.get("close", 0)
-                check_ema200 = indicators.get("ema_200", 0)
-                check_rsi = indicators.get("rsi_14", 50)
-                try:
-                    from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
-                    c4h = get_candles(asset, interval="4h", limit=100)
-                    if c4h and len(c4h) >= 50:
-                        i4h = binance_ind(c4h)
-                        check_close = i4h.get("close", check_close)
-                        check_ema200 = i4h.get("ema_200", check_ema200)
-                        check_rsi = i4h.get("rsi_14", check_rsi)
-                except Exception:
-                    pass
-
-                dist_from_ema200 = (check_close - check_ema200) / check_ema200 * 100 if check_ema200 > 0 else 0
-
-                if dist_from_ema200 > 3.0 and check_rsi > 50:
-                    # Price clearly recovered: 3%+ above EMA200 AND RSI > 50
-                    # F&G is stale — crash is over, keep RANGE regime
-                    logger.info("training_sentiment_override_SKIPPED",
+                # Quick check: if 15m RSI is overbought (>70), it's clearly rallying
+                # Don't force CRASH on an asset with RSI 80+ just because F&G is stale
+                rsi_15m = indicators.get("rsi_14", 50)
+                if rsi_15m > 70:
+                    logger.info("training_sentiment_override_SKIPPED_RSI",
                                 asset=asset, regime=regime,
-                                fear_greed=fng_value, rsi=round(check_rsi, 1),
-                                dist_from_ema200=round(dist_from_ema200, 2),
-                                reason="price 3%+ above EMA200 on 4H + RSI>50")
+                                fear_greed=fng_value, rsi_15m=round(rsi_15m, 1),
+                                reason="15m RSI > 70 — overbought rally, F&G stale")
                 else:
-                    # Price near or below EMA200 — crash confirmed
-                    original = regime
-                    regime = "CRASH"
-                    indicators["_regime"] = "CRASH"
-                    logger.info("training_sentiment_regime_override",
-                                asset=asset, original=original, override="CRASH",
-                                fear_greed=fng_value,
-                                dist_from_ema200=round(dist_from_ema200, 2),
-                                rsi=round(check_rsi, 1))
+                    # Use 4H indicators for macro-level check (not 15m which is noisy)
+                    # Fall back to 15m if 4H not available
+                    check_close = indicators.get("close", 0)
+                    check_ema200 = indicators.get("ema_200", 0)
+                    check_rsi = indicators.get("rsi_14", 50)
+                    try:
+                        from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+                        c4h = get_candles(asset, interval="4h", limit=100)
+                        if c4h and len(c4h) >= 50:
+                            i4h = binance_ind(c4h)
+                            check_close = i4h.get("close", check_close)
+                            check_ema200 = i4h.get("ema_200", check_ema200)
+                            check_rsi = i4h.get("rsi_14", check_rsi)
+                    except Exception:
+                        pass
+
+                    dist_from_ema200 = (check_close - check_ema200) / check_ema200 * 100 if check_ema200 > 0 else 0
+
+                    if dist_from_ema200 > 3.0 and check_rsi > 50:
+                        logger.info("training_sentiment_override_SKIPPED",
+                                    asset=asset, regime=regime,
+                                    fear_greed=fng_value, rsi=round(check_rsi, 1),
+                                    dist_from_ema200=round(dist_from_ema200, 2),
+                                    reason="price 3%+ above EMA200 on 4H + RSI>50")
+                    else:
+                        original = regime
+                        regime = "CRASH"
+                        indicators["_regime"] = "CRASH"
+                        logger.info("training_sentiment_regime_override",
+                                    asset=asset, original=original, override="CRASH",
+                                    fear_greed=fng_value,
+                                    dist_from_ema200=round(dist_from_ema200, 2),
+                                    rsi=round(check_rsi, 1))
         except Exception:
             pass
 
@@ -510,6 +516,8 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # Config-driven — disable by setting exploration.debug_override=false
     # ═══════════════════════════════════════════
     if strategy_signals_found == 0:
+        # Global suppress list — these assets are blocked from ALL signal paths
+        SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX"}
         debug_enabled = True
         debug_min_score = 20  # Low floor — most approaching candidates qualify
         try:
@@ -519,6 +527,10 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         except Exception as e:
             logger.warning("debug_override_config_failed", error=str(e),
                            msg="using defaults: enabled=True, min_score=20")
+
+        # Force-disable for suppressed assets (dead weight, zero PnL)
+        if asset in SUPPRESS_ASSETS:
+            debug_enabled = False
 
         # Skip assets that already have an open position (no duplicates)
         has_existing_position = False

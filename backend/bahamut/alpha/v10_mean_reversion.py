@@ -311,10 +311,11 @@ def detect_crash_short(
     """Detect a SHORT setup during CRASH — sell bear market rallies.
 
     Entry logic:
-      1. Price below EMA200 (confirms downtrend)
-      2. Price rallied within 6% of EMA20 (or above it)
-      3. RSI recovered above 40 (rally happened)
-      4. Rejection: close < prev close OR bearish candle
+      1. Price rallied toward EMA20 (within 6% below or slightly above)
+      2. RSI recovered above 35 but NOT overbought (< 70)
+      3. Price NOT surging past EMA20 (max 0.5% above)
+      4. Rejection candle: close < prev close AND bearish candle (close < open)
+      5. Multi-bar confirmation: at least 2 of last 3 bars declining
     """
     sig = MeanReversionSignal()
 
@@ -332,12 +333,20 @@ def detect_crash_short(
         sig.reason = "missing indicators"
         return sig
 
-    # NOTE: We do NOT check close vs EMA200 here.
-    # The regime detector already confirmed CRASH using 4H candles.
-    # On 15m candles, EMA200 only covers ~50 hours and price may be
-    # above it even during a macro crash. Trust the regime classification.
+    # ── RALLY PROTECTION: don't short into strong upward momentum ──
+    dist_to_ema20 = (ema_20 - close) / ema_20  # positive = below, negative = above
 
-    dist_to_ema20 = (ema_20 - close) / ema_20
+    # If price surged more than 0.5% ABOVE EMA20, it's rallying past resistance — don't short
+    if dist_to_ema20 < -0.005:
+        sig.reason = f"price surging {abs(dist_to_ema20)*100:.1f}% ABOVE EMA20 — don't fight rally"
+        return sig
+
+    # If RSI is overbought (>70), momentum is too strong — wait for exhaustion
+    if rsi > 70:
+        sig.reason = f"RSI {rsi:.0f} overbought — rally momentum too strong, wait for exhaustion"
+        return sig
+
+    # If price is still far below EMA20, it hasn't rallied to resistance yet
     if dist_to_ema20 > 0.06:
         sig.reason = f"price still far below EMA20: {dist_to_ema20*100:.1f}%"
         return sig
@@ -346,45 +355,51 @@ def detect_crash_short(
         sig.reason = f"RSI too low ({rsi:.0f}) — still oversold"
         return sig
 
+    # ── REJECTION CONFIRMATION: require strong bearish signal ──
     prev_close = candles[-2]["close"] if len(candles) >= 2 else close
     bar_open = candles[-1].get("open", close)
     rejection_lower = close < prev_close
     bearish_candle = close < bar_open
 
-    if not rejection_lower and not bearish_candle:
+    # Require BOTH conditions (close < prev AND bearish candle) — not just one
+    if not (rejection_lower and bearish_candle):
         sig.reason = "no rejection — price still rallying"
         return sig
 
-    quality = 0.50
-    # Closer to EMA20 = better entry
-    if dist_to_ema20 <= 0.01:
-        quality += 0.15  # Within 1% — right at resistance
+    # Multi-bar confirmation: at least 2 of last 3 bars should be declining
+    if len(candles) >= 4:
+        declining = 0
+        for j in range(-3, 0):
+            if candles[j]["close"] < candles[j - 1]["close"]:
+                declining += 1
+        if declining < 2:
+            sig.reason = f"weak rejection — only {declining}/3 bars declining"
+            return sig
+
+    # ── Quality scoring ──
+    quality = 0.45  # Lower base — SHORTs need higher conviction
+
+    # Closer to EMA20 = better entry (at resistance)
+    if abs(dist_to_ema20) <= 0.005:
+        quality += 0.15  # Right at EMA20
     elif dist_to_ema20 <= 0.02:
-        quality += 0.12  # Within 2%
-    elif dist_to_ema20 <= 0.03:
-        quality += 0.08  # Within 3%
+        quality += 0.10  # Close below
     elif dist_to_ema20 <= 0.04:
-        quality += 0.05  # Within 4%
-    # 4-6% = base quality only (lower conviction)
-    if close > ema_20:
-        quality += 0.15  # Above EMA20 — best entry
-    if 35 <= rsi <= 55:
+        quality += 0.05  # Moderate distance
+
+    # RSI sweet spot: 40-60 is ideal for crash shorts (recovered but not overbought)
+    if 40 <= rsi <= 60:
         quality += 0.10
-    elif rsi > 55:
-        quality += 0.05
-    if rejection_lower and bearish_candle:
+    elif 35 <= rsi < 40:
         quality += 0.05
 
-    quality = round(min(1.0, quality), 3)
+    quality = round(min(0.85, quality), 3)  # Cap at 0.85 — SHORTs should never be max confidence
 
     reasons = [
         f"CRASH short: bear rally to EMA20 (dist {dist_to_ema20*100:.1f}%)",
         f"RSI recovered to {rsi:.0f}",
+        "rejection confirmed (close < prev + bearish candle)",
     ]
-    if rejection_lower:
-        reasons.append("rejection (close < prev)")
-    if bearish_candle:
-        reasons.append("bearish candle")
 
     sig.valid = True
     sig.direction = "SHORT"
