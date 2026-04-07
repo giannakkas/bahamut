@@ -132,7 +132,7 @@ export default function ConfigPage() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        <span className="text-[10px] text-bah-muted">
+        <span className="text-[11px] text-bah-muted">
           {Object.keys(config).length} keys
         </span>
       </TopBar>

@@ -157,14 +157,14 @@ export default function DailyOperations() {
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-base sm:text-lg font-bold text-bah-heading">Daily Operations Monitor</h1>
           {p?.kill_switch ? (
-            <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold border bg-red-500/20 text-red-400 border-red-500/30">HALTED</span>
+            <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-red-500/20 text-red-400 border-red-500/30">HALTED</span>
           ) : (
-            <span className="px-2 py-0.5 text-[10px] rounded-full font-semibold border bg-green-500/20 text-green-400 border-green-500/30">
+            <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-green-500/20 text-green-400 border-green-500/30">
               LIVE{health?.data_source === "LIVE" ? "" : ` · ${health?.data_source || "?"}`}
             </span>
           )}
-          {health?.engine && <span className="px-2 py-0.5 text-[10px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
-          {critAlerts > 0 && <button onClick={() => setTab("alerts")} className="px-2 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse cursor-pointer hover:bg-red-500/30 transition-colors">{critAlerts} CRITICAL</button>}
+          {health?.engine && <span className="px-2 py-0.5 text-[11px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
+          {critAlerts > 0 && <button onClick={() => setTab("alerts")} className="px-2 py-0.5 text-[11px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse cursor-pointer hover:bg-red-500/30 transition-colors">{critAlerts} CRITICAL</button>}
         </div>
         <div className="flex gap-2 items-center">
           {/* ═══ TRADING ACCURACY — top right ═══ */}
@@ -177,15 +177,15 @@ export default function DailyOperations() {
               }`}>
                 {accuracy?.has_data ? `${accuracy.strict_accuracy_pct}%` : "—%"}
               </div>
-              <div className="text-[8px] text-bah-muted uppercase tracking-wider leading-none mt-0.5">Win Rate</div>
+              <div className="text-[9px] text-bah-muted uppercase tracking-wider leading-none mt-0.5">Win Rate</div>
             </div>
-            <div className="text-[9px] text-bah-muted/60 leading-tight max-w-[80px]">
+            <div className="text-[10px] text-bah-muted/60 leading-tight max-w-[80px]">
               {accuracy?.has_data ? `${accuracy.strict_total_trades} ${accuracy.source === "training" ? "training" : "strict"} trades` : "awaiting trades"}
             </div>
           </div>
           {/* ═══ Exploration badge ═══ */}
           {explorationStatus?.enabled && (
-            <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9px] font-semibold ${
+            <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-semibold ${
               explorationStatus.cooldown_active ? "border-red-500/30 text-red-400 bg-red-500/5" :
               "border-amber-500/25 text-amber-300 bg-amber-500/5"
             }`} title={`Exploration: ${explorationStatus.daily_count}/${explorationStatus.daily_limit} today, ${explorationStatus.open_positions}/${explorationStatus.max_positions} open${explorationStatus.cooldown_active ? `, cooldown ${explorationStatus.cooldown_remaining_hours}h` : ""}`}>
@@ -193,7 +193,7 @@ export default function DailyOperations() {
               <span>EXPLORE {explorationStatus.daily_count}/{explorationStatus.daily_limit}</span>
             </div>
           )}
-          <span className="text-[10px] font-bold flex items-center gap-1.5">
+          <span className="text-[11px] font-bold flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-green-400">LIVE</span>
           </span>
@@ -225,7 +225,7 @@ export default function DailyOperations() {
 
       {/* ═══ DATA HEALTH + OPERATOR TRUST ═══ */}
       {health && (
-        <div className="bg-bah-surface border border-bah-border rounded-xl p-2.5 flex flex-wrap items-center gap-3 text-[11px]">
+        <div className="bg-bah-surface border border-bah-border rounded-xl p-2.5 flex flex-wrap items-center gap-3 text-[12px]">
           <div className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${
               (health as any)?.data_source === "LIVE" ? "bg-green-400" : "bg-amber-400"
@@ -260,18 +260,18 @@ export default function DailyOperations() {
             {Object.entries(timing.assets || {}).map(([asset, t]: [string, any]) => (
               <div key={asset} className="flex items-center gap-2">
                 <span className="font-semibold text-bah-heading">{asset}</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
                   (t.data_health || t.status) === "HEALTHY" ? "bg-green-500/15 text-green-400" :
                   (t.data_health || t.status) === "DEGRADED" ? "bg-amber-500/15 text-amber-400" :
                   (t.data_health || t.status) === "STALE" || t.status === "STALE" ? "bg-red-500/15 text-red-400" :
                   t.status === "NEW_BAR_READY" ? "bg-green-500/15 text-green-400" :
                   "bg-bah-border text-bah-muted"
                 }`}>{t.data_health === "HEALTHY" ? (t.status === "NEW_BAR_READY" ? "NEW BAR" : "WAITING") : (t.data_health || t.status)}</span>
-                <span className="text-[10px] text-bah-muted font-mono">bar: {t.last_processed_bar?.slice(11, 16) || t.last_closed_bar?.slice(11, 16) || "?"}</span>
+                <span className="text-[11px] text-bah-muted font-mono">bar: {t.last_processed_bar?.slice(11, 16) || t.last_closed_bar?.slice(11, 16) || "?"}</span>
               </div>
             ))}
           </div>
-          <span className="text-[10px] text-bah-muted font-mono ml-auto">{timing.now_utc?.slice(11, 19)} UTC</span>
+          <span className="text-[11px] text-bah-muted font-mono ml-auto">{timing.now_utc?.slice(11, 19)} UTC</span>
         </div>
       )}
 
@@ -318,8 +318,8 @@ export default function DailyOperations() {
         })().map((m: any) => (
           <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-2.5 text-center">
             <div className={`text-lg font-bold font-mono ${m.c}`}>{m.v}</div>
-            <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
-            {m.sub && <div className="text-[8px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
+            <div className="text-[10px] text-bah-muted uppercase mt-0.5">{m.l}</div>
+            {m.sub && <div className="text-[9px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
           </div>
         ))}
       </div>
@@ -341,12 +341,12 @@ export default function DailyOperations() {
                       {regime==="TREND"?"📈":regime==="CRASH"?"🔻":"↔️"} {regime as string}
                     </span>
                   </div>
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                  <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
                     dataStatus==="OK"?"text-green-400 bg-green-500/10":dataStatus==="STALE"?"text-amber-400 bg-amber-500/10":"text-bah-muted bg-bah-border/50"
                   }`}>{dataStatus === "OK" ? "LIVE" : dataStatus === "SYNTHETIC" ? "SYNTHETIC" : dataStatus}</span>
                 </div>
                 {dataDetail && (
-                  <div className="text-[10px] text-bah-muted mt-1 font-mono truncate">{dataDetail}</div>
+                  <div className="text-[11px] text-bah-muted mt-1 font-mono truncate">{dataDetail}</div>
                 )}
               </div>
             );
@@ -368,7 +368,7 @@ export default function DailyOperations() {
       {/* ═══ CYCLE INSPECTOR ═══ */}
       {(tab === "cycle" || isMobile) && (
         <div className="space-y-3">
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-1">🔍 Cycle Inspector</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-1">🔍 Cycle Inspector</div>}
           {lc?.assets && lc.assets.length > 0 ? (
             <div className="grid grid-cols-1 gap-3">
               {lc.assets.map((a: any, i: number) => (
@@ -379,10 +379,10 @@ export default function DailyOperations() {
                       <span className={`text-xs font-semibold ${a.regime==="TREND"?"text-green-400":a.regime==="CRASH"?"text-red-400":"text-amber-400"}`}>
                         {a.regime} {a.regime_confidence ? `(${(a.regime_confidence*100).toFixed(0)}%)` : ""}
                       </span>
-                      {a.new_bar && <span className="text-[10px] px-1.5 py-0.5 rounded bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">NEW BAR</span>}
+                      {a.new_bar && <span className="text-[11px] px-1.5 py-0.5 rounded bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">NEW BAR</span>}
                       {a.bar_close > 0 && <span className="text-xs text-bah-muted font-mono">${a.bar_close.toLocaleString()}</span>}
                     </div>
-                    <span className="text-[10px] text-bah-muted font-mono">{a.timestamp || ""}</span>
+                    <span className="text-[11px] text-bah-muted font-mono">{a.timestamp || ""}</span>
                   </div>
                   {a.strategies_evaluated?.length > 0 ? (
                     <div className="divide-y divide-bah-border/40">
@@ -390,11 +390,11 @@ export default function DailyOperations() {
                         <div key={j} className="px-3 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-medium text-bah-heading">{s.strategy}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusBg(s.result === "EXECUTED" ? "SUCCESS" : s.result === "BLOCKED" ? "SKIPPED" : "")}`}>
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${statusBg(s.result === "EXECUTED" ? "SUCCESS" : s.result === "BLOCKED" ? "SKIPPED" : "")}`}>
                               <span className={resultClr(s.result)}>{s.result}</span>
                             </span>
                           </div>
-                          <div className="text-[11px] text-bah-muted mt-1">{s.reason}</div>
+                          <div className="text-[12px] text-bah-muted mt-1">{s.reason}</div>
                         </div>
                       ))}
                     </div>
@@ -437,7 +437,7 @@ export default function DailyOperations() {
       {/* ═══ STRATEGY CONDITIONS ═══ */}
       {(tab === "conditions" || isMobile) && (
         <div className="space-y-3">
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2">🎯 Strategy Conditions</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2">🎯 Strategy Conditions</div>}
           {Object.keys(stratConds).length > 0 ? (
             Object.entries(stratConds).map(([asset, data]: [string, any]) => (
               <div key={asset} className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
@@ -451,20 +451,20 @@ export default function DailyOperations() {
                     <div key={si} className="px-3 py-3">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-xs font-semibold text-bah-heading">{s.strategy}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
                           s.result==="SIGNAL"?"bg-green-500/15 text-green-400 border border-green-500/30":
                           s.result==="BLOCKED"?"bg-amber-500/15 text-amber-400 border border-amber-500/30":
                           "bg-bah-border text-bah-muted border border-bah-border"}`}>{s.result}</span>
                       </div>
-                      <div className="text-[11px] text-bah-muted mb-2">{s.reason}</div>
+                      <div className="text-[12px] text-bah-muted mb-2">{s.reason}</div>
                       <div className="space-y-1">
                         {(s.conditions || []).map((c: any, ci: number) => (
-                          <div key={ci} className="text-[11px]">
+                          <div key={ci} className="text-[12px]">
                             <span className={`font-bold ${c.passed?"text-green-400":"text-red-400"}`}>{c.passed?"✓":"✗"}</span>
                             {" "}<span className="text-bah-muted">{c.name}:</span>
                             {" "}<span className="font-mono text-bah-heading">{c.actual}</span>
                             {!c.passed && <span className="text-bah-muted"> → {c.target}</span>}
-                            {c.distance && c.distance !== "N/A" && <span className={`font-mono text-[10px] ${c.passed?"text-green-400/70":"text-amber-400"}`}> ({c.distance})</span>}
+                            {c.distance && c.distance !== "N/A" && <span className={`font-mono text-[11px] ${c.passed?"text-green-400/70":"text-amber-400"}`}> ({c.distance})</span>}
                           </div>
                         ))}
                       </div>
@@ -480,13 +480,13 @@ export default function DailyOperations() {
       {/* ═══ PERFORMANCE ═══ */}
       {(tab === "strategies" || isMobile) && (
         <div className="space-y-3">
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">📊 Performance</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">📊 Performance</div>}
 
           {/* Portfolio summary */}
           {performance?.portfolio && performance.has_data ? (
             <div className="bg-bah-surface border border-bah-border rounded-xl p-3 sm:p-4">
               <div className="text-xs font-semibold text-bah-heading mb-2">Portfolio Summary</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-[11px]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-[12px]">
                 <div><span className="text-bah-muted">Closed Trades</span><div className="text-bah-heading font-bold text-sm">{performance.portfolio.total_trades}</div></div>
                 <div><span className="text-bah-muted">Total PnL</span><div className={`font-bold text-sm font-mono ${performance.portfolio.pnl>=0?"text-green-400":"text-red-400"}`}>${performance.portfolio.pnl?.toFixed(0)}</div></div>
                 <div><span className="text-bah-muted">Win Rate</span><div className="text-bah-heading font-bold text-sm">{performance.portfolio.win_rate?.toFixed(1)}%</div></div>
@@ -527,7 +527,7 @@ export default function DailyOperations() {
                       <span className="text-xs font-semibold text-bah-heading">{n}</span>
                       <span className={`text-sm font-bold font-mono ${(s.pnl||0)>=0?"text-green-400":"text-red-400"}`}>${(s.pnl||0).toFixed(0)}</span>
                     </div>
-                    <div className="grid grid-cols-4 gap-2 text-[10px]">
+                    <div className="grid grid-cols-4 gap-2 text-[11px]">
                       <div><span className="text-bah-muted">Trades</span><div className="font-semibold">{s.total_trades||0}</div></div>
                       <div><span className="text-bah-muted">WR</span><div className="font-semibold">{(s.win_rate||0).toFixed(0)}%</div></div>
                       <div><span className="text-bah-muted">PF</span><div className="font-semibold">{(s.profit_factor||0).toFixed(2)}</div></div>
@@ -564,8 +564,8 @@ export default function DailyOperations() {
           {!performance?.has_data && (
             <div className="bg-bah-surface border border-bah-border rounded-xl p-6 text-center">
               <div className="text-sm text-bah-muted">No closed trades yet</div>
-              <div className="text-[11px] text-bah-muted mt-1">Engine is evaluating market conditions. Trades will appear when strategy conditions are met.</div>
-              <div className="text-[11px] text-bah-muted mt-2">Use <span className="text-bah-cyan">▶ Test Trade</span> below to verify the full lifecycle.</div>
+              <div className="text-[12px] text-bah-muted mt-1">Engine is evaluating market conditions. Trades will appear when strategy conditions are met.</div>
+              <div className="text-[12px] text-bah-muted mt-2">Use <span className="text-bah-cyan">▶ Test Trade</span> below to verify the full lifecycle.</div>
             </div>
           )}
 
@@ -573,9 +573,9 @@ export default function DailyOperations() {
           <div className="bg-bah-surface border border-bah-border rounded-xl p-3 sm:p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-bah-heading">🧪 Test Trade Mode</span>
-              <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">PAPER ONLY</span>
+              <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">PAPER ONLY</span>
             </div>
-            <div className="text-[11px] text-bah-muted mb-3">Run a controlled test trade to verify the signal → order → position → close lifecycle.</div>
+            <div className="text-[12px] text-bah-muted mb-3">Run a controlled test trade to verify the signal → order → position → close lifecycle.</div>
             <div className="flex gap-2 flex-wrap">
               <button disabled={testTradeLoading} onClick={async () => {
                 setTestTradeResult(null);
@@ -593,7 +593,7 @@ export default function DailyOperations() {
                   }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
                 setTestTradeLoading(false);
-              }} className="px-3 py-1.5 text-[11px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors disabled:opacity-50">
+              }} className="px-3 py-1.5 text-[12px] bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/25 transition-colors disabled:opacity-50">
                 {testTradeLoading ? "⟳ Opening..." : "▶ Open Test Trade (BTCUSD LONG)"}
               </button>
               <button disabled={testTradeLoading} onClick={async () => {
@@ -612,7 +612,7 @@ export default function DailyOperations() {
                   }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
                 setTestTradeLoading(false);
-              }} className="px-3 py-1.5 text-[11px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors disabled:opacity-50">
+              }} className="px-3 py-1.5 text-[12px] bg-red-500/15 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors disabled:opacity-50">
                 {testTradeLoading ? "⟳ Closing..." : "■ Close Test Trade"}
               </button>
               <button disabled={testTradeLoading} onClick={async () => {
@@ -629,7 +629,7 @@ export default function DailyOperations() {
                   }
                 } catch (e: any) { setTestTradeResult({ type: "error", error: e.message }); }
                 setTestTradeLoading(false);
-              }} className="px-3 py-1.5 text-[11px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors disabled:opacity-50">
+              }} className="px-3 py-1.5 text-[12px] bg-bah-border/50 text-bah-muted border border-bah-border rounded-lg hover:bg-bah-border/80 transition-colors disabled:opacity-50">
                 ℹ Test Status
               </button>
             </div>
@@ -657,7 +657,7 @@ export default function DailyOperations() {
 
                 {/* OPENED */}
                 {testTradeResult.status === "OPENED" && testTradeResult.position && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
                     <div><span className="text-bah-muted">Asset</span><div className="font-semibold text-bah-heading">{testTradeResult.position.asset}</div></div>
                     <div><span className="text-bah-muted">Direction</span><div className="font-semibold text-green-400">{testTradeResult.position.direction}</div></div>
                     <div><span className="text-bah-muted">Entry</span><div className="font-mono font-semibold text-bah-heading">${testTradeResult.position.entry_price?.toLocaleString()}</div></div>
@@ -665,13 +665,13 @@ export default function DailyOperations() {
                     <div><span className="text-red-400">Stop Loss</span><div className="font-mono text-red-400">${testTradeResult.position.stop_loss?.toLocaleString()}</div></div>
                     <div><span className="text-green-400">Take Profit</span><div className="font-mono text-green-400">${testTradeResult.position.take_profit?.toLocaleString()}</div></div>
                     <div><span className="text-bah-muted">Strategy</span><div className="text-bah-heading">{testTradeResult.position.strategy}</div></div>
-                    <div><span className="text-bah-muted">Order ID</span><div className="font-mono text-bah-muted text-[10px]">{testTradeResult.order_id}</div></div>
+                    <div><span className="text-bah-muted">Order ID</span><div className="font-mono text-bah-muted text-[11px]">{testTradeResult.order_id}</div></div>
                   </div>
                 )}
 
                 {/* CLOSED */}
                 {testTradeResult.status === "CLOSED" && testTradeResult.trade && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
                     <div><span className="text-bah-muted">Asset</span><div className="font-semibold text-bah-heading">{testTradeResult.trade.asset}</div></div>
                     <div><span className="text-bah-muted">PnL</span><div className={`font-bold font-mono text-sm ${testTradeResult.trade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>${testTradeResult.trade.pnl?.toFixed(2)}</div></div>
                     <div><span className="text-bah-muted">PnL %</span><div className={`font-semibold ${testTradeResult.trade.pnl_pct >= 0 ? "text-green-400" : "text-red-400"}`}>{testTradeResult.trade.pnl_pct?.toFixed(2)}%</div></div>
@@ -685,14 +685,14 @@ export default function DailyOperations() {
 
                 {/* STATUS */}
                 {testTradeResult.type === "status" && (
-                  <div className="text-[11px]">
+                  <div className="text-[12px]">
                     <div className="flex gap-4 mb-2">
                       <span className="text-bah-muted">Open positions: <span className="text-bah-heading font-semibold">{testTradeResult.open_test_positions || 0}</span></span>
                       <span className="text-bah-muted">Closed trades: <span className="text-bah-heading font-semibold">{testTradeResult.closed_test_trades || 0}</span></span>
                     </div>
                     {testTradeResult.positions?.length > 0 && (
                       <div className="space-y-1">{testTradeResult.positions.map((p: any, i: number) => (
-                        <div key={i} className="flex items-center gap-3 text-[10px] bg-bah-border/20 rounded px-2 py-1">
+                        <div key={i} className="flex items-center gap-3 text-[11px] bg-bah-border/20 rounded px-2 py-1">
                           <span className="font-semibold text-bah-heading">{p.asset}</span>
                           <span className="font-mono">${p.entry_price?.toLocaleString()}</span>
                           <span className={p.unrealized_pnl >= 0 ? "text-green-400" : "text-red-400"}>${p.unrealized_pnl?.toFixed(2)}</span>
@@ -704,12 +704,12 @@ export default function DailyOperations() {
 
                 {/* REJECTED/FAILED/ERROR */}
                 {(testTradeResult.status === "REJECTED" || testTradeResult.status === "FAILED" || testTradeResult.type === "error") && (
-                  <div className="text-[11px] text-red-400">{testTradeResult.reason || testTradeResult.error || "Unknown error"}</div>
+                  <div className="text-[12px] text-red-400">{testTradeResult.reason || testTradeResult.error || "Unknown error"}</div>
                 )}
 
                 {/* NOT_FOUND */}
                 {testTradeResult.status === "NOT_FOUND" && (
-                  <div className="text-[11px] text-bah-muted">{testTradeResult.reason || "No open test position to close."}</div>
+                  <div className="text-[12px] text-bah-muted">{testTradeResult.reason || "No open test position to close."}</div>
                 )}
               </div>
             )}
@@ -720,7 +720,7 @@ export default function DailyOperations() {
       {/* ═══ POSITIONS ═══ */}
       {(tab === "positions" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">📦 Positions</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">📦 Positions</div>}
           {positions?.positions?.length > 0 ? (
             <>
               <div className="hidden lg:block bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
@@ -746,10 +746,10 @@ export default function DailyOperations() {
                 {positions.positions.map((pos: any, i: number) => (
                   <div key={i} className="bg-bah-surface border border-bah-border rounded-xl p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div><span className="text-sm font-bold text-bah-heading">{pos.asset}</span> <span className="text-[10px] text-bah-muted">{pos.strategy}</span></div>
+                      <div><span className="text-sm font-bold text-bah-heading">{pos.asset}</span> <span className="text-[11px] text-bah-muted">{pos.strategy}</span></div>
                       <span className={`text-sm font-bold font-mono ${pos.unrealized_pnl>=0?"text-green-400":"text-red-400"}`}>${pos.unrealized_pnl.toFixed(0)}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
                       <div><span className="text-bah-muted">Entry</span><div className="font-mono text-bah-heading">${pos.entry_price.toLocaleString()}</div></div>
                       <div><span className="text-red-400">SL</span><div className="font-mono text-red-400">${pos.stop_loss.toLocaleString()}</div></div>
                       <div><span className="text-green-400">TP</span><div className="font-mono text-green-400">${pos.take_profit.toLocaleString()}</div></div>
@@ -765,7 +765,7 @@ export default function DailyOperations() {
       {/* ═══ TRADES ═══ */}
       {(tab === "trades" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">🔁 Trades</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">🔁 Trades</div>}
           {trades?.trades?.length > 0 ? (
             <>
               <div className="hidden lg:block bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
@@ -791,8 +791,8 @@ export default function DailyOperations() {
                   <div key={i} className="bg-bah-surface border border-bah-border rounded-xl p-3 flex items-center justify-between">
                     <div>
                       <span className="text-xs font-bold text-bah-heading">{t.asset}</span>
-                      <span className="text-[10px] text-bah-muted ml-1">{t.strategy}</span>
-                      <div className="text-[10px] text-bah-muted font-mono mt-0.5">${t.entry_price.toLocaleString()} → ${t.exit_price.toLocaleString()} · {t.exit_reason}</div>
+                      <span className="text-[11px] text-bah-muted ml-1">{t.strategy}</span>
+                      <div className="text-[11px] text-bah-muted font-mono mt-0.5">${t.entry_price.toLocaleString()} → ${t.exit_price.toLocaleString()} · {t.exit_reason}</div>
                     </div>
                     <span className={`text-sm font-bold font-mono ${t.pnl>=0?"text-green-400":"text-red-400"}`}>{t.pnl>=0?"+":""}${t.pnl.toFixed(0)}</span>
                   </div>
@@ -806,13 +806,13 @@ export default function DailyOperations() {
       {/* ═══ ALERTS ═══ */}
       {(tab === "alerts" || isMobile) && (
         <div>
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length - hiddenAlerts.length})</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2">⚠️ Alerts ({alerts.length - hiddenAlerts.length})</div>}
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
             {alerts.length > hiddenAlerts.length ? (
               <>
                 <div className="px-3 py-2 border-b border-bah-border flex items-center justify-between">
-                  <span className="text-[10px] text-bah-muted">{alerts.length - hiddenAlerts.length} alert{alerts.length - hiddenAlerts.length !== 1 ? "s" : ""}</span>
-                  <button onClick={async () => { setHiddenAlerts(alerts.map((_, idx) => idx)); try { await fetch(`${apiBase()}/monitoring/alerts/dismiss-all`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} }); } catch {} }} className="text-[10px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">Archive All</button>
+                  <span className="text-[11px] text-bah-muted">{alerts.length - hiddenAlerts.length} alert{alerts.length - hiddenAlerts.length !== 1 ? "s" : ""}</span>
+                  <button onClick={async () => { setHiddenAlerts(alerts.map((_, idx) => idx)); try { await fetch(`${apiBase()}/monitoring/alerts/dismiss-all`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} }); } catch {} }} className="text-[11px] text-bah-muted hover:text-bah-heading transition-colors px-2 py-1 rounded hover:bg-white/[0.03]">Archive All</button>
                 </div>
                 <div className="divide-y divide-bah-border/50">{alerts.slice(0, 30).map((a: any, i: number) => {
                 if (hiddenAlerts.includes(i)) return null;
@@ -836,11 +836,11 @@ export default function DailyOperations() {
                 return (
                 <div key={i} className={`px-3 py-3 ${a.level==="CRITICAL"?"bg-red-500/5":a.level==="WARNING"?"bg-amber-500/5":""}`}>
                   <div className="flex items-start gap-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{String(a.level)}</span>
+                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0 ${a.level==="CRITICAL"?"bg-red-500/20 text-red-400":a.level==="WARNING"?"bg-amber-500/20 text-amber-400":"bg-bah-border text-bah-muted"}`}>{String(a.level)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-bah-heading">{String(a.title)}</div>
-                      <div className="text-[11px] text-bah-muted mt-0.5 break-words">{String(a.message)}</div>
-                      <div className={`mt-2 text-[11px] px-2.5 py-2 rounded-lg border ${advCls}`}>
+                      <div className="text-[12px] text-bah-muted mt-0.5 break-words">{String(a.message)}</div>
+                      <div className={`mt-2 text-[12px] px-2.5 py-2 rounded-lg border ${advCls}`}>
                         <div className="text-bah-heading font-medium">{icon} {advice}</div>
                         {fix && <div className="text-bah-muted mt-1">{"→ "}{fix}</div>}
                       </div>
@@ -854,14 +854,14 @@ export default function DailyOperations() {
                             });
                             setAlerts(prev => prev.filter(al => al.key !== a.key));
                           } catch {}
-                        }} className="text-[10px] font-medium text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-500/30 hover:bg-red-500/15 transition-colors" title="Acknowledge this alert">
+                        }} className="text-[11px] font-medium text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-500/30 hover:bg-red-500/15 transition-colors" title="Acknowledge this alert">
                           ACK
                         </button>
                       )}
-                      <button onClick={async () => { setHiddenAlerts(h => [...h, i]); try { const key = a.key || a.title || ""; if (key) await fetch(`${apiBase()}/monitoring/alerts/dismiss`, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ key }) }); } catch {} }} className="text-[10px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Dismiss">✕</button>
+                      <button onClick={async () => { setHiddenAlerts(h => [...h, i]); try { const key = a.key || a.title || ""; if (key) await fetch(`${apiBase()}/monitoring/alerts/dismiss`, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ key }) }); } catch {} }} className="text-[11px] text-bah-muted hover:text-bah-heading shrink-0 px-1.5 py-0.5 rounded hover:bg-white/[0.05]" title="Dismiss">✕</button>
                     </div>
                   </div>
-                  <div className="text-[10px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
+                  <div className="text-[11px] text-bah-muted font-mono mt-1 text-right">{fmtTime(a.timestamp)}</div>
                 </div>
                 );
               })}</div>
@@ -880,7 +880,7 @@ export default function DailyOperations() {
       {/* ═══ TRAINING UNIVERSE ═══ */}
       {(tab === "training" || isMobile) && (
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-          {isMobile && <div className="text-[10px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2 px-3">🧪 Training Universe</div>}
+          {isMobile && <div className="text-[11px] font-semibold text-bah-muted uppercase tracking-widest pt-2 pb-2 px-3">🧪 Training Universe</div>}
           <TrainingPanel token={token} apiBase={apiBase} />
         </div>
       )}
@@ -916,12 +916,12 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
       {/* Header stats */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">PAPER ONLY</span>
+          <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">PAPER ONLY</span>
           <span className="text-xs text-bah-muted">{d.universe_size || 0} assets in training universe</span>
         </div>
         <div className="flex items-center gap-2">
-          {d.last_cycle && <span className="text-[10px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
-          <a href="/training-operations" className="px-2.5 py-1 text-[10px] font-semibold text-bah-cyan border border-bah-cyan/30 rounded hover:bg-bah-cyan/10 transition-colors">Full Dashboard →</a>
+          {d.last_cycle && <span className="text-[11px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
+          <a href="/training-operations" className="px-2.5 py-1 text-[11px] font-semibold text-bah-cyan border border-bah-cyan/30 rounded hover:bg-bah-cyan/10 transition-colors">Full Dashboard →</a>
         </div>
       </div>
 
@@ -929,21 +929,21 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
           <div className="text-lg font-bold text-bah-heading">{d.open_positions || 0}</div>
-          <div className="text-[10px] text-bah-muted uppercase">Open Positions</div>
+          <div className="text-[11px] text-bah-muted uppercase">Open Positions</div>
         </div>
         <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
           <div className="text-lg font-bold text-bah-heading">{d.total_closed_trades || 0}</div>
-          <div className="text-[10px] text-bah-muted uppercase">Closed Trades</div>
+          <div className="text-[11px] text-bah-muted uppercase">Closed Trades</div>
         </div>
         <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
           <div className={`text-lg font-bold ${(d.total_pnl||0) >= 0 ? "text-green-400" : "text-red-400"}`}>
             ${(d.total_pnl||0).toLocaleString(undefined,{minimumFractionDigits:0})}
           </div>
-          <div className="text-[10px] text-bah-muted uppercase">Total PnL (Paper)</div>
+          <div className="text-[11px] text-bah-muted uppercase">Total PnL (Paper)</div>
         </div>
         <div className="bg-bah-bg border border-bah-border rounded-lg p-3 text-center">
           <div className="text-lg font-bold text-bah-heading">{((d.win_rate||0)*100).toFixed(1)}%</div>
-          <div className="text-[10px] text-bah-muted uppercase">Win Rate</div>
+          <div className="text-[11px] text-bah-muted uppercase">Win Rate</div>
         </div>
       </div>
 
@@ -954,9 +954,9 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {Object.entries(d.class_stats).map(([cls, s]: [string, any]) => (
               <div key={cls} className="bg-bah-bg border border-bah-border rounded-lg p-2.5">
-                <div className="text-[10px] text-bah-muted uppercase mb-1">{cls}</div>
+                <div className="text-[11px] text-bah-muted uppercase mb-1">{cls}</div>
                 <div className="text-xs text-bah-heading font-semibold">{s.trades} trades</div>
-                <div className={`text-[10px] ${s.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                <div className={`text-[11px] ${s.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                   ${s.total_pnl?.toFixed(0)} · {((s.win_rate||0)*100).toFixed(0)}% WR
                 </div>
               </div>
@@ -971,7 +971,7 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
           <h3 className="text-xs font-semibold text-bah-heading mb-2">By Strategy</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase">
+              <thead><tr className="border-b border-bah-border text-left text-[11px] text-bah-muted uppercase">
                 <th className="py-2 pr-3">Strategy</th><th className="py-2 pr-3">Trades</th><th className="py-2 pr-3">Win Rate</th><th className="py-2 pr-3">PnL</th>
               </tr></thead>
               <tbody>
@@ -994,8 +994,8 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
         <div>
           <h3 className="text-xs font-semibold text-bah-heading mb-2">Recent Closed Trades</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead><tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase">
+            <table className="w-full text-[12px]">
+              <thead><tr className="border-b border-bah-border text-left text-[11px] text-bah-muted uppercase">
                 <th className="py-1.5 pr-2">Asset</th><th className="py-1.5 pr-2">Strategy</th><th className="py-1.5 pr-2">Dir</th>
                 <th className="py-1.5 pr-2">PnL</th><th className="py-1.5 pr-2">Exit</th><th className="py-1.5 pr-2">Bars</th>
               </tr></thead>

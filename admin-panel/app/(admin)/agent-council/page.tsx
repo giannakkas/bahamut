@@ -55,7 +55,7 @@ export default function AgentCouncilPage() {
                   {(a.globalScore * 100).toFixed(0)}%
                 </div>
                 {a.provisional && (
-                  <div className="text-[9px] text-amber-400 mt-1">PROVISIONAL</div>
+                  <div className="text-[10px] text-amber-400 mt-1">PROVISIONAL</div>
                 )}
               </div>
             ))}

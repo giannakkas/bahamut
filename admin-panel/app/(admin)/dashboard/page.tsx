@@ -83,7 +83,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {/* Kill Switch — detailed */}
         <Card glowColor={summary.kill_switch.active ? "#ef4444" : "#10b981"}>
-          <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">Kill Switch</div>
+          <div className="text-[11px] text-bah-muted uppercase tracking-widest mb-1">Kill Switch</div>
           <div className="flex items-center gap-2 mt-1">
             <Pulse color={summary.kill_switch.active ? "#ef4444" : "#10b981"} />
             <span className="text-base font-bold" style={{ color: summary.kill_switch.active ? "#ef4444" : "#10b981" }}>
@@ -91,10 +91,10 @@ export default function DashboardPage() {
             </span>
           </div>
           {summary.kill_switch.reason && (
-            <div className="text-[11px] text-bah-red mt-2">Reason: {summary.kill_switch.reason}</div>
+            <div className="text-[12px] text-bah-red mt-2">Reason: {summary.kill_switch.reason}</div>
           )}
           {killRecovery && killRecovery.status !== "normal" && (
-            <div className="mt-2 text-[10px]">
+            <div className="mt-2 text-[11px]">
               <span className={killRecovery.status === "recovering" ? "text-amber-400" : killRecovery.status === "cooldown" ? "text-red-400" : "text-bah-muted"}>
                 Recovery: {killRecovery.status}
               </span>
@@ -103,11 +103,11 @@ export default function DashboardPage() {
               )}
             </div>
           )}
-          <div className="text-[10px] text-bah-muted mt-2">
+          <div className="text-[11px] text-bah-muted mt-2">
             Last triggered: {fmtTime(summary.kill_switch.last_triggered)}
           </div>
           {killRecovery?.trigger_count_today > 0 && (
-            <div className="text-[10px] text-amber-400 mt-0.5">
+            <div className="text-[11px] text-amber-400 mt-0.5">
               Triggers today: {killRecovery.trigger_count_today}
             </div>
           )}
@@ -115,24 +115,24 @@ export default function DashboardPage() {
 
         {/* Risk Level */}
         <Card glowColor={riskColor}>
-          <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">Risk Level</div>
+          <div className="text-[11px] text-bah-muted uppercase tracking-widest mb-1">Risk Level</div>
           <div className="text-[22px] font-bold" style={{ color: riskColor }}>{summary.risk_level}</div>
           <div className="mt-2"><RiskGauge value={risk.total_risk} /></div>
         </Card>
 
         {/* Readiness */}
         <Card glowColor={readinessColor}>
-          <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">Readiness Score</div>
+          <div className="text-[11px] text-bah-muted uppercase tracking-widest mb-1">Readiness Score</div>
           <div className="text-[22px] font-bold" style={{ color: readinessColor }}>{pct(summary.readiness.score)}</div>
           <div className="text-sm font-bold mt-0.5" style={{ color: readinessColor }}>Grade: {summary.readiness.grade}</div>
           <div className="mt-3 flex flex-col gap-1.5">
             {Object.entries(summary.readiness.components).map(([k, v]: [string, any]) => (
               <div key={k} className="flex items-center gap-2">
-                <span className="text-[10px] text-bah-subtle w-12 capitalize">{k}</span>
+                <span className="text-[11px] text-bah-subtle w-12 capitalize">{k}</span>
                 <div className="flex-1 h-1 bg-white/[0.04] rounded overflow-hidden">
                   <div className="h-full rounded transition-all duration-500" style={{ width: pct(v), background: v >= 0.8 ? "#10b981" : "#f59e0b" }} />
                 </div>
-                <span className="text-[10px] text-bah-subtle w-9 text-right">{pct(v)}</span>
+                <span className="text-[11px] text-bah-subtle w-9 text-right">{pct(v)}</span>
               </div>
             ))}
           </div>
@@ -140,7 +140,7 @@ export default function DashboardPage() {
 
         {/* Confidence */}
         <Card glowColor="#14b8a6">
-          <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">Confidence Score</div>
+          <div className="text-[11px] text-bah-muted uppercase tracking-widest mb-1">Confidence Score</div>
           <div className="text-[22px] font-bold text-bah-teal">{pct(summary.confidence.score)}</div>
           <div className="flex items-center gap-1.5 mt-1">
             <Badge color={summary.confidence.trend === "rising" ? "#10b981" : summary.confidence.trend === "falling" ? "#ef4444" : "#64748b"}>
@@ -167,19 +167,19 @@ export default function DashboardPage() {
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-white/[0.02] rounded-lg p-2">
               <div className="text-lg font-bold text-bah-heading">{learning?.samples_collected || 0}</div>
-              <div className="text-[9px] text-bah-muted">Samples</div>
+              <div className="text-[10px] text-bah-muted">Samples</div>
             </div>
             <div className="bg-white/[0.02] rounded-lg p-2">
               <div className="text-lg font-bold text-bah-heading">{learning?.patterns_detected || 0}</div>
-              <div className="text-[9px] text-bah-muted">Patterns</div>
+              <div className="text-[10px] text-bah-muted">Patterns</div>
             </div>
             <div className="bg-white/[0.02] rounded-lg p-2">
               <div className="text-lg font-bold text-bah-heading">{learning?.closed_trades || 0}</div>
-              <div className="text-[9px] text-bah-muted">Closed Trades</div>
+              <div className="text-[10px] text-bah-muted">Closed Trades</div>
             </div>
           </div>
           {learning?.next_milestone && (
-            <div className="text-[10px] text-bah-muted mt-2">Next: {learning.next_milestone}</div>
+            <div className="text-[11px] text-bah-muted mt-2">Next: {learning.next_milestone}</div>
           )}
         </Card>
 
@@ -194,11 +194,11 @@ export default function DashboardPage() {
                     <span className={`text-xs font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>
                       {p.direction === "LONG" ? "▲" : "▼"}
                     </span>
-                    <span className="text-[11px] font-semibold text-bah-heading">{p.asset}</span>
-                    <span className="text-[10px] text-bah-muted">{p.status}</span>
+                    <span className="text-[12px] font-semibold text-bah-heading">{p.asset}</span>
+                    <span className="text-[11px] text-bah-muted">{p.status}</span>
                   </div>
                   <div className="text-right">
-                    <span className={`text-[11px] font-mono font-semibold ${(p.unrealized_pnl || p.realized_pnl || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    <span className={`text-[12px] font-mono font-semibold ${(p.unrealized_pnl || p.realized_pnl || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
                       {(p.unrealized_pnl || p.realized_pnl || 0) >= 0 ? "+" : ""}${(p.unrealized_pnl || p.realized_pnl || 0).toFixed(2)}
                     </span>
                   </div>
@@ -206,7 +206,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <div className="text-[11px] text-bah-muted text-center py-4">No positions yet</div>
+            <div className="text-[12px] text-bah-muted text-center py-4">No positions yet</div>
           )}
         </Card>
       </div>
@@ -216,18 +216,18 @@ export default function DashboardPage() {
         <Card glowColor="#06b6d4">
           <div className="flex justify-between items-center mb-3">
             <div className="text-xs font-semibold text-bah-heading">Top Risk Contributors</div>
-            <div className="text-[10px] text-bah-muted">Quality: <span className="text-bah-cyan">{fmt(risk.quality_ratio)}</span></div>
+            <div className="text-[11px] text-bah-muted">Quality: <span className="text-bah-cyan">{fmt(risk.quality_ratio)}</span></div>
           </div>
           {risk.contributors && risk.contributors.length > 0 ? risk.contributors.map((c: any) => (
             <div key={c.asset} className="flex items-center gap-2 py-1">
-              <span className="w-9 text-[11px] font-semibold text-bah-heading">{c.asset}</span>
+              <span className="w-9 text-[12px] font-semibold text-bah-heading">{c.asset}</span>
               <div className="flex-1 h-1.5 bg-white/[0.04] rounded overflow-hidden">
                 <div className="h-full rounded bg-gradient-to-r from-bah-cyan/50 to-bah-cyan/20" style={{ width: `${c.contribution_pct}%` }} />
               </div>
-              <span className="text-[10px] text-bah-subtle w-10 text-right">{c.contribution_pct}%</span>
+              <span className="text-[11px] text-bah-subtle w-10 text-right">{c.contribution_pct}%</span>
             </div>
           )) : (
-            <div className="text-[11px] text-bah-muted text-center py-4">No risk contributors yet</div>
+            <div className="text-[12px] text-bah-muted text-center py-4">No risk contributors yet</div>
           )}
         </Card>
         <ScenarioChart scenarios={risk.scenarios || []} />

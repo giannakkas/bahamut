@@ -16,7 +16,7 @@ export function TopBar({ title, subtitle, children }: TopBarProps) {
           {title}
         </h1>
         {subtitle && (
-          <p className="text-[10px] text-bah-muted mt-0.5">{subtitle}</p>
+          <p className="text-[11px] text-bah-muted mt-0.5">{subtitle}</p>
         )}
       </div>
       {children && <div className="flex items-center gap-2">{children}</div>}

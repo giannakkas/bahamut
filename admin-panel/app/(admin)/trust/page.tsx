@@ -9,7 +9,7 @@ const matC = (m: string) => m === "mature" ? "text-green-400" : m === "developin
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-bah-card border border-bah-border rounded-xl p-4">
-      <h3 className="text-[10px] font-bold text-bah-muted uppercase tracking-wider mb-3">{title}</h3>
+      <h3 className="text-[11px] font-bold text-bah-muted uppercase tracking-wider mb-3">{title}</h3>
       {children}
     </div>
   );
@@ -20,11 +20,11 @@ function TrustBar({ value, label }: { value: number; label: string }) {
   const color = value >= 0.6 ? "bg-green-500" : value >= 0.5 ? "bg-yellow-500" : "bg-red-500";
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[9px] text-bah-muted w-12 text-right">{label}</span>
+      <span className="text-[10px] text-bah-muted w-12 text-right">{label}</span>
       <div className="flex-1 h-3 bg-bah-surface rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
       </div>
-      <span className={`text-[10px] font-bold w-10 ${trustC(value)}`}>{value.toFixed(3)}</span>
+      <span className={`text-[11px] font-bold w-10 ${trustC(value)}`}>{value.toFixed(3)}</span>
     </div>
   );
 }
@@ -68,7 +68,7 @@ export default function TrustPage() {
                 <div className={`h-full rounded-full ${s.trust >= 0.6 ? "bg-green-500" : s.trust >= 0.5 ? "bg-yellow-500" : "bg-red-500"}`}
                      style={{ width: `${s.trust * 100}%` }} />
               </div>
-              <div className="grid grid-cols-3 gap-1 mt-2 text-[8px]">
+              <div className="grid grid-cols-3 gap-1 mt-2 text-[9px]">
                 <div><span className="text-bah-muted">Samples:</span> <span className="text-bah-heading font-bold">{s.samples}</span></div>
                 <div><span className="text-bah-muted">WR:</span> <span className="text-bah-heading font-bold">{(s.wr * 100).toFixed(0)}%</span></div>
                 <div><span className="text-bah-muted">Mat:</span> <span className={`font-bold ${matC(s.maturity)}`}>{s.maturity}</span></div>
@@ -97,7 +97,7 @@ export default function TrustPage() {
                 <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-bah-border/20">
                   <div>
                     <span className="font-bold text-bah-heading">{p.key}</span>
-                    <span className={`ml-2 text-[8px] font-bold ${matC(p.maturity)}`}>{p.maturity}</span>
+                    <span className={`ml-2 text-[9px] font-bold ${matC(p.maturity)}`}>{p.maturity}</span>
                   </div>
                   <div className="flex gap-3">
                     <span className="text-bah-muted">{p.trades}T</span>
@@ -116,7 +116,7 @@ export default function TrustPage() {
                 <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-bah-border/20">
                   <div>
                     <span className="font-bold text-bah-heading">{p.key}</span>
-                    <span className={`ml-2 text-[8px] font-bold ${matC(p.maturity)}`}>{p.maturity}</span>
+                    <span className={`ml-2 text-[9px] font-bold ${matC(p.maturity)}`}>{p.maturity}</span>
                   </div>
                   <div className="flex gap-3">
                     <span className="text-bah-muted">{p.trades}T</span>
@@ -179,7 +179,7 @@ export default function TrustPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Section title="💰 Best Assets">
             <table className="w-full text-xs">
-              <thead><tr className="text-bah-muted text-[9px]">
+              <thead><tr className="text-bah-muted text-[10px]">
                 <th className="text-left">Asset</th><th className="text-left">Class</th><th className="text-right">Trades</th>
                 <th className="text-right">WR</th><th className="text-right">PnL</th><th className="text-right">Avg R</th>
               </tr></thead>
@@ -200,7 +200,7 @@ export default function TrustPage() {
 
           <Section title="📉 Worst Assets">
             <table className="w-full text-xs">
-              <thead><tr className="text-bah-muted text-[9px]">
+              <thead><tr className="text-bah-muted text-[10px]">
                 <th className="text-left">Asset</th><th className="text-left">Class</th><th className="text-right">Trades</th>
                 <th className="text-right">WR</th><th className="text-right">PnL</th><th className="text-right">Avg R</th>
               </tr></thead>
@@ -231,7 +231,7 @@ export default function TrustPage() {
                     <span className="text-sm font-black text-bah-heading">{regime}</span>
                     <span className={`text-lg font-black ${pnlC(s.pnl)}`}>{s.pnl >= 0 ? "+" : ""}${s.pnl.toFixed(0)}</span>
                   </div>
-                  <div className="flex gap-4 mt-1 text-[9px] text-bah-muted">
+                  <div className="flex gap-4 mt-1 text-[10px] text-bah-muted">
                     <span>{s.trades} trades</span>
                     <span>WR: {(s.wr * 100).toFixed(0)}%</span>
                     <span>{s.wins}W / {s.losses}L</span>
@@ -250,7 +250,7 @@ export default function TrustPage() {
                     <span className={`text-sm font-black ${dir === "LONG" ? "text-green-400" : "text-red-400"}`}>{dir}</span>
                     <span className={`text-lg font-black ${pnlC(s.pnl)}`}>{s.pnl >= 0 ? "+" : ""}${s.pnl.toFixed(0)}</span>
                   </div>
-                  <div className="text-[9px] text-bah-muted mt-1">{s.trades} trades · {s.wins} wins</div>
+                  <div className="text-[10px] text-bah-muted mt-1">{s.trades} trades · {s.wins} wins</div>
                 </div>
               ))}
             </div>

@@ -47,11 +47,11 @@ export function ConfigEditor({
       {/* Label */}
       <div className="flex-[1.5] min-w-0">
         <div
-          className={`text-[11px] font-medium ${isModified ? "text-bah-amber" : "text-bah-heading"}`}
+          className={`text-[12px] font-medium ${isModified ? "text-bah-amber" : "text-bah-heading"}`}
         >
           {shortKey}
         </div>
-        <div className="text-[9px] text-bah-muted mt-0.5 truncate">
+        <div className="text-[10px] text-bah-muted mt-0.5 truncate">
           {meta.description}
         </div>
       </div>
@@ -89,7 +89,7 @@ export function ConfigEditor({
                 [&::-webkit-slider-thumb]:bg-bah-cyan [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(6,182,212,0.4)]
                 [&::-webkit-slider-thumb]:cursor-pointer"
             />
-            <span className="text-[11px] text-bah-cyan font-semibold min-w-[40px] text-right">
+            <span className="text-[12px] text-bah-cyan font-semibold min-w-[40px] text-right">
               {fmt(displaySliderVal)}
             </span>
           </div>

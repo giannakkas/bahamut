@@ -36,7 +36,7 @@ export default function AdaptiveRiskPage() {
           ].map(item => (
             <div key={item.label} className="bg-white/[0.02] rounded-lg p-3 text-center">
               <div className={`text-lg font-bold ${item.color}`}>{item.value}</div>
-              <div className="text-[10px] text-bah-muted uppercase">{item.label}</div>
+              <div className="text-[11px] text-bah-muted uppercase">{item.label}</div>
             </div>
           ))}
         </div>
@@ -50,7 +50,7 @@ export default function AdaptiveRiskPage() {
             <div key={key} className="flex items-center justify-between py-2 border-b border-bah-border/30 last:border-0">
               <div>
                 <div className="text-sm text-bah-heading font-medium">{key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</div>
-                <div className="text-[10px] text-bah-muted">{adj.reason}</div>
+                <div className="text-[11px] text-bah-muted">{adj.reason}</div>
               </div>
               <div className="text-right">
                 <div className="text-sm font-mono">

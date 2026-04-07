@@ -90,25 +90,25 @@ export default function OverridesPage() {
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-[13px] font-semibold text-bah-amber">
+                    <div className="text-[14px] font-semibold text-bah-amber">
                       {o.key}
                     </div>
-                    <div className="text-[11px] text-bah-subtle mt-1">
+                    <div className="text-[12px] text-bah-subtle mt-1">
                       Override value:{" "}
                       <span className="text-bah-heading font-semibold">
                         {String(o.value)}
                       </span>
                     </div>
                     {o.reason && (
-                      <div className="text-[10px] text-bah-muted mt-0.5">
+                      <div className="text-[11px] text-bah-muted mt-0.5">
                         Reason: {o.reason}
                       </div>
                     )}
                     <div className="flex gap-3 mt-2">
-                      <span className="text-[10px] text-bah-muted">
+                      <span className="text-[11px] text-bah-muted">
                         Created: {fmtTime(o.created) || "—"}
                       </span>
-                      <span className={`text-[10px] ${expiryColor}`}>
+                      <span className={`text-[11px] ${expiryColor}`}>
                         {expiryText}
                       </span>
                     </div>

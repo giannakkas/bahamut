@@ -43,7 +43,7 @@ export default function PaperTradingPage() {
         <div>
           <h1 className="text-xl font-bold text-bah-heading flex items-center gap-3">
             Self-Learning Engine
-            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded-full font-semibold border border-green-500/30">
+            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[11px] rounded-full font-semibold border border-green-500/30">
               PAPER TRADING
             </span>
           </h1>
@@ -68,7 +68,7 @@ export default function PaperTradingPage() {
         ].map(m => (
           <div key={m.label} className="bg-bah-surface border border-bah-border rounded-xl p-3 text-center">
             <div className={`text-lg font-bold ${m.color}`}>{m.value}</div>
-            <div className="text-[9px] text-bah-muted uppercase mt-0.5">{m.label}</div>
+            <div className="text-[10px] text-bah-muted uppercase mt-0.5">{m.label}</div>
           </div>
         ))}
       </div>
@@ -82,7 +82,7 @@ export default function PaperTradingPage() {
           </div>
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase">
+              <tr className="border-b border-bah-border text-[11px] text-bah-muted uppercase">
                 <th className="px-3 py-2 text-left">Asset</th>
                 <th className="px-3 py-2 text-left">Direction</th>
                 <th className="px-3 py-2 text-right">Invested</th>
@@ -100,7 +100,7 @@ export default function PaperTradingPage() {
                 <tr key={i} className="border-b border-bah-border/30 hover:bg-white/[0.02]">
                   <td className="px-3 py-2 font-semibold text-bah-heading">{pos.asset}</td>
                   <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                    <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
                       pos.direction === "LONG" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
                     }`}>
                       {pos.direction === "LONG" ? "▲" : "▼"} {pos.direction}
@@ -143,7 +143,7 @@ export default function PaperTradingPage() {
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase">
+              <tr className="border-b border-bah-border text-[11px] text-bah-muted uppercase">
                 <th className="px-3 py-2 text-left">Asset</th>
                 <th className="px-3 py-2 text-left">Direction</th>
                 <th className="px-3 py-2 text-right">Entry</th>
@@ -177,7 +177,7 @@ export default function PaperTradingPage() {
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase">
+              <tr className="border-b border-bah-border text-[11px] text-bah-muted uppercase">
                 <th className="px-3 py-2 text-left">Agent</th>
                 <th className="px-3 py-2 text-right">Trades</th>
                 <th className="px-3 py-2 text-right">Win Rate</th>
@@ -207,7 +207,7 @@ export default function PaperTradingPage() {
         <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase">
+              <tr className="border-b border-bah-border text-[11px] text-bah-muted uppercase">
                 <th className="px-3 py-2 text-left">Agent</th>
                 <th className="px-3 py-2 text-left">Asset</th>
                 <th className="px-3 py-2 text-left">Correct</th>

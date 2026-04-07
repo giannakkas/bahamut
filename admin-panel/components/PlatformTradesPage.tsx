@@ -88,7 +88,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center">
         <div className="text-bah-muted text-sm mb-2">{data?.error || `Cannot connect to ${label}`}</div>
-        <div className="text-bah-muted text-[10px]">Check API keys in Railway environment variables</div>
+        <div className="text-bah-muted text-[11px]">Check API keys in Railway environment variables</div>
       </div>
     </div>
   );
@@ -113,14 +113,14 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           )}
           <div>
             <h1 className="text-lg font-bold text-bah-heading">{label} Trades</h1>
-            <p className="text-[10px] text-bah-muted">
+            <p className="text-[11px] text-bah-muted">
               Live from {label} API · {s.total_trades || 0} round-trip trades · Last refresh: {new Date().toLocaleTimeString()}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${wsStatus === "connected" ? "bg-green-400 animate-pulse" : "bg-red-400"}`} />
-          <span className={`text-[10px] font-bold ${wsStatus === "connected" ? "text-green-400" : "text-red-400"}`}>
+          <span className={`text-[11px] font-bold ${wsStatus === "connected" ? "text-green-400" : "text-red-400"}`}>
             {wsStatus === "connected" ? "LIVE" : "OFFLINE"}
           </span>
         </div>
@@ -159,12 +159,12 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               </div>
               <div className="flex-1">
                 <div className={`text-base font-bold ${sentiment.fear_greed.value <= 24 ? "text-red-500" : sentiment.fear_greed.value <= 39 ? "text-orange-500" : sentiment.fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.fear_greed.classification}</div>
-                <div className="text-[10px] text-bah-muted">Source: alternative.me · Free</div>
+                <div className="text-[11px] text-bah-muted">Source: alternative.me · Free</div>
                 <div className="mt-1.5">
                   {sentiment.fear_greed.should_block_longs ? (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 ALL CRYPTO LONGS BLOCKED</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 ALL CRYPTO LONGS BLOCKED</span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ CRYPTO LONGS ALLOWED</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ CRYPTO LONGS ALLOWED</span>
                   )}
                 </div>
               </div>
@@ -198,18 +198,18 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               </div>
               <div className="flex-1">
                 <div className={`text-base font-bold ${sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" : sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" : sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.cnn_fear_greed.classification}</div>
-                <div className="text-[10px] text-bah-muted">Source: CNN · Free</div>
+                <div className="text-[11px] text-bah-muted">Source: CNN · Free</div>
                 <div className="mt-1.5">
                   {sentiment.cnn_fear_greed.should_block_longs ? (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 STOCK LONGS BLOCKED</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 STOCK LONGS BLOCKED</span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ STOCK LONGS ALLOWED</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ STOCK LONGS ALLOWED</span>
                   )}
                 </div>
                 {sentiment.cnn_fear_greed.indicators && Object.keys(sentiment.cnn_fear_greed.indicators).length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {Object.entries(sentiment.cnn_fear_greed.indicators).map(([key, ind]: [string, any]) => (
-                      <span key={key} className={`px-1.5 py-0.5 rounded text-[8px] border ${ind.rating === "extreme fear" ? "bg-red-500/10 border-red-500/20 text-red-400" : ind.rating === "fear" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : ind.rating === "greed" ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"}`}>
+                      <span key={key} className={`px-1.5 py-0.5 rounded text-[9px] border ${ind.rating === "extreme fear" ? "bg-red-500/10 border-red-500/20 text-red-400" : ind.rating === "fear" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : ind.rating === "greed" ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"}`}>
                         {ind.score} {key.replace(/_/g, " ")}
                       </span>
                     ))}
@@ -243,7 +243,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-sm sm:text-base font-bold ${card.c}`}>{card.v}</div>
-            <div className="text-[8px] text-bah-muted uppercase tracking-wider mt-0.5">{card.l}</div>
+            <div className="text-[9px] text-bah-muted uppercase tracking-wider mt-0.5">{card.l}</div>
           </div>
         ))}
       </div>
@@ -254,7 +254,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           {s.best_trade && (
             <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 flex justify-between items-center">
               <div>
-                <div className="text-[9px] text-green-400/60 uppercase font-bold">Best Trade</div>
+                <div className="text-[10px] text-green-400/60 uppercase font-bold">Best Trade</div>
                 <div className="text-sm text-bah-heading font-bold">{s.best_trade.asset}</div>
               </div>
               <div className="text-lg font-bold text-green-400">{fmS(s.best_trade.pnl)}</div>
@@ -263,7 +263,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           {s.worst_trade && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex justify-between items-center">
               <div>
-                <div className="text-[9px] text-red-400/60 uppercase font-bold">Worst Trade</div>
+                <div className="text-[10px] text-red-400/60 uppercase font-bold">Worst Trade</div>
                 <div className="text-sm text-bah-heading font-bold">{s.worst_trade.asset}</div>
               </div>
               <div className="text-lg font-bold text-red-400">{fmS(s.worst_trade.pnl)}</div>
@@ -277,7 +277,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         <Section title={`Open Positions — Exchange (${positions.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
+              <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
                 <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">{platform === "binance" ? "Side" : "Qty"}</th>
                 <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">{platform === "binance" ? "Mark" : "Current"}</th>
                 <th className="py-2 pr-2">{platform === "binance" ? "Qty" : "Market Value"}</th><th className="py-2">Unrealized P&L</th>
@@ -305,7 +305,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         <Section title={`Open Crypto Positions — Training Engine (${data.training_positions.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase tracking-wider text-left">
+              <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
                 <th className="py-2 pr-2">Asset</th><th className="py-2 pr-2">Strategy</th><th className="py-2 pr-2">Dir</th>
                 <th className="py-2 pr-2">Entry</th><th className="py-2 pr-2">Current</th>
                 <th className="py-2 pr-2">SL</th><th className="py-2 pr-2">TP</th>
@@ -323,7 +323,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
                   <td className="py-2 pr-2 text-green-400/60 font-mono">{fm(p.tp_price)}</td>
                   <td className="py-2 pr-2 text-amber-400/70 font-mono">{fm(p.risk_amount)}</td>
                   <td className="py-2 pr-2 text-bah-muted">{p.bars_held}/{p.max_hold_bars}</td>
-                  <td className="py-2 pr-2"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                  <td className="py-2 pr-2"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
                     p.execution_platform === "binance_futures" ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/25" :
                     "bg-bah-border/50 text-bah-muted border border-bah-border"
                   }`}>{p.execution_platform === "binance_futures" ? "FUTURES" : "INTERNAL"}</span></td>
@@ -361,15 +361,15 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           <div className="flex gap-1 mb-3">
             {(["trades", "orders", "fills"] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`px-3 py-1 text-[10px] font-bold rounded-md capitalize ${tab === t ? "bg-bah-cyan/20 text-bah-cyan" : "text-bah-muted hover:text-bah-text"}`}>
+                className={`px-3 py-1 text-[11px] font-bold rounded-md capitalize ${tab === t ? "bg-bah-cyan/20 text-bah-cyan" : "text-bah-muted hover:text-bah-text"}`}>
                 {t} ({t === "trades" ? trades.length : t === "orders" ? rawOrders.length : rawFills.length})
               </button>
             ))}
           </div>
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             {tab === "trades" && (
-              <table className="w-full text-[10px]">
-                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+              <table className="w-full text-[11px]">
+                <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase sticky top-0 bg-bah-card">
                   <th className="py-1.5 pr-2 text-left">Time</th><th className="py-1.5 pr-2 text-left">Asset</th>
                   <th className="py-1.5 pr-2 text-left">Side</th><th className="py-1.5 pr-2 text-left">Price</th>
                   <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 pr-2 text-left">Value</th>
@@ -393,8 +393,8 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
               </table>
             )}
             {tab === "orders" && (
-              <table className="w-full text-[10px]">
-                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+              <table className="w-full text-[11px]">
+                <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase sticky top-0 bg-bah-card">
                   <th className="py-1.5 pr-2 text-left">Asset</th><th className="py-1.5 pr-2 text-left">Side</th>
                   <th className="py-1.5 pr-2 text-left">Qty</th><th className="py-1.5 pr-2 text-left">Price</th>
                   <th className="py-1.5 text-left">Status</th>
@@ -405,14 +405,14 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
                     <td className={`py-1.5 pr-2 font-bold ${o.side === "BUY" || o.side === "buy" ? "text-green-400" : "text-red-400"}`}>{(o.side || "").toUpperCase()}</td>
                     <td className="py-1.5 pr-2 text-bah-text">{o.filled_qty || o.executed_qty || o.qty || o.orig_qty}</td>
                     <td className="py-1.5 pr-2 text-bah-text">{fm(o.filled_avg_price || o.price || 0)}</td>
-                    <td className="py-1.5"><span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${o.status === "filled" || o.status === "FILLED" ? "bg-green-500/15 text-green-400" : "bg-bah-surface text-bah-muted"}`}>{(o.status || "").toUpperCase()}</span></td>
+                    <td className="py-1.5"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${o.status === "filled" || o.status === "FILLED" ? "bg-green-500/15 text-green-400" : "bg-bah-surface text-bah-muted"}`}>{(o.status || "").toUpperCase()}</span></td>
                   </tr>
                 ))}</tbody>
               </table>
             )}
             {tab === "fills" && (
-              <table className="w-full text-[10px]">
-                <thead><tr className="border-b border-bah-border text-[8px] text-bah-muted uppercase sticky top-0 bg-bah-card">
+              <table className="w-full text-[11px]">
+                <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase sticky top-0 bg-bah-card">
                   <th className="py-1.5 pr-2 text-left">Time</th><th className="py-1.5 pr-2 text-left">Asset</th>
                   <th className="py-1.5 pr-2 text-left">Side</th><th className="py-1.5 pr-2 text-left">Price</th>
                   <th className="py-1.5 text-left">Qty</th>
@@ -441,7 +441,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           <Section title={title}>
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-bah-muted text-[9px] uppercase border-b border-bah-border">
+                <tr className="text-bah-muted text-[10px] uppercase border-b border-bah-border">
                   <th className="text-left py-1.5">#</th>
                   <th className="text-left py-1.5">Asset</th>
                   <th className="text-right py-1.5">Trades</th>
@@ -485,7 +485,7 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
                 ))}
               </tbody>
             </table>
-            <div className="flex justify-between mt-3 pt-2 border-t border-bah-border text-[10px]">
+            <div className="flex justify-between mt-3 pt-2 border-t border-bah-border text-[11px]">
               <span className="text-bah-muted">{assets.filter((a: any) => a.trades > 0).length} active / {assets.length} total · Sorted by PnL</span>
               <span className={`font-bold ${assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
                 Total: {assets.reduce((s: number, a: any) => s + a.pnl, 0) >= 0 ? "+" : ""}

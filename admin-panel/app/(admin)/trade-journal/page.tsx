@@ -26,19 +26,19 @@ export default function TradeJournalPage() {
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-bah-surface border border-bah-border rounded-xl p-4 text-center">
           <div className="text-xl font-bold text-bah-heading">{trades.length}</div>
-          <div className="text-[10px] text-bah-muted uppercase">Total Trades</div>
+          <div className="text-[11px] text-bah-muted uppercase">Total Trades</div>
         </div>
         <div className="bg-bah-surface border border-bah-border rounded-xl p-4 text-center">
           <div className={`text-xl font-bold ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>${totalPnl.toFixed(2)}</div>
-          <div className="text-[10px] text-bah-muted uppercase">Total P&L</div>
+          <div className="text-[11px] text-bah-muted uppercase">Total P&L</div>
         </div>
         <div className="bg-bah-surface border border-bah-border rounded-xl p-4 text-center">
           <div className="text-xl font-bold text-bah-cyan">{winRate}%</div>
-          <div className="text-[10px] text-bah-muted uppercase">Win Rate</div>
+          <div className="text-[11px] text-bah-muted uppercase">Win Rate</div>
         </div>
         <div className="bg-bah-surface border border-bah-border rounded-xl p-4 text-center">
           <div className="text-xl font-bold text-green-400">{wins}</div>
-          <div className="text-[10px] text-bah-muted uppercase">Wins</div>
+          <div className="text-[11px] text-bah-muted uppercase">Wins</div>
         </div>
       </div>
 

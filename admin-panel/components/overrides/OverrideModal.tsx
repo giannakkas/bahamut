@@ -48,7 +48,7 @@ export function OverrideModal({
 
   const inputClass =
     "w-full bg-white/[0.04] border border-bah-border rounded-md px-2.5 py-2 text-xs text-bah-heading font-mono outline-none focus:border-bah-cyan/40";
-  const labelClass = "text-[10px] text-bah-muted block mb-1";
+  const labelClass = "text-[11px] text-bah-muted block mb-1";
 
   return (
     <div

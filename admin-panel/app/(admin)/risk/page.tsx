@@ -9,7 +9,7 @@ const pnlC = (n: number) => n > 0.01 ? "text-green-400" : n < -0.01 ? "text-red-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-bah-card border border-bah-border rounded-xl p-4">
-      <h3 className="text-[10px] font-bold text-bah-muted uppercase tracking-wider mb-3">{title}</h3>
+      <h3 className="text-[11px] font-bold text-bah-muted uppercase tracking-wider mb-3">{title}</h3>
       {children}
     </div>
   );
@@ -52,7 +52,7 @@ export default function RiskPage() {
         ].map((card, i) => (
           <div key={i} className="bg-bah-card border border-bah-border rounded-lg p-3 text-center">
             <div className={`text-lg font-black ${card.c}`}>{card.v}</div>
-            <div className="text-[8px] text-bah-muted uppercase">{card.l}</div>
+            <div className="text-[9px] text-bah-muted uppercase">{card.l}</div>
           </div>
         ))}
       </div>
@@ -63,11 +63,11 @@ export default function RiskPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-3xl font-black text-red-400">{fm(d.max_drawdown)}</div>
-              <div className="text-[10px] text-bah-muted">Max Drawdown ({d.max_drawdown_pct.toFixed(2)}%)</div>
+              <div className="text-[11px] text-bah-muted">Max Drawdown ({d.max_drawdown_pct.toFixed(2)}%)</div>
             </div>
             <div>
               <div className={`text-3xl font-black ${d.current_drawdown > 0 ? "text-orange-400" : "text-green-400"}`}>{fm(d.current_drawdown)}</div>
-              <div className="text-[10px] text-bah-muted">Current Drawdown ({d.current_drawdown_pct.toFixed(2)}%)</div>
+              <div className="text-[11px] text-bah-muted">Current Drawdown ({d.current_drawdown_pct.toFixed(2)}%)</div>
             </div>
           </div>
         </Section>
@@ -75,13 +75,13 @@ export default function RiskPage() {
         {/* Streaks */}
         <Section title="Streaks & Extremes">
           <div className="grid grid-cols-3 gap-4">
-            <div className="text-center"><div className="text-2xl font-black text-green-400">{d.best_streak}</div><div className="text-[8px] text-bah-muted">Best Win Streak</div></div>
-            <div className="text-center"><div className="text-2xl font-black text-red-400">{d.worst_streak}</div><div className="text-[8px] text-bah-muted">Worst Loss Streak</div></div>
-            <div className="text-center"><div className={`text-2xl font-black ${d.current_streak_type === "win" ? "text-green-400" : d.current_streak_type === "loss" ? "text-red-400" : "text-bah-muted"}`}>{d.current_streak}</div><div className="text-[8px] text-bah-muted">Current ({d.current_streak_type || "flat"})</div></div>
+            <div className="text-center"><div className="text-2xl font-black text-green-400">{d.best_streak}</div><div className="text-[9px] text-bah-muted">Best Win Streak</div></div>
+            <div className="text-center"><div className="text-2xl font-black text-red-400">{d.worst_streak}</div><div className="text-[9px] text-bah-muted">Worst Loss Streak</div></div>
+            <div className="text-center"><div className={`text-2xl font-black ${d.current_streak_type === "win" ? "text-green-400" : d.current_streak_type === "loss" ? "text-red-400" : "text-bah-muted"}`}>{d.current_streak}</div><div className="text-[9px] text-bah-muted">Current ({d.current_streak_type || "flat"})</div></div>
           </div>
           <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-bah-border">
-            <div><div className="text-lg font-bold text-green-400">{fmS(d.biggest_win?.pnl || 0)}</div><div className="text-[9px] text-bah-muted">Best — {d.biggest_win?.asset} ({d.biggest_win?.strategy})</div></div>
-            <div><div className="text-lg font-bold text-red-400">{fmS(d.biggest_loss?.pnl || 0)}</div><div className="text-[9px] text-bah-muted">Worst — {d.biggest_loss?.asset} ({d.biggest_loss?.strategy})</div></div>
+            <div><div className="text-lg font-bold text-green-400">{fmS(d.biggest_win?.pnl || 0)}</div><div className="text-[10px] text-bah-muted">Best — {d.biggest_win?.asset} ({d.biggest_win?.strategy})</div></div>
+            <div><div className="text-lg font-bold text-red-400">{fmS(d.biggest_loss?.pnl || 0)}</div><div className="text-[10px] text-bah-muted">Worst — {d.biggest_loss?.asset} ({d.biggest_loss?.strategy})</div></div>
           </div>
         </Section>
       </div>
@@ -89,10 +89,10 @@ export default function RiskPage() {
       {/* R-Multiples */}
       <Section title="R-Multiple Analysis">
         <div className="grid grid-cols-4 gap-6 text-center">
-          <div><div className={`text-xl font-black ${pnlC(d.avg_r_multiple)}`}>{d.avg_r_multiple.toFixed(3)}</div><div className="text-[8px] text-bah-muted">Avg R (all)</div></div>
-          <div><div className="text-xl font-black text-green-400">+{d.avg_win_r.toFixed(3)}</div><div className="text-[8px] text-bah-muted">Avg Win R</div></div>
-          <div><div className="text-xl font-black text-red-400">{d.avg_loss_r.toFixed(3)}</div><div className="text-[8px] text-bah-muted">Avg Loss R</div></div>
-          <div><div className="text-xl font-black text-bah-heading">{d.avg_bars_held}</div><div className="text-[8px] text-bah-muted">Avg Bars ({(d.avg_bars_held * 4).toFixed(0)}h)</div></div>
+          <div><div className={`text-xl font-black ${pnlC(d.avg_r_multiple)}`}>{d.avg_r_multiple.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg R (all)</div></div>
+          <div><div className="text-xl font-black text-green-400">+{d.avg_win_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Win R</div></div>
+          <div><div className="text-xl font-black text-red-400">{d.avg_loss_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Loss R</div></div>
+          <div><div className="text-xl font-black text-bah-heading">{d.avg_bars_held}</div><div className="text-[9px] text-bah-muted">Avg Bars ({(d.avg_bars_held * 4).toFixed(0)}h)</div></div>
         </div>
       </Section>
 
@@ -105,9 +105,9 @@ export default function RiskPage() {
               const h = Math.max(6, Math.abs(day.pnl) / maxAbs * 100);
               return (
                 <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
-                  <div className="text-[7px] text-bah-muted mb-0.5">{fmS(day.pnl)}</div>
+                  <div className="text-[8px] text-bah-muted mb-0.5">{fmS(day.pnl)}</div>
                   <div className={`w-full rounded-sm ${day.pnl >= 0 ? "bg-green-500/60" : "bg-red-500/60"}`} style={{ height: `${h}%` }} />
-                  <div className="text-[7px] text-bah-muted mt-0.5">{day.date.slice(5)}</div>
+                  <div className="text-[8px] text-bah-muted mt-0.5">{day.date.slice(5)}</div>
                 </div>
               );
             })}
@@ -118,7 +118,7 @@ export default function RiskPage() {
       {/* By Strategy */}
       <Section title="Risk by Strategy">
         <table className="w-full text-xs">
-          <thead><tr className="text-bah-muted text-[9px] uppercase">
+          <thead><tr className="text-bah-muted text-[10px] uppercase">
             <th className="text-left py-1">Strategy</th><th className="text-right">Trades</th><th className="text-right">W/L</th>
             <th className="text-right">PnL</th><th className="text-right">Max Loss</th><th className="text-right">Σ R</th>
           </tr></thead>
@@ -143,7 +143,7 @@ export default function RiskPage() {
             <div key={cls} className={`border rounded-lg p-3 text-center ${s.pnl >= 0 ? "bg-green-500/5 border-green-500/20" : "bg-red-500/5 border-red-500/20"}`}>
               <div className="text-xs font-bold text-bah-heading uppercase">{cls}</div>
               <div className={`text-lg font-black mt-1 ${pnlC(s.pnl)}`}>{fmS(s.pnl)}</div>
-              <div className="text-[8px] text-bah-muted">{s.trades}T · {s.wins}W/{s.losses}L</div>
+              <div className="text-[9px] text-bah-muted">{s.trades}T · {s.wins}W/{s.losses}L</div>
             </div>
           ))}
         </div>

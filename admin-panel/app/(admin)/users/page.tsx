@@ -234,7 +234,7 @@ export default function UsersPage() {
                     <div className="text-xs text-bah-muted">{u.email}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase
                       ${u.role === "admin" ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" :
                         u.role === "trader" ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" :
                         "bg-gray-500/20 text-gray-400 border border-gray-500/30"}`}>
@@ -279,7 +279,7 @@ export default function UsersPage() {
               <h2 className="text-base font-bold text-bah-heading">Registered Interest</h2>
               <p className="text-xs text-bah-muted mt-0.5">{waitlist.filter(w => w.status === "PENDING").length} pending, {waitlist.filter(w => w.status === "APPROVED").length} approved</p>
             </div>
-            <span className="px-2.5 py-1 text-[10px] font-semibold rounded-full bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
+            <span className="px-2.5 py-1 text-[11px] font-semibold rounded-full bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30">
               {waitlist.length} TOTAL
             </span>
           </div>
@@ -306,7 +306,7 @@ export default function UsersPage() {
                         {w.workspace_name || "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                           w.status === "APPROVED"
                             ? "bg-green-500/15 text-green-400 border border-green-500/30"
                             : "bg-[#c9a84c]/15 text-[#c9a84c] border border-[#c9a84c]/30"
@@ -324,7 +324,7 @@ export default function UsersPage() {
                               <select
                                 id={`role-${w.id}`}
                                 defaultValue="trader"
-                                className="bg-white/[0.04] border border-bah-border rounded px-1.5 py-1 text-[10px] text-bah-heading outline-none"
+                                className="bg-white/[0.04] border border-bah-border rounded px-1.5 py-1 text-[11px] text-bah-heading outline-none"
                               >
                                 <option value="trader">Trader</option>
                                 <option value="viewer">Viewer</option>
@@ -347,7 +347,7 @@ export default function UsersPage() {
                                     alert(e.message);
                                   }
                                 }}
-                                className="px-2.5 py-1 text-[10px] font-semibold text-green-400 border border-green-500/30 rounded hover:bg-green-500/15 transition-colors"
+                                className="px-2.5 py-1 text-[11px] font-semibold text-green-400 border border-green-500/30 rounded hover:bg-green-500/15 transition-colors"
                               >
                                 ✓ Approve
                               </button>
@@ -355,7 +355,7 @@ export default function UsersPage() {
                           )}
                           <button
                             onClick={() => removeFromWaitlist(w.id, w.email)}
-                            className="text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                            className="text-[11px] text-red-400 hover:text-red-300 transition-colors"
                           >
                             Remove
                           </button>

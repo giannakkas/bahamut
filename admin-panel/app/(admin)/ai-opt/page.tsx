@@ -73,7 +73,7 @@ export default function AIOptPage() {
           <div className="text-xs text-bah-purple">
             Running portfolio optimization analysis...
           </div>
-          <div className="text-[10px] text-bah-muted mt-1">
+          <div className="text-[11px] text-bah-muted mt-1">
             Evaluating risk-return tradeoffs across all scenarios
           </div>
         </Card>
@@ -93,11 +93,11 @@ export default function AIOptPage() {
           ) : (
             <>
               <Card className="bg-bah-purple/[0.04] border-bah-purple/15">
-                <div className="text-[11px] text-bah-subtle">
+                <div className="text-[12px] text-bah-subtle">
                   AI has analyzed current market conditions, portfolio
                   performance, and risk metrics.
                 </div>
-                <div className="text-[11px] text-bah-purple mt-1">
+                <div className="text-[12px] text-bah-purple mt-1">
                   {suggestions.length} optimization suggestions available.
                 </div>
               </Card>
@@ -113,15 +113,15 @@ export default function AIOptPage() {
                           {s.key}
                         </div>
                         <div className="flex items-center gap-3 mt-1.5">
-                          <span className="text-[11px] text-bah-red/60">
+                          <span className="text-[12px] text-bah-red/60">
                             {fmt(s.current)}
                           </span>
                           <span className="text-bah-muted">→</span>
-                          <span className="text-[11px] text-bah-green font-bold">
+                          <span className="text-[12px] text-bah-green font-bold">
                             {fmt(s.suggested)}
                           </span>
                           <span
-                            className={`text-[10px] ${
+                            className={`text-[11px] ${
                               delta > 0 ? "text-bah-green" : "text-bah-amber"
                             }`}
                           >
@@ -129,7 +129,7 @@ export default function AIOptPage() {
                             {fmt(delta, 1)}%)
                           </span>
                         </div>
-                        <div className="text-[10px] text-bah-muted mt-1">
+                        <div className="text-[11px] text-bah-muted mt-1">
                           {s.reason}
                         </div>
                       </div>

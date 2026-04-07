@@ -63,14 +63,14 @@ export function AuditTable({ entries }: AuditTableProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[11px]">
+            <table className="w-full border-collapse text-[12px]">
               <thead>
                 <tr>
                   {["Timestamp", "Config Key", "Old → New", "Source", "User"].map(
                     (h) => (
                       <th
                         key={h}
-                        className="px-2.5 py-2 text-left text-[10px] text-bah-muted uppercase tracking-widest border-b border-bah-border/60 font-medium"
+                        className="px-2.5 py-2 text-left text-[11px] text-bah-muted uppercase tracking-widest border-b border-bah-border/60 font-medium"
                       >
                         {h}
                       </th>
@@ -87,7 +87,7 @@ export function AuditTable({ entries }: AuditTableProps) {
                       key={e.id}
                       className="hover:bg-bah-cyan/[0.02] transition-colors"
                     >
-                      <td className="px-2.5 py-2 text-bah-subtle text-[10px] border-b border-white/[0.02]">
+                      <td className="px-2.5 py-2 text-bah-subtle text-[11px] border-b border-white/[0.02]">
                         {fmtTime(e.timestamp)}
                       </td>
                       <td className="px-2.5 py-2 text-bah-heading font-medium border-b border-white/[0.02]">

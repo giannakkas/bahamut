@@ -30,14 +30,14 @@ export function ScenarioChart({ scenarios }: ScenarioChartProps) {
                 className="w-2 h-2 rounded-sm shrink-0"
                 style={{ background: s.color }}
               />
-              <span className="flex-1 text-[11px] text-bah-subtle">
+              <span className="flex-1 text-[12px] text-bah-subtle">
                 {s.name}
               </span>
-              <span className="text-[10px] text-bah-muted w-10 text-right">
+              <span className="text-[11px] text-bah-muted w-10 text-right">
                 {pct(s.probability)}
               </span>
               <span
-                className={`text-[11px] font-semibold w-12 text-right ${
+                className={`text-[12px] font-semibold w-12 text-right ${
                   s.impact >= 0 ? "text-bah-green" : "text-bah-red"
                 }`}
               >

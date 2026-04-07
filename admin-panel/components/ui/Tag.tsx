@@ -8,7 +8,7 @@ interface TagProps {
 export function Tag({ color, children }: TagProps) {
   return (
     <span
-      className="inline-block rounded px-2 py-0.5 text-[10px] font-semibold border"
+      className="inline-block rounded px-2 py-0.5 text-[11px] font-semibold border"
       style={{
         background: `${color}15`,
         color,

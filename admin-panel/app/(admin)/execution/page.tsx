@@ -79,7 +79,7 @@ function TradeCard({ asset, cycle, onApprove, approving }: {
                 const ac = a.directional_bias === "LONG" ? "#10b981" : a.directional_bias === "SHORT" ? "#ef4444" : "#555570";
                 return (
                   <div key={a.agent_id} className="flex items-center gap-1.5 bg-[#161628] rounded-md px-2.5 py-1.5 border border-[#2A2A4A]">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
                       style={{ backgroundColor: meta.color }}>{meta.icon}</div>
                     <span className="text-xs text-[#8888AA]">{meta.name}</span>
                     <span className="text-xs font-semibold" style={{ color: ac }}>

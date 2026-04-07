@@ -92,12 +92,12 @@ export default function AlertsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Tag color={color}>{a.type}</Tag>
-                    <span className="text-[11px] text-bah-heading">
+                    <span className="text-[12px] text-bah-heading">
                       {a.message}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-bah-muted">
+                    <span className="text-[11px] text-bah-muted">
                       {fmtTime(a.timestamp)}
                     </span>
                     {!a.dismissed && (
@@ -116,7 +116,7 @@ export default function AlertsPage() {
                       </Button>
                     )}
                     {a.dismissed && (
-                      <span className="text-[10px] text-bah-muted italic">Dismissed</span>
+                      <span className="text-[11px] text-bah-muted italic">Dismissed</span>
                     )}
                   </div>
                 </div>

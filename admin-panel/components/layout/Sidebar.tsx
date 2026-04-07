@@ -109,10 +109,10 @@ export function Sidebar() {
                 )}
         <span>{item.label}</span>
         {item.href === "/alerts" && activeAlerts > 0 && (
-          <span className="ml-auto bg-bah-red text-white text-[9px] font-bold px-1.5 py-px rounded-full">{activeAlerts}</span>
+          <span className="ml-auto bg-bah-red text-white text-[10px] font-bold px-1.5 py-px rounded-full">{activeAlerts}</span>
         )}
         {item.href === "/overrides" && activeOverrides > 0 && (
-          <span className="ml-auto bg-bah-amber text-black text-[9px] font-bold px-1.5 py-px rounded-full">{activeOverrides}</span>
+          <span className="ml-auto bg-bah-amber text-black text-[10px] font-bold px-1.5 py-px rounded-full">{activeOverrides}</span>
         )}
       </Link>
     );
@@ -123,7 +123,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-bah-border/60">
         <img src="/logo.png" alt="Bahamut.AI" className="h-12 w-auto object-contain" />
-        <div className="text-[9px] tracking-[0.15em] uppercase mt-1 flex items-center gap-2">
+        <div className="text-[10px] tracking-[0.15em] uppercase mt-1 flex items-center gap-2">
           <span className="text-green-400 font-semibold">● OPERATIONS</span>
           <span className="text-bah-muted">BTC + ETH</span>
         </div>
@@ -131,7 +131,7 @@ export function Sidebar() {
 
       {/* Operational Nav */}
       <div className="py-2 flex-1">
-        <div className="px-4 py-1.5 text-[9px] text-bah-muted font-semibold uppercase tracking-widest">
+        <div className="px-4 py-1.5 text-[10px] text-bah-muted font-semibold uppercase tracking-widest">
           Trading Operations
         </div>
         {OPERATIONAL_NAV.map(renderItem)}
@@ -140,10 +140,10 @@ export function Sidebar() {
         <div className="mt-3 border-t border-bah-border/40">
           <button
             onClick={() => setShowLegacy(!showLegacy)}
-            className="w-full px-4 py-2 text-[9px] text-bah-muted font-semibold uppercase tracking-widest flex items-center justify-between hover:text-bah-heading transition-colors"
+            className="w-full px-4 py-2 text-[10px] text-bah-muted font-semibold uppercase tracking-widest flex items-center justify-between hover:text-bah-heading transition-colors"
           >
             <span>Legacy / Research</span>
-            <span className="text-[10px]">{showLegacy ? "▾" : "▸"}</span>
+            <span className="text-[11px]">{showLegacy ? "▾" : "▸"}</span>
           </button>
           {showLegacy && (
             <div className="opacity-60">
@@ -154,9 +154,9 @@ export function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-bah-border/60 text-[10px] text-bah-muted">
+      <div className="px-4 py-3 border-t border-bah-border/60 text-[11px] text-bah-muted">
         <EnvIndicator />
-        <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+        <div className="flex items-center gap-1.5 mt-1 text-[11px]">
           <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === "connected" ? "bg-green-400" : wsStatus === "connecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"}`} />
           <span className={wsStatus === "connected" ? "text-green-400" : wsStatus === "connecting" ? "text-amber-400" : "text-red-400"}>
             {wsStatus === "connected" ? "Realtime ON" : wsStatus === "connecting" ? "Connecting..." : "Realtime OFF"}
@@ -170,13 +170,13 @@ export function Sidebar() {
             window.location.href = `https://bahamut.ai?token=${encodeURIComponent(token)}`;
           }}
             className="w-full mt-2 flex items-center justify-between px-2.5 py-1.5 rounded-md border border-bah-border bg-white/[0.02] text-bah-muted hover:bg-white/[0.04] hover:text-bah-heading transition-all duration-200">
-            <span className="text-[10px] font-semibold tracking-wide uppercase">👤 Switch to Frontend</span>
-            <span className="text-[9px] opacity-60">→</span>
+            <span className="text-[11px] font-semibold tracking-wide uppercase">👤 Switch to Frontend</span>
+            <span className="text-[10px] opacity-60">→</span>
           </a>
         )}
 
         {isSuperAdmin && (
-          <div className="text-[9px] text-purple-400 font-semibold tracking-wider uppercase mt-2">⚡ Super Admin</div>
+          <div className="text-[10px] text-purple-400 font-semibold tracking-wider uppercase mt-2">⚡ Super Admin</div>
         )}
 
         <div className="flex justify-between mt-2">

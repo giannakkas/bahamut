@@ -12,7 +12,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[11px] font-semibold font-mono tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[12px] font-semibold font-mono tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed";
 
 const variants: Record<Variant, string> = {
   primary: "border-0",

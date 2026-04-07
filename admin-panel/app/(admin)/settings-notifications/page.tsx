@@ -217,7 +217,7 @@ export default function NotificationSettings() {
             <span className="text-lg">📲</span>
             <div>
               <h2 className="text-sm font-semibold text-bah-heading">Telegram</h2>
-              <p className="text-[11px] text-bah-muted">Instant alerts via Telegram bot</p>
+              <p className="text-[12px] text-bah-muted">Instant alerts via Telegram bot</p>
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -234,7 +234,7 @@ export default function NotificationSettings() {
               onChange={(e) => set("telegram_bot_token", e.target.value)}
               placeholder={settings?.telegram_bot_token?.startsWith("●") ? settings.telegram_bot_token : "Paste token from @BotFather"}
               className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            <p className="text-[10px] text-bah-muted mt-1">Message @BotFather on Telegram → /newbot → copy the token</p>
+            <p className="text-[11px] text-bah-muted mt-1">Message @BotFather on Telegram → /newbot → copy the token</p>
           </div>
           <div>
             <label className="block text-xs text-bah-muted mb-1 font-medium">Chat ID</label>
@@ -242,7 +242,7 @@ export default function NotificationSettings() {
               onChange={(e) => set("telegram_chat_id", e.target.value)}
               placeholder="e.g. 123456789"
               className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            <p className="text-[10px] text-bah-muted mt-1">Message your bot, then visit https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</p>
+            <p className="text-[11px] text-bah-muted mt-1">Message your bot, then visit https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</p>
           </div>
           <button onClick={() => test("telegram")} disabled={testing === "telegram"}
             className="px-4 py-2 bg-bah-cyan/10 border border-bah-cyan/30 rounded-lg text-xs text-bah-cyan hover:bg-bah-cyan/20 disabled:opacity-50">
@@ -258,7 +258,7 @@ export default function NotificationSettings() {
             <span className="text-lg">📧</span>
             <div>
               <h2 className="text-sm font-semibold text-bah-heading">Email (Brevo)</h2>
-              <p className="text-[11px] text-bah-muted">Email alerts via Brevo API</p>
+              <p className="text-[12px] text-bah-muted">Email alerts via Brevo API</p>
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -275,7 +275,7 @@ export default function NotificationSettings() {
               onChange={(e) => set("email_smtp_pass", e.target.value)}
               placeholder={settings?.email_smtp_pass?.startsWith("●") ? settings.email_smtp_pass : "xkeysib-..."}
               className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-            <p className="text-[10px] text-bah-muted mt-1">Brevo → SMTP & API → API Keys → Generate</p>
+            <p className="text-[11px] text-bah-muted mt-1">Brevo → SMTP & API → API Keys → Generate</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -284,7 +284,7 @@ export default function NotificationSettings() {
                 onChange={(e) => set("email_from", e.target.value)}
                 placeholder="info@bahamut.ai"
                 className="w-full px-3 py-2 bg-bah-bg border border-bah-border rounded-lg text-sm text-bah-heading font-mono focus:outline-none focus:border-bah-cyan" />
-              <p className="text-[10px] text-bah-muted mt-1">Must be verified in Brevo → Senders</p>
+              <p className="text-[11px] text-bah-muted mt-1">Must be verified in Brevo → Senders</p>
             </div>
             <div>
               <label className="block text-xs text-bah-muted mb-1 font-medium">Send Alerts To</label>
@@ -314,7 +314,7 @@ export default function NotificationSettings() {
       <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-bah-border">
           <h2 className="text-sm font-semibold text-bah-heading">Alert Levels</h2>
-          <p className="text-[11px] text-bah-muted">Choose which alert types get sent externally</p>
+          <p className="text-[12px] text-bah-muted">Choose which alert types get sent externally</p>
         </div>
         <div className="px-5 py-4 space-y-3">
           {[
@@ -328,7 +328,7 @@ export default function NotificationSettings() {
                 className="w-4 h-4 mt-0.5 rounded border-bah-border accent-green-500" />
               <div>
                 <span className={`text-sm font-semibold ${level.color}`}>{level.label}</span>
-                <p className="text-[11px] text-bah-muted">{level.desc}</p>
+                <p className="text-[12px] text-bah-muted">{level.desc}</p>
               </div>
             </label>
           ))}
@@ -337,7 +337,7 @@ export default function NotificationSettings() {
 
       {/* ═══ SAVE ═══ */}
       <div className="flex items-center justify-between">
-        <div className="text-[11px] text-bah-muted">
+        <div className="text-[12px] text-bah-muted">
           {settings?.telegram_connected && <span className="text-green-400 mr-4">✓ Telegram connected</span>}
           {settings?.email_connected && <span className="text-green-400">✓ Email connected</span>}
           {!settings?.telegram_connected && !settings?.email_connected && <span>No channels configured yet</span>}

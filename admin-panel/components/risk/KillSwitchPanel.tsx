@@ -41,7 +41,7 @@ export function KillSwitchPanel({
             <div className="text-sm font-bold text-bah-heading">
               🚨 Kill Switch Engine
             </div>
-            <div className="text-[11px] text-bah-subtle mt-1">
+            <div className="text-[12px] text-bah-subtle mt-1">
               Status:{" "}
               <span
                 className={`font-semibold ${
@@ -54,11 +54,11 @@ export function KillSwitchPanel({
               </span>
             </div>
             {killSwitch.reason && (
-              <div className="text-[11px] text-bah-red mt-1">
+              <div className="text-[12px] text-bah-red mt-1">
                 Trigger: {killSwitch.reason}
               </div>
             )}
-            <div className="text-[10px] text-bah-muted mt-2">
+            <div className="text-[11px] text-bah-muted mt-2">
               Last triggered: {fmtTime(killSwitch.last_triggered)}
             </div>
           </div>
@@ -80,7 +80,7 @@ export function KillSwitchPanel({
             <div className="text-xs font-semibold text-bah-heading">
               🛡️ Safe Mode
             </div>
-            <div className="text-[10px] text-bah-muted mt-0.5">
+            <div className="text-[11px] text-bah-muted mt-0.5">
               Reduces exposure and tightens risk parameters
             </div>
           </div>

@@ -49,7 +49,7 @@ export default function AgentRankingPage() {
                   <div className="font-medium text-bah-heading">{a.name}</div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${tierColors[a.tier] || tierColors.D}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${tierColors[a.tier] || tierColors.D}`}>
                     {a.tier}
                   </span>
                 </td>

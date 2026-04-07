@@ -42,7 +42,7 @@ export function BarChart({
             key={i}
             className="flex-1 flex flex-col items-center gap-1"
           >
-            <span className="text-[9px] text-bah-subtle">
+            <span className="text-[10px] text-bah-subtle">
               {fmtVal(val)}
             </span>
             <div
@@ -53,7 +53,7 @@ export function BarChart({
                 border: `1px solid ${color}40`,
               }}
             />
-            <span className="text-[9px] text-bah-text font-semibold truncate max-w-full">
+            <span className="text-[10px] text-bah-text font-semibold truncate max-w-full">
               {String(getField(d, labelKey))}
             </span>
           </div>

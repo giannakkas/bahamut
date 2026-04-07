@@ -19,7 +19,7 @@ export function StatusCard({
 }: StatusCardProps) {
   return (
     <Card glowColor={color}>
-      <div className="text-[10px] text-bah-muted uppercase tracking-widest mb-1">
+      <div className="text-[11px] text-bah-muted uppercase tracking-widest mb-1">
         {label}
       </div>
       <div
@@ -29,7 +29,7 @@ export function StatusCard({
         {value}
       </div>
       {subtitle && (
-        <div className="text-[10px] text-bah-muted mt-1">{subtitle}</div>
+        <div className="text-[11px] text-bah-muted mt-1">{subtitle}</div>
       )}
       {children}
     </Card>

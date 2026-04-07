@@ -89,7 +89,7 @@ export default function LearningPage() {
                 className="rounded-lg p-3 text-center"
                 style={{ background: `${m.color}08` }}
               >
-                <div className="text-[10px] text-bah-muted">{m.label}</div>
+                <div className="text-[11px] text-bah-muted">{m.label}</div>
                 <div className="text-xl font-bold mt-1" style={{ color: m.color }}>
                   {m.value}
                 </div>
@@ -126,14 +126,14 @@ export default function LearningPage() {
       {/* Pattern Table */}
       <Card className="mt-3">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[11px]">
+          <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr>
                 {["Pattern", "Freq", "Confidence", "Win Rate", "Last Seen"].map(
                   (h) => (
                     <th
                       key={h}
-                      className="px-2.5 py-2 text-left text-[10px] text-bah-muted uppercase tracking-widest border-b border-bah-border/60 font-medium"
+                      className="px-2.5 py-2 text-left text-[11px] text-bah-muted uppercase tracking-widest border-b border-bah-border/60 font-medium"
                     >
                       {h}
                     </th>
@@ -169,7 +169,7 @@ export default function LearningPage() {
                           />
                         </div>
                         <span
-                          className="text-[11px]"
+                          className="text-[12px]"
                           style={{
                             color:
                               p.confidence >= 0.8
@@ -191,7 +191,7 @@ export default function LearningPage() {
                     >
                       {pct(p.win_rate)}
                     </td>
-                    <td className="px-2.5 py-2 text-bah-muted text-[10px] border-b border-white/[0.02]">
+                    <td className="px-2.5 py-2 text-bah-muted text-[11px] border-b border-white/[0.02]">
                       {fmtTime(p.last_seen)}
                     </td>
                   </tr>

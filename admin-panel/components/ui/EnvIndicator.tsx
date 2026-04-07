@@ -24,7 +24,7 @@ export function EnvIndicator() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-1.5 text-[10px]">
+    <div className="flex flex-col gap-1.5 text-[11px]">
       <div className="flex items-center gap-1.5">
         <Pulse color={mock ? "#f59e0b" : "#10b981"} />
         <span className={mock ? "text-bah-amber" : "text-bah-green"}>

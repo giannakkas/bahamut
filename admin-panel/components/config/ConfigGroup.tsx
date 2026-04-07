@@ -42,7 +42,7 @@ export function ConfigGroup({
       >
         <div className="flex items-center gap-2">
           <span className="text-sm">{icon}</span>
-          <span className="text-[13px] font-semibold text-bah-heading">
+          <span className="text-[14px] font-semibold text-bah-heading">
             {label}
           </span>
           <Tag color={color}>{items.length}</Tag>

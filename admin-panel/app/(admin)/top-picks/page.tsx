@@ -119,7 +119,7 @@ export default function TopPicksPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <div className="text-[10px] text-[#555570] uppercase tracking-wider">Next scan</div>
+            <div className="text-[11px] text-[#555570] uppercase tracking-wider">Next scan</div>
             <div className="text-sm font-mono font-bold text-[#6C63FF]">{countdown}</div>
           </div>
           <button onClick={triggerScan} disabled={scanning}
@@ -143,7 +143,7 @@ export default function TopPicksPage() {
             <div className="h-full bg-gradient-to-r from-[#6C63FF] to-[#10b981] rounded-full transition-all duration-1000 ease-out"
               style={{ width: `${scanProgress}%` }} />
           </div>
-          <div className="text-[10px] text-[#555570]">
+          <div className="text-[11px] text-[#555570]">
             Analyzing technical indicators, whale activity, EMA alignment, RSI, MACD, ADX...
           </div>
         </div>
@@ -172,14 +172,14 @@ export default function TopPicksPage() {
               <ScoreBar score={pick.score} />
               {pick.whale_score > 0 && (
                 <div className="mt-2">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
                     pick.whale_score >= 20 ? "bg-[#10b981]/20 text-[#10b981]" : "bg-[#f59e0b]/20 text-[#f59e0b]"
                   }`}>
                     🐋 {pick.whale_signal === "EXTREME_SPIKE" ? "EXTREME" : pick.whale_signal === "MAJOR_SPIKE" ? "MAJOR" : "ACTIVE"} · Vol {pick.volume_ratio}x
                   </span>
                 </div>
               )}
-              <div className="mt-1 text-[10px] text-[#555570] leading-tight">
+              <div className="mt-1 text-[11px] text-[#555570] leading-tight">
                 {pick.reasons?.slice(0, 2).join(" · ")}
               </div>
               {pick.agent_decision && (
@@ -245,7 +245,7 @@ export default function TopPicksPage() {
                     <td className="py-2 px-3 text-xs font-mono text-[#555570]">{rank}</td>
                     <td className="py-2 px-3 font-semibold text-xs text-[#E8E8F0]">{r.symbol}</td>
                     <td className="py-2 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${CLASS_COLORS[r.asset_class] || ""}`}>
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${CLASS_COLORS[r.asset_class] || ""}`}>
                         {r.asset_class}
                       </span>
                     </td>

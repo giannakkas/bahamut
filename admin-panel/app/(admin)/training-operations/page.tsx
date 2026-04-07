@@ -285,14 +285,14 @@ export default function TrainingOperationsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 anim-slide">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-base sm:text-lg font-bold text-bah-heading tracking-tight">Training Operations</h1>
-          <span className="px-2.5 py-0.5 text-[10px] rounded-full font-bold border bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40 tracking-wider">PAPER TRADING</span>
-          <span className="text-[11px] text-bah-muted">{cs.universe_size || k.universe_size || 0} assets</span>
+          <span className="px-2.5 py-0.5 text-[11px] rounded-full font-bold border bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40 tracking-wider">PAPER TRADING</span>
+          <span className="text-[12px] text-bah-muted">{cs.universe_size || k.universe_size || 0} assets</span>
           <span style={{fontSize: "8px", color: "#666"}}>v2.1</span>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => { setSoundEnabled((s: boolean) => !s); if (!soundEnabled) playSignalSound(); }}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+            className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all ${
               soundEnabled
                 ? "bg-bah-cyan/10 border-bah-cyan/30 text-bah-cyan"
                 : "bg-bah-surface border-bah-border text-bah-muted"
@@ -302,7 +302,7 @@ export default function TrainingOperationsPage() {
             {soundEnabled ? "🔔" : "🔇"}
           </button>
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[10px] text-green-400 font-bold">LIVE</span>
+          <span className="text-[11px] text-green-400 font-bold">LIVE</span>
         </div>
       </div>
 
@@ -345,8 +345,8 @@ export default function TrainingOperationsPage() {
         })().map((m: any) => (
           <div key={m.l} className="bg-bah-surface border border-bah-border rounded-xl p-1.5 sm:p-2.5 text-center">
             <div className={`text-sm sm:text-lg font-bold font-mono ${m.c}`}>{m.v}</div>
-            <div className="text-[8px] sm:text-[9px] text-bah-muted uppercase mt-0.5">{m.l}</div>
-            {m.sub && <div className="text-[7px] sm:text-[8px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
+            <div className="text-[9px] sm:text-[10px] text-bah-muted uppercase mt-0.5">{m.l}</div>
+            {m.sub && <div className="text-[8px] sm:text-[9px] text-bah-muted/50 mt-0.5">{m.sub}</div>}
           </div>
         ))}
       </div>
@@ -357,11 +357,11 @@ export default function TrainingOperationsPage() {
           <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
             <div className="px-4 py-3.5 flex items-center gap-3">
               <span className="text-sm font-bold text-bah-heading tracking-tight">📦 Open Positions</span>
-              <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-green-500/15 text-green-400 border border-green-500/30">{(data.positions || []).length}</span>
+              <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-green-500/15 text-green-400 border border-green-500/30">{(data.positions || []).length}</span>
             </div>
             <div className="border-t border-bah-border overflow-x-auto">
-              <table className="w-full text-[11px] min-w-[900px]">
-                <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-[0.1em] text-left">
+              <table className="w-full text-[12px] min-w-[900px]">
+                <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-[0.1em] text-left">
                   <th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th><th className="px-3 py-2.5">Dir</th>
                   <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Current</th>
                   <th className="px-3 py-2.5 text-right">SL</th><th className="px-3 py-2.5 text-right">TP</th>
@@ -373,7 +373,7 @@ export default function TrainingOperationsPage() {
                   const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
-                      <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[9px] text-bah-muted">{p.asset_class}</div></td>
+                      <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[10px] text-bah-muted">{p.asset_class}</div></td>
                       <td className="px-3 py-2.5 text-bah-text">{sn(p.strategy)}</td>
                       <td className="px-3 py-2.5"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
                       <td className="px-3 py-2.5 font-mono text-right text-bah-text">{fmtM(p.entry_price || 0)}</td>
@@ -452,13 +452,13 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
   const nextCycleTime = cs.next_cycle_time ? new Date(cs.next_cycle_time).toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 
   return (
-    <div className={`rounded-xl border p-2 sm:p-3 flex flex-wrap items-center gap-x-3 sm:gap-x-5 gap-y-2 text-[10px] sm:text-[11px] anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-bah-surface border-bah-border"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
+    <div className={`rounded-xl border p-2 sm:p-3 flex flex-wrap items-center gap-x-3 sm:gap-x-5 gap-y-2 text-[11px] sm:text-[12px] anim-slide ${cs.is_running ? "bg-bah-cyan/[0.04] border-bah-cyan/25" : "bg-bah-surface border-bah-border"}`} style={{ animationDelay: "0.03s", ...(cs.is_running ? { animation: "scanPulse 2.5s ease-in-out infinite" } : {}) }}>
 
       {/* Auto Training */}
       <div className="flex items-center gap-2">
         <span className={`w-2.5 h-2.5 rounded-full ${autoDot} ${cs.is_running ? "animate-pulse" : ""}`} />
-        <span className="text-[11px] font-bold text-bah-text uppercase tracking-wider">Auto Training</span>
-        <span className={`text-[11px] font-extrabold ${autoClr}`}>{autoLabel}</span>
+        <span className="text-[12px] font-bold text-bah-text uppercase tracking-wider">Auto Training</span>
+        <span className={`text-[12px] font-extrabold ${autoClr}`}>{autoLabel}</span>
       </div>
 
       {cs.is_running && (
@@ -466,22 +466,22 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
           <div className="w-20 h-1.5 bg-bah-border rounded-full overflow-hidden">
             <div className="h-full bg-bah-cyan rounded-full transition-all duration-500" style={{ width: `${cs.running_progress ? (cs.running_progress.current / Math.max(1, cs.running_progress.total)) * 100 : 0}%` }} />
           </div>
-          <span className="text-[10px] text-bah-cyan font-bold font-mono">{cs.running_progress?.current || 0}/{cs.running_progress?.total || cs.universe_size || 40}</span>
+          <span className="text-[11px] text-bah-cyan font-bold font-mono">{cs.running_progress?.current || 0}/{cs.running_progress?.total || cs.universe_size || 40}</span>
         </div>
       )}
 
       <div className="hidden sm:block w-px h-5 bg-bah-border" />
 
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-bah-muted uppercase tracking-wider">Status</span>
-        <span className={`text-[11px] font-bold ${sysClr}`}>{sysStatus}</span>
+        <span className="text-[11px] text-bah-muted uppercase tracking-wider">Status</span>
+        <span className={`text-[12px] font-bold ${sysClr}`}>{sysStatus}</span>
       </div>
 
       <div className="hidden sm:block w-px h-5 bg-bah-border" />
 
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-bah-muted uppercase tracking-wider">Next cycle</span>
-        <span className={`text-[13px] font-bold font-mono tabular-nums ${
+        <span className="text-[11px] text-bah-muted uppercase tracking-wider">Next cycle</span>
+        <span className={`text-[14px] font-bold font-mono tabular-nums ${
           cs.is_running ? "text-bah-cyan" :
           nextCycle !== null && nextCycle <= 0 ? "text-red-400" :
           nextCycle !== null && nextCycle < 60 ? "text-bah-cyan" :
@@ -490,15 +490,15 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
           {cs.is_running ? "NOW" : nextCycle !== null && nextCycle <= 0 ? "OVERDUE" : fmtCountdown(nextCycle)}
         </span>
         {nextCycleTime && !cs.is_running && nextCycle !== null && nextCycle > 0 && (
-          <span className="text-[10px] text-bah-muted font-mono">({nextCycleTime})</span>
+          <span className="text-[11px] text-bah-muted font-mono">({nextCycleTime})</span>
         )}
       </div>
 
       <div className="hidden sm:block w-px h-5 bg-bah-border" />
 
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-bah-muted uppercase tracking-wider">Next 4H bar</span>
-        <span className="text-[13px] font-bold font-mono tabular-nums text-bah-heading">{fmtCountdown(next4H)}</span>
+        <span className="text-[11px] text-bah-muted uppercase tracking-wider">Next 4H bar</span>
+        <span className="text-[14px] font-bold font-mono tabular-nums text-bah-heading">{fmtCountdown(next4H)}</span>
       </div>
 
       <div className="hidden sm:block w-px h-5 bg-bah-border" />
@@ -507,7 +507,7 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
       <button
         onClick={onRunCycle}
         disabled={cs.is_running || cycleTriggered}
-        className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${
+        className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-all ${
           cs.is_running
             ? "bg-bah-cyan/15 border-bah-cyan/40 text-bah-cyan animate-pulse cursor-wait"
             : cycleTriggered
@@ -518,7 +518,7 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
         {cs.is_running ? "⏳ Running…" : cycleTriggered ? "⏳ Starting…" : "▶ Run Cycle"}
       </button>
 
-      <div className="flex items-center gap-2 text-[10px] text-bah-muted font-mono">
+      <div className="flex items-center gap-2 text-[11px] text-bah-muted font-mono">
         <span>every {(cs.cycle_interval_seconds || 600) / 60}m</span>
         {cs.last_cycle_time && (
           <>
@@ -560,13 +560,13 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
       <div className="bg-bah-surface border border-bah-border rounded-xl p-5">
         <div className="flex items-center gap-3 mb-3">
           <span className="text-sm font-bold text-bah-heading tracking-tight">🔥 Trade Candidates</span>
-          <span className="text-[10px] text-bah-muted">read-only intelligence</span>
+          <span className="text-[11px] text-bah-muted">read-only intelligence</span>
         </div>
         <div className="flex items-start gap-3">
           <span className="text-xl mt-0.5">📡</span>
           <div>
             <p className="text-xs text-bah-muted font-medium mb-1">All candidates below execution threshold (score ≥ {THRESHOLD})</p>
-            <p className="text-[11px] text-bah-muted">The scanner evaluates 40+ assets against EMA cross and breakout strategies every 10 minutes. Candidates appear when price action converges on trigger conditions. The next opportunity may come at the next 4H bar boundary.</p>
+            <p className="text-[12px] text-bah-muted">The scanner evaluates 40+ assets against EMA cross and breakout strategies every 10 minutes. Candidates appear when price action converges on trigger conditions. The next opportunity may come at the next 4H bar boundary.</p>
           </div>
         </div>
       </div>
@@ -578,18 +578,18 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
       <div className="px-4 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-sm font-bold text-bah-heading tracking-tight">🔥 Trade Candidates</span>
-          <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{candidates.length}</span>
+          <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{candidates.length}</span>
           {aboveThreshold > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{aboveThreshold} READY (≥{THRESHOLD})</span>
+            <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{aboveThreshold} READY (≥{THRESHOLD})</span>
           )}
-          <span className="text-[10px] text-bah-muted hidden sm:inline">execution threshold: {THRESHOLD}</span>
+          <span className="text-[11px] text-bah-muted hidden sm:inline">execution threshold: {THRESHOLD}</span>
         </div>
       </div>
 
       <div className="border-t border-bah-border overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[1000px]">
+          <table className="w-full text-[12px] min-w-[1000px]">
             <thead>
-              <tr className="border-b border-bah-border text-left text-[9px] text-bah-muted uppercase tracking-[0.1em]">
+              <tr className="border-b border-bah-border text-left text-[10px] text-bah-muted uppercase tracking-[0.1em]">
                 <th className="px-3 py-2.5 w-[130px]">Score</th><th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th>
                 <th className="px-3 py-2.5">Dir</th><th className="px-3 py-2.5">Regime</th><th className="px-3 py-2.5">Distance</th>
                 <th className="px-3 py-2.5">RSI</th><th className="px-3 py-2.5">EMAs</th><th className="px-3 py-2.5">Setup</th>
@@ -613,7 +613,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <span style={{color: isTop ? "#00d2d2" : "white", fontWeight: 700}}>{c.asset}</span>
-                        <span className={`px-1.5 py-0 text-[8px] font-bold rounded border tracking-wider ${u.cls}`} style={(u as any).style || {}}>{u.label}</span>
+                        <span className={`px-1.5 py-0 text-[9px] font-bold rounded border tracking-wider ${u.cls}`} style={(u as any).style || {}}>{u.label}</span>
                       </div>
                       <div style={{fontSize: "9px", color: "rgba(255,255,255,0.4)", marginTop: "2px"}}>{c.asset_class}</div>
                     </td>
@@ -646,7 +646,7 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
         </div>
         {candidates.length > 5 && (
           <button onClick={() => setExpanded(!expanded)}
-            className="w-full py-2.5 text-[11px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5">
+            className="w-full py-2.5 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5">
             {expanded ? '▲ Show Less' : `▼ Show All ${candidates.length} Candidates`}
           </button>
         )}
@@ -677,15 +677,15 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
       {recentCycles.length > 0 && (
         <Section title="Recent Cycles">
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
+            <table className="w-full text-[12px]">
+              <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
                 <th className="py-2 pr-3">Time</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Processed</th><th className="py-2 pr-3">Errors</th><th className="py-2 pr-3">Signals</th><th className="py-2 pr-3">Selected</th><th className="py-2 pr-3">Opened</th><th className="py-2 pr-3">Closed</th><th className="py-2 pr-3">Duration</th>
               </tr></thead>
               <tbody>
                 {recentCycles.slice(0, 7).map((c: any, i: number) => (
                   <tr key={i} className="border-b border-bah-border hover-row">
                     <td className="py-1.5 pr-3 text-bah-muted font-mono">{fmtT(c.last_cycle)}</td>
-                    <td className="py-1.5 pr-3"><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${c.status === "OK" ? "bg-green-500/15 text-green-400 border-green-500/25" : c.status === "DEGRADED" ? "bg-amber-500/15 text-amber-300 border-amber-500/25" : "bg-red-500/15 text-red-300 border-red-500/25"}`}>{c.status}</span></td>
+                    <td className="py-1.5 pr-3"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${c.status === "OK" ? "bg-green-500/15 text-green-400 border-green-500/25" : c.status === "DEGRADED" ? "bg-amber-500/15 text-amber-300 border-amber-500/25" : "bg-red-500/15 text-red-300 border-red-500/25"}`}>{c.status}</span></td>
                     <td className="py-1.5 pr-3 text-bah-text">{c.processed}</td>
                     <td className="py-1.5 pr-3 text-bah-text">{c.errors}</td>
                     <td className="py-1.5 pr-3 text-bah-text">{c.signals}</td>
@@ -704,7 +704,7 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
       <Section title="Strategy Breakdown">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
+            <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
               <th className="py-2.5 pr-3">Strategy</th><th className="py-2.5 pr-3">Open</th><th className="py-2.5 pr-3">Closed</th>
               <th className="py-2.5 pr-3">WR</th><th className="py-2.5 pr-3">PF</th><th className="py-2.5 pr-3">PnL</th>
               <th className="py-2.5 pr-3">Avg Bars</th><th className="py-2.5">Status</th>
@@ -712,14 +712,14 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
             <tbody>
               {Object.entries(strats).map(([name, s]: [string, any]) => (
                 <tr key={name} className="border-b border-bah-border hover-row">
-                  <td className="py-2.5 pr-3 text-bah-heading font-semibold">{stratName[name] || name} <span className="text-[8px] text-bah-muted font-normal">{name}</span></td>
+                  <td className="py-2.5 pr-3 text-bah-heading font-semibold">{stratName[name] || name} <span className="text-[9px] text-bah-muted font-normal">{name}</span></td>
                   <td className="py-2.5 pr-3 text-bah-text">{s.open_trades}</td>
                   <td className="py-2.5 pr-3 text-bah-text">{s.closed_trades}</td>
                   <td className="py-2.5 pr-3 text-bah-heading">{fmtPct(s.win_rate)}</td>
                   <td className="py-2.5 pr-3 text-bah-heading">{s.profit_factor.toFixed(2)}</td>
                   <td className={`py-2.5 pr-3 font-bold ${pnlC(s.total_pnl)}`}>{fmtPnl(s.total_pnl)}</td>
                   <td className="py-2.5 pr-3 text-bah-muted">{s.avg_hold_bars?.toFixed(1)}</td>
-                  <td className="py-2.5"><span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${s.provisional ? "bg-amber-500/15 text-amber-300 border-amber-500/25" : "bg-green-500/15 text-green-400 border-green-500/25"}`}>{s.provisional ? "WARMING" : "ACTIVE"}</span></td>
+                  <td className="py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${s.provisional ? "bg-amber-500/15 text-amber-300 border-amber-500/25" : "bg-green-500/15 text-green-400 border-green-500/25"}`}>{s.provisional ? "WARMING" : "ACTIVE"}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -732,9 +732,9 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {Object.entries(classes).map(([cls, s]: [string, any], i) => (
               <div key={cls} className="bg-bah-surface border border-bah-border rounded-lg p-3 anim-slide" style={{ animationDelay: `${i * 0.04}s` }}>
-                <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold mb-1">{cls}</div>
+                <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-1">{cls}</div>
                 <div className="text-xs text-bah-heading font-semibold">{s.closed_trades} closed · {s.open_trades} open</div>
-                <div className={`text-[11px] font-bold mt-0.5 ${pnlC(s.pnl)}`}>{fmtPnl(s.pnl)} · {fmtPct(s.win_rate)} WR</div>
+                <div className={`text-[12px] font-bold mt-0.5 ${pnlC(s.pnl)}`}>{fmtPnl(s.pnl)} · {fmtPct(s.win_rate)} WR</div>
               </div>
             ))}
           </div>
@@ -743,13 +743,13 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
         <div className="space-y-4">
           {rankings.best?.length > 0 && <Section title="🏆 Best Assets">{rankings.best.map((a: any, i: number) => (
             <div key={i} className="flex justify-between items-center py-2 text-xs border-b border-bah-border hover-row px-1 rounded">
-              <div><span className="text-bah-heading font-semibold">{a.asset}</span> <span className="text-bah-muted ml-1 text-[10px]">{a.class}</span></div>
+              <div><span className="text-bah-heading font-semibold">{a.asset}</span> <span className="text-bah-muted ml-1 text-[11px]">{a.class}</span></div>
               <div className="text-green-400 font-bold">{fmtPnl(a.pnl)} <span className="text-bah-muted font-normal">({a.trades}t)</span></div>
             </div>
           ))}</Section>}
           {rankings.worst?.length > 0 && <Section title="⚠️ Worst Assets">{rankings.worst.map((a: any, i: number) => (
             <div key={i} className="flex justify-between items-center py-2 text-xs border-b border-bah-border hover-row px-1 rounded">
-              <div><span className="text-bah-heading font-semibold">{a.asset}</span> <span className="text-bah-muted ml-1 text-[10px]">{a.class}</span></div>
+              <div><span className="text-bah-heading font-semibold">{a.asset}</span> <span className="text-bah-muted ml-1 text-[11px]">{a.class}</span></div>
               <div className="text-red-400 font-bold">{fmtPnl(a.pnl)} <span className="text-bah-muted font-normal">({a.trades}t)</span></div>
             </div>
           ))}</Section>}
@@ -768,8 +768,8 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
   return (
     <Section title={`Open Positions (${positions.length})`}>
       {positions.length > 0 ? (
-        <div className="overflow-x-auto"><table className="w-full text-[11px] min-w-[1000px]">
-          <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
+        <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[1000px]">
+          <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
             <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th>
             <th className="py-2.5 pr-2">Dir</th><th className="py-2.5 pr-2">Type</th>
             <th className="py-2.5 pr-2 text-right">Entry</th><th className="py-2.5 pr-2 text-right">Current</th>
@@ -786,7 +786,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
               <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                 <td className="py-2.5 pr-2">
                   <div className="text-bah-heading font-bold">{p.asset}</div>
-                  <div className="text-[9px] text-bah-muted">{p.asset_class}</div>
+                  <div className="text-[10px] text-bah-muted">{p.asset_class}</div>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-text">{sn(p.strategy)}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
@@ -800,7 +800,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(value)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(unreal)}`}>{fmtPnl(unreal)}</td>
                 <td className="py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
-                <td className="py-2.5 text-bah-muted text-[10px]">{p.entry_time ? new Date(p.entry_time).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                <td className="py-2.5 text-bah-muted text-[11px]">{p.entry_time ? new Date(p.entry_time).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
               </tr>
             );
           })}</tbody>
@@ -818,8 +818,8 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
   return (
     <Section title={`Closed Trades (${trades.length})`}>
       {trades.length > 0 ? (
-        <div className="overflow-x-auto"><table className="w-full text-[11px] min-w-[1100px]">
-          <thead><tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
+        <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[1100px]">
+          <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
             <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th><th className="py-2.5 pr-2">Dir</th>
             <th className="py-2.5 pr-2 text-right">Entry</th><th className="py-2.5 pr-2 text-right">Exit</th>
             <th className="py-2.5 pr-2 text-right">Risk</th><th className="py-2.5 pr-2 text-right">P&L</th>
@@ -839,7 +839,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
               <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                 <td className="py-2.5 pr-2">
                   <div className="text-bah-heading font-bold">{t.asset}</div>
-                  <div className="text-[9px] text-bah-muted">{t.asset_class || ""}</div>
+                  <div className="text-[10px] text-bah-muted">{t.asset_class || ""}</div>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-text">{sn(t.strategy)}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
@@ -849,20 +849,20 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{pnl >= 0 ? "+" : "-"}{fmtMoney(pnl)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{rMult >= 0 ? "+" : ""}{rMult.toFixed(1)}R</td>
                 <td className="py-2.5 pr-2">
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${resultCls}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${resultCls}`}>
                     {resultLabel}
                   </span>
                 </td>
                 <td className="py-2.5 pr-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                     t.exit_reason === "TP" ? "bg-green-500/10 text-green-400" :
                     t.exit_reason === "SL" ? "bg-red-500/10 text-red-400" :
                     "bg-bah-surface text-bah-muted"
                   }`}>{t.exit_reason}</span>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-muted text-center">{t.bars_held}</td>
-                <td className="py-2.5 pr-2 text-bah-muted text-[10px]">{fmtT(t.entry_time)}</td>
-                <td className="py-2.5 text-bah-muted text-[10px]">{fmtT(t.exit_time)}</td>
+                <td className="py-2.5 pr-2 text-bah-muted text-[11px]">{fmtT(t.entry_time)}</td>
+                <td className="py-2.5 text-bah-muted text-[11px]">{fmtT(t.exit_time)}</td>
               </tr>
             );
           })}</tbody>
@@ -905,8 +905,8 @@ function FailedTab({ signals }: { signals: any[] }) {
       {/* Summary counts */}
       <div className="flex gap-3 items-center">
         <span className="text-sm font-bold text-bah-heading">Rejected Signals</span>
-        {training.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{training.length} Training</span>}
-        {production.length > 0 && <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/15 text-red-300 border border-red-500/30">{production.length} Production</span>}
+        {training.length > 0 && <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{training.length} Training</span>}
+        {production.length > 0 && <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-red-500/15 text-red-300 border border-red-500/30">{production.length} Production</span>}
         {signals.length === 0 && <span className="text-xs text-bah-muted">No rejected signals in current window</span>}
       </div>
 
@@ -920,18 +920,18 @@ function FailedTab({ signals }: { signals: any[] }) {
               return (
                 <div key={idx}>
                   <button onClick={() => toggle(idx)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-bah-border bg-bah-surface hover:bg-bah-surface transition-colors text-left cursor-pointer">
-                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.BLOCKED}`}>{s._group}</span>
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.BLOCKED}`}>{s._group}</span>
                     <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{s.asset}</span>
-                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
-                    <span className="text-[10px] text-bah-muted w-[35px] shrink-0 text-center font-mono">{typeof s.score === "number" ? (s.score * 100).toFixed(0) : s.score}</span>
-                    <span className="text-[10px] text-bah-muted w-[65px] shrink-0">{s.label}</span>
-                    <span className="text-[10px] text-bah-muted flex-1 truncate">{s.reason}</span>
-                    <span className="text-[10px] text-bah-muted/60 w-[100px] shrink-0 text-right">{fmtT(s.timestamp)}</span>
-                    <span className="text-[10px] text-bah-muted/60 shrink-0">{isOpen ? "▼" : "▶"}</span>
+                    <span className={`text-[11px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
+                    <span className="text-[11px] text-bah-muted w-[35px] shrink-0 text-center font-mono">{typeof s.score === "number" ? (s.score * 100).toFixed(0) : s.score}</span>
+                    <span className="text-[11px] text-bah-muted w-[65px] shrink-0">{s.label}</span>
+                    <span className="text-[11px] text-bah-muted flex-1 truncate">{s.reason}</span>
+                    <span className="text-[11px] text-bah-muted/60 w-[100px] shrink-0 text-right">{fmtT(s.timestamp)}</span>
+                    <span className="text-[11px] text-bah-muted/60 shrink-0">{isOpen ? "▼" : "▶"}</span>
                   </button>
                   {isOpen && (
-                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-bah-border space-y-1.5 text-[10px] font-mono">
-                      <div className="text-bah-muted uppercase text-[8px] tracking-widest font-bold mb-2">Rejection Trace</div>
+                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-bah-border space-y-1.5 text-[11px] font-mono">
+                      <div className="text-bah-muted uppercase text-[9px] tracking-widest font-bold mb-2">Rejection Trace</div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[60px] shrink-0">Asset</span><span className="text-bah-heading">{s.asset}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[60px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-green-400" : "text-red-400"}>{s.direction}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[60px] shrink-0">Score</span><span className="text-bah-heading">{typeof s.score === "number" ? s.score.toFixed(4) : s.score}</span></div>
@@ -971,17 +971,17 @@ function FailedTab({ signals }: { signals: any[] }) {
               return (
                 <div key={idx}>
                   <button onClick={() => toggle(idx)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-bah-border bg-bah-surface hover:bg-bah-surface transition-colors text-left cursor-pointer">
-                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.REJECT}`}>{s._group}</span>
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.REJECT}`}>{s._group}</span>
                     <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{s.asset}</span>
-                    <span className="text-[10px] text-bah-muted w-[55px] shrink-0">{sn(s.strategy)}</span>
-                    <span className={`text-[10px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
-                    <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
-                    <span className="text-[10px] text-bah-muted flex-1 truncate">{(s.reasons || []).join(" · ")}</span>
-                    <span className="text-[10px] text-bah-muted/60 shrink-0">{isOpen ? "▼" : "▶"}</span>
+                    <span className="text-[11px] text-bah-muted w-[55px] shrink-0">{sn(s.strategy)}</span>
+                    <span className={`text-[11px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
+                    <span className="text-[11px] text-bah-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
+                    <span className="text-[11px] text-bah-muted flex-1 truncate">{(s.reasons || []).join(" · ")}</span>
+                    <span className="text-[11px] text-bah-muted/60 shrink-0">{isOpen ? "▼" : "▶"}</span>
                   </button>
                   {isOpen && (
-                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-bah-border space-y-1.5 text-[10px] font-mono">
-                      <div className="text-bah-muted uppercase text-[8px] tracking-widest font-bold mb-2">Decision Trace</div>
+                    <div className="ml-6 mt-1 mb-2 p-3 rounded-lg bg-black/30 border border-bah-border space-y-1.5 text-[11px] font-mono">
+                      <div className="text-bah-muted uppercase text-[9px] tracking-widest font-bold mb-2">Decision Trace</div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Asset</span><span className="text-bah-heading">{s.asset} ({s.asset_class})</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Strategy</span><span className="text-bah-heading">{sn(s.strategy)}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-green-400" : "text-red-400"}>{s.direction}</span></div>
@@ -1038,14 +1038,14 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
             <span className={`text-sm font-bold px-2.5 py-1 rounded border ${modeBg(ap.mode)}`}>
               <span className={modeClr(ap.mode)}>{ap.mode || "—"}</span>
             </span>
-            <div className="text-[8px] text-bah-muted uppercase tracking-wider font-semibold mt-1">Mode</div>
+            <div className="text-[9px] text-bah-muted uppercase tracking-wider font-semibold mt-1">Mode</div>
           </div>
           <Stat l="Std Threshold" v={ap.standard_threshold ?? "—"} />
           <Stat l="Early Threshold" v={ap.early_threshold ?? "—"} />
           <Stat l="Early/Cycle" v={ap.max_early_per_cycle ?? "—"} />
           <Stat l="Early Risk" v={ap.early_risk_multiplier ? `${(ap.early_risk_multiplier * 100).toFixed(0)}%` : "—"} />
         </div>
-        <div className="flex flex-wrap gap-3 text-[10px] mb-3">
+        <div className="flex flex-wrap gap-3 text-[11px] mb-3">
           <span className={`px-2 py-0.5 rounded border ${ap.early_execution_enabled ? "bg-green-500/10 text-green-400 border-green-500/25" : "bg-red-500/10 text-red-300/60 border-red-500/20"}`}>
             Early Exec: {ap.early_execution_enabled ? "ON" : "OFF"}
           </span>
@@ -1069,11 +1069,11 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
         {(am.early_count > 0 || am.standard_count > 0) && (
           <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-bah-border">
             <div className="bg-bah-surface border border-bah-border rounded-lg p-2.5">
-              <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold mb-1">Standard</div>
+              <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-1">Standard</div>
               <div className="text-xs text-bah-heading">{am.standard_count || 0} trades · {((am.standard_win_rate || 0) * 100).toFixed(0)}% WR</div>
             </div>
             <div className="bg-bah-surface border border-bah-border rounded-lg p-2.5">
-              <div className="text-[9px] text-amber-300/60 uppercase tracking-wider font-bold mb-1">⚡ Early</div>
+              <div className="text-[10px] text-amber-300/60 uppercase tracking-wider font-bold mb-1">⚡ Early</div>
               <div className="text-xs text-bah-heading">{am.early_count || 0} trades · {((am.early_win_rate || 0) * 100).toFixed(0)}% WR</div>
             </div>
           </div>
@@ -1085,7 +1085,7 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
         <Section title="Adjustment History">
           <div className="space-y-1.5">
             {ah.slice(0, 8).map((h: any, i: number) => (
-              <div key={i} className="flex items-center gap-3 text-[10px] py-1.5 border-b border-bah-border">
+              <div key={i} className="flex items-center gap-3 text-[11px] py-1.5 border-b border-bah-border">
                 <span className="text-bah-muted font-mono w-[130px] shrink-0">{h.timestamp ? new Date(h.timestamp).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
                 <span className={`px-1.5 py-0.5 rounded border font-bold ${modeBg(h.new_mode)} ${modeClr(h.new_mode)}`}>{h.new_mode}</span>
                 <span className="text-bah-muted">std:{h.new_standard_threshold} early:{h.new_early_threshold}</span>
@@ -1113,9 +1113,9 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
         <div className="space-y-2">
           {(learn.milestones || []).map((m: any, i: number) => (
             <div key={i} className="flex items-center gap-3 text-xs anim-slide" style={{ animationDelay: `${i * 0.06}s` }}>
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border ${m.reached ? "bg-green-500/20 text-green-400 border-green-500/40" : "bg-bah-surface text-bah-muted border-bah-border"}`}>{m.reached ? "✓" : i + 1}</span>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border ${m.reached ? "bg-green-500/20 text-green-400 border-green-500/40" : "bg-bah-surface text-bah-muted border-bah-border"}`}>{m.reached ? "✓" : i + 1}</span>
               <span className={`font-medium ${m.reached ? "text-bah-heading" : "text-bah-muted"}`}>{m.label}</span>
-              <span className="text-[10px] text-bah-muted/60">({m.current || 0}/{m.required})</span>
+              <span className="text-[11px] text-bah-muted/60">({m.current || 0}/{m.required})</span>
             </div>
           ))}
         </div>
@@ -1135,7 +1135,7 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
 
       {/* ═══ AI DIAGNOSTIC LOGS ═══ */}
       <Section title="🤖 AI Diagnostic Logs">
-        <p className="text-[10px] text-bah-muted mb-3">
+        <p className="text-[11px] text-bah-muted mb-3">
           Copy these logs and paste into Claude to diagnose issues, identify weak patterns, and improve trading accuracy.
         </p>
         <div className="flex gap-2 mb-3">
@@ -1193,7 +1193,7 @@ function LearningTab({ learn, adaptive, token }: { learn: any; adaptive: any; to
           )}
         </div>
         {diagText && (
-          <pre className="bg-black/40 border border-bah-border rounded-lg p-4 text-[10px] text-green-300/80 font-mono overflow-x-auto max-h-[500px] overflow-y-auto whitespace-pre-wrap select-all leading-relaxed">
+          <pre className="bg-black/40 border border-bah-border rounded-lg p-4 text-[11px] text-green-300/80 font-mono overflow-x-auto max-h-[500px] overflow-y-auto whitespace-pre-wrap select-all leading-relaxed">
             {diagText}
           </pre>
         )}
@@ -1234,7 +1234,7 @@ function RiskTab({ expo }: { expo: any }) {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {Object.entries(expo.per_class).map(([cls, val]: [string, any]) => (
               <div key={cls} className="bg-bah-surface border border-bah-border rounded-lg p-2.5 text-center">
-                <div className="text-[9px] text-bah-muted uppercase tracking-wider font-semibold">{cls}</div>
+                <div className="text-[10px] text-bah-muted uppercase tracking-wider font-semibold">{cls}</div>
                 <div className="text-xs text-bah-heading font-bold mt-0.5">${val.toLocaleString()}</div>
               </div>
             ))}
@@ -1314,21 +1314,21 @@ function AssetsTab({ data }: { data: any }) {
         ].map((s, i) => (
           <div key={i} className="bg-bah-surface border border-bah-border rounded-lg px-3 py-1.5 flex items-center gap-2">
             <span className={`text-sm font-bold ${s.cls}`}>{s.value}</span>
-            <span className="text-[9px] text-bah-muted uppercase tracking-wider">{s.label}</span>
+            <span className="text-[10px] text-bah-muted uppercase tracking-wider">{s.label}</span>
           </div>
         ))}
         {data.duration_ms > 0 && (
           <div className="bg-bah-surface border border-bah-border rounded-lg px-3 py-1.5 flex items-center">
-            <span className="text-[10px] text-bah-muted/60 font-mono">scanned in {data.duration_ms}ms</span>
+            <span className="text-[11px] text-bah-muted/60 font-mono">scanned in {data.duration_ms}ms</span>
           </div>
         )}
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-[10px] text-bah-muted uppercase tracking-wider">Filter:</span>
+        <span className="text-[11px] text-bah-muted uppercase tracking-wider">Filter:</span>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="bg-bah-border/50 border border-bah-border rounded text-[11px] text-bah-text px-2 py-1 outline-none focus:border-bah-cyan/40">
+          className="bg-bah-border/50 border border-bah-border rounded text-[12px] text-bah-text px-2 py-1 outline-none focus:border-bah-cyan/40">
           <option value="all">All statuses</option>
           <option value="ready">Ready</option>
           <option value="approaching">Approaching</option>
@@ -1336,19 +1336,19 @@ function AssetsTab({ data }: { data: any }) {
           <option value="no_signal">No Signal</option>
         </select>
         <select value={filterClass} onChange={e => setFilterClass(e.target.value)}
-          className="bg-bah-border/50 border border-bah-border rounded text-[11px] text-bah-text px-2 py-1 outline-none focus:border-bah-cyan/40">
+          className="bg-bah-border/50 border border-bah-border rounded text-[12px] text-bah-text px-2 py-1 outline-none focus:border-bah-cyan/40">
           <option value="all">All classes</option>
           {uniqueClasses.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span className="text-[10px] text-bah-muted/60 ml-1">{filtered.length} shown</span>
+        <span className="text-[11px] text-bah-muted/60 ml-1">{filtered.length} shown</span>
       </div>
 
       {/* Table */}
       <Section title={`Asset Universe (${filtered.length})`}>
         <div className="overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[900px]">
+          <table className="w-full text-[12px] min-w-[900px]">
             <thead>
-              <tr className="border-b border-bah-border text-[9px] text-bah-muted uppercase tracking-wider text-left">
+              <tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
                 <th className="py-2.5 px-3 cursor-pointer hover:text-bah-muted select-none" onClick={() => toggleSort("score")}>
                   Score {sortBy === "score" ? (sortDir === "desc" ? "↓" : "↑") : ""}
                 </th>
@@ -1383,13 +1383,13 @@ function AssetsTab({ data }: { data: any }) {
                     </td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-bah-muted">{isExpanded ? "▾" : "▸"}</span>
+                        <span className="text-[11px] text-bah-muted">{isExpanded ? "▾" : "▸"}</span>
                         <span className="text-bah-heading font-semibold">{a.asset}</span>
                       </div>
                     </td>
                     <td className="py-2 px-3 text-bah-muted">{a.asset_class}</td>
                     <td className="py-2 px-3">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${st.cls}`}>{st.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${st.cls}`}>{st.label}</span>
                     </td>
                     <td className="py-2 px-3 text-bah-muted">{sn(a.strategy)}</td>
                     <td className="py-2 px-3">
@@ -1397,20 +1397,20 @@ function AssetsTab({ data }: { data: any }) {
                     </td>
                     <td className="py-2 px-3">
                       {a.regime !== "—" ? (
-                        <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
+                        <span className={`px-1 py-0.5 rounded text-[10px] font-bold ${
                           a.regime === "TREND" || a.regime === "BREAKOUT" ? "bg-green-500/10 text-green-400" :
                           a.regime === "BEAR" ? "bg-red-500/10 text-red-300" :
                           "bg-bah-surface text-bah-muted"
                         }`}>{a.regime}</span>
                       ) : <span className="text-bah-muted/60">—</span>}
                     </td>
-                    <td className="py-2 px-3 text-[10px] text-bah-muted font-mono max-w-[160px] truncate">{a.distance_to_trigger}</td>
+                    <td className="py-2 px-3 text-[11px] text-bah-muted font-mono max-w-[160px] truncate">{a.distance_to_trigger}</td>
                     <td className="py-2 px-3 font-mono">
                       {a.indicators?.rsi ? (
                         <span className={a.indicators.rsi < 30 ? "text-green-400" : a.indicators.rsi > 70 ? "text-red-400" : "text-bah-muted"}>{a.indicators.rsi.toFixed(0)}</span>
                       ) : <span className="text-bah-muted/40">—</span>}
                     </td>
-                    <td className="py-2 px-3 text-[10px] text-bah-muted max-w-[220px] truncate">{a.reason}</td>
+                    <td className="py-2 px-3 text-[11px] text-bah-muted max-w-[220px] truncate">{a.reason}</td>
                   </tr>
                   {isExpanded && (
                     <tr className="bg-bah-surface">
@@ -1463,13 +1463,13 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <span className="text-xs sm:text-sm font-bold text-bah-heading tracking-tight">⚡ Execution Decisions</span>
           {exec.length > 0 && (
-            <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{exec.length} EXECUTE</span>
+            <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/35">{exec.length} EXECUTE</span>
           )}
           {watch.length > 0 && (
-            <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{watch.length} WATCH</span>
+            <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">{watch.length} WATCH</span>
           )}
         </div>
-        <span className="text-[9px] sm:text-[10px] text-bah-muted font-mono hidden sm:inline">
+        <span className="text-[10px] sm:text-[11px] text-bah-muted font-mono hidden sm:inline">
           {summary.total_signals || 0} signals → {summary.selected || 0} selected · threshold ≥{summary.config?.execution_threshold || 80}
         </span>
       </div>
@@ -1477,13 +1477,13 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
       <div className="space-y-1.5 overflow-x-auto">
         {visible.map((d: any, i: number) => (
           <div key={i} className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border min-w-[600px] ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
-            <span className={`px-2 py-0.5 text-[9px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
+            <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
             <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{d.asset}</span>
-            <span className="text-[10px] text-bah-muted w-[50px] shrink-0">{sn(d.strategy)}</span>
-            <span className={`text-[10px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{d.direction}</span>
+            <span className="text-[11px] text-bah-muted w-[50px] shrink-0">{sn(d.strategy)}</span>
+            <span className={`text-[11px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{d.direction}</span>
             <ExecBadge type={d.execution_type} />
-            <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center">{d.readiness_score}</span>
-            <span className="text-[10px] text-bah-muted w-[30px] shrink-0 text-center font-mono">{d.priority_score}</span>
+            <span className="text-[11px] text-bah-muted w-[30px] shrink-0 text-center">{d.readiness_score}</span>
+            <span className="text-[11px] text-bah-muted w-[30px] shrink-0 text-center font-mono">{d.priority_score}</span>
 
             {d.priority_breakdown && (
               <div className="flex gap-0.5 shrink-0">
@@ -1495,14 +1495,14 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
               </div>
             )}
 
-            <span className="text-[10px] text-bah-muted flex-1 truncate">{(d.reasons || []).join(" · ")}</span>
+            <span className="text-[11px] text-bah-muted flex-1 truncate">{(d.reasons || []).join(" · ")}</span>
           </div>
         ))}
       </div>
 
       {hasMore && (
         <button onClick={() => setShowAll(!showAll)}
-          className="w-full mt-2 py-2 text-[10px] font-bold text-bah-cyan hover:text-bah-cyan/80 border border-bah-border rounded-lg hover:bg-bah-cyan/5 transition-all">
+          className="w-full mt-2 py-2 text-[11px] font-bold text-bah-cyan hover:text-bah-cyan/80 border border-bah-border rounded-lg hover:bg-bah-cyan/5 transition-all">
           {showAll ? `▲ Show less` : `▼ Show all ${allItems.length} decisions`}
         </button>
       )}
@@ -1539,11 +1539,11 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       {/* Score Breakdown */}
       <div>
-        <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-2">Score Breakdown</div>
+        <div className="text-[11px] text-bah-muted uppercase tracking-wider font-bold mb-2">Score Breakdown</div>
         <div className="space-y-1.5">
           {components.map(([key, val]) => (
             <div key={key} className="flex items-center gap-2">
-              <span className="text-[10px] text-bah-muted w-[100px] truncate">{labelMap[key] || key}</span>
+              <span className="text-[11px] text-bah-muted w-[100px] truncate">{labelMap[key] || key}</span>
               <div className="flex-1 h-1.5 bg-bah-border/50 rounded-full overflow-hidden">
                 {val >= 0 ? (
                   <div className={`h-full rounded-full ${barClr(val)}`} style={{ width: `${(val / maxVal) * 100}%` }} />
@@ -1553,13 +1553,13 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
                   </div>
                 )}
               </div>
-              <span className={`text-[10px] font-bold w-[28px] text-right ${val > 0 ? "text-green-400" : val < 0 ? "text-red-300" : "text-bah-muted/60"}`}>
+              <span className={`text-[11px] font-bold w-[28px] text-right ${val > 0 ? "text-green-400" : val < 0 ? "text-red-300" : "text-bah-muted/60"}`}>
                 {val > 0 ? `+${val}` : val}
               </span>
             </div>
           ))}
           <div className="flex items-center gap-2 pt-1 border-t border-bah-border">
-            <span className="text-[10px] text-bah-text w-[100px] font-bold">Total</span>
+            <span className="text-[11px] text-bah-text w-[100px] font-bold">Total</span>
             <div className="flex-1" />
             <span className="text-xs font-bold text-bah-heading">{a.score}</span>
           </div>
@@ -1568,14 +1568,14 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
 
       {/* Explanation */}
       <div>
-        <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-2">AI Explanation</div>
-        <p className="text-[11px] text-bah-text leading-relaxed mb-3">{explanation || "No explanation available."}</p>
+        <div className="text-[11px] text-bah-muted uppercase tracking-wider font-bold mb-2">AI Explanation</div>
+        <p className="text-[12px] text-bah-text leading-relaxed mb-3">{explanation || "No explanation available."}</p>
         {reasons.length > 0 && (
           <>
-            <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-1.5">Factors</div>
+            <div className="text-[11px] text-bah-muted uppercase tracking-wider font-bold mb-1.5">Factors</div>
             <div className="space-y-1">
               {reasons.slice(0, 5).map((r: string, i: number) => (
-                <div key={i} className="text-[10px] text-bah-muted flex items-start gap-1.5">
+                <div key={i} className="text-[11px] text-bah-muted flex items-start gap-1.5">
                   <span className="text-bah-muted/60 mt-0.5">•</span>
                   <span>{r}</span>
                 </div>
@@ -1587,18 +1587,18 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
 
       {/* Missing Conditions */}
       <div>
-        <div className="text-[10px] text-bah-muted uppercase tracking-wider font-bold mb-2">Missing to Trigger</div>
+        <div className="text-[11px] text-bah-muted uppercase tracking-wider font-bold mb-2">Missing to Trigger</div>
         {missing.length > 0 ? (
           <div className="space-y-1.5">
             {missing.map((m: string, i: number) => (
-              <div key={i} className="flex items-start gap-2 text-[11px]">
+              <div key={i} className="flex items-start gap-2 text-[12px]">
                 <span className="text-amber-400/70 mt-0.5 shrink-0">⚡</span>
                 <span className="text-bah-text">{m}</span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-[11px] text-green-400/60">All conditions met — signal may fire on next bar evaluation.</div>
+          <div className="text-[12px] text-green-400/60">All conditions met — signal may fire on next bar evaluation.</div>
         )}
       </div>
     </div>
@@ -1611,22 +1611,22 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-bah-surface border border-bah-border rounded-xl p-4">
-      <h3 className="text-[11px] font-bold text-bah-text mb-3 uppercase tracking-[0.08em]">{title}</h3>
+      <h3 className="text-[12px] font-bold text-bah-text mb-3 uppercase tracking-[0.08em]">{title}</h3>
       {children}
     </div>
   );
 }
 
 function ExecBadge({ type }: { type: string | undefined }) {
-  if (type === "early") return <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">⚡ EARLY</span>;
-  return <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-green-500/10 text-green-400/60 border border-green-500/15">STD</span>;
+  if (type === "early") return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">⚡ EARLY</span>;
+  return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-500/10 text-green-400/60 border border-green-500/15">STD</span>;
 }
 
 function Stat({ l, v, c }: { l: string; v: any; c?: string }) {
   return (
     <div className="text-center">
       <div className={`text-sm font-bold ${c || "text-bah-heading"}`}>{v}</div>
-      <div className="text-[8px] text-bah-muted uppercase tracking-wider font-semibold">{l}</div>
+      <div className="text-[9px] text-bah-muted uppercase tracking-wider font-semibold">{l}</div>
     </div>
   );
 }
