@@ -142,6 +142,93 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
         </div>
       )}
 
+      {/* Sentiment — Binance: Fear & Greed */}
+      {platform === "binance" && sentiment && sentiment.fear_greed && (
+        <div className="space-y-3">
+          <Section title="Fear & Greed Index">
+            <div className="flex items-center gap-6">
+              <div className="relative w-20 h-20 shrink-0">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
+                  <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8" strokeDasharray={`${(sentiment.fear_greed.value / 100) * 264} 264`} strokeLinecap="round"
+                    className={sentiment.fear_greed.value <= 24 ? "text-red-500" : sentiment.fear_greed.value <= 39 ? "text-orange-500" : sentiment.fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"} />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className={`text-xl font-black ${sentiment.fear_greed.value <= 24 ? "text-red-500" : sentiment.fear_greed.value <= 39 ? "text-orange-500" : sentiment.fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.fear_greed.value}</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <div className={`text-base font-bold ${sentiment.fear_greed.value <= 24 ? "text-red-500" : sentiment.fear_greed.value <= 39 ? "text-orange-500" : sentiment.fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.fear_greed.classification}</div>
+                <div className="text-[10px] text-bah-muted">Source: alternative.me · Free</div>
+                <div className="mt-1.5">
+                  {sentiment.fear_greed.should_block_longs ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 ALL CRYPTO LONGS BLOCKED</span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ CRYPTO LONGS ALLOWED</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Section>
+          {(() => {
+            const action = sentiment.combined_crypto_action;
+            return action && (
+              <div className={`rounded-xl p-2.5 border text-center text-xs font-bold ${action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" : action === "block_longs" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" : "bg-green-500/15 border-green-500/30 text-green-400"}`}>
+                SENTIMENT GATE: {action.replace(/_/g, " ").toUpperCase()} {sentiment.combined_reason ? `— ${sentiment.combined_reason}` : ""}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Sentiment — Alpaca: CNN Fear & Greed */}
+      {platform === "alpaca" && sentiment && sentiment.cnn_fear_greed && (
+        <div className="space-y-3">
+          <Section title="CNN Fear & Greed Index — US Stock Market">
+            <div className="flex items-center gap-6">
+              <div className="relative w-20 h-20 shrink-0">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
+                  <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8" strokeDasharray={`${(sentiment.cnn_fear_greed.value / 100) * 264} 264`} strokeLinecap="round"
+                    className={sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" : sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" : sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"} />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className={`text-xl font-black ${sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" : sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" : sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.cnn_fear_greed.value}</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <div className={`text-base font-bold ${sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" : sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" : sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" : "text-green-400"}`}>{sentiment.cnn_fear_greed.classification}</div>
+                <div className="text-[10px] text-bah-muted">Source: CNN · Free</div>
+                <div className="mt-1.5">
+                  {sentiment.cnn_fear_greed.should_block_longs ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">🛑 STOCK LONGS BLOCKED</span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">✅ STOCK LONGS ALLOWED</span>
+                  )}
+                </div>
+                {sentiment.cnn_fear_greed.indicators && Object.keys(sentiment.cnn_fear_greed.indicators).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {Object.entries(sentiment.cnn_fear_greed.indicators).map(([key, ind]: [string, any]) => (
+                      <span key={key} className={`px-1.5 py-0.5 rounded text-[8px] border ${ind.rating === "extreme fear" ? "bg-red-500/10 border-red-500/20 text-red-400" : ind.rating === "fear" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : ind.rating === "greed" ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"}`}>
+                        {ind.score} {key.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Section>
+          {(() => {
+            const action = sentiment.combined_stock_action;
+            return action && action !== "allow" && (
+              <div className={`rounded-xl p-2.5 border text-center text-xs font-bold ${action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" : "bg-orange-500/15 border-orange-500/30 text-orange-400"}`}>
+                SENTIMENT GATE: {action.replace(/_/g, " ").toUpperCase()} {sentiment.combined_reason ? `— ${sentiment.combined_reason}` : ""}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
@@ -344,194 +431,6 @@ export default function PlatformTradesPage({ platform, icon, label, color }: {
           </div>
         </Section>
       </div>
-
-      {/* Sentiment — only on Binance page */}
-      {platform === "binance" && sentiment && (
-        <div className="space-y-4">
-          {/* Fear & Greed Index */}
-          {sentiment.fear_greed && (
-            <Section title="Fear & Greed Index">
-              <div className="flex items-center gap-6">
-                {/* Score circle */}
-                <div className="relative w-24 h-24 shrink-0">
-                  <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
-                    <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8"
-                      strokeDasharray={`${(sentiment.fear_greed.value / 100) * 264} 264`}
-                      strokeLinecap="round"
-                      className={
-                        sentiment.fear_greed.value <= 24 ? "text-red-500" :
-                        sentiment.fear_greed.value <= 39 ? "text-orange-500" :
-                        sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
-                        sentiment.fear_greed.value <= 74 ? "text-green-400" :
-                        "text-green-500"
-                      } />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className={`text-2xl font-black ${
-                      sentiment.fear_greed.value <= 24 ? "text-red-500" :
-                      sentiment.fear_greed.value <= 39 ? "text-orange-500" :
-                      sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
-                      "text-green-400"
-                    }`}>{sentiment.fear_greed.value}</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className={`text-lg font-bold ${
-                    sentiment.fear_greed.value <= 24 ? "text-red-500" :
-                    sentiment.fear_greed.value <= 39 ? "text-orange-500" :
-                    sentiment.fear_greed.value <= 60 ? "text-yellow-500" :
-                    "text-green-400"
-                  }`}>{sentiment.fear_greed.classification}</div>
-                  <div className="text-[10px] text-bah-muted mt-1">
-                    Source: alternative.me · Free · No API key
-                  </div>
-                  <div className="mt-2">
-                    {sentiment.fear_greed.should_block_longs ? (
-                      <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-                        🛑 ALL CRYPTO LONGS BLOCKED
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
-                        ✅ CRYPTO LONGS ALLOWED
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[9px] text-bah-muted mt-2">
-                    0-24: Extreme Fear (block) · 25-39: Fear (block) · 40-60: Neutral · 61-74: Greed · 75-100: Extreme Greed
-                  </div>
-                </div>
-              </div>
-            </Section>
-          )}
-
-          {/* CryptoPanic per-asset sentiment */}
-          {sentiment.cryptopanic && sentiment.cryptopanic.assets && Object.keys(sentiment.cryptopanic.assets).length > 0 && (
-            <Section title="CryptoPanic — Per-Asset Sentiment">
-              <div className="flex items-center gap-3 mb-3">
-                <span className={`text-sm font-bold ${
-                  sentiment.cryptopanic.overall === "extreme_fear" ? "text-red-500" :
-                  sentiment.cryptopanic.overall === "bearish" ? "text-orange-400" :
-                  sentiment.cryptopanic.overall === "bullish" ? "text-green-400" :
-                  sentiment.cryptopanic.overall === "extreme_greed" ? "text-green-500" :
-                  "text-yellow-400"
-                }`}>
-                  Market: {sentiment.cryptopanic.overall?.toUpperCase()} (score: {sentiment.cryptopanic.score?.toFixed(2)})
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                {Object.entries(sentiment.cryptopanic.assets).map(([code, s]: [string, any]) => (
-                  <div key={code} className={`border rounded-lg p-2.5 text-center ${
-                    s.mood === "bearish" ? "bg-red-500/10 border-red-500/20" :
-                    s.mood === "bullish" ? "bg-green-500/10 border-green-500/20" :
-                    "bg-bah-surface border-bah-border"
-                  }`}>
-                    <div className="text-xs font-bold text-bah-heading">{code}</div>
-                    <div className={`text-lg font-black mt-0.5 ${
-                      s.score > 0.15 ? "text-green-400" :
-                      s.score < -0.15 ? "text-red-400" :
-                      "text-yellow-400"
-                    }`}>{s.score > 0 ? "+" : ""}{(s.score * 100).toFixed(0)}%</div>
-                    <div className="text-[8px] text-bah-muted mt-0.5">
-                      {s.bullish}↑ {s.bearish}↓ · {s.posts}p
-                    </div>
-                    <div className={`text-[8px] font-bold mt-0.5 ${
-                      s.mood === "bearish" ? "text-red-400" :
-                      s.mood === "bullish" ? "text-green-400" :
-                      "text-yellow-400"
-                    }`}>{s.mood.toUpperCase()}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="text-[9px] text-bah-muted mt-2">
-                Source: CryptoPanic API · Cached 30 min · Per-asset bearish score {"<"} -0.4 blocks that asset
-              </div>
-            </Section>
-          )}
-
-          {/* Combined action */}
-          {(() => {
-            const action = platform === "binance" ? sentiment.combined_crypto_action : sentiment.combined_stock_action;
-            return action && (
-              <div className={`rounded-xl p-3 border text-center text-xs font-bold ${
-                action === "block_all_longs" ? "bg-red-500/15 border-red-500/30 text-red-400" :
-                action === "block_longs" ? "bg-orange-500/15 border-orange-500/30 text-orange-400" :
-                "bg-green-500/15 border-green-500/30 text-green-400"
-              }`}>
-                SENTIMENT GATE: {action.replace(/_/g, " ").toUpperCase()} {sentiment.combined_reason ? `— ${sentiment.combined_reason}` : ""}
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Alpaca — CNN Fear & Greed for Stocks */}
-      {platform === "alpaca" && sentiment && sentiment.cnn_fear_greed && (
-        <Section title="CNN Fear & Greed Index — US Stock Market">
-          <div className="flex items-center gap-6">
-            <div className="relative w-24 h-24 shrink-0">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" className="text-bah-border" />
-                <circle cx="50" cy="50" r="42" fill="none" strokeWidth="8"
-                  strokeDasharray={`${(sentiment.cnn_fear_greed.value / 100) * 264} 264`}
-                  strokeLinecap="round"
-                  className={
-                    sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
-                    sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
-                    sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
-                    sentiment.cnn_fear_greed.value <= 74 ? "text-green-400" :
-                    "text-green-500"
-                  } />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className={`text-2xl font-black ${
-                  sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
-                  sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
-                  sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
-                  "text-green-400"
-                }`}>{sentiment.cnn_fear_greed.value}</span>
-              </div>
-            </div>
-            <div className="flex-1">
-              <div className={`text-lg font-bold ${
-                sentiment.cnn_fear_greed.value <= 24 ? "text-red-500" :
-                sentiment.cnn_fear_greed.value <= 39 ? "text-orange-500" :
-                sentiment.cnn_fear_greed.value <= 60 ? "text-yellow-500" :
-                "text-green-400"
-              }`}>{sentiment.cnn_fear_greed.classification}</div>
-              <div className="text-[10px] text-bah-muted mt-1">Source: CNN · Free · No API key</div>
-              <div className="mt-2">
-                {sentiment.cnn_fear_greed.should_block_longs ? (
-                  <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-                    🛑 STOCK LONGS BLOCKED (Extreme Fear)
-                  </span>
-                ) : (
-                  <span className="px-3 py-1 rounded-lg text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
-                    ✅ STOCK LONGS ALLOWED
-                  </span>
-                )}
-              </div>
-              {/* Sub-indicators */}
-              {sentiment.cnn_fear_greed.indicators && Object.keys(sentiment.cnn_fear_greed.indicators).length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3">
-                  {Object.entries(sentiment.cnn_fear_greed.indicators).map(([key, ind]: [string, any]) => (
-                    <div key={key} className={`rounded-md px-2 py-1 text-[9px] border ${
-                      ind.rating === "extreme fear" ? "bg-red-500/10 border-red-500/20 text-red-400" :
-                      ind.rating === "fear" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" :
-                      ind.rating === "greed" ? "bg-green-500/10 border-green-500/20 text-green-400" :
-                      ind.rating === "extreme greed" ? "bg-green-500/15 border-green-500/25 text-green-500" :
-                      "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
-                    }`}>
-                      <div className="font-bold">{ind.score}</div>
-                      <div className="text-[7px] opacity-70">{key.replace(/_/g, " ")}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </Section>
-      )}
 
       {/* Asset Leaderboard */}
       {leaderboard && (() => {

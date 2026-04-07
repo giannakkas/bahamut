@@ -261,20 +261,16 @@ async def binance_live_data():
     # Pull from Binance Futures
     account_raw = get_account()
     exchange_positions = get_positions()
-    futures_trades = get_trades()
-    futures_orders = get_orders()
 
-    # Account summary
-    balance = 0
-    unrealized = 0
-    if account_raw:
-        balance = float(account_raw.get("totalWalletBalance", 0))
-        unrealized = float(account_raw.get("totalUnrealizedProfit", 0))
-
-    # Open crypto positions from training engine (internal + exchange)
+    # Only fetch trades/orders for symbols with positions or recent training activity
+    active_symbols = set()
+    for ep in exchange_positions:
+        active_symbols.add(ep.get("symbol", ""))
+    # Add training engine crypto positions
     training_positions = []
     try:
         from bahamut.training.engine import _load_positions
+        from bahamut.execution.binance_futures import _to_symbol
         from dataclasses import asdict
         all_pos = _load_positions()
         for p in all_pos:
@@ -284,8 +280,22 @@ async def binance_live_data():
                     "unrealized_pnl": round(p.unrealized_pnl, 2),
                     "source": "training_engine",
                 })
+                active_symbols.add(_to_symbol(p.asset))
     except Exception:
         pass
+    # Always include top 5 majors
+    active_symbols.update(["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"])
+    active_list = [s for s in active_symbols if s]
+
+    futures_trades = get_trades(symbols=active_list, limit=30)
+    futures_orders = get_orders(symbols=active_list, limit=10)
+
+    # Account summary
+    balance = 0
+    unrealized = 0
+    if account_raw:
+        balance = float(account_raw.get("totalWalletBalance", 0))
+        unrealized = float(account_raw.get("totalUnrealizedProfit", 0))
 
     # Compute PnL from futures trades (realized)
     realized_pnl = sum(t.get("realized_pnl", 0) for t in futures_trades)
