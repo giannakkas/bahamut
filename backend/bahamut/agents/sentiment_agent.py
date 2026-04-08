@@ -33,6 +33,20 @@ class SentimentAgent(BaseAgent):
         indicators = features.get("indicators", {})
         news_headlines = await self._fetch_news(request.asset)
 
+        # ── Deterministic news impact (always runs, no AI needed) ──
+        news_impact_data = {}
+        try:
+            from bahamut.intelligence.news_impact import (
+                compute_news_impact, dedupe_headlines, cache_news_data,
+            )
+            deduped = dedupe_headlines(news_headlines)
+            # Cache for sync access by training selector
+            cache_news_data(request.asset, deduped)
+            nia = compute_news_impact(request.asset, request.asset_class, deduped)
+            news_impact_data = nia.to_dict()
+        except Exception as e:
+            logger.debug("sentiment_news_impact_failed", error=str(e)[:80])
+
         gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
         has_claude = bool(settings.anthropic_api_key)
 
@@ -46,11 +60,16 @@ class SentimentAgent(BaseAgent):
 
         if gemini_out:
             # Only escalate to Claude if: low confidence OR high-impact news detected
+            det_impact = news_impact_data.get("impact_score", 0)
             needs_second_opinion = (
                 gemini_out.confidence < 0.45 or
+                det_impact >= 0.5 or  # Deterministic: significant news event
                 gemini_out.meta.get("news_impact") in ("strong_bullish", "strong_bearish") or
                 len(news_headlines) > 5  # Lots of news = important event
             )
+
+            # Inject deterministic news data into output meta
+            gemini_out.meta["news_impact_deterministic"] = news_impact_data
 
             if needs_second_opinion and has_claude:
                 try:

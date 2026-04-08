@@ -1415,6 +1415,24 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
             short_pipeline["error"] = str(e)
         ai_section["data"]["short_pipeline"] = short_pipeline
 
+        # News/event impact snapshot (top 5 crypto + top 3 stocks)
+        news_snapshots = {}
+        try:
+            from bahamut.intelligence.news_impact import compute_news_impact_sync
+            from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
+            for a in (TRAINING_CRYPTO[:5] + TRAINING_STOCKS[:3]):
+                ac = "crypto" if a in TRAINING_CRYPTO else "stock"
+                nia = compute_news_impact_sync(a, ac)
+                if nia.impact_score > 0:
+                    news_snapshots[a] = {
+                        "impact": nia.impact_score, "bias": nia.directional_bias,
+                        "shock": nia.shock_level, "freeze": nia.freeze_trading,
+                        "headlines": nia.headline_count,
+                    }
+        except Exception:
+            pass
+        ai_section["data"]["news_impact_snapshot"] = news_snapshots
+
         # Recommendations engine
         recommendations = []
         for name, sh in strat_health.items():
@@ -1429,6 +1447,11 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 recommendations.append(f"AGING POSITION: {pa['asset']} {pa['direction']} — {pa['bars_held']}/{pa['max_hold']} bars, still flat — may timeout at $0")
             if pa["execution_platform"] == "internal" and pa["direction"] in ("LONG", "SHORT"):
                 recommendations.append(f"UNMIRRORED: {pa['asset']} {pa['direction']} on internal — should be on exchange")
+        for asset_name, ns in news_snapshots.items():
+            if ns.get("freeze"):
+                recommendations.append(f"NEWS FREEZE: {asset_name} — trading frozen due to high-impact event")
+            if ns.get("shock") in ("HIGH", "EXTREME"):
+                recommendations.append(f"NEWS SHOCK: {asset_name} — {ns['shock']} shock detected, bias={ns['bias']}")
         if not recommendations:
             recommendations.append("System healthy — no critical issues detected")
         ai_section["data"]["recommendations"] = recommendations

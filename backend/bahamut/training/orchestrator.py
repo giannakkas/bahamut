@@ -53,6 +53,37 @@ def run_training_cycle():
     start = time.time()
     logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
 
+    # Pre-fetch and cache news/events for this cycle (sync-safe)
+    try:
+        from bahamut.intelligence.news_impact import cache_news_data
+        from bahamut.ingestion.adapters.news import econ_calendar, news_adapter
+        import asyncio
+
+        async def _prefetch():
+            events = await econ_calendar.get_upcoming_events(days_ahead=1)
+            cache_news_data("_global", [], events)
+            # Cache headlines for top assets
+            for a in TRAINING_ASSETS[:10]:
+                try:
+                    hl = await news_adapter.get_asset_news(a, count=8)
+                    if hl:
+                        cache_news_data(a, hl)
+                except Exception:
+                    pass
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Already in async context — schedule
+                asyncio.ensure_future(_prefetch())
+            else:
+                loop.run_until_complete(_prefetch())
+        except RuntimeError:
+            asyncio.run(_prefetch())
+        logger.info("training_news_prefetch_done")
+    except Exception as e:
+        logger.debug("training_news_prefetch_failed", error=str(e)[:80])
+
     # Decrement pattern suppression timers
     try:
         from bahamut.training.context_gate import decrement_suppression_cycles

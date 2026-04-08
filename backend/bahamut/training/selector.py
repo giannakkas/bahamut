@@ -143,6 +143,20 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
         bd["trust"] = 15  # Default neutral if learning engine unavailable
 
     total = sum(bd.values())
+
+    # 6. News impact modifier (0 to ±15 pts) — from deterministic news equations
+    try:
+        from bahamut.intelligence.news_impact import compute_news_impact_sync, compute_consensus_modifier
+        assessment = compute_news_impact_sync(signal.asset, signal.asset_class)
+        if assessment.impact_score > 0.1:
+            mod = compute_consensus_modifier(assessment, signal.direction)
+            bd["news_impact"] = mod["modifier"]
+            total += mod["modifier"]
+            if mod["action"] == "freeze":
+                bd["news_freeze"] = True
+    except Exception:
+        pass  # News impact unavailable — no modifier applied
+
     return {"components": bd, "total": total}
 
 
@@ -320,6 +334,13 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if opt["decision"] == "PENALIZE":
             effective_priority -= opt["penalty"]
             reasons.extend(opt["reasons"])
+
+        # 3. News impact freeze check
+        if pri.get("components", {}).get("news_freeze"):
+            reasons.append("News/event freeze active — trading paused")
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("news_freeze")
+            continue
 
         # 4. Position cap
         if current_count + len(execute) >= max_total:

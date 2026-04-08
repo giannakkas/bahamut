@@ -111,3 +111,48 @@ async def get_ai_reviewer_status(user=Depends(get_current_user)):
     """Get AI consensus reviewer circuit breaker and provider status."""
     from bahamut.consensus.ai_reviewer import get_reviewer_status
     return get_reviewer_status()
+
+
+@router.get("/news-impact/{symbol}")
+async def get_news_impact(symbol: str, user=Depends(get_current_user)):
+    """Get deterministic news impact assessment for an asset."""
+    try:
+        from bahamut.intelligence.news_impact import fetch_and_assess
+        # Infer asset class
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        asset_class = ASSET_CLASS_MAP.get(symbol, "crypto" if "USD" in symbol else "stock")
+        assessment = await fetch_and_assess(symbol, asset_class)
+        return assessment.to_dict()
+    except Exception as e:
+        logger.error("news_impact_api_error", symbol=symbol, error=str(e)[:100])
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.get("/events/upcoming")
+async def get_upcoming_events(user=Depends(get_current_user)):
+    """Get upcoming economic events with impact scoring."""
+    try:
+        from bahamut.ingestion.adapters.news import econ_calendar
+        from bahamut.intelligence.news_impact import event_surprise_score, scheduled_event_component
+        events = await econ_calendar.get_upcoming_events(days_ahead=3)
+
+        # Enrich each event with surprise scoring
+        enriched = []
+        for ev in events[:30]:
+            surprise = event_surprise_score(ev)
+            enriched.append({
+                **ev,
+                "surprise": surprise,
+            })
+
+        # Aggregate event impact
+        aggregate = scheduled_event_component(events, "_market", "fx")
+
+        return {
+            "events": enriched,
+            "count": len(enriched),
+            "aggregate": aggregate,
+        }
+    except Exception as e:
+        logger.error("events_api_error", error=str(e)[:100])
+        raise HTTPException(status_code=500, detail=str(e)[:200])

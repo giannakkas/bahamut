@@ -311,6 +311,36 @@ class ConsensusEngine:
         except Exception as e:
             logger.debug("ai_reviewer_skipped", reason=str(e)[:100])
 
+        # ── Step 6b: News/Event Impact Modifier (DETERMINISTIC) ──
+        # Adjusts final score based on news alignment with candidate direction.
+        # This is equation-based, not AI — works even if all APIs fail.
+        news_explanation = ""
+        try:
+            from bahamut.intelligence.news_impact import compute_news_impact_sync, compute_consensus_modifier
+            asset_name = directional_outputs[0].asset if directional_outputs else ""
+            asset_cls = asset_class or "fx"
+            nia = compute_news_impact_sync(asset_name, asset_cls)
+            if nia.impact_score > 0.1:
+                mod = compute_consensus_modifier(nia, candidate_dir)
+                if mod["action"] == "freeze":
+                    # Downgrade to WATCH — don't trade during event window
+                    exec_mode_override = "WATCH"
+                    final_score = round(max(0.0, final_score * 0.5), 4)
+                    news_explanation = mod["explanation"]
+                elif mod["action"] == "boost":
+                    bonus = mod["modifier"] / 100.0  # Convert pts to score delta
+                    final_score = round(min(1.0, final_score + bonus), 4)
+                    news_explanation = mod["explanation"]
+                elif mod["action"] == "penalize":
+                    penalty = abs(mod["modifier"]) / 100.0
+                    final_score = round(max(0.0, final_score - penalty), 4)
+                    news_explanation = mod["explanation"]
+                if nia.shock_level == "EXTREME":
+                    final_score = round(max(0.0, final_score * 0.3), 4)
+                    news_explanation = f"EXTREME shock: {nia.freeze_reason or 'market event'}"
+        except Exception as e:
+            logger.debug("news_impact_consensus_skipped", error=str(e)[:80])
+
         # ── Step 7: Map to decision ──
         decision = self._map_to_decision(final_score, trading_profile, thresholds)
 
@@ -369,6 +399,17 @@ class ConsensusEngine:
             explanation_text = expl.narrative
         except Exception as e:
             logger.warning("consensus_explanation_failed", error=str(e))
+
+        # Append news impact explanation if present
+        if news_explanation:
+            explanation_text = (explanation_text + f" | NEWS: {news_explanation}").strip()
+
+        # Apply news freeze exec_mode override (set in Step 6b)
+        try:
+            if exec_mode_override:
+                exec_mode = exec_mode_override
+        except NameError:
+            pass
 
         return ConsensusDecisionSchema(
             consensus_id=uuid4(),

@@ -44,6 +44,14 @@ class MacroAgent(BaseAgent):
             "above_200ema": close > ema_200 if close and ema_200 else None,
         }
 
+        # Inject deterministic news impact
+        news_impact = self._get_news_impact(request.asset, request.asset_class)
+        if news_impact.get("impact_score", 0) > 0.1:
+            context["news_impact_score"] = news_impact.get("impact_score", 0)
+            context["news_directional_bias"] = news_impact.get("directional_bias", "NEUTRAL")
+            context["news_shock_level"] = news_impact.get("shock_level", "NONE")
+            context["news_freeze"] = news_impact.get("freeze_trading", False)
+
         news = await self._fetch_macro_news(request.asset)
 
         # Try AI analysis (Gemini -> Claude -> math fallback)
@@ -67,10 +75,20 @@ class MacroAgent(BaseAgent):
 
     async def _fetch_macro_news(self, asset: str) -> list[str]:
         try:
-            from bahamut.ingestion.news import get_recent_headlines
-            return await get_recent_headlines(asset, category="macro", limit=10) or []
+            from bahamut.ingestion.adapters.news import news_adapter
+            articles = await news_adapter.get_asset_news(asset, count=10)
+            return [a.get("title", "") for a in articles if a.get("title")]
         except Exception:
             return []
+
+    def _get_news_impact(self, asset: str, asset_class: str) -> dict:
+        """Get deterministic news impact assessment for macro context."""
+        try:
+            from bahamut.intelligence.news_impact import compute_news_impact_sync
+            nia = compute_news_impact_sync(asset, asset_class)
+            return nia.to_dict()
+        except Exception:
+            return {}
 
     async def _gemini_macro(self, context: dict, news: list, api_key: str) -> dict:
         prompt = self._build_prompt(context, news)
