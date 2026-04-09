@@ -1934,12 +1934,22 @@ async def news_dashboard():
         events = await econ_calendar.get_upcoming_events(days_ahead=3)
         enriched = []
         for e in events[:40]:
-            surprise = event_surprise_score(e)
-            enriched.append({**e, "surprise": surprise})
+            try:
+                surprise = event_surprise_score(e)
+                enriched.append({**e, "surprise": surprise})
+            except Exception:
+                enriched.append({**e, "surprise": {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}})
         result["upcoming_events"] = enriched
         logger.info("news_dashboard_events", count=len(enriched))
     except Exception as e:
         logger.error("news_dashboard_events_failed", error=str(e)[:100])
+        # Fallback: try fetching without enrichment
+        try:
+            from bahamut.ingestion.adapters.news import econ_calendar as ec2
+            raw_events = await ec2.get_upcoming_events(days_ahead=3)
+            result["upcoming_events"] = raw_events[:30]
+        except Exception:
+            pass
 
     # 4. Recent headlines — fetch fresh from Finnhub (async endpoint)
     try:
