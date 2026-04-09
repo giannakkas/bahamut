@@ -162,13 +162,14 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-    // ── Phase 1: Fast endpoints → render immediately ──
+    // ── Phase 1: All critical endpoints in parallel → render everything together ──
     try {
-      const [opsRes, decRes, adaptRes, assetsRes] = await Promise.all([
+      const [opsRes, decRes, adaptRes, assetsRes, newsRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
         fetch(`${apiBase()}/training/adaptive`, { headers: h }),
         fetch(`${apiBase()}/training/assets`, { headers: h }),
+        fetch(`${apiBase()}/training/news-dashboard`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
@@ -178,6 +179,7 @@ export default function TrainingOperationsPage() {
         const hasRealData = newAssets?.assets?.some((a: any) => a.status !== "no_data");
         setAllAssets((prev: any) => hasRealData || !prev ? newAssets : prev);
       }
+      if (newsRes.ok) setNewsDash(await newsRes.json());
     } catch {}
     setLoading(false);
 
@@ -205,12 +207,6 @@ export default function TrainingOperationsPage() {
       }
       setFailedSignals(combined);
     } catch {}
-
-    // ── Phase 4: Market intelligence (news-dashboard) — background ──
-    fetch(`${apiBase()}/training/news-dashboard`, { headers: h })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setNewsDash(d); })
-      .catch(() => {});
   };
 
   // Fast refresh: live data (positions, KPIs, cycle status) — every 5s like Daily Operations
@@ -387,26 +383,23 @@ export default function TrainingOperationsPage() {
                 const current = headlines[tickerIdx % headlines.length];
                 if (!current) return null;
                 return (
-                  <div className="relative overflow-hidden rounded-lg border border-bah-border bg-bah-bg/50 px-4 py-2.5">
-                    <div className="flex items-center gap-3">
-                      <span className="text-bah-cyan text-[11px] font-bold shrink-0 animate-pulse">● LIVE</span>
-                      <div className="flex-1 min-w-0" key={tickerIdx}>
-                        <div className="text-[12px] text-red-400 font-bold uppercase truncate" style={{ animation: "slideUp 0.4s ease" }}>
-                          {current.title}
-                        </div>
-                        <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-0.5">
-                          <span className="font-semibold">{current.source}</span>
-                          <span>·</span>
-                          <span>{current.asset}</span>
-                          {current.published && <span>· {(() => { try { return new Date(current.published).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>}
-                        </div>
+                  <div className="relative overflow-hidden rounded-lg border border-bah-border bg-bah-bg/50 px-4 py-3">
+                    <div className="flex flex-col items-center text-center" key={tickerIdx}>
+                      <div className="text-[12px] text-red-400 font-bold uppercase leading-snug" style={{ animation: "slideUp 0.4s ease" }}>
+                        {current.title}
                       </div>
-                      <div className="flex gap-1 shrink-0">
-                        {headlines.map((_: any, i: number) => (
-                          <button key={i} onClick={() => setTickerIdx(i)}
-                            className={`w-1.5 h-1.5 rounded-full transition-all ${i === tickerIdx % headlines.length ? "bg-bah-cyan" : "bg-bah-border"}`} />
-                        ))}
+                      <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-1">
+                        <span className="font-semibold">{current.source}</span>
+                        <span>·</span>
+                        <span>{current.asset}</span>
+                        {current.published && <span>· {(() => { try { return new Date(current.published).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>}
                       </div>
+                    </div>
+                    <div className="flex gap-1.5 justify-center mt-2">
+                      {headlines.map((_: any, i: number) => (
+                        <button key={i} onClick={() => setTickerIdx(i)}
+                          className={`w-1.5 h-1.5 rounded-full transition-all ${i === tickerIdx % headlines.length ? "bg-bah-cyan" : "bg-bah-border"}`} />
+                      ))}
                     </div>
                   </div>
                 );
