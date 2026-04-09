@@ -494,7 +494,7 @@ export default function TrainingOperationsPage() {
                                 <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-amber-500/[0.04]" : ""}`}>
                                   <td className="py-1.5 pr-3">
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-border/50 text-bah-muted"
+                                      isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-cyan/15 text-bah-cyan"
                                     }`}>{(ev.impact || "low").toUpperCase()}</span>
                                   </td>
                                   <td className="py-1.5 pr-3 font-semibold text-bah-heading">{isHigh ? "⚡ " : ""}{ev.event}</td>
