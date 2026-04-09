@@ -1927,34 +1927,41 @@ async def news_dashboard():
     except Exception:
         pass
 
-    # 3. Upcoming events — cached in Redis (1hr TTL) to avoid rate limits
+    # 3. Upcoming events — cached in Redis to avoid rate limits
     import httpx as _hx
     _no_surp = {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}
     _events_debug = {"source": "none", "error": None}
 
-    # Check Redis cache first
+    # Check Redis cache first (only use if it's economic calendar data, not stale earnings)
     try:
         import redis as _rds
         _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _cached = _rc.get("bahamut:calendar:events")
+        _cached = _rc.get("bahamut:calendar:events_v2")
         if _cached:
-            result["upcoming_events"] = json.loads(_cached)
-            _events_debug["source"] = "cache"
-            _events_debug["count"] = len(result["upcoming_events"])
+            _cached_data = json.loads(_cached)
+            # Only use cache if it has real economic events (not just earnings)
+            has_econ = any(not e.get("event", "").endswith(")") for e in _cached_data[:5])
+            if has_econ or len(_cached_data) > 0:
+                result["upcoming_events"] = _cached_data
+                _events_debug["source"] = "cache"
     except Exception:
         _rc = None
 
     # If no cache, fetch fresh
     if not result["upcoming_events"]:
-        _headers = {"User-Agent": "Bahamut/2.0 (Trading Platform)"}
+        _headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
 
-        # 3a. Forex Factory (free, works with User-Agent)
+        # 3a. Forex Factory economic calendar (priority)
         try:
-            async with _hx.AsyncClient(timeout=15, headers=_headers) as _c:
+            async with _hx.AsyncClient(timeout=20, headers=_headers, follow_redirects=True) as _c:
                 _r = await _c.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
                 _events_debug["ff_status"] = _r.status_code
                 if _r.status_code == 200:
-                    for ev in _r.json()[:30]:
+                    for ev in _r.json()[:40]:
                         imp = ev.get("impact", "Low")
                         if imp == "Holiday":
                             continue
@@ -1970,28 +1977,38 @@ async def news_dashboard():
                             "surprise": _no_surp,
                         })
                     _events_debug["source"] = "forexfactory"
+                    # Cache economic calendar for 2 hours
+                    if _rc and result["upcoming_events"]:
+                        try:
+                            _rc.setex("bahamut:calendar:events_v2", 7200, json.dumps(result["upcoming_events"]))
+                        except Exception:
+                            pass
         except Exception as e:
             _events_debug["error"] = str(e)[:100]
 
-        # 3b. Fallback: Finnhub earnings calendar (free tier)
+        # 3b. Fallback: Finnhub earnings (only for stocks in our universe)
         if not result["upcoming_events"]:
             try:
                 from bahamut.config import get_settings as _gs
+                from bahamut.config_assets import TRAINING_STOCKS
                 _fk = _gs().finnhub_key
+                _stock_set = set(TRAINING_STOCKS)
                 if _fk:
                     async with _hx.AsyncClient(timeout=15) as _c:
                         _r = await _c.get("https://finnhub.io/api/v1/calendar/earnings",
                                            params={"from": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                                                    "to": (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d"),
                                                    "token": _fk})
-                        _events_debug["finnhub_earnings_status"] = _r.status_code
                         if _r.status_code == 200:
                             _d = _r.json()
-                            for ev in (_d.get("earningsCalendar", []))[:20]:
+                            for ev in (_d.get("earningsCalendar", []))[:50]:
+                                sym = ev.get("symbol", "")
+                                # Only show earnings for stocks we actually trade
+                                is_relevant = sym in _stock_set
                                 result["upcoming_events"].append({
-                                    "event": f"{ev.get('symbol', '?')} Earnings ({ev.get('quarter', '?')})",
+                                    "event": f"{sym} Earnings Q{ev.get('quarter', '?')}",
                                     "country": "US",
-                                    "impact": "high",
+                                    "impact": "high" if is_relevant else "medium",
                                     "actual": ev.get("epsActual"),
                                     "estimate": ev.get("epsEstimate"),
                                     "prev": None,
@@ -1999,16 +2016,17 @@ async def news_dashboard():
                                     "source": "finnhub_earnings",
                                     "surprise": _no_surp,
                                 })
+                            # Sort: our stocks first, then by date
+                            result["upcoming_events"].sort(key=lambda e: (0 if e["impact"] == "high" else 1, e.get("date", "")))
                             _events_debug["source"] = "finnhub_earnings"
+                            # Short cache for earnings (15 min) — keep trying for FF
+                            if _rc:
+                                try:
+                                    _rc.setex("bahamut:calendar:events_v2", 900, json.dumps(result["upcoming_events"]))
+                                except Exception:
+                                    pass
             except Exception as e:
                 _events_debug["error"] = (_events_debug.get("error") or "") + " | " + str(e)[:80]
-
-        # Cache result for 1 hour
-        if result["upcoming_events"] and _rc:
-            try:
-                _rc.setex("bahamut:calendar:events", 3600, json.dumps(result["upcoming_events"]))
-            except Exception:
-                pass
 
     # Enrich with surprise scores
     if result["upcoming_events"]:

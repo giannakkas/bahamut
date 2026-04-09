@@ -508,13 +508,13 @@ export default function TrainingOperationsPage() {
                               const s = ev.surprise || {};
                               const hasSurprise = s.surprise_z > 0.2;
                               return (
-                                <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-amber-500/[0.04]" : ""}`}>
+                                <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-red-500/[0.05]" : ""}`}>
                                   <td className="py-1.5 pr-3">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-cyan/15 text-bah-cyan"
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
+                                      isHigh ? "bg-red-500/25 text-red-300 border border-red-500/40" : isMed ? "bg-amber-500/20 text-amber-300" : "bg-bah-cyan/15 text-bah-cyan"
                                     }`}>{(ev.impact || "low").toUpperCase()}</span>
                                   </td>
-                                  <td className="py-1.5 pr-3 font-semibold text-bah-heading">{isHigh ? "⚡ " : ""}{ev.event}</td>
+                                  <td className={`py-1.5 pr-3 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
                                   <td className="py-1.5 pr-3 text-bah-muted">{ev.country}</td>
                                   <td className="py-1.5 pr-3 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
                                   <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
