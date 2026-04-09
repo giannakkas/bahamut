@@ -412,50 +412,67 @@ export default function TrainingOperationsPage() {
                 );
               })()}
 
-              {/* ── SENTIMENT ROW ── */}
-              <div className="flex flex-wrap gap-3">
+              {/* ── SENTIMENT GAUGES ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Crypto Fear & Greed */}
                 {newsDash.sentiment?.fear_greed && (() => {
                   const fg = newsDash.sentiment.fear_greed;
                   const val = fg.value || 0;
-                  const clr = val <= 24 ? "text-red-500" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
-                  const bgClr = val <= 24 ? "bg-red-500/10 border-red-500/20" : val <= 39 ? "bg-orange-500/10 border-orange-500/20" : val <= 60 ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20";
+                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
+                  const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
                   return (
-                    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${bgClr}`}>
-                      <span className={`text-xl font-black ${clr}`}>{val}</span>
-                      <div>
-                        <div className={`text-[12px] font-bold ${clr}`}>{fg.classification}</div>
-                        <div className="text-[10px] text-bah-muted">Crypto F&G</div>
+                    <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
+                      <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
+                        <span className={`text-2xl font-black ${clr}`}>{val}</span>
                       </div>
-                      {fg.should_block_longs && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">LONGS BLOCKED</span>}
+                      <div>
+                        <div className={`text-[13px] font-bold ${clr}`}>{fg.classification}</div>
+                        <div className="text-[10px] text-bah-muted">Crypto Fear & Greed</div>
+                      </div>
+                      {fg.should_block_longs && (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase tracking-wider">Longs Blocked</span>
+                      )}
                     </div>
                   );
                 })()}
+
+                {/* CNN Stock Fear & Greed */}
                 {newsDash.sentiment?.cnn_fear_greed && (() => {
                   const cnn = newsDash.sentiment.cnn_fear_greed;
                   const val = cnn.value || 0;
-                  const clr = val <= 24 ? "text-red-500" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
-                  const bgClr = val <= 24 ? "bg-red-500/10 border-red-500/20" : val <= 39 ? "bg-orange-500/10 border-orange-500/20" : val <= 60 ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20";
+                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
+                  const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
                   return (
-                    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${bgClr}`}>
-                      <span className={`text-xl font-black ${clr}`}>{val}</span>
+                    <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
+                      <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
+                        <span className={`text-2xl font-black ${clr}`}>{val}</span>
+                      </div>
                       <div>
-                        <div className={`text-[12px] font-bold ${clr}`}>{cnn.classification}</div>
+                        <div className={`text-[13px] font-bold ${clr}`}>{cnn.classification}</div>
                         <div className="text-[10px] text-bah-muted">CNN Stock F&G</div>
                       </div>
-                      {cnn.should_block_longs && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">BLOCKED</span>}
                     </div>
                   );
                 })()}
+
+                {/* Sentiment Gate */}
                 {newsDash.sentiment?.combined_crypto_action && (() => {
                   const action = newsDash.sentiment.combined_crypto_action;
                   const reason = newsDash.sentiment.combined_reason || "";
                   const isBlock = action.includes("block");
                   return (
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${isBlock ? "bg-red-500/10 border-red-500/20" : "bg-green-500/10 border-green-500/20"}`}>
-                      <span className={`text-[12px] font-bold ${isBlock ? "text-red-400" : "text-green-400"}`}>
-                        {isBlock ? "🛑" : "✅"} {action.replace(/_/g, " ").toUpperCase()}
-                      </span>
-                      {reason && <span className="text-[10px] text-bah-muted">— {reason}</span>}
+                    <div className={`rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2 ${isBlock ? "bg-red-500/[0.06]" : "bg-green-500/[0.06]"}`}>
+                      <div className={`w-16 h-16 rounded-full border-[3px] flex items-center justify-center ${isBlock ? "border-red-500/40" : "border-green-500/40"}`}>
+                        <span className="text-2xl">{isBlock ? "🛑" : "✅"}</span>
+                      </div>
+                      <div>
+                        <div className={`text-[13px] font-bold ${isBlock ? "text-red-400" : "text-green-400"}`}>
+                          {isBlock ? "Block All Longs" : "Trading Allowed"}
+                        </div>
+                        {reason && <div className="text-[10px] text-bah-muted mt-0.5">{reason}</div>}
+                      </div>
                     </div>
                   );
                 })()}
@@ -470,7 +487,7 @@ export default function TrainingOperationsPage() {
                     <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
                       📅 Economic Calendar
                       <span className="text-bah-cyan">{allEvents.length} events</span>
-                      {debug && <span className="text-[9px] text-bah-muted/50 font-normal">src: {debug.source} | finnhub: {debug.finnhub_status} keys: {JSON.stringify(debug.finnhub_keys)} raw: {debug.raw_count} | ff: {debug.ff_status} | err: {debug.error || "none"}</span>}
+                      {debug && debug.source !== "none" && <span className="text-[9px] text-bah-muted/40 font-normal">via {debug.source}</span>}
                     </div>
                     {allEvents.length > 0 ? (
                       <>
@@ -522,7 +539,7 @@ export default function TrainingOperationsPage() {
                         )}
                       </>
                     ) : (
-                      <div className="text-[11px] text-bah-muted py-2">No events loaded — check logs</div>
+                      <div className="text-[11px] text-bah-muted py-3 text-center">Loading economic events... (cached hourly)</div>
                     )}
                   </div>
                 );
