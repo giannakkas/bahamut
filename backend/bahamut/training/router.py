@@ -1882,3 +1882,83 @@ async def asset_leaderboard():
         return {"crypto": crypto, "stock": stock}
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/news-dashboard")
+async def news_dashboard():
+    """Compact news/events dashboard for the Training Operations page."""
+    result = {
+        "sentiment": {},
+        "news_impacts": [],
+        "upcoming_events": [],
+        "freezes": [],
+        "headlines": [],
+    }
+
+    # 1. Sentiment state
+    try:
+        from bahamut.sentiment.gate import get_full_sentiment
+        result["sentiment"] = get_full_sentiment()
+    except Exception:
+        pass
+
+    # 2. News impact for top assets
+    try:
+        from bahamut.intelligence.news_impact import compute_news_impact_sync
+        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
+        for a in (TRAINING_CRYPTO[:8] + TRAINING_STOCKS[:5]):
+            ac = "crypto" if a in TRAINING_CRYPTO else "stock"
+            nia = compute_news_impact_sync(a, ac)
+            if nia.impact_score > 0.05:
+                entry = {
+                    "asset": a, "asset_class": ac,
+                    "impact_score": nia.impact_score,
+                    "directional_bias": nia.directional_bias,
+                    "shock_level": nia.shock_level,
+                    "freeze_trading": nia.freeze_trading,
+                    "freeze_reason": nia.freeze_reason,
+                    "headline_count": nia.headline_count,
+                    "confidence": nia.confidence,
+                    "explanations": nia.explanations[:3],
+                }
+                result["news_impacts"].append(entry)
+                if nia.freeze_trading:
+                    result["freezes"].append({"asset": a, "reason": nia.freeze_reason})
+    except Exception:
+        pass
+
+    # 3. Upcoming events
+    try:
+        from bahamut.ingestion.adapters.news import econ_calendar
+        events = await econ_calendar.get_upcoming_events(days_ahead=2)
+        high_events = [e for e in events if e.get("impact") == "high"][:5]
+        result["upcoming_events"] = high_events
+    except Exception:
+        pass
+
+    # 4. Recent headlines (cached)
+    try:
+        import os, redis as _redis, json
+        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        for key in r.keys("bahamut:news:headlines:*"):
+            try:
+                asset_name = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
+                if asset_name == "_global":
+                    continue
+                raw = r.get(key)
+                if raw:
+                    headlines = json.loads(raw)
+                    for h in headlines[:2]:
+                        result["headlines"].append({
+                            "asset": asset_name,
+                            "title": h.get("title", "")[:100],
+                            "source": h.get("source", ""),
+                            "published": h.get("published", ""),
+                        })
+            except Exception:
+                pass
+        result["headlines"] = sorted(result["headlines"], key=lambda x: x.get("published", ""), reverse=True)[:10]
+    except Exception:
+        pass
+
+    return result

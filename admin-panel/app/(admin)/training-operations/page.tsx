@@ -52,6 +52,7 @@ export default function TrainingOperationsPage() {
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showMoreClosed, setShowMoreClosed] = useState(false);
+  const [newsDash, setNewsDash] = useState<any>(null);
   const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevLastCycle = useRef<string | null>(null);
@@ -202,6 +203,18 @@ export default function TrainingOperationsPage() {
       }
       setFailedSignals(combined);
     } catch {}
+
+    // ── Phase 4: Market intelligence (sentiment + events) — background ──
+    try {
+      const [sentRes, evtRes] = await Promise.all([
+        fetch(`${apiBase()}/training/sentiment`, { headers: h }),
+        fetch(`${apiBase()}/trust/events/upcoming`, { headers: h }),
+      ]);
+      const newsData: any = {};
+      if (sentRes.ok) newsData.sentiment = await sentRes.json();
+      if (evtRes.ok) newsData.events = await evtRes.json();
+      setNewsDash(newsData);
+    } catch {}
   };
 
   // Fast refresh: live data (positions, KPIs, cycle status) — every 5s like Daily Operations
@@ -351,6 +364,118 @@ export default function TrainingOperationsPage() {
           </div>
         ))}
       </div>
+
+      {/* ═══ MARKET INTELLIGENCE ═══ */}
+      {newsDash && (
+        <div className="anim-slide" style={{ animationDelay: "0.09s" }}>
+          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3 border-b border-bah-border">
+              <span className="text-sm font-bold text-bah-heading tracking-tight">📰 Market Intelligence</span>
+              <span className="text-[11px] text-bah-muted">News & Events driving decisions</span>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Sentiment Row */}
+              <div className="flex flex-wrap gap-3">
+                {/* Crypto F&G */}
+                {newsDash.sentiment?.fear_greed && (() => {
+                  const fg = newsDash.sentiment.fear_greed;
+                  const val = fg.value || 0;
+                  const clr = val <= 24 ? "text-red-500" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const bgClr = val <= 24 ? "bg-red-500/10 border-red-500/20" : val <= 39 ? "bg-orange-500/10 border-orange-500/20" : val <= 60 ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20";
+                  return (
+                    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${bgClr}`}>
+                      <span className={`text-xl font-black ${clr}`}>{val}</span>
+                      <div>
+                        <div className={`text-[12px] font-bold ${clr}`}>{fg.classification}</div>
+                        <div className="text-[10px] text-bah-muted">Crypto Fear & Greed</div>
+                      </div>
+                      {fg.should_block_longs && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 ml-2">LONGS BLOCKED</span>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* CNN F&G */}
+                {newsDash.sentiment?.cnn_fear_greed && (() => {
+                  const cnn = newsDash.sentiment.cnn_fear_greed;
+                  const val = cnn.value || 0;
+                  const clr = val <= 24 ? "text-red-500" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const bgClr = val <= 24 ? "bg-red-500/10 border-red-500/20" : val <= 39 ? "bg-orange-500/10 border-orange-500/20" : val <= 60 ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20";
+                  return (
+                    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${bgClr}`}>
+                      <span className={`text-xl font-black ${clr}`}>{val}</span>
+                      <div>
+                        <div className={`text-[12px] font-bold ${clr}`}>{cnn.classification}</div>
+                        <div className="text-[10px] text-bah-muted">CNN Stock F&G</div>
+                      </div>
+                      {cnn.should_block_longs && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 ml-2">BLOCKED</span>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Sentiment Gate Action */}
+                {newsDash.sentiment?.combined_crypto_action && (() => {
+                  const action = newsDash.sentiment.combined_crypto_action;
+                  const reason = newsDash.sentiment.combined_reason || "";
+                  const isBlock = action.includes("block");
+                  return (
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${isBlock ? "bg-red-500/10 border-red-500/20" : "bg-green-500/10 border-green-500/20"}`}>
+                      <span className={`text-[12px] font-bold ${isBlock ? "text-red-400" : "text-green-400"}`}>
+                        {isBlock ? "🛑" : "✅"} {action.replace(/_/g, " ").toUpperCase()}
+                      </span>
+                      {reason && <span className="text-[10px] text-bah-muted">— {reason}</span>}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Upcoming Events */}
+              {newsDash.events?.events && newsDash.events.events.length > 0 && (() => {
+                const highImpact = newsDash.events.events.filter((e: any) => e.impact === "high").slice(0, 5);
+                const medImpact = newsDash.events.events.filter((e: any) => e.impact === "medium").slice(0, 3);
+                const events = [...highImpact, ...medImpact].slice(0, 5);
+                if (events.length === 0) return null;
+                return (
+                  <div>
+                    <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-1.5 font-bold">Upcoming Events</div>
+                    <div className="flex flex-wrap gap-2">
+                      {events.map((ev: any, i: number) => {
+                        const isHigh = ev.impact === "high";
+                        const hasSurprise = ev.surprise && ev.surprise.surprise_z > 0.2;
+                        return (
+                          <div key={i} className={`px-3 py-1.5 rounded-lg border text-[11px] ${
+                            isHigh ? "bg-amber-500/10 border-amber-500/25" : "bg-bah-surface border-bah-border"
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold ${isHigh ? "text-amber-400" : "text-bah-text"}`}>
+                                {isHigh ? "⚡" : "📅"} {ev.event}
+                              </span>
+                              <span className="text-[10px] text-bah-muted">{ev.country}</span>
+                            </div>
+                            {hasSurprise && (
+                              <div className={`text-[10px] font-bold mt-0.5 ${ev.surprise.direction === "LONG" ? "text-green-400" : ev.surprise.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
+                                Surprise: {ev.surprise.magnitude} ({ev.surprise.direction}) z={ev.surprise.surprise_z}
+                              </div>
+                            )}
+                            {ev.actual != null && (
+                              <div className="text-[10px] text-bah-muted mt-0.5">
+                                Actual: {ev.actual} | Est: {ev.estimate || "—"} | Prev: {ev.prev || "—"}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
