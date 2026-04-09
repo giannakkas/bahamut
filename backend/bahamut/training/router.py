@@ -10,7 +10,7 @@ Completely isolated from production BTC/ETH data.
 import json
 import os
 import structlog
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends
 
 from bahamut.auth.router import get_current_user
@@ -1927,27 +1927,76 @@ async def news_dashboard():
     except Exception:
         pass
 
-    # 3. Upcoming events
+    # 3. Upcoming events — direct HTTP calls, no adapter imports
+    import httpx as _hx
+    _no_surp = {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}
+
+    # 3a. Try Finnhub economic calendar
     try:
-        from bahamut.ingestion.adapters.news import econ_calendar
-        from bahamut.intelligence.news_impact import event_surprise_score
-        events = await econ_calendar.get_upcoming_events(days_ahead=3)
-        enriched = []
-        for e in events[:40]:
-            try:
-                surprise = event_surprise_score(e)
-                enriched.append({**e, "surprise": surprise})
-            except Exception:
-                enriched.append({**e, "surprise": {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}})
-        result["upcoming_events"] = enriched
-        logger.info("news_dashboard_events", count=len(enriched))
+        from bahamut.config import get_settings as _gs
+        _fk = _gs().finnhub_key
+        if _fk:
+            async with _hx.AsyncClient(timeout=15) as _c:
+                _start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                _end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+                _r = await _c.get("https://finnhub.io/api/v1/calendar/economic",
+                                   params={"from": _start, "to": _end, "token": _fk})
+                if _r.status_code == 200:
+                    _d = _r.json()
+                    _raw = _d.get("economicCalendar", _d.get("result", []))
+                    for ev in (_raw or [])[:40]:
+                        imp_raw = ev.get("impact", "low")
+                        imp = imp_raw if imp_raw in ("high", "medium", "low") else "low"
+                        result["upcoming_events"].append({
+                            "event": ev.get("event", "Unknown"),
+                            "country": ev.get("country", ""),
+                            "impact": imp,
+                            "actual": ev.get("actual"),
+                            "estimate": ev.get("estimate"),
+                            "prev": ev.get("prev"),
+                            "date": ev.get("date", ""),
+                            "time": ev.get("time", ""),
+                            "source": "finnhub",
+                            "surprise": _no_surp,
+                        })
+                    logger.info("news_dashboard_events_finnhub", count=len(result["upcoming_events"]))
+                else:
+                    logger.warning("news_dashboard_finnhub_cal_status", status=_r.status_code)
     except Exception as e:
-        logger.error("news_dashboard_events_failed", error=str(e)[:100])
-        # Fallback: try fetching without enrichment
+        logger.error("news_dashboard_finnhub_cal_error", error=str(e)[:120])
+
+    # 3b. Fallback: Forex Factory
+    if not result["upcoming_events"]:
         try:
-            from bahamut.ingestion.adapters.news import econ_calendar as ec2
-            raw_events = await ec2.get_upcoming_events(days_ahead=3)
-            result["upcoming_events"] = raw_events[:30]
+            async with _hx.AsyncClient(timeout=10) as _c:
+                _r = await _c.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+                if _r.status_code == 200:
+                    for ev in _r.json()[:30]:
+                        imp = ev.get("impact", "Low")
+                        if imp == "Holiday":
+                            continue
+                        result["upcoming_events"].append({
+                            "event": ev.get("title", "Unknown"),
+                            "country": ev.get("country", ""),
+                            "impact": "high" if imp == "High" else "medium" if imp == "Medium" else "low",
+                            "actual": ev.get("actual") or None,
+                            "estimate": ev.get("forecast") or None,
+                            "prev": ev.get("previous") or None,
+                            "date": ev.get("date", ""),
+                            "source": "forexfactory",
+                            "surprise": _no_surp,
+                        })
+                    logger.info("news_dashboard_events_ff", count=len(result["upcoming_events"]))
+        except Exception as e:
+            logger.error("news_dashboard_ff_cal_error", error=str(e)[:120])
+
+    # 3c. Enrich with surprise scores
+    if result["upcoming_events"]:
+        try:
+            from bahamut.intelligence.news_impact import event_surprise_score
+            for ev in result["upcoming_events"]:
+                if ev.get("actual") is not None and ev.get("estimate") is not None:
+                    ev["surprise"] = event_surprise_score(ev)
         except Exception:
             pass
 
