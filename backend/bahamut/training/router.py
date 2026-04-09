@@ -1884,10 +1884,10 @@ async def asset_leaderboard():
         return {"error": str(e)}
 
 
-async def _ai_estimate_event_directions(events: list[dict]) -> dict:
+async def _ai_estimate_event_directions(events: list[dict]) -> list[dict]:
     """Use Gemini (free) to estimate market direction for each economic event.
-    Returns: {event_name: {direction: UP/DOWN/NEUTRAL, confidence: 0-1, reason: str}}
-    Single batch API call — not per-event.
+    Returns: list of {direction: UP/DOWN/NEUTRAL, confidence: 0-1, reason: str}
+    Index-aligned with input events. Single batch API call.
     """
     import httpx
 
@@ -1895,39 +1895,38 @@ async def _ai_estimate_event_directions(events: list[dict]) -> dict:
     s = get_settings()
     api_key = s.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        return {}
+        return []
 
-    # Build compact event list for prompt
+    # Build numbered event list
     event_lines = []
-    for ev in events[:20]:
-        line = f"- {ev.get('event', 'Unknown')} | impact: {ev.get('impact', 'low')} | country: {ev.get('country', '?')}"
+    for i, ev in enumerate(events[:20]):
+        line = f"{i+1}. {ev.get('event', 'Unknown')} | impact: {ev.get('impact', 'low')} | country: {ev.get('country', '?')}"
         if ev.get("actual") is not None:
             line += f" | actual: {ev['actual']} vs estimate: {ev.get('estimate', '?')}"
         event_lines.append(line)
 
-    prompt = f"""You are a macro market analyst. For each economic event below, estimate whether it will move the US stock market and crypto market UP or DOWN.
+    prompt = f"""You are a macro market analyst. For each numbered economic event below, estimate whether it will move markets UP or DOWN.
 
 Events:
 {chr(10).join(event_lines)}
 
-Respond ONLY with a JSON object. No markdown, no backticks, no explanation.
-Format: {{"event_name_first_50_chars": {{"direction": "UP" or "DOWN" or "NEUTRAL", "confidence": 0.0-1.0, "reason": "brief 5-10 word reason"}}}}
+Respond ONLY with a JSON array. No markdown, no backticks, no extra text.
+Each element: {{"direction": "UP" or "DOWN" or "NEUTRAL", "confidence": 0.0-1.0, "reason": "5-10 word reason"}}
+Array must have exactly {len(event_lines)} elements, one per event in order.
 
 Rules:
-- Rate cuts, dovish = UP
+- Rate cuts, dovish, stimulus = UP
 - Rate hikes, hawkish, high inflation = DOWN
-- Strong jobs/GDP = UP (good economy) unless it means no rate cuts
-- Weak jobs = DOWN short term but UP if it means rate cuts
-- Geopolitical tension = DOWN
-- Earnings beat = UP for that stock
-- Earnings miss = DOWN for that stock
-- OPEC cut = DOWN for markets (higher oil costs)
-- Tariffs = DOWN
-- If uncertain, say NEUTRAL with low confidence"""
+- Strong jobs/GDP = UP unless it delays rate cuts
+- Weak jobs = mixed, lean DOWN
+- Geopolitical tension, war, tariffs = DOWN
+- Earnings beat = UP, earnings miss = DOWN
+- OPEC production cut = DOWN (higher oil)
+- If uncertain, NEUTRAL with low confidence"""
 
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
                 f"{url}?key={api_key}",
                 json={
@@ -1936,31 +1935,37 @@ Rules:
                 },
             )
             if resp.status_code != 200:
-                return {}
+                logger.warning("ai_event_estimate_status", status=resp.status_code)
+                return []
 
             data = resp.json()
             text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
 
-            # Clean and parse JSON
+            # Clean and parse JSON array
             text = text.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
             result = json.loads(text)
 
-            # Validate structure
-            clean = {}
-            for key, val in result.items():
-                if isinstance(val, dict) and "direction" in val:
-                    clean[key[:50]] = {
-                        "direction": val.get("direction", "NEUTRAL").upper(),
-                        "confidence": min(1.0, max(0.0, float(val.get("confidence", 0.5)))),
-                        "reason": str(val.get("reason", ""))[:60],
-                    }
+            if not isinstance(result, list):
+                return []
+
+            # Validate and clean each entry
+            clean = []
+            for item in result:
+                if isinstance(item, dict) and "direction" in item:
+                    clean.append({
+                        "direction": item.get("direction", "NEUTRAL").upper(),
+                        "confidence": min(1.0, max(0.0, float(item.get("confidence", 0.5)))),
+                        "reason": str(item.get("reason", ""))[:60],
+                    })
+                else:
+                    clean.append({"direction": "NEUTRAL", "confidence": 0, "reason": ""})
             return clean
     except Exception as e:
         logger.debug("ai_event_direction_error", error=str(e)[:100])
-        return {}
+        return []
 
 
 @router.get("/news-dashboard")
@@ -2015,7 +2020,7 @@ async def news_dashboard():
     try:
         import redis as _rds
         _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _cached = _rc.get("bahamut:calendar:events_v2")
+        _cached = _rc.get("bahamut:calendar:events_v3")
         if _cached:
             _cached_data = json.loads(_cached)
             # Only use cache if it has real economic events (not just earnings)
@@ -2059,7 +2064,7 @@ async def news_dashboard():
                     # Cache economic calendar for 2 hours
                     if _rc and result["upcoming_events"]:
                         try:
-                            _rc.setex("bahamut:calendar:events_v2", 7200, json.dumps(result["upcoming_events"]))
+                            _rc.setex("bahamut:calendar:events_v3", 7200, json.dumps(result["upcoming_events"]))
                         except Exception:
                             pass
         except Exception as e:
@@ -2101,7 +2106,7 @@ async def news_dashboard():
                             # Short cache for earnings (15 min) — keep trying for FF
                             if _rc:
                                 try:
-                                    _rc.setex("bahamut:calendar:events_v2", 900, json.dumps(result["upcoming_events"]))
+                                    _rc.setex("bahamut:calendar:events_v3", 900, json.dumps(result["upcoming_events"]))
                                 except Exception:
                                     pass
             except Exception as e:
@@ -2119,20 +2124,18 @@ async def news_dashboard():
 
     # AI-estimated market direction for each event (Gemini, single batch call)
     if result["upcoming_events"]:
-        # Check if estimates already cached
         _has_estimates = any(ev.get("ai_estimate") for ev in result["upcoming_events"])
         if not _has_estimates:
             try:
                 estimates = await _ai_estimate_event_directions(result["upcoming_events"][:20])
                 if estimates:
-                    for ev in result["upcoming_events"]:
-                        key = ev.get("event", "")[:50]
-                        if key in estimates:
-                            ev["ai_estimate"] = estimates[key]
+                    for i, est in enumerate(estimates):
+                        if i < len(result["upcoming_events"]):
+                            result["upcoming_events"][i]["ai_estimate"] = est
                     # Re-cache with estimates
                     if _rc:
                         try:
-                            _rc.setex("bahamut:calendar:events_v2",
+                            _rc.setex("bahamut:calendar:events_v3",
                                       7200 if _events_debug.get("source") != "finnhub_earnings" else 900,
                                       json.dumps(result["upcoming_events"]))
                         except Exception:

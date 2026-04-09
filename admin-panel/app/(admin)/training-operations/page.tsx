@@ -391,7 +391,7 @@ export default function TrainingOperationsPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-bah-cyan text-[11px] font-bold shrink-0 animate-pulse">● LIVE</span>
                       <div className="flex-1 min-w-0" key={tickerIdx}>
-                        <div className="text-[12px] text-bah-heading font-semibold truncate" style={{ animation: "slideUp 0.4s ease" }}>
+                        <div className="text-[12px] text-red-400 font-bold uppercase truncate" style={{ animation: "slideUp 0.4s ease" }}>
                           {current.title}
                         </div>
                         <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-0.5">
