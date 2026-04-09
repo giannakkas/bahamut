@@ -302,14 +302,16 @@ export default function Dashboard() {
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-accent-emerald/15 text-accent-emerald border border-accent-emerald/30">{(data.positions || []).length}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-[10px] sm:text-[11px] min-w-[700px]">
+              <table className="w-full text-[10px] sm:text-[11px] min-w-[800px]">
                 <thead><tr className="border-b border-border-default text-[9px] text-text-muted uppercase tracking-wider text-left">
                   <th className="py-2 px-3">Asset</th><th className="py-2 px-3">Strategy</th><th className="py-2 px-3">Dir</th>
                   <th className="py-2 px-3">Entry</th><th className="py-2 px-3">SL</th><th className="py-2 px-3">TP</th>
-                  <th className="py-2 px-3">Risk</th><th className="py-2 px-3">Bars</th><th className="py-2 px-3">PnL</th>
+                  <th className="py-2 px-3">Risk</th><th className="py-2 px-3">Bars</th><th className="py-2 px-3">PnL</th><th className="py-2 px-3">Opened</th>
                 </tr></thead>
                 <tbody>
-                  {(data.positions || []).map((p: any, i: number) => (
+                  {(data.positions || []).map((p: any, i: number) => {
+                    const fmtTime = (t: string) => { try { const d = new Date(t); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
+                    return (
                     <tr key={i} className="border-b border-border-default/50 hover:bg-bg-tertiary/30">
                       <td className="py-2 px-3 text-text-primary font-bold">{p.asset}</td>
                       <td className="py-2 px-3 text-text-secondary">{sn(p.strategy)}</td>
@@ -320,8 +322,10 @@ export default function Dashboard() {
                       <td className="py-2 px-3 text-text-secondary font-mono">{fm(p.risk_amount)}</td>
                       <td className="py-2 px-3 text-text-muted">{p.bars_held}/{p.max_hold_bars}</td>
                       <td className={`py-2 px-3 font-bold ${(p.unrealized_pnl || 0) >= 0 ? 'text-accent-emerald' : 'text-accent-crimson'}`}>{fmS(p.unrealized_pnl || 0)}</td>
+                      <td className="py-2 px-3 text-text-muted text-[10px] whitespace-nowrap">{p.entry_time ? fmtTime(p.entry_time) : "—"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -505,11 +509,13 @@ export default function Dashboard() {
                     <th className="py-2 px-3">Asset</th><th className="py-2 px-3">Strategy</th><th className="py-2 px-3">Dir</th>
                     <th className="py-2 px-3">Entry</th><th className="py-2 px-3">Exit</th><th className="py-2 px-3">PnL</th>
                     <th className="py-2 px-3">Result</th><th className="py-2 px-3">Reason</th><th className="py-2 px-3">Bars</th>
+                    <th className="py-2 px-3">Opened</th><th className="py-2 px-3">Closed</th>
                   </tr></thead>
                   <tbody>
                     {(data.closed_trades || []).slice(0, 30).map((t: any, i: number) => {
                       const pnl = t.pnl || 0;
                       const isFlat = Math.abs(pnl) < 0.01;
+                      const fmtTime = (ts: string) => { try { const d = new Date(ts); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
                       return (
                         <tr key={i} className="border-b border-border-default/50">
                           <td className="py-2 px-3 text-text-primary font-bold">{t.asset}</td>
@@ -521,6 +527,8 @@ export default function Dashboard() {
                           <td className="py-2 px-3"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isFlat ? 'bg-border-default text-text-muted' : pnl > 0 ? 'bg-accent-emerald/15 text-accent-emerald' : 'bg-accent-crimson/15 text-accent-crimson'}`}>{isFlat ? 'FLAT' : pnl > 0 ? 'WIN' : 'LOSS'}</span></td>
                           <td className="py-2 px-3 text-text-muted text-[10px]">{t.exit_reason}</td>
                           <td className="py-2 px-3 text-text-muted">{t.bars_held}</td>
+                          <td className="py-2 px-3 text-text-muted text-[10px] whitespace-nowrap">{t.entry_time ? fmtTime(t.entry_time) : "—"}</td>
+                          <td className="py-2 px-3 text-text-muted text-[10px] whitespace-nowrap">{t.exit_time ? fmtTime(t.exit_time) : "—"}</td>
                         </tr>
                       );
                     })}

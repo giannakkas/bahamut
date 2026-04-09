@@ -541,17 +541,18 @@ export default function TrainingOperationsPage() {
               <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-green-500/15 text-green-400 border border-green-500/30">{(data.positions || []).length}</span>
             </div>
             <div className="border-t border-bah-border overflow-x-auto">
-              <table className="w-full text-[12px] min-w-[900px]">
+              <table className="w-full text-[12px] min-w-[1000px]">
                 <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-[0.1em] text-left">
                   <th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th><th className="px-3 py-2.5">Dir</th>
                   <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Current</th>
                   <th className="px-3 py-2.5 text-right">SL</th><th className="px-3 py-2.5 text-right">TP</th>
                   <th className="px-3 py-2.5 text-right">Risk</th><th className="px-3 py-2.5 text-right">Unreal P&L</th>
-                  <th className="px-3 py-2.5">Bars</th>
+                  <th className="px-3 py-2.5 text-center">Bars</th><th className="px-3 py-2.5">Opened</th>
                 </tr></thead>
                 <tbody>{(data.positions || []).map((p: any, i: number) => {
                   const unreal = p.unrealized_pnl || 0;
                   const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  const fmtTime = (t: string) => { try { const d = new Date(t); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                       <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[10px] text-bah-muted">{p.asset_class}</div></td>
@@ -564,6 +565,7 @@ export default function TrainingOperationsPage() {
                       <td className="px-3 py-2.5 font-mono text-right text-amber-400/70">{fmtM(p.risk_amount || 0)}</td>
                       <td className={`px-3 py-2.5 font-mono font-bold text-right ${unreal >= 0 ? "text-green-400" : "text-red-400"}`}>{`${unreal >= 0 ? "+" : "-"}$${Math.abs(unreal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                       <td className="px-3 py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
+                      <td className="px-3 py-2.5 text-bah-muted text-[11px] whitespace-nowrap">{p.entry_time ? fmtTime(p.entry_time) : "—"}</td>
                     </tr>
                   );
                 })}</tbody>
@@ -582,18 +584,20 @@ export default function TrainingOperationsPage() {
               <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-bah-cyan/15 text-bah-cyan border border-bah-cyan/30">{(data.closed_trades || []).length}</span>
             </div>
             <div className="border-t border-bah-border overflow-x-auto">
-              <table className="w-full text-[12px] min-w-[800px]">
+              <table className="w-full text-[12px] min-w-[950px]">
                 <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-[0.1em] text-left">
                   <th className="px-3 py-2">Asset</th><th className="px-3 py-2">Strategy</th><th className="px-3 py-2">Dir</th>
                   <th className="px-3 py-2 text-right">Entry</th><th className="px-3 py-2 text-right">Exit</th>
                   <th className="px-3 py-2 text-right">P&L</th><th className="px-3 py-2">Result</th>
                   <th className="px-3 py-2">Reason</th><th className="px-3 py-2 text-center">Bars</th>
+                  <th className="px-3 py-2">Opened</th><th className="px-3 py-2">Closed</th>
                 </tr></thead>
                 <tbody>{(data.closed_trades || []).slice(0, showMoreClosed ? 35 : 5).map((t: any, i: number) => {
                   const pnl = t.pnl || 0;
                   const isFlat = Math.abs(pnl) < 0.01;
                   const isWin = pnl > 0.01;
                   const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  const fmtTime = (ts: string) => { try { const d = new Date(ts); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                       <td className="px-3 py-2 text-bah-heading font-bold">{t.asset}</td>
@@ -605,6 +609,8 @@ export default function TrainingOperationsPage() {
                       <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isFlat ? "bg-white/10 text-white/50" : isWin ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>{isFlat ? "FLAT" : isWin ? "WIN" : "LOSS"}</span></td>
                       <td className="px-3 py-2 text-bah-muted text-[11px]">{t.exit_reason}</td>
                       <td className="px-3 py-2 text-bah-muted text-center">{t.bars_held}</td>
+                      <td className="px-3 py-2 text-bah-muted text-[11px] whitespace-nowrap">{t.entry_time ? fmtTime(t.entry_time) : "—"}</td>
+                      <td className="px-3 py-2 text-bah-muted text-[11px] whitespace-nowrap">{t.exit_time ? fmtTime(t.exit_time) : "—"}</td>
                     </tr>
                   );
                 })}</tbody>
