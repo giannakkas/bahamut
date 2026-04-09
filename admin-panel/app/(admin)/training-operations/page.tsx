@@ -53,6 +53,8 @@ export default function TrainingOperationsPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showMoreClosed, setShowMoreClosed] = useState(false);
   const [newsDash, setNewsDash] = useState<any>(null);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [tickerIdx, setTickerIdx] = useState(0);
   const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevLastCycle = useRef<string | null>(null);
@@ -204,17 +206,11 @@ export default function TrainingOperationsPage() {
       setFailedSignals(combined);
     } catch {}
 
-    // ── Phase 4: Market intelligence (sentiment + events) — background ──
-    try {
-      const [sentRes, evtRes] = await Promise.all([
-        fetch(`${apiBase()}/training/sentiment`, { headers: h }),
-        fetch(`${apiBase()}/trust/events/upcoming`, { headers: h }),
-      ]);
-      const newsData: any = {};
-      if (sentRes.ok) newsData.sentiment = await sentRes.json();
-      if (evtRes.ok) newsData.events = await evtRes.json();
-      setNewsDash(newsData);
-    } catch {}
+    // ── Phase 4: Market intelligence (news-dashboard) — background ──
+    fetch(`${apiBase()}/training/news-dashboard`, { headers: h })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setNewsDash(d); })
+      .catch(() => {});
   };
 
   // Fast refresh: live data (positions, KPIs, cycle status) — every 5s like Daily Operations
@@ -250,6 +246,16 @@ export default function TrainingOperationsPage() {
     const slow = setInterval(load, 60_000);
     return () => { clearInterval(fast); clearInterval(slow); };
   }, []);
+
+  // Rotate news ticker every 4 seconds
+  useEffect(() => {
+    const headlines = newsDash?.headlines || [];
+    if (headlines.length <= 1) return;
+    const iv = setInterval(() => {
+      setTickerIdx(prev => (prev + 1) % Math.min(headlines.length, 5));
+    }, 4000);
+    return () => clearInterval(iv);
+  }, [newsDash?.headlines?.length]);
 
   if (loading) return (
     <div className="p-12 text-center">
@@ -374,9 +380,40 @@ export default function TrainingOperationsPage() {
               <span className="text-[11px] text-bah-muted">News & Events driving decisions</span>
             </div>
             <div className="p-4 space-y-3">
-              {/* Sentiment Row */}
+
+              {/* ── NEWS TICKER — rotating last 5 headlines ── */}
+              {(newsDash.headlines || []).length > 0 && (() => {
+                const headlines = (newsDash.headlines || []).slice(0, 5);
+                const current = headlines[tickerIdx % headlines.length];
+                if (!current) return null;
+                return (
+                  <div className="relative overflow-hidden rounded-lg border border-bah-border bg-bah-bg/50 px-4 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-bah-cyan text-[11px] font-bold shrink-0 animate-pulse">● LIVE</span>
+                      <div className="flex-1 min-w-0" key={tickerIdx}>
+                        <div className="text-[12px] text-bah-heading font-semibold truncate" style={{ animation: "slideUp 0.4s ease" }}>
+                          {current.title}
+                        </div>
+                        <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-0.5">
+                          <span className="font-semibold">{current.source}</span>
+                          <span>·</span>
+                          <span>{current.asset}</span>
+                          {current.published && <span>· {(() => { try { return new Date(current.published).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>}
+                        </div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        {headlines.map((_: any, i: number) => (
+                          <button key={i} onClick={() => setTickerIdx(i)}
+                            className={`w-1.5 h-1.5 rounded-full transition-all ${i === tickerIdx % headlines.length ? "bg-bah-cyan" : "bg-bah-border"}`} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── SENTIMENT ROW ── */}
               <div className="flex flex-wrap gap-3">
-                {/* Crypto F&G */}
                 {newsDash.sentiment?.fear_greed && (() => {
                   const fg = newsDash.sentiment.fear_greed;
                   const val = fg.value || 0;
@@ -387,16 +424,12 @@ export default function TrainingOperationsPage() {
                       <span className={`text-xl font-black ${clr}`}>{val}</span>
                       <div>
                         <div className={`text-[12px] font-bold ${clr}`}>{fg.classification}</div>
-                        <div className="text-[10px] text-bah-muted">Crypto Fear & Greed</div>
+                        <div className="text-[10px] text-bah-muted">Crypto F&G</div>
                       </div>
-                      {fg.should_block_longs && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 ml-2">LONGS BLOCKED</span>
-                      )}
+                      {fg.should_block_longs && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">LONGS BLOCKED</span>}
                     </div>
                   );
                 })()}
-
-                {/* CNN F&G */}
                 {newsDash.sentiment?.cnn_fear_greed && (() => {
                   const cnn = newsDash.sentiment.cnn_fear_greed;
                   const val = cnn.value || 0;
@@ -409,14 +442,10 @@ export default function TrainingOperationsPage() {
                         <div className={`text-[12px] font-bold ${clr}`}>{cnn.classification}</div>
                         <div className="text-[10px] text-bah-muted">CNN Stock F&G</div>
                       </div>
-                      {cnn.should_block_longs && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 ml-2">BLOCKED</span>
-                      )}
+                      {cnn.should_block_longs && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">BLOCKED</span>}
                     </div>
                   );
                 })()}
-
-                {/* Sentiment Gate Action */}
                 {newsDash.sentiment?.combined_crypto_action && (() => {
                   const action = newsDash.sentiment.combined_crypto_action;
                   const reason = newsDash.sentiment.combined_reason || "";
@@ -432,43 +461,62 @@ export default function TrainingOperationsPage() {
                 })()}
               </div>
 
-              {/* Upcoming Events */}
-              {newsDash.events?.events && newsDash.events.events.length > 0 && (() => {
-                const highImpact = newsDash.events.events.filter((e: any) => e.impact === "high").slice(0, 5);
-                const medImpact = newsDash.events.events.filter((e: any) => e.impact === "medium").slice(0, 3);
-                const events = [...highImpact, ...medImpact].slice(0, 5);
-                if (events.length === 0) return null;
+              {/* ── ECONOMIC CALENDAR — 3 events default, expand to 30 ── */}
+              {(newsDash.upcoming_events || []).length > 0 && (() => {
+                const allEvents = newsDash.upcoming_events || [];
+                const visible = showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3);
                 return (
                   <div>
-                    <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-1.5 font-bold">Upcoming Events</div>
-                    <div className="flex flex-wrap gap-2">
-                      {events.map((ev: any, i: number) => {
-                        const isHigh = ev.impact === "high";
-                        const hasSurprise = ev.surprise && ev.surprise.surprise_z > 0.2;
-                        return (
-                          <div key={i} className={`px-3 py-1.5 rounded-lg border text-[11px] ${
-                            isHigh ? "bg-amber-500/10 border-amber-500/25" : "bg-bah-surface border-bah-border"
-                          }`}>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-bold ${isHigh ? "text-amber-400" : "text-bah-text"}`}>
-                                {isHigh ? "⚡" : "📅"} {ev.event}
-                              </span>
-                              <span className="text-[10px] text-bah-muted">{ev.country}</span>
-                            </div>
-                            {hasSurprise && (
-                              <div className={`text-[10px] font-bold mt-0.5 ${ev.surprise.direction === "LONG" ? "text-green-400" : ev.surprise.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
-                                Surprise: {ev.surprise.magnitude} ({ev.surprise.direction}) z={ev.surprise.surprise_z}
-                              </div>
-                            )}
-                            {ev.actual != null && (
-                              <div className="text-[10px] text-bah-muted mt-0.5">
-                                Actual: {ev.actual} | Est: {ev.estimate || "—"} | Prev: {ev.prev || "—"}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
+                      📅 Economic Calendar
+                      <span className="text-bah-cyan">{allEvents.length} events</span>
                     </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[12px]">
+                        <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
+                          <th className="py-1.5 pr-3">Impact</th>
+                          <th className="py-1.5 pr-3">Event</th>
+                          <th className="py-1.5 pr-3">Country</th>
+                          <th className="py-1.5 pr-3 text-right">Actual</th>
+                          <th className="py-1.5 pr-3 text-right">Estimate</th>
+                          <th className="py-1.5 pr-3 text-right">Previous</th>
+                          <th className="py-1.5">Surprise</th>
+                        </tr></thead>
+                        <tbody>{visible.map((ev: any, i: number) => {
+                          const isHigh = ev.impact === "high";
+                          const isMed = ev.impact === "medium";
+                          const s = ev.surprise || {};
+                          const hasSurprise = s.surprise_z > 0.2;
+                          return (
+                            <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-amber-500/[0.04]" : ""}`}>
+                              <td className="py-1.5 pr-3">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                  isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-border/50 text-bah-muted"
+                                }`}>{(ev.impact || "low").toUpperCase()}</span>
+                              </td>
+                              <td className="py-1.5 pr-3 font-semibold text-bah-heading">{isHigh ? "⚡ " : ""}{ev.event}</td>
+                              <td className="py-1.5 pr-3 text-bah-muted">{ev.country}</td>
+                              <td className="py-1.5 pr-3 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
+                              <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
+                              <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
+                              <td className="py-1.5">
+                                {hasSurprise ? (
+                                  <span className={`text-[11px] font-bold ${s.direction === "LONG" ? "text-green-400" : s.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
+                                    {s.magnitude} {s.direction !== "NEUTRAL" ? `(${s.direction})` : ""}
+                                  </span>
+                                ) : <span className="text-bah-muted text-[10px]">—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}</tbody>
+                      </table>
+                    </div>
+                    {allEvents.length > 3 && (
+                      <button onClick={() => setShowAllEvents(!showAllEvents)}
+                        className="w-full py-2 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5 mt-1">
+                        {showAllEvents ? "▲ Show Less" : `▼ Show All ${Math.min(allEvents.length, 30)} Events`}
+                      </button>
+                    )}
                   </div>
                 );
               })()}

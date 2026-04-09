@@ -1930,9 +1930,13 @@ async def news_dashboard():
     # 3. Upcoming events
     try:
         from bahamut.ingestion.adapters.news import econ_calendar
-        events = await econ_calendar.get_upcoming_events(days_ahead=2)
-        high_events = [e for e in events if e.get("impact") == "high"][:5]
-        result["upcoming_events"] = high_events
+        from bahamut.intelligence.news_impact import event_surprise_score
+        events = await econ_calendar.get_upcoming_events(days_ahead=3)
+        enriched = []
+        for e in events[:40]:
+            surprise = event_surprise_score(e)
+            enriched.append({**e, "surprise": surprise})
+        result["upcoming_events"] = enriched
     except Exception:
         pass
 
