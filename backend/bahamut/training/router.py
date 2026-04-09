@@ -1937,32 +1937,56 @@ async def news_dashboard():
             surprise = event_surprise_score(e)
             enriched.append({**e, "surprise": surprise})
         result["upcoming_events"] = enriched
-    except Exception:
-        pass
+        logger.info("news_dashboard_events", count=len(enriched))
+    except Exception as e:
+        logger.error("news_dashboard_events_failed", error=str(e)[:100])
 
-    # 4. Recent headlines (cached)
+    # 4. Recent headlines — fetch fresh from Finnhub (async endpoint)
     try:
-        import os, redis as _redis, json
-        r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        for key in r.keys("bahamut:news:headlines:*"):
-            try:
-                asset_name = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
-                if asset_name == "_global":
-                    continue
-                raw = r.get(key)
-                if raw:
-                    headlines = json.loads(raw)
-                    for h in headlines[:2]:
-                        result["headlines"].append({
-                            "asset": asset_name,
-                            "title": h.get("title", "")[:100],
-                            "source": h.get("source", ""),
-                            "published": h.get("published", ""),
-                        })
-            except Exception:
-                pass
-        result["headlines"] = sorted(result["headlines"], key=lambda x: x.get("published", ""), reverse=True)[:10]
-    except Exception:
-        pass
+        from bahamut.ingestion.adapters.news import news_adapter
+        from bahamut.intelligence.news_impact import dedupe_headlines
+        # Fetch general market news + crypto news
+        general = await news_adapter.get_headlines(category="general", count=5)
+        crypto = await news_adapter.get_headlines(category="crypto", count=5)
+        all_hl = general + crypto
+        all_hl = dedupe_headlines(all_hl)
+        # Sort by published time, newest first
+        all_hl.sort(key=lambda x: x.get("published", ""), reverse=True)
+        result["headlines"] = [
+            {
+                "title": h.get("title", "")[:120],
+                "source": h.get("source", ""),
+                "published": h.get("published", ""),
+                "category": h.get("category", ""),
+                "asset": h.get("category", "market").upper(),
+            }
+            for h in all_hl[:10]
+        ]
+    except Exception as e:
+        logger.debug("news_dashboard_headlines_failed", error=str(e)[:80])
+        # Fallback to cached
+        try:
+            import os, redis as _redis, json
+            r2 = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            for key in r2.keys("bahamut:news:headlines:*"):
+                try:
+                    asset_name = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
+                    if asset_name == "_global":
+                        continue
+                    raw = r2.get(key)
+                    if raw:
+                        headlines = json.loads(raw)
+                        for h in headlines[:2]:
+                            result["headlines"].append({
+                                "asset": asset_name,
+                                "title": h.get("title", "")[:120],
+                                "source": h.get("source", ""),
+                                "published": h.get("published", ""),
+                            })
+                except Exception:
+                    pass
+            result["headlines"] = sorted(result["headlines"], key=lambda x: x.get("published", ""), reverse=True)[:10]
+        except Exception:
+            pass
 
     return result
