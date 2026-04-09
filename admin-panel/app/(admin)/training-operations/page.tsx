@@ -494,12 +494,13 @@ export default function TrainingOperationsPage() {
                         <div className="overflow-x-auto">
                           <table className="w-full text-[12px]">
                             <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
-                              <th className="py-1.5 pr-3">Impact</th>
+                              <th className="py-1.5 pr-2">Impact</th>
                               <th className="py-1.5 pr-3">Event</th>
-                              <th className="py-1.5 pr-3">Country</th>
-                              <th className="py-1.5 pr-3 text-right">Actual</th>
-                              <th className="py-1.5 pr-3 text-right">Estimate</th>
-                              <th className="py-1.5 pr-3 text-right">Previous</th>
+                              <th className="py-1.5 pr-2">Country</th>
+                              <th className="py-1.5 pr-2 text-center">Est.</th>
+                              <th className="py-1.5 pr-2 text-right">Actual</th>
+                              <th className="py-1.5 pr-2 text-right">Estimate</th>
+                              <th className="py-1.5 pr-2 text-right">Previous</th>
                               <th className="py-1.5">Surprise</th>
                             </tr></thead>
                             <tbody>{(showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3)).map((ev: any, i: number) => {
@@ -507,18 +508,38 @@ export default function TrainingOperationsPage() {
                               const isMed = ev.impact === "medium";
                               const s = ev.surprise || {};
                               const hasSurprise = s.surprise_z > 0.2;
+                              const ai = ev.ai_estimate || {};
+                              const aiDir = ai.direction || "";
+                              const aiConf = ai.confidence || 0;
                               return (
                                 <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-red-500/[0.05]" : ""}`}>
-                                  <td className="py-1.5 pr-3">
+                                  <td className="py-1.5 pr-2">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
                                       isHigh ? "bg-red-500/25 text-red-300 border border-red-500/40" : isMed ? "bg-amber-500/20 text-amber-300" : "bg-bah-cyan/15 text-bah-cyan"
                                     }`}>{(ev.impact || "low").toUpperCase()}</span>
                                   </td>
                                   <td className={`py-1.5 pr-3 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
-                                  <td className="py-1.5 pr-3 text-bah-muted">{ev.country}</td>
-                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
-                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
-                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
+                                  <td className="py-1.5 pr-2 text-bah-muted">{ev.country}</td>
+                                  <td className="py-1.5 pr-2 text-center">
+                                    {aiDir === "UP" ? (
+                                      <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
+                                        <span className="text-green-400 text-[14px] font-black leading-none">▲</span>
+                                        {aiConf >= 0.6 && <span className="text-[8px] text-green-400/60">{Math.round(aiConf * 100)}%</span>}
+                                      </span>
+                                    ) : aiDir === "DOWN" ? (
+                                      <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
+                                        <span className="text-red-400 text-[14px] font-black leading-none">▼</span>
+                                        {aiConf >= 0.6 && <span className="text-[8px] text-red-400/60">{Math.round(aiConf * 100)}%</span>}
+                                      </span>
+                                    ) : aiDir === "NEUTRAL" ? (
+                                      <span className="text-bah-muted text-[12px]" title={ai.reason || ""}>—</span>
+                                    ) : (
+                                      <span className="text-bah-border text-[10px]">···</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
                                   <td className="py-1.5">
                                     {hasSurprise ? (
                                       <span className={`text-[11px] font-bold ${s.direction === "LONG" ? "text-green-400" : s.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>

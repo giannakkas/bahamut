@@ -1884,6 +1884,85 @@ async def asset_leaderboard():
         return {"error": str(e)}
 
 
+async def _ai_estimate_event_directions(events: list[dict]) -> dict:
+    """Use Gemini (free) to estimate market direction for each economic event.
+    Returns: {event_name: {direction: UP/DOWN/NEUTRAL, confidence: 0-1, reason: str}}
+    Single batch API call — not per-event.
+    """
+    import httpx
+
+    from bahamut.config import get_settings
+    s = get_settings()
+    api_key = s.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return {}
+
+    # Build compact event list for prompt
+    event_lines = []
+    for ev in events[:20]:
+        line = f"- {ev.get('event', 'Unknown')} | impact: {ev.get('impact', 'low')} | country: {ev.get('country', '?')}"
+        if ev.get("actual") is not None:
+            line += f" | actual: {ev['actual']} vs estimate: {ev.get('estimate', '?')}"
+        event_lines.append(line)
+
+    prompt = f"""You are a macro market analyst. For each economic event below, estimate whether it will move the US stock market and crypto market UP or DOWN.
+
+Events:
+{chr(10).join(event_lines)}
+
+Respond ONLY with a JSON object. No markdown, no backticks, no explanation.
+Format: {{"event_name_first_50_chars": {{"direction": "UP" or "DOWN" or "NEUTRAL", "confidence": 0.0-1.0, "reason": "brief 5-10 word reason"}}}}
+
+Rules:
+- Rate cuts, dovish = UP
+- Rate hikes, hawkish, high inflation = DOWN
+- Strong jobs/GDP = UP (good economy) unless it means no rate cuts
+- Weak jobs = DOWN short term but UP if it means rate cuts
+- Geopolitical tension = DOWN
+- Earnings beat = UP for that stock
+- Earnings miss = DOWN for that stock
+- OPEC cut = DOWN for markets (higher oil costs)
+- Tariffs = DOWN
+- If uncertain, say NEUTRAL with low confidence"""
+
+    try:
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{url}?key={api_key}",
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2000},
+                },
+            )
+            if resp.status_code != 200:
+                return {}
+
+            data = resp.json()
+            text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
+            # Clean and parse JSON
+            text = text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(text)
+
+            # Validate structure
+            clean = {}
+            for key, val in result.items():
+                if isinstance(val, dict) and "direction" in val:
+                    clean[key[:50]] = {
+                        "direction": val.get("direction", "NEUTRAL").upper(),
+                        "confidence": min(1.0, max(0.0, float(val.get("confidence", 0.5)))),
+                        "reason": str(val.get("reason", ""))[:60],
+                    }
+            return clean
+    except Exception as e:
+        logger.debug("ai_event_direction_error", error=str(e)[:100])
+        return {}
+
+
 @router.get("/news-dashboard")
 async def news_dashboard():
     """Compact news/events dashboard for the Training Operations page."""
@@ -2037,6 +2116,29 @@ async def news_dashboard():
                     ev["surprise"] = event_surprise_score(ev)
         except Exception:
             pass
+
+    # AI-estimated market direction for each event (Gemini, single batch call)
+    if result["upcoming_events"]:
+        # Check if estimates already cached
+        _has_estimates = any(ev.get("ai_estimate") for ev in result["upcoming_events"])
+        if not _has_estimates:
+            try:
+                estimates = await _ai_estimate_event_directions(result["upcoming_events"][:20])
+                if estimates:
+                    for ev in result["upcoming_events"]:
+                        key = ev.get("event", "")[:50]
+                        if key in estimates:
+                            ev["ai_estimate"] = estimates[key]
+                    # Re-cache with estimates
+                    if _rc:
+                        try:
+                            _rc.setex("bahamut:calendar:events_v2",
+                                      7200 if _events_debug.get("source") != "finnhub_earnings" else 900,
+                                      json.dumps(result["upcoming_events"]))
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.debug("ai_event_estimates_failed", error=str(e)[:80])
 
     result["_events_debug"] = _events_debug
 
