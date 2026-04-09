@@ -80,8 +80,11 @@ def check_quality_floors(
         })
 
     # ── B) Reward/Risk floor ──
+    # CRASH SHORTs are quick scalps — lower R:R is acceptable
     rr = tp_pct / max(sl_pct, 0.001)
     min_rr = floors["min_reward_risk"]
+    if regime == "CRASH" and "mean_reversion" in strategy:
+        min_rr = 0.8  # Mean reversion SHORTs in crash are quick scalps, lower R:R OK
     if rr < min_rr:
         failures.append({
             "floor": "reward_risk",

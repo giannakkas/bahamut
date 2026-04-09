@@ -328,13 +328,20 @@ def open_training_position(
                            existing_strategy=p.strategy, existing_direction=p.direction)
             return None
 
-    # Per-asset cooldown: skip if recently closed (avoid TSLA-style repeated entries)
-    COOLDOWN_SECONDS = 1800  # 30 minutes (3 cycles)
+    # Per-asset cooldown: skip if recently closed (avoid repeated entries on same asset)
+    # v5_base gets 2hr cooldown (20-bar hold on 15m = 5hr, so 2hr gap between attempts)
+    # Others get 30min (default)
+    COOLDOWN_BY_STRATEGY = {
+        "v5_base": 7200,       # 2 hours — long-hold strategy needs longer gap
+    }
+    COOLDOWN_DEFAULT = 1800    # 30 minutes
     try:
         r = _get_redis()
         if r:
+            # Check both asset-level and asset+strategy-level cooldowns
             cooldown_key = f"bahamut:training:cooldown:{asset}"
-            if r.exists(cooldown_key):
+            cooldown_key_strat = f"bahamut:training:cooldown:{asset}:{strategy}"
+            if r.exists(cooldown_key) or r.exists(cooldown_key_strat):
                 logger.info("training_position_rejected_cooldown",
                             asset=asset, strategy=strategy, direction=direction,
                             reason="Asset on cooldown after recent close")
@@ -443,6 +450,30 @@ def open_training_position(
                         asset=asset, count=crash_shorts,
                         reason="Max 2 concurrent CRASH SHORTs")
             return None
+
+    # Strategy loss-streak circuit breaker: halve risk when WR < 45% with 50+ samples
+    try:
+        if strategy == "v5_base":
+            from bahamut.db.query import run_query_one
+            stats = run_query_one("""
+                SELECT COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses
+                FROM training_trades WHERE strategy = 'v5_base'
+            """)
+            if stats:
+                total = int(stats["trades"] or 0)
+                wins = int(stats["wins"] or 0)
+                losses = int(stats["losses"] or 0)
+                wr = wins / max(1, wins + losses)
+                if total >= 50 and wr < 0.45:
+                    risk_amount = round(risk_amount * 0.5, 2)
+                    logger.warning("training_v5_circuit_breaker",
+                                   asset=asset, wr=round(wr, 3), trades=total,
+                                   risk_reduced_to=risk_amount,
+                                   reason="v5_base WR < 45% with 50+ trades — half risk")
+    except Exception:
+        pass
 
     # Calculate SL/TP prices
     if direction == "LONG":
@@ -734,11 +765,15 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             _record_recent(trade)
             closed_trades.append(trade)
 
-            # Set per-asset cooldown to prevent immediate re-entry
+            # Set per-asset + per-strategy cooldown to prevent immediate re-entry
             try:
                 r = _get_redis()
                 if r:
-                    r.setex(f"bahamut:training:cooldown:{pos.asset}", 1800, "1")  # 30 min
+                    # Strategy-specific cooldown duration
+                    COOLDOWN_BY_STRATEGY = {"v5_base": 7200}
+                    cd_time = COOLDOWN_BY_STRATEGY.get(pos.strategy, 1800)
+                    r.setex(f"bahamut:training:cooldown:{pos.asset}", cd_time, "1")
+                    r.setex(f"bahamut:training:cooldown:{pos.asset}:{pos.strategy}", cd_time, "1")
             except Exception:
                 pass
 

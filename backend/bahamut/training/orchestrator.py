@@ -55,26 +55,41 @@ def run_training_cycle():
 
     # Pre-fetch and cache news/events for this cycle (sync-safe)
     try:
-        from bahamut.intelligence.news_impact import cache_news_data
+        from bahamut.intelligence.news_impact import cache_news_data, dedupe_headlines
         from bahamut.ingestion.adapters.news import econ_calendar, news_adapter
+        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
         import asyncio
 
         async def _prefetch():
+            # 1. Economic events — cache globally
             events = await econ_calendar.get_upcoming_events(days_ahead=1)
             cache_news_data("_global", [], events)
-            # Cache headlines for top assets
-            for a in TRAINING_ASSETS[:10]:
+
+            # 2. Headlines — fetch general + crypto once (2 API calls, not 50)
+            general = await news_adapter.get_headlines(category="general", count=10)
+            crypto_hl = await news_adapter.get_headlines(category="crypto", count=10)
+            all_hl = dedupe_headlines(general + crypto_hl)
+
+            # Cache for ALL crypto assets (they share crypto headlines)
+            for a in TRAINING_CRYPTO:
+                cache_news_data(a, all_hl)
+
+            # Cache general headlines for all stock assets
+            for a in TRAINING_STOCKS:
+                cache_news_data(a, general)
+
+            # Fetch asset-specific news for top 5 stocks (company news)
+            for a in TRAINING_STOCKS[:5]:
                 try:
-                    hl = await news_adapter.get_asset_news(a, count=8)
+                    hl = await news_adapter.get_asset_news(a, count=5)
                     if hl:
-                        cache_news_data(a, hl)
+                        cache_news_data(a, hl + general[:3])
                 except Exception:
                     pass
 
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # Already in async context — schedule
                 asyncio.ensure_future(_prefetch())
             else:
                 loop.run_until_complete(_prefetch())
@@ -548,7 +563,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # ═══════════════════════════════════════════
     if strategy_signals_found == 0:
         # Global suppress list — these assets are blocked from ALL signal paths
-        SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX"}
+        SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"}
         debug_enabled = True
         debug_min_score = 20  # Low floor — most approaching candidates qualify
         try:
