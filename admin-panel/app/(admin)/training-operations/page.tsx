@@ -462,60 +462,67 @@ export default function TrainingOperationsPage() {
               </div>
 
               {/* ── ECONOMIC CALENDAR — 3 events default, expand to 30 ── */}
-              {(newsDash.upcoming_events || []).length > 0 && (() => {
-                const allEvents = newsDash.upcoming_events || [];
-                const visible = showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3);
+              {(() => {
+                const allEvents = newsDash?.upcoming_events || [];
+                const debug = newsDash?._events_debug;
                 return (
                   <div>
                     <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
                       📅 Economic Calendar
                       <span className="text-bah-cyan">{allEvents.length} events</span>
+                      {debug && <span className="text-[9px] text-bah-muted/50 font-normal">src: {debug.source} | finnhub: {debug.finnhub_status} keys: {JSON.stringify(debug.finnhub_keys)} raw: {debug.raw_count} | ff: {debug.ff_status} | err: {debug.error || "none"}</span>}
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-[12px]">
-                        <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
-                          <th className="py-1.5 pr-3">Impact</th>
-                          <th className="py-1.5 pr-3">Event</th>
-                          <th className="py-1.5 pr-3">Country</th>
-                          <th className="py-1.5 pr-3 text-right">Actual</th>
-                          <th className="py-1.5 pr-3 text-right">Estimate</th>
-                          <th className="py-1.5 pr-3 text-right">Previous</th>
-                          <th className="py-1.5">Surprise</th>
-                        </tr></thead>
-                        <tbody>{visible.map((ev: any, i: number) => {
-                          const isHigh = ev.impact === "high";
-                          const isMed = ev.impact === "medium";
-                          const s = ev.surprise || {};
-                          const hasSurprise = s.surprise_z > 0.2;
-                          return (
-                            <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-amber-500/[0.04]" : ""}`}>
-                              <td className="py-1.5 pr-3">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                  isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-border/50 text-bah-muted"
-                                }`}>{(ev.impact || "low").toUpperCase()}</span>
-                              </td>
-                              <td className="py-1.5 pr-3 font-semibold text-bah-heading">{isHigh ? "⚡ " : ""}{ev.event}</td>
-                              <td className="py-1.5 pr-3 text-bah-muted">{ev.country}</td>
-                              <td className="py-1.5 pr-3 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
-                              <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
-                              <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
-                              <td className="py-1.5">
-                                {hasSurprise ? (
-                                  <span className={`text-[11px] font-bold ${s.direction === "LONG" ? "text-green-400" : s.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
-                                    {s.magnitude} {s.direction !== "NEUTRAL" ? `(${s.direction})` : ""}
-                                  </span>
-                                ) : <span className="text-bah-muted text-[10px]">—</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}</tbody>
-                      </table>
-                    </div>
-                    {allEvents.length > 3 && (
-                      <button onClick={() => setShowAllEvents(!showAllEvents)}
-                        className="w-full py-2 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5 mt-1">
-                        {showAllEvents ? "▲ Show Less" : `▼ Show All ${Math.min(allEvents.length, 30)} Events`}
-                      </button>
+                    {allEvents.length > 0 ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[12px]">
+                            <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
+                              <th className="py-1.5 pr-3">Impact</th>
+                              <th className="py-1.5 pr-3">Event</th>
+                              <th className="py-1.5 pr-3">Country</th>
+                              <th className="py-1.5 pr-3 text-right">Actual</th>
+                              <th className="py-1.5 pr-3 text-right">Estimate</th>
+                              <th className="py-1.5 pr-3 text-right">Previous</th>
+                              <th className="py-1.5">Surprise</th>
+                            </tr></thead>
+                            <tbody>{(showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3)).map((ev: any, i: number) => {
+                              const isHigh = ev.impact === "high";
+                              const isMed = ev.impact === "medium";
+                              const s = ev.surprise || {};
+                              const hasSurprise = s.surprise_z > 0.2;
+                              return (
+                                <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-amber-500/[0.04]" : ""}`}>
+                                  <td className="py-1.5 pr-3">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-bah-border/50 text-bah-muted"
+                                    }`}>{(ev.impact || "low").toUpperCase()}</span>
+                                  </td>
+                                  <td className="py-1.5 pr-3 font-semibold text-bah-heading">{isHigh ? "⚡ " : ""}{ev.event}</td>
+                                  <td className="py-1.5 pr-3 text-bah-muted">{ev.country}</td>
+                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
+                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
+                                  <td className="py-1.5 pr-3 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
+                                  <td className="py-1.5">
+                                    {hasSurprise ? (
+                                      <span className={`text-[11px] font-bold ${s.direction === "LONG" ? "text-green-400" : s.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
+                                        {s.magnitude} {s.direction !== "NEUTRAL" ? `(${s.direction})` : ""}
+                                      </span>
+                                    ) : <span className="text-bah-muted text-[10px]">—</span>}
+                                  </td>
+                                </tr>
+                              );
+                            })}</tbody>
+                          </table>
+                        </div>
+                        {allEvents.length > 3 && (
+                          <button onClick={() => setShowAllEvents(!showAllEvents)}
+                            className="w-full py-2 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5 mt-1">
+                            {showAllEvents ? "▲ Show Less" : `▼ Show All ${Math.min(allEvents.length, 30)} Events`}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-bah-muted py-2">No events loaded — check logs</div>
                     )}
                   </div>
                 );

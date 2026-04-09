@@ -1930,20 +1930,32 @@ async def news_dashboard():
     # 3. Upcoming events — direct HTTP calls, no adapter imports
     import httpx as _hx
     _no_surp = {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}
+    _events_debug = {"source": "none", "error": None, "finnhub_keys": None, "finnhub_status": None, "ff_status": None}
 
     # 3a. Try Finnhub economic calendar
     try:
         from bahamut.config import get_settings as _gs
         _fk = _gs().finnhub_key
+        _events_debug["has_key"] = bool(_fk)
         if _fk:
             async with _hx.AsyncClient(timeout=15) as _c:
                 _start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 _end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
                 _r = await _c.get("https://finnhub.io/api/v1/calendar/economic",
                                    params={"from": _start, "to": _end, "token": _fk})
+                _events_debug["finnhub_status"] = _r.status_code
                 if _r.status_code == 200:
                     _d = _r.json()
-                    _raw = _d.get("economicCalendar", _d.get("result", []))
+                    _events_debug["finnhub_keys"] = list(_d.keys())[:5]
+                    # Finnhub wraps events inside economicCalendar → result
+                    _raw = _d.get("economicCalendar", {})
+                    if isinstance(_raw, dict):
+                        _raw = _raw.get("result", [])
+                    elif isinstance(_raw, list):
+                        pass  # Already a list
+                    else:
+                        _raw = _d.get("result", [])
+                    _events_debug["raw_count"] = len(_raw) if _raw else 0
                     for ev in (_raw or [])[:40]:
                         imp_raw = ev.get("impact", "low")
                         imp = imp_raw if imp_raw in ("high", "medium", "low") else "low"
@@ -1959,10 +1971,11 @@ async def news_dashboard():
                             "source": "finnhub",
                             "surprise": _no_surp,
                         })
-                    logger.info("news_dashboard_events_finnhub", count=len(result["upcoming_events"]))
-                else:
-                    logger.warning("news_dashboard_finnhub_cal_status", status=_r.status_code)
+                    _events_debug["source"] = "finnhub"
+                    logger.info("news_dashboard_events_finnhub", count=len(result["upcoming_events"]),
+                                keys=_events_debug["finnhub_keys"], raw_count=_events_debug.get("raw_count"))
     except Exception as e:
+        _events_debug["error"] = str(e)[:120]
         logger.error("news_dashboard_finnhub_cal_error", error=str(e)[:120])
 
     # 3b. Fallback: Forex Factory
@@ -1970,8 +1983,11 @@ async def news_dashboard():
         try:
             async with _hx.AsyncClient(timeout=10) as _c:
                 _r = await _c.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+                _events_debug["ff_status"] = _r.status_code
                 if _r.status_code == 200:
-                    for ev in _r.json()[:30]:
+                    _ff_data = _r.json()
+                    _events_debug["ff_raw_count"] = len(_ff_data)
+                    for ev in _ff_data[:30]:
                         imp = ev.get("impact", "Low")
                         if imp == "Holiday":
                             continue
@@ -1986,9 +2002,13 @@ async def news_dashboard():
                             "source": "forexfactory",
                             "surprise": _no_surp,
                         })
+                    _events_debug["source"] = "forexfactory"
                     logger.info("news_dashboard_events_ff", count=len(result["upcoming_events"]))
         except Exception as e:
+            _events_debug["error"] = (_events_debug.get("error") or "") + " | FF: " + str(e)[:80]
             logger.error("news_dashboard_ff_cal_error", error=str(e)[:120])
+
+    result["_events_debug"] = _events_debug
 
     # 3c. Enrich with surprise scores
     if result["upcoming_events"]:
