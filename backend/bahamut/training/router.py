@@ -2023,7 +2023,7 @@ async def news_dashboard():
     try:
         import redis as _rds
         _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _cached = _rc.get("bahamut:calendar:events_v4")
+        _cached = _rc.get("bahamut:calendar:events_v5")
         if _cached:
             _cached_data = json.loads(_cached)
             # Only use cache if it has real economic events (not just earnings)
@@ -2067,7 +2067,7 @@ async def news_dashboard():
                     # Cache economic calendar for 2 hours
                     if _rc and result["upcoming_events"]:
                         try:
-                            _rc.setex("bahamut:calendar:events_v4", 7200, json.dumps(result["upcoming_events"]))
+                            _rc.setex("bahamut:calendar:events_v5", 7200, json.dumps(result["upcoming_events"]))
                         except Exception:
                             pass
         except Exception as e:
@@ -2109,7 +2109,7 @@ async def news_dashboard():
                             # Short cache for earnings (15 min) — keep trying for FF
                             if _rc:
                                 try:
-                                    _rc.setex("bahamut:calendar:events_v4", 900, json.dumps(result["upcoming_events"]))
+                                    _rc.setex("bahamut:calendar:events_v5", 900, json.dumps(result["upcoming_events"]))
                                 except Exception:
                                     pass
             except Exception as e:
@@ -2140,7 +2140,7 @@ async def news_dashboard():
                     # Re-cache with estimates
                     if _rc:
                         try:
-                            _rc.setex("bahamut:calendar:events_v4",
+                            _rc.setex("bahamut:calendar:events_v5",
                                       7200 if _events_debug.get("source") != "finnhub_earnings" else 900,
                                       json.dumps(result["upcoming_events"]))
                         except Exception:

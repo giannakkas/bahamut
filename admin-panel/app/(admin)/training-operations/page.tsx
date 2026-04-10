@@ -406,8 +406,8 @@ export default function TrainingOperationsPage() {
               })()}
 
               {/* ── SENTIMENT GAUGES ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Crypto Fear & Greed */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* CRYPTO */}
                 {newsDash.sentiment?.fear_greed && (() => {
                   const fg = newsDash.sentiment.fear_greed;
                   const val = fg.value || 0;
@@ -416,12 +416,13 @@ export default function TrainingOperationsPage() {
                   const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
                   return (
                     <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
+                      <div className="text-[10px] text-bah-muted uppercase tracking-[0.15em] font-bold">Crypto</div>
                       <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
                         <span className={`text-2xl font-black ${clr}`}>{val}</span>
                       </div>
                       <div>
                         <div className={`text-[13px] font-bold ${clr}`}>{fg.classification}</div>
-                        <div className="text-[10px] text-bah-muted">Crypto Fear & Greed</div>
+                        <div className="text-[10px] text-bah-muted">Fear & Greed Index</div>
                       </div>
                       {fg.should_block_longs && (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase tracking-wider">Longs Blocked</span>
@@ -430,7 +431,7 @@ export default function TrainingOperationsPage() {
                   );
                 })()}
 
-                {/* CNN Stock Fear & Greed */}
+                {/* STOCKS */}
                 {newsDash.sentiment?.cnn_fear_greed && (() => {
                   const cnn = newsDash.sentiment.cnn_fear_greed;
                   const val = cnn.value || 0;
@@ -439,32 +440,13 @@ export default function TrainingOperationsPage() {
                   const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
                   return (
                     <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
+                      <div className="text-[10px] text-bah-muted uppercase tracking-[0.15em] font-bold">Stocks</div>
                       <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
                         <span className={`text-2xl font-black ${clr}`}>{val}</span>
                       </div>
                       <div>
                         <div className={`text-[13px] font-bold ${clr}`}>{cnn.classification}</div>
-                        <div className="text-[10px] text-bah-muted">CNN Stock F&G</div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Sentiment Gate */}
-                {newsDash.sentiment?.combined_crypto_action && (() => {
-                  const action = newsDash.sentiment.combined_crypto_action;
-                  const reason = newsDash.sentiment.combined_reason || "";
-                  const isBlock = action.includes("block");
-                  return (
-                    <div className={`rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2 ${isBlock ? "bg-red-500/[0.06]" : "bg-green-500/[0.06]"}`}>
-                      <div className={`w-16 h-16 rounded-full border-[3px] flex items-center justify-center ${isBlock ? "border-red-500/40" : "border-green-500/40"}`}>
-                        <span className="text-2xl">{isBlock ? "🛑" : "✅"}</span>
-                      </div>
-                      <div>
-                        <div className={`text-[13px] font-bold ${isBlock ? "text-red-400" : "text-green-400"}`}>
-                          {isBlock ? "Block All Longs" : "Trading Allowed"}
-                        </div>
-                        {reason && <div className="text-[10px] text-bah-muted mt-0.5">{reason}</div>}
+                        <div className="text-[10px] text-bah-muted">CNN Fear & Greed Index</div>
                       </div>
                     </div>
                   );
@@ -516,18 +498,18 @@ export default function TrainingOperationsPage() {
                                   <td className="py-1.5 pr-2 text-center">
                                     {aiDir === "UP" ? (
                                       <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
-                                        <span className="text-green-400 text-[14px] font-black leading-none">▲</span>
-                                        {aiConf >= 0.6 && <span className="text-[8px] text-green-400/60">{Math.round(aiConf * 100)}%</span>}
+                                        <span className="text-green-400 text-[16px] font-black leading-none">▲</span>
+                                        {aiConf >= 0.5 && <span className="text-[9px] text-green-400/70 font-bold">{Math.round(aiConf * 100)}%</span>}
                                       </span>
                                     ) : aiDir === "DOWN" ? (
                                       <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
-                                        <span className="text-red-400 text-[14px] font-black leading-none">▼</span>
-                                        {aiConf >= 0.6 && <span className="text-[8px] text-red-400/60">{Math.round(aiConf * 100)}%</span>}
+                                        <span className="text-red-400 text-[16px] font-black leading-none">▼</span>
+                                        {aiConf >= 0.5 && <span className="text-[9px] text-red-400/70 font-bold">{Math.round(aiConf * 100)}%</span>}
                                       </span>
                                     ) : aiDir === "NEUTRAL" ? (
-                                      <span className="text-bah-muted text-[12px]" title={ai.reason || ""}>—</span>
+                                      <span className="text-yellow-500/60 text-[11px] font-bold" title={ai.reason || ""}>●</span>
                                     ) : (
-                                      <span className="text-bah-border text-[10px]">···</span>
+                                      <span className="text-bah-border text-[9px]">{ev.ai_estimate ? JSON.stringify(ev.ai_estimate).slice(0,20) : "–"}</span>
                                     )}
                                   </td>
                                   <td className="py-1.5 pr-2 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
