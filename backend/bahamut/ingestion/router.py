@@ -64,10 +64,31 @@ async def get_price(symbol: str, user: User = Depends(get_current_user)):
 
 
 @router.get("/calendar")
-async def get_economic_calendar(days: int = 7, user: User = Depends(get_current_user)):
+async def get_economic_calendar(days: int = 7, enrich: bool = True, user: User = Depends(get_current_user)):
     from bahamut.ingestion.adapters.news import econ_calendar
     events = await econ_calendar.get_upcoming_events(days)
-    return {"events": events, "count": len(events), "source": "finnhub" if events else "none"}
+
+    source = "finnhub" if events else "none"
+    ai_enabled = False
+
+    # Enrich with per-asset impact analysis
+    if enrich and events:
+        try:
+            from bahamut.intelligence.event_impact_analyzer import (
+                get_enriched_calendar_cached, TRACKED_ASSETS,
+            )
+            events = get_enriched_calendar_cached(events)
+            ai_enabled = True
+        except Exception as e:
+            logger.warning("calendar_enrichment_failed", error=str(e)[:100])
+
+    return {
+        "events": events,
+        "count": len(events),
+        "source": source,
+        "ai_enabled": ai_enabled,
+        "tracked_assets": ["BTCUSD", "ETHUSD", "SPX", "NQ", "DXY", "XAUUSD", "EURUSD", "USDJPY"] if ai_enabled else [],
+    }
 
 
 @router.get("/news")
