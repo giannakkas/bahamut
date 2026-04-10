@@ -1895,7 +1895,10 @@ async def _ai_estimate_event_directions(events: list[dict]) -> list[dict]:
     s = get_settings()
     api_key = s.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
+        logger.warning("ai_event_no_gemini_key")
         return []
+
+    logger.info("ai_event_calling_gemini", event_count=len(events))
 
     # Build numbered event list
     event_lines = []
@@ -2020,7 +2023,7 @@ async def news_dashboard():
     try:
         import redis as _rds
         _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _cached = _rc.get("bahamut:calendar:events_v3")
+        _cached = _rc.get("bahamut:calendar:events_v4")
         if _cached:
             _cached_data = json.loads(_cached)
             # Only use cache if it has real economic events (not just earnings)
@@ -2064,7 +2067,7 @@ async def news_dashboard():
                     # Cache economic calendar for 2 hours
                     if _rc and result["upcoming_events"]:
                         try:
-                            _rc.setex("bahamut:calendar:events_v3", 7200, json.dumps(result["upcoming_events"]))
+                            _rc.setex("bahamut:calendar:events_v4", 7200, json.dumps(result["upcoming_events"]))
                         except Exception:
                             pass
         except Exception as e:
@@ -2106,7 +2109,7 @@ async def news_dashboard():
                             # Short cache for earnings (15 min) — keep trying for FF
                             if _rc:
                                 try:
-                                    _rc.setex("bahamut:calendar:events_v3", 900, json.dumps(result["upcoming_events"]))
+                                    _rc.setex("bahamut:calendar:events_v4", 900, json.dumps(result["upcoming_events"]))
                                 except Exception:
                                     pass
             except Exception as e:
@@ -2125,9 +2128,11 @@ async def news_dashboard():
     # AI-estimated market direction for each event (Gemini, single batch call)
     if result["upcoming_events"]:
         _has_estimates = any(ev.get("ai_estimate") for ev in result["upcoming_events"])
+        _events_debug["has_estimates"] = _has_estimates
         if not _has_estimates:
             try:
                 estimates = await _ai_estimate_event_directions(result["upcoming_events"][:20])
+                _events_debug["ai_result_count"] = len(estimates) if estimates else 0
                 if estimates:
                     for i, est in enumerate(estimates):
                         if i < len(result["upcoming_events"]):
@@ -2135,13 +2140,18 @@ async def news_dashboard():
                     # Re-cache with estimates
                     if _rc:
                         try:
-                            _rc.setex("bahamut:calendar:events_v3",
+                            _rc.setex("bahamut:calendar:events_v4",
                                       7200 if _events_debug.get("source") != "finnhub_earnings" else 900,
                                       json.dumps(result["upcoming_events"]))
                         except Exception:
                             pass
+                    logger.info("ai_event_estimates_ok", count=len(estimates))
+                else:
+                    _events_debug["ai_error"] = "empty result from AI"
+                    logger.warning("ai_event_estimates_empty")
             except Exception as e:
-                logger.debug("ai_event_estimates_failed", error=str(e)[:80])
+                _events_debug["ai_error"] = str(e)[:100]
+                logger.error("ai_event_estimates_failed", error=str(e)[:100])
 
     result["_events_debug"] = _events_debug
 

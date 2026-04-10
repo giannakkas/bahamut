@@ -480,7 +480,7 @@ export default function TrainingOperationsPage() {
                     <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
                       📅 Economic Calendar
                       <span className="text-bah-cyan">{allEvents.length} events</span>
-                      {debug && debug.source !== "none" && <span className="text-[9px] text-bah-muted/40 font-normal">via {debug.source}</span>}
+                      {debug && debug.source !== "none" && <span className="text-[9px] text-bah-muted/40 font-normal">via {debug.source} {debug.ai_result_count != null ? `| AI: ${debug.ai_result_count} est` : debug.ai_error ? `| AI err: ${debug.ai_error}` : ""}</span>}
                     </div>
                     {allEvents.length > 0 ? (
                       <>
