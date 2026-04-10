@@ -20,7 +20,7 @@ class V5Base(BaseStrategy):
     )
 
     # Assets that consistently produce losses or $0 flat exits — suppress
-    SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "ARBUSD"}
+    SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"}
 
     def evaluate(self, candles: list, indicators: dict,
                  prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:

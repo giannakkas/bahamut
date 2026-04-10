@@ -332,7 +332,7 @@ def open_training_position(
     # v5_base gets 2hr cooldown (20-bar hold on 15m = 5hr, so 2hr gap between attempts)
     # Others get 30min (default)
     COOLDOWN_BY_STRATEGY = {
-        "v5_base": 7200,       # 2 hours — long-hold strategy needs longer gap
+        "v5_base": 14400,       # 4 hours — long-hold strategy needs longer gap
     }
     COOLDOWN_DEFAULT = 1800    # 30 minutes
     try:
@@ -451,7 +451,7 @@ def open_training_position(
                         reason="Max 2 concurrent CRASH SHORTs")
             return None
 
-    # Strategy loss-streak circuit breaker: halve risk when WR < 45% with 50+ samples
+    # Strategy loss-streak circuit breaker for v5_base
     try:
         if strategy == "v5_base":
             from bahamut.db.query import run_query_one
@@ -466,12 +466,22 @@ def open_training_position(
                 wins = int(stats["wins"] or 0)
                 losses = int(stats["losses"] or 0)
                 wr = wins / max(1, wins + losses)
+
+                # HARD BLOCK: WR < 40% with 100+ trades → disable crypto entirely
+                # v5_base crypto: -$462. v5_base stock: +$1,036. Only stocks work.
+                if total >= 100 and wr < 0.40 and asset_class == "crypto":
+                    logger.warning("training_v5_crypto_blocked",
+                                   asset=asset, wr=round(wr, 3), trades=total,
+                                   reason="v5_base WR < 40% — crypto disabled, stocks only")
+                    return None
+
+                # SOFT: WR < 45% with 50+ trades → halve risk
                 if total >= 50 and wr < 0.45:
                     risk_amount = round(risk_amount * 0.5, 2)
                     logger.warning("training_v5_circuit_breaker",
                                    asset=asset, wr=round(wr, 3), trades=total,
                                    risk_reduced_to=risk_amount,
-                                   reason="v5_base WR < 45% with 50+ trades — half risk")
+                                   reason="v5_base WR < 45% — half risk")
     except Exception:
         pass
 
@@ -770,7 +780,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 r = _get_redis()
                 if r:
                     # Strategy-specific cooldown duration
-                    COOLDOWN_BY_STRATEGY = {"v5_base": 7200}
+                    COOLDOWN_BY_STRATEGY = {"v5_base": 14400}
                     cd_time = COOLDOWN_BY_STRATEGY.get(pos.strategy, 1800)
                     r.setex(f"bahamut:training:cooldown:{pos.asset}", cd_time, "1")
                     r.setex(f"bahamut:training:cooldown:{pos.asset}:{pos.strategy}", cd_time, "1")

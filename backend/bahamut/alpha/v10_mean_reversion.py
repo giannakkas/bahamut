@@ -425,13 +425,15 @@ class V10MeanReversion:
         self.max_hold = 10          # ~40 hours on 4H bars (short-duration trades)
         self.risk_pct = 0.015       # 1.5% risk per trade (slightly lower than trend strategies)
 
-    def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
-        """Evaluate for mean reversion setup — LONG, SHORT, and CRASH SHORT.
+    # Assets that consistently lose on mean reversion — suppress
+    SUPPRESS_ASSETS = {"COIN", "SOLUSD", "BNBUSD"}
 
-        LONG:  oversold in RANGE → bounce to mean
-        SHORT: overbought in RANGE → rejection to mean
-        CRASH SHORT: bear rally in CRASH → sell into resistance
-        """
+    def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
+        """Evaluate for mean reversion setup — LONG, SHORT, and CRASH SHORT."""
+        # Hard suppress list
+        if asset in self.SUPPRESS_ASSETS:
+            return None
+
         regime = indicators.get("_regime", "UNKNOWN")
 
         # Try LONG first (oversold → bounce) — only in RANGE
