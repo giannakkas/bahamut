@@ -162,14 +162,13 @@ export default function TrainingOperationsPage() {
   const load = async () => {
     const h: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-    // ── Phase 1: All critical endpoints in parallel → render everything together ──
+    // ── Phase 1: Fast endpoints → render immediately ──
     try {
-      const [opsRes, decRes, adaptRes, assetsRes, newsRes] = await Promise.all([
+      const [opsRes, decRes, adaptRes, assetsRes] = await Promise.all([
         fetch(`${apiBase()}/training/operations`, { headers: h }),
         fetch(`${apiBase()}/training/execution-decisions`, { headers: h }),
         fetch(`${apiBase()}/training/adaptive`, { headers: h }),
         fetch(`${apiBase()}/training/assets`, { headers: h }),
-        fetch(`${apiBase()}/training/news-dashboard`, { headers: h }),
       ]);
       if (opsRes.ok) setData(await opsRes.json());
       if (decRes.ok) setDecisions(await decRes.json());
@@ -179,9 +178,14 @@ export default function TrainingOperationsPage() {
         const hasRealData = newAssets?.assets?.some((a: any) => a.status !== "no_data");
         setAllAssets((prev: any) => hasRealData || !prev ? newAssets : prev);
       }
-      if (newsRes.ok) setNewsDash(await newsRes.json());
     } catch {}
     setLoading(false);
+
+    // ── Phase 1b: News dashboard — starts immediately, doesn't block render ──
+    fetch(`${apiBase()}/training/news-dashboard`, { headers: h })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setNewsDash(d); })
+      .catch(() => {});
 
     // ── Phase 2: Candidates → background, never overwrite good data with empty ──
     fetch(`${apiBase()}/training/candidates`, { headers: h })
@@ -243,13 +247,13 @@ export default function TrainingOperationsPage() {
     return () => { clearInterval(fast); clearInterval(slow); };
   }, []);
 
-  // Rotate news ticker every 4 seconds
+  // Rotate news ticker every 8 seconds
   useEffect(() => {
     const headlines = newsDash?.headlines || [];
     if (headlines.length <= 1) return;
     const iv = setInterval(() => {
       setTickerIdx(prev => (prev + 1) % Math.min(headlines.length, 5));
-    }, 4000);
+    }, 8000);
     return () => clearInterval(iv);
   }, [newsDash?.headlines?.length]);
 
@@ -405,48 +409,41 @@ export default function TrainingOperationsPage() {
                 );
               })()}
 
-              {/* ── SENTIMENT GAUGES ── */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* CRYPTO */}
+              {/* ── SENTIMENT GAUGES — compact ── */}
+              <div className="grid grid-cols-2 gap-2">
                 {newsDash.sentiment?.fear_greed && (() => {
                   const fg = newsDash.sentiment.fear_greed;
                   const val = fg.value || 0;
                   const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
                   const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
-                  const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
+                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
                   return (
-                    <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
-                      <div className="text-[10px] text-bah-muted uppercase tracking-[0.15em] font-bold">Crypto</div>
-                      <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
-                        <span className={`text-2xl font-black ${clr}`}>{val}</span>
+                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
+                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
+                        <span className={`text-lg font-black ${clr}`}>{val}</span>
                       </div>
-                      <div>
-                        <div className={`text-[13px] font-bold ${clr}`}>{fg.classification}</div>
-                        <div className="text-[10px] text-bah-muted">Fear & Greed Index</div>
+                      <div className="min-w-0">
+                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Crypto</div>
+                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{fg.classification}</div>
+                        {fg.should_block_longs && <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[8px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase">Longs Blocked</span>}
                       </div>
-                      {fg.should_block_longs && (
-                        <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase tracking-wider">Longs Blocked</span>
-                      )}
                     </div>
                   );
                 })()}
-
-                {/* STOCKS */}
                 {newsDash.sentiment?.cnn_fear_greed && (() => {
                   const cnn = newsDash.sentiment.cnn_fear_greed;
                   const val = cnn.value || 0;
                   const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
                   const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
-                  const bg = val <= 24 ? "bg-red-500/[0.06]" : val <= 39 ? "bg-orange-500/[0.06]" : val <= 60 ? "bg-yellow-500/[0.06]" : "bg-green-500/[0.06]";
+                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
                   return (
-                    <div className={`${bg} rounded-xl border border-bah-border p-4 flex flex-col items-center text-center gap-2`}>
-                      <div className="text-[10px] text-bah-muted uppercase tracking-[0.15em] font-bold">Stocks</div>
-                      <div className={`w-16 h-16 rounded-full border-[3px] ${ring} flex items-center justify-center`}>
-                        <span className={`text-2xl font-black ${clr}`}>{val}</span>
+                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
+                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
+                        <span className={`text-lg font-black ${clr}`}>{val}</span>
                       </div>
-                      <div>
-                        <div className={`text-[13px] font-bold ${clr}`}>{cnn.classification}</div>
-                        <div className="text-[10px] text-bah-muted">CNN Fear & Greed Index</div>
+                      <div className="min-w-0">
+                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Stocks</div>
+                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{cnn.classification}</div>
                       </div>
                     </div>
                   );
@@ -462,7 +459,6 @@ export default function TrainingOperationsPage() {
                     <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
                       📅 Economic Calendar
                       <span className="text-bah-cyan">{allEvents.length} events</span>
-                      {debug && debug.source !== "none" && <span className="text-[9px] text-bah-muted/40 font-normal">via {debug.source} {debug.ai_result_count != null ? `| AI: ${debug.ai_result_count} est` : debug.ai_error ? `| AI err: ${debug.ai_error}` : ""}</span>}
                     </div>
                     {allEvents.length > 0 ? (
                       <>
@@ -470,22 +466,20 @@ export default function TrainingOperationsPage() {
                           <table className="w-full text-[12px]">
                             <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
                               <th className="py-1.5 pr-2">Impact</th>
-                              <th className="py-1.5 pr-3">Event</th>
-                              <th className="py-1.5 pr-2">Country</th>
+                              <th className="py-1.5 pr-2">Event</th>
+                              <th className="py-1.5 pr-2">Date</th>
                               <th className="py-1.5 pr-2 text-center">Est.</th>
                               <th className="py-1.5 pr-2 text-right">Actual</th>
-                              <th className="py-1.5 pr-2 text-right">Estimate</th>
-                              <th className="py-1.5 pr-2 text-right">Previous</th>
-                              <th className="py-1.5">Surprise</th>
+                              <th className="py-1.5 pr-2 text-right">Forecast</th>
+                              <th className="py-1.5 pr-2 text-right">Prev</th>
                             </tr></thead>
                             <tbody>{(showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3)).map((ev: any, i: number) => {
                               const isHigh = ev.impact === "high";
                               const isMed = ev.impact === "medium";
-                              const s = ev.surprise || {};
-                              const hasSurprise = s.surprise_z > 0.2;
                               const ai = ev.ai_estimate || {};
                               const aiDir = ai.direction || "";
                               const aiConf = ai.confidence || 0;
+                              const fmtDate = (d: string) => { try { if (!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); } catch { return d?.slice(5, 10) || "—"; } };
                               return (
                                 <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-red-500/[0.05]" : ""}`}>
                                   <td className="py-1.5 pr-2">
@@ -493,35 +487,20 @@ export default function TrainingOperationsPage() {
                                       isHigh ? "bg-red-500/25 text-red-300 border border-red-500/40" : isMed ? "bg-amber-500/20 text-amber-300" : "bg-bah-cyan/15 text-bah-cyan"
                                     }`}>{(ev.impact || "low").toUpperCase()}</span>
                                   </td>
-                                  <td className={`py-1.5 pr-3 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
-                                  <td className="py-1.5 pr-2 text-bah-muted">{ev.country}</td>
-                                  <td className="py-1.5 pr-2 text-center">
+                                  <td className={`py-1.5 pr-2 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
+                                  <td className="py-1.5 pr-2 text-bah-muted text-[11px] whitespace-nowrap">{fmtDate(ev.date)}</td>
+                                  <td className="py-1.5 pr-2 text-center" title={ai.reason || ""}>
                                     {aiDir === "UP" ? (
-                                      <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
-                                        <span className="text-green-400 text-[16px] font-black leading-none">▲</span>
-                                        {aiConf >= 0.5 && <span className="text-[9px] text-green-400/70 font-bold">{Math.round(aiConf * 100)}%</span>}
-                                      </span>
+                                      <span className="text-green-400 text-[15px] font-black">▲</span>
                                     ) : aiDir === "DOWN" ? (
-                                      <span className="inline-flex flex-col items-center" title={ai.reason || ""}>
-                                        <span className="text-red-400 text-[16px] font-black leading-none">▼</span>
-                                        {aiConf >= 0.5 && <span className="text-[9px] text-red-400/70 font-bold">{Math.round(aiConf * 100)}%</span>}
-                                      </span>
-                                    ) : aiDir === "NEUTRAL" ? (
-                                      <span className="text-yellow-500/60 text-[11px] font-bold" title={ai.reason || ""}>●</span>
+                                      <span className="text-red-400 text-[15px] font-black">▼</span>
                                     ) : (
-                                      <span className="text-bah-border text-[9px]">{ev.ai_estimate ? JSON.stringify(ev.ai_estimate).slice(0,20) : "–"}</span>
+                                      <span className="text-yellow-500/50 text-[10px]">●</span>
                                     )}
                                   </td>
                                   <td className="py-1.5 pr-2 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
                                   <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
                                   <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
-                                  <td className="py-1.5">
-                                    {hasSurprise ? (
-                                      <span className={`text-[11px] font-bold ${s.direction === "LONG" ? "text-green-400" : s.direction === "SHORT" ? "text-red-400" : "text-bah-muted"}`}>
-                                        {s.magnitude} {s.direction !== "NEUTRAL" ? `(${s.direction})` : ""}
-                                      </span>
-                                    ) : <span className="text-bah-muted text-[10px]">—</span>}
-                                  </td>
                                 </tr>
                               );
                             })}</tbody>
