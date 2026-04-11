@@ -333,6 +333,15 @@ def detect_crash_short(
         sig.reason = "missing indicators"
         return sig
 
+    # ── EMA200 FILTER: don't short assets that are above the long-term mean ──
+    # If price is 2%+ ABOVE EMA200, the asset is NOT in a real crash.
+    # F&G override may force CRASH regime, but structurally the asset is ranging/bullish.
+    if ema_200 > 0:
+        dist_ema200_pct = (close - ema_200) / ema_200
+        if dist_ema200_pct > 0.02:
+            sig.reason = f"price {dist_ema200_pct*100:.1f}% ABOVE EMA200 — not a real crash, skip SHORT"
+            return sig
+
     # ── RALLY PROTECTION: don't short into strong upward momentum ──
     dist_to_ema20 = (ema_20 - close) / ema_20  # positive = below, negative = above
 

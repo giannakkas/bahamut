@@ -299,6 +299,26 @@ def open_training_position(
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
 
+    # ═══════════════════════════════════════════
+    # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
+    # This is the single choke point every trade must pass through.
+    # Strategy.evaluate(), debug_exploration, and CRASH SHORT all converge here.
+    # ═══════════════════════════════════════════
+    ENGINE_SUPPRESS = {
+        # Global suppresses (all strategies)
+        "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
+        # Per-strategy suppresses
+        "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
+        "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL"},
+    }
+    global_block = ENGINE_SUPPRESS.get("*", set())
+    strat_block = ENGINE_SUPPRESS.get(strategy, set())
+    if asset in global_block or asset in strat_block:
+        logger.info("training_engine_suppressed",
+                    asset=asset, strategy=strategy, direction=direction,
+                    reason="ENGINE_SUPPRESS_MAP")
+        return None
+
     # Check position limit
     current_count = get_open_position_count()
     if current_count >= TRAINING_MAX_POSITIONS:

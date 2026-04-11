@@ -11,16 +11,31 @@ from bahamut.strategies.base import BaseStrategy, StrategyMeta, Signal
 class V5Base(BaseStrategy):
     meta = StrategyMeta(
         name="v5_base",
-        version="5.0",
-        description="EMA20x50 golden cross, bull regime, SL 8%, TP 16%",
-        sl_pct=0.08,
-        tp_pct=0.16,
-        max_hold_bars=30,
+        version="5.1",
+        description="EMA20x50 golden cross, dynamic SL/TP by timeframe",
+        sl_pct=0.03,       # Default (overridden dynamically in evaluate)
+        tp_pct=0.06,
+        max_hold_bars=20,
         risk_pct=0.02,
     )
 
+    # Expose for debug exploration path (getattr fallback)
+    sl_pct = 0.025       # 15m default — overridden per trade
+    tp_pct = 0.05
+    max_hold = 20
+
     # Assets that consistently produce losses or $0 flat exits — suppress
     SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"}
+
+    # Timeframe-proportional SL/TP targets
+    # Key insight: on 15m candles, 20 bars = 5 hours. Price moves ~3-5% max.
+    # On 4H candles, 20 bars = 3.3 days. Price moves ~5-8% max.
+    SL_TP_BY_INTERVAL = {
+        "15m": {"sl": 0.025, "tp": 0.05, "hold": 20},   # 2.5% SL, 5% TP — achievable in 5hr
+        "5m":  {"sl": 0.015, "tp": 0.03, "hold": 20},    # 1.5% SL, 3% TP
+        "1h":  {"sl": 0.03,  "tp": 0.06, "hold": 20},    # 3% SL, 6% TP
+        "4h":  {"sl": 0.035, "tp": 0.07, "hold": 30},    # 3.5% SL, 7% TP — achievable in 5 days
+    }
 
     def evaluate(self, candles: list, indicators: dict,
                  prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:
@@ -66,13 +81,17 @@ class V5Base(BaseStrategy):
 
         # Golden cross: EMA20 crosses above EMA50
         if prev_20 <= prev_50 and ema_20 > ema_50:
+            # Dynamic SL/TP based on candle timeframe
+            interval = indicators.get("_interval", "4h")
+            params = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
+
             return Signal(
                 strategy=self.meta.name,
                 asset=asset,
                 direction="LONG",
-                sl_pct=self.meta.sl_pct,
-                tp_pct=self.meta.tp_pct,
-                max_hold_bars=self.meta.max_hold_bars,
+                sl_pct=params["sl"],
+                tp_pct=params["tp"],
+                max_hold_bars=params["hold"],
                 quality=0.7,
                 reason=f"EMA20x50 golden cross, bull regime ({asset})",
                 signal_id=f"{self.meta.name}:{asset}:{candles[-1].get('datetime', '') if candles else ''}",

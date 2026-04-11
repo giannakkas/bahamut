@@ -637,24 +637,48 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                             is_new_bar=is_new_bar,
                             reason="Candidate score qualifies for debug exploration")
 
-                # Get strategy's actual parameters (don't hardcode)
+                # Get strategy's actual parameters — interval-aware
                 strat_obj = strategies.get(strat)
-                strat_sl = getattr(strat_obj, "sl_pct", 0.05) if strat_obj else 0.05
-                strat_tp = getattr(strat_obj, "tp_pct", 0.10) if strat_obj else 0.10
-                strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
+
+                # Determine interval for this asset
+                _interval = indicators.get("_interval", "4h")
+
+                # Use strategy's SL_TP_BY_INTERVAL if available (v5_base has this)
+                if hasattr(strat_obj, "SL_TP_BY_INTERVAL"):
+                    _params = strat_obj.SL_TP_BY_INTERVAL.get(_interval, {})
+                    strat_sl = _params.get("sl", 0.025)
+                    strat_tp = _params.get("tp", 0.05)
+                    strat_hold = _params.get("hold", 20)
+                else:
+                    # Fallback: interval-aware defaults (not hardcoded 5%/10%)
+                    if _interval in ("15m", "5m"):
+                        strat_sl = getattr(strat_obj, "sl_pct", 0.02) if strat_obj else 0.02
+                        strat_tp = getattr(strat_obj, "tp_pct", 0.04) if strat_obj else 0.04
+                    else:
+                        strat_sl = getattr(strat_obj, "sl_pct", 0.035) if strat_obj else 0.035
+                        strat_tp = getattr(strat_obj, "tp_pct", 0.07) if strat_obj else 0.07
+                    strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
+
+                # Check strategy-level suppress lists
+                context_blocked = False
+                suppress_set = getattr(strat_obj, "SUPPRESS_ASSETS", set()) if strat_obj else set()
+                if asset in suppress_set:
+                    logger.info("debug_exploration_suppressed",
+                                asset=asset, strategy=strat, reason="SUPPRESS_ASSETS")
+                    context_blocked = True
 
                 # Context gate check — even debug exploration must not open in invalid regimes
-                context_blocked = False
-                try:
-                    from bahamut.training.context_gate import validate_strategy_context
-                    gate = validate_strategy_context(strat, regime, direction)
-                    if not gate["valid"]:
-                        logger.info("debug_exploration_context_blocked",
-                                    asset=asset, strategy=strat, regime=regime,
-                                    reason=gate["reason"])
-                        context_blocked = True
-                except Exception:
-                    pass
+                if not context_blocked:
+                    try:
+                        from bahamut.training.context_gate import validate_strategy_context
+                        gate = validate_strategy_context(strat, regime, direction)
+                        if not gate["valid"]:
+                            logger.info("debug_exploration_context_blocked",
+                                        asset=asset, strategy=strat, regime=regime,
+                                        reason=gate["reason"])
+                            context_blocked = True
+                    except Exception:
+                        pass
 
                 if not context_blocked:
                     result["signals"].append(PendingSignal(

@@ -1456,6 +1456,156 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
             recommendations.append("System healthy — no critical issues detected")
         ai_section["data"]["recommendations"] = recommendations
 
+        # ═══════════════════════════════════════════
+        # WIN RATE OPTIMIZATION ANALYTICS
+        # ═══════════════════════════════════════════
+
+        # Exit reason breakdown per strategy
+        try:
+            exit_rows = run_query("""
+                SELECT strategy, exit_reason,
+                       COUNT(*) as cnt,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl,
+                       ROUND(AVG(bars_held)::numeric, 1) as avg_bars
+                FROM training_trades
+                GROUP BY strategy, exit_reason
+                ORDER BY strategy, cnt DESC
+            """)
+            exit_breakdown = {}
+            for row in exit_rows:
+                r = dict(row)
+                s = r["strategy"]
+                if s not in exit_breakdown:
+                    exit_breakdown[s] = {}
+                reason = r["exit_reason"] or "UNKNOWN"
+                exit_breakdown[s][reason] = {
+                    "count": r["cnt"],
+                    "wins": int(r["wins"] or 0),
+                    "losses": int(r["losses"] or 0),
+                    "avg_pnl": float(r["avg_pnl"] or 0),
+                    "avg_bars": float(r["avg_bars"] or 0),
+                }
+            ai_section["data"]["exit_reason_breakdown"] = exit_breakdown
+        except Exception:
+            pass
+
+        # Best & worst asset+strategy combos (by win rate, min 5 trades)
+        try:
+            combo_rows = run_query("""
+                SELECT asset, strategy, direction,
+                       COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl
+                FROM training_trades
+                WHERE ABS(pnl) > 0.01
+                GROUP BY asset, strategy, direction
+                HAVING COUNT(*) >= 3
+                ORDER BY SUM(pnl) DESC
+            """)
+            combos = [dict(r) for r in combo_rows]
+            for c in combos:
+                w, l = int(c["wins"] or 0), int(c["losses"] or 0)
+                c["win_rate"] = round(w / max(1, w + l) * 100, 1)
+                c["total_pnl"] = float(c["total_pnl"] or 0)
+                c["avg_pnl"] = float(c["avg_pnl"] or 0)
+            ai_section["data"]["best_combos"] = combos[:10]
+            ai_section["data"]["worst_combos"] = combos[-10:][::-1]
+        except Exception:
+            pass
+
+        # CRASH SHORT specific tracking
+        try:
+            crash_rows = run_query("""
+                SELECT asset,
+                       COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl
+                FROM training_trades
+                WHERE direction = 'SHORT' AND regime = 'CRASH'
+                GROUP BY asset
+                ORDER BY SUM(pnl) DESC
+            """)
+            crash_shorts = []
+            for row in crash_rows:
+                r = dict(row)
+                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                crash_shorts.append({
+                    "asset": r["asset"],
+                    "trades": r["trades"],
+                    "wins": w, "losses": l,
+                    "win_rate": round(w / max(1, w + l) * 100, 1),
+                    "total_pnl": float(r["total_pnl"] or 0),
+                    "avg_pnl": float(r["avg_pnl"] or 0),
+                })
+            ai_section["data"]["crash_short_performance"] = crash_shorts
+        except Exception:
+            pass
+
+        # Win rate by asset class + strategy
+        try:
+            class_rows = run_query("""
+                SELECT
+                    CASE
+                        WHEN asset LIKE '%%USD' THEN 'crypto'
+                        WHEN asset IN ('SPX','IXIC','DJI','NDX') THEN 'index'
+                        ELSE 'stock'
+                    END as asset_class,
+                    strategy,
+                    COUNT(*) as trades,
+                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                    ROUND(SUM(pnl)::numeric, 2) as total_pnl
+                FROM training_trades
+                GROUP BY 1, strategy
+                HAVING COUNT(*) >= 5
+                ORDER BY SUM(pnl) DESC
+            """)
+            class_strat = []
+            for row in class_rows:
+                r = dict(row)
+                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                class_strat.append({
+                    "class": r["asset_class"],
+                    "strategy": r["strategy"],
+                    "trades": r["trades"],
+                    "win_rate": round(w / max(1, w + l) * 100, 1),
+                    "pnl": float(r["total_pnl"] or 0),
+                })
+            ai_section["data"]["class_strategy_matrix"] = class_strat
+        except Exception:
+            pass
+
+        # Active engine suppress map (show what's blocked)
+        try:
+            from bahamut.training.engine import open_training_position
+            # Read ENGINE_SUPPRESS from the function body
+            ai_section["data"]["engine_suppress_map"] = {
+                "global": sorted(["RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"]),
+                "v5_base": sorted(["ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"]),
+                "v10_mean_reversion": sorted(["SOLUSD", "BNBUSD", "AAPL"]),
+            }
+        except Exception:
+            pass
+
+        # SL/TP configuration awareness
+        ai_section["data"]["sl_tp_config"] = {
+            "v5_base": {
+                "15m": {"sl": "2.5%", "tp": "5%", "hold": 20, "note": "5hr window"},
+                "4h": {"sl": "3.5%", "tp": "7%", "hold": 30, "note": "5 day window"},
+            },
+            "v10_mean_reversion": {
+                "15m": {"sl": "0.8-3%", "tp": "0.5-4%", "hold": 10, "note": "ATR-based"},
+                "4h": {"sl": "3.5-8%", "tp": "2-8%", "hold": 10, "note": "ATR-based"},
+            },
+            "v9_breakout": "Uses dynamic ATR-based SL/TP",
+        }
+
     except Exception as e:
         ai_section["error"] = str(e)
     diag["sections"].append(ai_section)
