@@ -367,7 +367,9 @@ def compute_trust_points(strategy: str, regime: str, asset_class: str, max_point
         "points": points, "trust": t["blended_trust"],
         "confidence": t["blended_confidence"], "maturity": t["maturity"],
         "quick_stop_penalty": qs_penalty, "provisional": t["provisional"],
-        "detail": f"trust={t['blended_trust']:.2f} conf={t['blended_confidence']:.2f} mat={t['maturity']} qs_pen={qs_penalty}",
+        "expectancy": t.get("expectancy", 0.0),
+        "samples": t.get("total_trades", 0),
+        "detail": f"trust={t['blended_trust']:.2f} conf={t['blended_confidence']:.2f} mat={t['maturity']} exp={t.get('expectancy', 0):.3f} qs_pen={qs_penalty}",
     }
 
 

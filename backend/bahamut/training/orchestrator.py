@@ -578,6 +578,28 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         if asset in SUPPRESS_ASSETS:
             debug_enabled = False
 
+        # ── SENTIMENT GATE: block crypto LONGs when sentiment says block ──
+        if debug_enabled and asset_class == "crypto":
+            try:
+                from bahamut.sentiment.fear_greed import get_fear_greed
+                fng = get_fear_greed()
+                if fng.get("value", 50) <= 25:
+                    # Only allow SHORTs in extreme fear, not LONGs
+                    logger.info("debug_exploration_sentiment_block",
+                                asset=asset, fear_greed=fng.get("value"),
+                                reason="Extreme fear — blocking crypto debug exploration LONGs")
+                    debug_enabled = False
+            except Exception:
+                pass
+
+        # ── v10 CRYPTO RANGE BLOCK: proven negative edge ──
+        # expectancy -0.1246 over 102 mature samples
+        if debug_enabled and asset_class == "crypto" and regime == "RANGE":
+            logger.info("debug_exploration_crypto_range_block",
+                        asset=asset, regime=regime,
+                        reason="v10 crypto RANGE has -0.12 expectancy — blocked")
+            debug_enabled = False
+
         # Skip assets that already have an open position (no duplicates)
         has_existing_position = False
         try:

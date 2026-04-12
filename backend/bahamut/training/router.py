@@ -1583,12 +1583,19 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
 
         # Active engine suppress map (show what's blocked)
         try:
-            from bahamut.training.engine import open_training_position
-            # Read ENGINE_SUPPRESS from the function body
             ai_section["data"]["engine_suppress_map"] = {
                 "global": sorted(["RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"]),
                 "v5_base": sorted(["ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"]),
-                "v10_mean_reversion": sorted(["SOLUSD", "BNBUSD", "AAPL"]),
+                "v10_mean_reversion": sorted(["SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"]),
+                "v9_breakout": sorted(["ETHUSD"]),
+            }
+            ai_section["data"]["containment_rules"] = {
+                "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (expectancy -0.1246)",
+                "debug_exploration_sentiment_gate": "Crypto LONGs blocked in debug exploration when F&G ≤ 25",
+                "debug_exploration_trust_dampening": "Debug exploration trades have 50% weight in trust updates",
+                "crash_short_ema200_filter": "No CRASH SHORTs when price >2% above EMA200",
+                "v5_base_circuit_breaker": "WR<40% blocks ALL crypto; WR<45% halves risk",
+                "selector_class_boosts": "v9+stock: +8pts, v10+crypto: -10pts, v5+crypto: -5pts",
             }
         except Exception:
             pass

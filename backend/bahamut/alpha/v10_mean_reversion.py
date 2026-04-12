@@ -435,7 +435,7 @@ class V10MeanReversion:
         self.risk_pct = 0.015       # 1.5% risk per trade (slightly lower than trend strategies)
 
     # Assets that consistently lose on mean reversion — suppress
-    SUPPRESS_ASSETS = {"COIN", "SOLUSD", "BNBUSD"}
+    SUPPRESS_ASSETS = {"COIN", "SOLUSD", "BNBUSD", "DOTUSD", "ADAUSD"}
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         """Evaluate for mean reversion setup — LONG, SHORT, and CRASH SHORT."""
@@ -443,9 +443,17 @@ class V10MeanReversion:
         if asset in self.SUPPRESS_ASSETS:
             return None
 
-        regime = indicators.get("_regime", "UNKNOWN")
+        # Use EFFECTIVE regime (includes F&G override), not raw 4H
+        regime = indicators.get("_effective_regime") or indicators.get("_regime", "UNKNOWN")
+        asset_class = indicators.get("_asset_class", "")
 
-        # Try LONG first (oversold → bounce) — only in RANGE
+        # ── PROVEN NEGATIVE EDGE: v10 crypto RANGE LONGs ──
+        # expectancy = -0.1246, 102 mature samples. This is buying dips in a downtrend.
+        # Mean reversion requires actual ranging. Crypto in extreme fear is trending down.
+        if asset_class == "crypto" and regime == "RANGE":
+            return None  # No crypto RANGE signals at all (LONG or SHORT)
+
+        # Try LONG first (oversold → bounce) — only in RANGE, only stocks
         sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
 
         # If no LONG, try SHORT (overbought → rejection) — only in RANGE

@@ -139,8 +139,30 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
             bd["mature_bad_penalty"] = -10
         elif tp["maturity"] == "developing" and tp["trust"] < 0.30:
             bd["mature_bad_penalty"] = -5
+
+        # ── EXPECTANCY-AWARE PENALTY ──
+        # If a pattern has mature negative expectancy, penalize heavily.
+        # This prevents the selector from sending known-bad patterns.
+        exp = tp.get("expectancy", 0)
+        exp_samples = tp.get("samples", 0)
+        if tp["maturity"] == "mature" and exp < -0.05 and exp_samples >= 15:
+            penalty = int(exp * 40)  # -0.12 expectancy → -5pts, -0.3 → -12pts
+            bd["expectancy_penalty"] = max(-15, penalty)
     except Exception:
         bd["trust"] = 15  # Default neutral if learning engine unavailable
+
+    # ── STRATEGY × CLASS ADJUSTMENTS ──
+    # Based on class_strategy_matrix data (proven over 100+ trades)
+    strat_class_key = f"{signal.strategy}:{signal.asset_class}"
+    STRAT_CLASS_BOOSTS = {
+        "v9_breakout:stock": 8,       # 74.4% WR, +$3476 — strongest edge
+        "v10_mean_reversion:stock": 3, # 48.5% WR but +$2028 — decent
+        "v5_base:stock": 3,            # 50% WR, +$1006 — ok
+        "v10_mean_reversion:crypto": -10,  # 54.9% WR but -$816 PnL — negative expectancy
+        "v5_base:crypto": -5,          # 44.7% WR, -$230 — weak
+    }
+    if strat_class_key in STRAT_CLASS_BOOSTS:
+        bd["class_boost"] = STRAT_CLASS_BOOSTS[strat_class_key]
 
     total = sum(bd.values())
 

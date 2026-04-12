@@ -309,7 +309,8 @@ def open_training_position(
         "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
         # Per-strategy suppresses
         "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
-        "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL"},
+        "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"},
+        "v9_breakout": {"ETHUSD"},  # 18 trades, 44% WR, -$147
     }
     global_block = ENGINE_SUPPRESS.get("*", set())
     strat_block = ENGINE_SUPPRESS.get(strategy, set())
@@ -943,11 +944,22 @@ def _feed_learning(trade: TrainingTrade):
     try:
         from bahamut.training.learning_engine import compute_learning_context, update_trust_from_trade
         ctx = compute_learning_context(asdict(trade))
+
+        # Debug exploration trades contaminate trust if weighted equally.
+        # Halve their outcome score so they contribute less to trust direction.
+        if trade.execution_type == "debug_exploration":
+            ctx.outcome_score = round(ctx.outcome_score * 0.5, 4)
+            logger.info("learning_debug_dampened",
+                        strategy=trade.strategy, asset=trade.asset,
+                        original_score=round(ctx.outcome_score * 2, 4),
+                        dampened_score=ctx.outcome_score)
+
         update_trust_from_trade(ctx)
         logger.info("enhanced_learning_fed",
                     strategy=trade.strategy, exit=trade.exit_reason,
                     pnl=trade.pnl, outcome=ctx.outcome_score,
-                    quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple)
+                    quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple,
+                    execution_type=trade.execution_type)
 
         # Check if this pattern should now be suppressed
         from bahamut.training.context_gate import evaluate_for_suppression
