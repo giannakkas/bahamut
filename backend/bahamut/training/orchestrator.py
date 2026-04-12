@@ -411,12 +411,15 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                     check_slope = 0
                     try:
                         from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+                        from bahamut.regime.v8_detector import detect_regime as _detect
                         c4h = get_candles(asset, interval="4h", limit=100)
                         if c4h and len(c4h) >= 50:
                             i4h = binance_ind(c4h)
                             check_close = i4h.get("close", check_close)
                             check_ema200 = i4h.get("ema_200", check_ema200)
-                            check_slope = i4h.get("ema50_slope", 0)
+                            # Get slope from regime detector (not in compute_indicators)
+                            rr = _detect(i4h, c4h[-15:])
+                            check_slope = rr.features.get("ema50_slope", 0)
                     except Exception:
                         pass
 

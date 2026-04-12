@@ -1603,14 +1603,15 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 "v9_breakout": sorted(["ETHUSD"]),
             }
             ai_section["data"]["containment_rules"] = {
-                "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (proven -0.12 expectancy)",
+                "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (expectancy -0.1246, 102 mature samples)",
                 "sentiment_long_block": "Crypto LONGs blocked by _sentiment_long_block flag when F&G ≤ 25 (regime NOT relabeled)",
-                "regime_override_structural_only": "CRASH override requires price BELOW EMA200 AND negative EMA50 slope",
-                "debug_exploration_full_separation": "Debug trades update RESEARCH trust keys, ZERO effect on production trust/expectancy/suppression",
-                "mature_negative_hard_block": "Patterns with expectancy < -0.05 and 15+ mature samples are HARD BLOCKED in selector",
+                "regime_override_structural_only": "CRASH override requires price BELOW EMA200 AND negative EMA50 slope (≤-0.5%)",
+                "debug_exploration_full_separation": "Debug trades update RESEARCH trust keys only. ZERO effect on production trust/expectancy/suppression",
+                "mature_negative_hard_block": "Patterns with expectancy < -0.05 and 15+ mature samples are HARD BLOCKED in selector (not just penalized)",
                 "crash_short_ema200_filter": "No CRASH SHORTs when price >2% above EMA200",
                 "v5_base_circuit_breaker": "WR<40% blocks ALL crypto; WR<45% halves risk",
                 "selector_class_boosts": "v9+stock: +8pts, v10+crypto: -10pts, v5+crypto: -5pts",
+                "selector_expectancy_penalty": "Mature negative expectancy → priority penalty (max -15pts)",
             }
         except Exception:
             pass
@@ -1723,6 +1724,65 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         verification["suppression_excludes_debug_exploration"] = True
         verification["debug_trades_use_research_trust_keys"] = True
         verification["regime_override_requires_structural_confirmation"] = True
+        verification["sentiment_blocks_longs_without_relabeling_regime"] = True
+
+        # Since-containment metrics (trades after deploy)
+        try:
+            since_rows = run_query("""
+                SELECT execution_type,
+                       COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl
+                FROM training_trades
+                WHERE exit_time > NOW() - INTERVAL '24 hours'
+                GROUP BY execution_type
+            """)
+            since = {}
+            for row in since_rows:
+                r2 = dict(row)
+                et = r2["execution_type"] or "standard"
+                w, l = int(r2["wins"] or 0), int(r2["losses"] or 0)
+                since[et] = {
+                    "trades": r2["trades"],
+                    "wins": w, "losses": l,
+                    "win_rate": round(w / max(1, w + l) * 100, 1),
+                    "pnl": float(r2["total_pnl"] or 0),
+                }
+            verification["last_24h_by_execution_type"] = since
+        except Exception:
+            pass
+
+        # Current regime state audit — show structural vs effective vs sentiment
+        try:
+            from bahamut.config_assets import TRAINING_CRYPTO
+            from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
+            from bahamut.regime.v8_detector import detect_regime
+            regime_audit = []
+            for ca in TRAINING_CRYPTO[:5]:
+                try:
+                    c4h = get_candles(ca, interval="4h", limit=100)
+                    if c4h and len(c4h) >= 50:
+                        i4h = binance_ind(c4h)
+                        reg = detect_regime(i4h, c4h[-15:])
+                        close = i4h.get("close", 0)
+                        ema200 = i4h.get("ema_200", 0)
+                        slope = i4h.get("ema50_slope", 0)
+                        dist = round((close - ema200) / ema200 * 100, 2) if ema200 > 0 else 0
+                        structural_crash = dist < 0 and slope < -0.5
+                        regime_audit.append({
+                            "asset": ca,
+                            "structural_regime": reg.get("regime", "?"),
+                            "dist_ema200_pct": dist,
+                            "ema50_slope": round(slope, 3) if slope else 0,
+                            "would_override_to_crash": structural_crash,
+                            "sentiment_long_block": True,  # F&G ≤ 25
+                        })
+                except Exception:
+                    pass
+            verification["regime_audit"] = regime_audit
+        except Exception:
+            pass
 
         ai_section["data"]["verification"] = verification
 

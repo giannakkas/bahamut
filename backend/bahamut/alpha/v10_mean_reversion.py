@@ -443,8 +443,8 @@ class V10MeanReversion:
         if asset in self.SUPPRESS_ASSETS:
             return None
 
-        # Use EFFECTIVE regime (includes F&G override), not raw 4H
-        regime = indicators.get("_effective_regime") or indicators.get("_regime", "UNKNOWN")
+        # Use regime from indicators (now honest — only CRASH if structurally confirmed)
+        regime = indicators.get("_regime", "UNKNOWN")
         asset_class = indicators.get("_asset_class", "")
 
         # ── PROVEN NEGATIVE EDGE: v10 crypto RANGE LONGs ──
