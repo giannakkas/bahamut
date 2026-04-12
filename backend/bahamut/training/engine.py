@@ -318,6 +318,12 @@ def open_training_position(
         logger.info("training_engine_suppressed",
                     asset=asset, strategy=strategy, direction=direction,
                     reason="ENGINE_SUPPRESS_MAP")
+        try:
+            import redis as _rds
+            _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+            _increment_counter(_rc, "bahamut:counters:engine_suppress_blocks")
+        except Exception:
+            pass
         return None
 
     # Check position limit
@@ -934,6 +940,59 @@ def _record_recent(trade: TrainingTrade):
             pass
 
 
+def _increment_counter(r, key: str):
+    """Increment a Redis counter for verification diagnostics."""
+    try:
+        if r:
+            r.incr(key)
+            r.expire(key, 604800)  # 7 day TTL
+    except Exception:
+        pass
+
+
+def _feed_research_learning(ctx):
+    """Feed a debug_exploration trade into SEPARATE research trust keys.
+    These keys are prefixed with 'research:' and have zero effect on production."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        from bahamut.training.learning_engine import _build_trust_keys, _load_trust_bucket, \
+            TRUST_EMA_ALPHA, TRUST_DEFAULT
+        import json as _json
+
+        # Build research-prefixed keys (separate from production)
+        prod_keys = _build_trust_keys(ctx)
+        for prod_key in prod_keys:
+            research_key = prod_key.replace("bahamut:training:trust:", "bahamut:training:research_trust:")
+            try:
+                raw = r.get(research_key)
+                trust = _json.loads(raw) if raw else {
+                    "trades": 0, "wins": 0, "losses": 0,
+                    "trust_score": TRUST_DEFAULT, "recent_outcomes": [],
+                    "recent_r_multiples": [],
+                }
+                trust["trades"] += 1
+                if ctx.pnl > 0.01:
+                    trust["wins"] += 1
+                elif ctx.pnl < -0.01:
+                    trust["losses"] += 1
+                recent = trust.get("recent_outcomes", [])
+                recent.append(ctx.outcome_score)
+                trust["recent_outcomes"] = recent[-20:]
+                r_mults = trust.get("recent_r_multiples", [])
+                r_mults.append(ctx.r_multiple)
+                trust["recent_r_multiples"] = r_mults[-20:]
+                old_trust = trust.get("trust_score", TRUST_DEFAULT)
+                target = 0.5 + ctx.outcome_score * 0.3
+                trust["trust_score"] = round(old_trust * (1 - TRUST_EMA_ALPHA) + target * TRUST_EMA_ALPHA, 4)
+                r.set(research_key, _json.dumps(trust), ex=604800)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _feed_learning(trade: TrainingTrade):
     """Feed a closed training trade into all learning systems."""
     r = _get_redis()
@@ -945,25 +1004,34 @@ def _feed_learning(trade: TrainingTrade):
         from bahamut.training.learning_engine import compute_learning_context, update_trust_from_trade
         ctx = compute_learning_context(asdict(trade))
 
-        # Debug exploration trades contaminate trust if weighted equally.
-        # Halve their outcome score so they contribute less to trust direction.
+        # ══════════════════════════════════════════════════════════
+        # FULL RESEARCH / PRODUCTION SEPARATION
+        # debug_exploration trades have ZERO effect on:
+        #   - production trust
+        #   - production expectancy
+        #   - production maturity
+        #   - production suppressions
+        #   - selector learning
+        # They go to separate research trust keys instead.
+        # ══════════════════════════════════════════════════════════
         if trade.execution_type == "debug_exploration":
-            ctx.outcome_score = round(ctx.outcome_score * 0.5, 4)
-            logger.info("learning_debug_dampened",
+            _feed_research_learning(ctx)
+            _increment_counter(r, "bahamut:counters:research_trust_updates")
+            logger.info("research_learning_fed",
                         strategy=trade.strategy, asset=trade.asset,
-                        original_score=round(ctx.outcome_score * 2, 4),
-                        dampened_score=ctx.outcome_score)
+                        exit=trade.exit_reason, pnl=trade.pnl,
+                        outcome=ctx.outcome_score, r_mult=ctx.r_multiple)
+        else:
+            update_trust_from_trade(ctx)
+            _increment_counter(r, "bahamut:counters:production_trust_updates")
+            logger.info("production_learning_fed",
+                        strategy=trade.strategy, exit=trade.exit_reason,
+                        pnl=trade.pnl, outcome=ctx.outcome_score,
+                        quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple)
 
-        update_trust_from_trade(ctx)
-        logger.info("enhanced_learning_fed",
-                    strategy=trade.strategy, exit=trade.exit_reason,
-                    pnl=trade.pnl, outcome=ctx.outcome_score,
-                    quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple,
-                    execution_type=trade.execution_type)
-
-        # Check if this pattern should now be suppressed
-        from bahamut.training.context_gate import evaluate_for_suppression
-        evaluate_for_suppression(trade.strategy, trade.regime, trade.asset_class)
+            # Only production trades can trigger auto-suppression
+            from bahamut.training.context_gate import evaluate_for_suppression
+            evaluate_for_suppression(trade.strategy, trade.regime, trade.asset_class)
     except Exception as e:
         logger.warning("enhanced_learning_failed", error=str(e))
 

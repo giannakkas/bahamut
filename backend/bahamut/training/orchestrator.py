@@ -14,6 +14,7 @@ SAFETY:
   - Uses its own Redis keys (bahamut:training:*)
   - Uses its own DB table (training_trades)
 """
+import os
 import time
 import structlog
 from datetime import datetime, timezone
@@ -372,30 +373,42 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     indicators["_regime"] = regime
     indicators["_asset_class"] = asset_class
 
-    # Sentiment-driven regime override for crypto:
-    # If Fear & Greed is extreme fear AND price action confirms crash,
-    # override to CRASH. But if price has CLEARLY recovered (3%+ above EMA200
-    # on 4H timeframe), the crash may be over even if F&G hasn't updated.
-    if asset_class == "crypto" and regime != "CRASH":
+    # ══════════════════════════════════════════════════════════
+    # SENTIMENT + REGIME HANDLING (redesigned)
+    #
+    # OLD: F&G ≤ 25 → force regime to CRASH. This created a dead zone:
+    #   regime=CRASH + RSI oversold → can't SHORT (RSI too low)
+    #   sentiment=block_all_longs → can't LONG either
+    #
+    # NEW: Sentiment and regime are SEPARATE concerns:
+    #   1. Sentiment sets _sentiment_long_block flag (blocks LONGs without changing regime)
+    #   2. Regime only overrides to CRASH if STRUCTURAL conditions confirm:
+    #      - Price BELOW EMA200 (not just near it)
+    #      - EMA50 slope is negative (confirmed downtrend)
+    #   3. If structure says RANGE but sentiment says fear, regime stays RANGE
+    #      but crypto LONGs are blocked by the sentiment flag
+    # ══════════════════════════════════════════════════════════
+    indicators["_sentiment_long_block"] = False
+
+    if asset_class == "crypto":
         try:
             from bahamut.sentiment.fear_greed import get_fear_greed
             fng = get_fear_greed()
             fng_value = fng.get("value", 50)
+
+            # Block crypto LONGs when F&G ≤ 25 — but don't touch regime label
             if fng_value <= 25:
-                # Quick check: if 15m RSI is overbought (>70), it's clearly rallying
-                # Don't force CRASH on an asset with RSI 80+ just because F&G is stale
-                rsi_15m = indicators.get("rsi_14", 50)
-                if rsi_15m > 70:
-                    logger.info("training_sentiment_override_SKIPPED_RSI",
-                                asset=asset, regime=regime,
-                                fear_greed=fng_value, rsi_15m=round(rsi_15m, 1),
-                                reason="15m RSI > 70 — overbought rally, F&G stale")
-                else:
-                    # Use 4H indicators for macro-level check (not 15m which is noisy)
-                    # Fall back to 15m if 4H not available
+                indicators["_sentiment_long_block"] = True
+                logger.info("training_sentiment_long_block",
+                            asset=asset, regime=regime, fear_greed=fng_value,
+                            reason="F&G extreme fear — crypto LONGs blocked (regime unchanged)")
+
+                # Only override regime to CRASH if STRUCTURAL conditions confirm:
+                # Price must be BELOW EMA200 AND EMA50 slope must be negative
+                if regime != "CRASH":
                     check_close = indicators.get("close", 0)
                     check_ema200 = indicators.get("ema_200", 0)
-                    check_rsi = indicators.get("rsi_14", 50)
+                    check_slope = 0
                     try:
                         from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
                         c4h = get_candles(asset, interval="4h", limit=100)
@@ -403,33 +416,35 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                             i4h = binance_ind(c4h)
                             check_close = i4h.get("close", check_close)
                             check_ema200 = i4h.get("ema_200", check_ema200)
-                            check_rsi = i4h.get("rsi_14", check_rsi)
+                            check_slope = i4h.get("ema50_slope", 0)
                     except Exception:
                         pass
 
                     dist_from_ema200 = (check_close - check_ema200) / check_ema200 * 100 if check_ema200 > 0 else 0
 
-                    if dist_from_ema200 > 3.0 and check_rsi > 50:
-                        logger.info("training_sentiment_override_SKIPPED",
-                                    asset=asset, regime=regime,
-                                    fear_greed=fng_value, rsi=round(check_rsi, 1),
-                                    dist_from_ema200=round(dist_from_ema200, 2),
-                                    reason="price 3%+ above EMA200 on 4H + RSI>50")
-                    else:
+                    # Structural crash: price BELOW EMA200 AND negative slope
+                    if dist_from_ema200 < 0 and check_slope < -0.5:
                         original = regime
                         regime = "CRASH"
                         indicators["_regime"] = "CRASH"
-                        logger.info("training_sentiment_regime_override",
-                                    asset=asset, original=original, override="CRASH",
+                        logger.info("training_structural_crash_override",
+                                    asset=asset, original=original,
                                     fear_greed=fng_value,
                                     dist_from_ema200=round(dist_from_ema200, 2),
-                                    rsi=round(check_rsi, 1))
+                                    ema50_slope=round(check_slope, 3),
+                                    reason="Price below EMA200 + negative slope = structural crash")
+                    else:
+                        logger.info("training_sentiment_no_crash_override",
+                                    asset=asset, regime=regime,
+                                    dist_from_ema200=round(dist_from_ema200, 2),
+                                    reason="Sentiment blocks LONGs but structure doesn't confirm CRASH")
         except Exception:
             pass
 
     # Inject timeframe so strategies can adjust SL/TP
     from bahamut.data.binance_data import is_crypto
     indicators["_interval"] = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
+    indicators["_effective_regime"] = regime  # Post-override regime for strategies
 
     result["regime"] = regime  # For orchestrator regime collection
 
@@ -449,6 +464,13 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             continue
 
         if signal:
+            # ── Sentiment long block: crypto LONGs blocked during extreme fear ──
+            if signal.direction == "LONG" and indicators.get("_sentiment_long_block", False):
+                logger.info("training_signal_sentiment_blocked",
+                            asset=asset, strategy=strat_name,
+                            reason="Sentiment long block active — LONG rejected")
+                continue
+
             strategy_signals_found += 1
 
             # DEBUG: Log SHORT signals explicitly
@@ -584,21 +606,25 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 from bahamut.sentiment.fear_greed import get_fear_greed
                 fng = get_fear_greed()
                 if fng.get("value", 50) <= 25:
-                    # Only allow SHORTs in extreme fear, not LONGs
                     logger.info("debug_exploration_sentiment_block",
                                 asset=asset, fear_greed=fng.get("value"),
                                 reason="Extreme fear — blocking crypto debug exploration LONGs")
                     debug_enabled = False
+                    try:
+                        import redis as _rds2; _r2 = _rds2.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0")); _r2.incr("bahamut:counters:sentiment_gate_blocks"); _r2.expire("bahamut:counters:sentiment_gate_blocks", 604800)
+                    except Exception: pass
             except Exception:
                 pass
 
         # ── v10 CRYPTO RANGE BLOCK: proven negative edge ──
-        # expectancy -0.1246 over 102 mature samples
-        if debug_enabled and asset_class == "crypto" and regime == "RANGE":
+        if debug_enabled and asset_class == "crypto" and regime in ("RANGE", "CRASH"):
             logger.info("debug_exploration_crypto_range_block",
                         asset=asset, regime=regime,
                         reason="v10 crypto RANGE has -0.12 expectancy — blocked")
             debug_enabled = False
+            try:
+                import redis as _rds3; _r3 = _rds3.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0")); _r3.incr("bahamut:counters:v10_crypto_range_blocks"); _r3.expire("bahamut:counters:v10_crypto_range_blocks", 604800)
+            except Exception: pass
 
         # Skip assets that already have an open position (no duplicates)
         has_existing_position = False

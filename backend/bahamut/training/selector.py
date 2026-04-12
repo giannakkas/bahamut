@@ -288,7 +288,32 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             except Exception:
                 pass
 
-        # 0.5. QUALITY FLOORS — hard minimum requirements before ranking
+        # 0.5. MATURE-NEGATIVE EXPECTANCY HARD BLOCK
+        # If a pattern has mature negative expectancy below -0.05 with 15+ samples,
+        # this is a proven losing edge. Block it completely, not just penalize.
+        # This is separate from selector penalties — it's a gate.
+        try:
+            from bahamut.training.learning_engine import compute_trust_points
+            _tp = compute_trust_points(sig.strategy, sig.regime, sig.asset_class, max_points=30)
+            if _tp["maturity"] == "mature" and _tp.get("expectancy", 0) < -0.05 and _tp.get("samples", 0) >= 15:
+                reasons.append(f"Mature negative expectancy {_tp['expectancy']:.3f} — hard blocked")
+                rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                _track_rejection("mature_negative_expectancy_block")
+                logger.info("selector_mature_neg_blocked",
+                            asset=sig.asset, strategy=sig.strategy,
+                            regime=sig.regime, asset_class=sig.asset_class,
+                            expectancy=_tp["expectancy"], samples=_tp["samples"])
+                try:
+                    import redis as _rds, os
+                    _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+                    _rc.incr("bahamut:counters:mature_neg_expectancy_blocks")
+                    _rc.expire("bahamut:counters:mature_neg_expectancy_blocks", 604800)
+                except Exception: pass
+                continue
+        except Exception:
+            pass
+
+        # 0.6. QUALITY FLOORS — hard minimum requirements before ranking
         if sig.execution_type != "debug_exploration":
             try:
                 from bahamut.training.quality_floors import check_quality_floors
