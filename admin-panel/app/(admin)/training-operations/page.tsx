@@ -5,10 +5,9 @@ import { apiBase } from "@/lib/utils";
 import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const STRAT_NAMES: Record<string, string> = {
-  v5_base: "S1 · EMA Trend",
-  v5_tuned: "S2 · EMA Tuned",
-  v9_breakout: "S3 · Breakout",
-  v10_mean_reversion: "S4 · Mean Reversion",
+  v5_base: "V5 · EMA Trend",
+  v9_breakout: "V9 · Breakout",
+  v10_mean_reversion: "V10 · Mean Reversion",
 };
 const sn = (s: string) => STRAT_NAMES[s] || s;
 
@@ -885,10 +884,10 @@ function CandidatesSection({ candidates }: { candidates: any[] }) {
    ═══════════════════════════════════════════ */
 function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtPct, fmtT, pnlC }: any) {
   const stratName: Record<string, string> = {
-    v5_base: "S1 · EMA Trend",
-    v5_tuned: "S2 · EMA Tuned",
-    v9_breakout: "S3 · Breakout",
-    v10_mean_reversion: "S4 · Mean Reversion",
+    v5_base: "V5 · EMA Trend",
+    
+    v9_breakout: "V9 · Breakout",
+    v10_mean_reversion: "V10 · Mean Reversion",
   };
   return (
     <div className="space-y-4">
