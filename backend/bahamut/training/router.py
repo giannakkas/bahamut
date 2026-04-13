@@ -396,7 +396,7 @@ def _build_closed_trades() -> list[dict]:
 def _build_strategy_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
     """Per-strategy breakdown using pre-aggregated data. Zero DB queries."""
     strategies = {}
-    for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+    for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
         bs = db_agg.get("by_strategy", {}).get(strat, {})
         cnt = bs.get("cnt", 0)
         wins = bs.get("wins", 0)
@@ -467,7 +467,7 @@ def _build_exposure_fast(positions: list) -> dict:
 def _build_strategy_breakdown(r) -> dict:
     """Per-strategy breakdown."""
     strategies = {}
-    for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+    for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
         stats = {
             "open_trades": 0, "closed_trades": 0, "win_rate": 0,
             "profit_factor": 0, "avg_pnl": 0, "total_pnl": 0,
@@ -938,7 +938,7 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
             })
 
         # Per-regime trust for each strategy
-        for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+        for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
             for regime in ["TREND", "RANGE", "BREAKOUT"]:
                 for ac in ["crypto", "stock", "forex", "commodity", "index"]:
                     try:
@@ -1596,11 +1596,9 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
 
         # Active engine suppress map (show what's blocked)
         try:
+            from bahamut.config_assets import TRAINING_SUPPRESS
             ai_section["data"]["engine_suppress_map"] = {
-                "global": sorted(["RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"]),
-                "v5_base": sorted(["ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"]),
-                "v10_mean_reversion": sorted(["SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"]),
-                "v9_breakout": sorted(["ETHUSD"]),
+                k: sorted(list(v)) for k, v in TRAINING_SUPPRESS.items()
             }
             ai_section["data"]["containment_rules"] = {
                 "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (expectancy -0.1246, 102 mature samples)",

@@ -304,16 +304,13 @@ def open_training_position(
     # This is the single choke point every trade must pass through.
     # Strategy.evaluate(), debug_exploration, and CRASH SHORT all converge here.
     # ═══════════════════════════════════════════
-    ENGINE_SUPPRESS = {
-        # Global suppresses (all strategies)
-        "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
-        # Per-strategy suppresses
-        "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
-        "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"},
-        "v9_breakout": {"ETHUSD"},  # 18 trades, 44% WR, -$147
-    }
-    global_block = ENGINE_SUPPRESS.get("*", set())
-    strat_block = ENGINE_SUPPRESS.get(strategy, set())
+    # ═══════════════════════════════════════════
+    # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
+    # Single canonical source: config_assets.TRAINING_SUPPRESS
+    # ═══════════════════════════════════════════
+    from bahamut.config_assets import TRAINING_SUPPRESS
+    global_block = TRAINING_SUPPRESS.get("*", set())
+    strat_block = TRAINING_SUPPRESS.get(strategy, set())
     if asset in global_block or asset in strat_block:
         logger.info("training_engine_suppressed",
                     asset=asset, strategy=strategy, direction=direction,
@@ -635,7 +632,7 @@ def cleanup_invalid_positions() -> list[str]:
     }
 
     VALID_REGIMES = {
-        "v5_base": {"TREND"}, "v5_tuned": {"TREND"},
+        "v5_base": {"TREND"},
         "v9_breakout": {"TREND", "BREAKOUT", "RANGE"},
         "v10_mean_reversion": {"RANGE", "CRASH"},
     }
@@ -1110,7 +1107,7 @@ def get_training_stats() -> dict:
         except Exception:
             pass
 
-        for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+        for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
             try:
                 raw = r.get(f"bahamut:training:strategy_stats:{strat}")
                 if raw:

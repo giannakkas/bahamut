@@ -28,7 +28,6 @@ logger = structlog.get_logger()
 # Anything not in the set is HARD BLOCKED before scoring
 STRATEGY_REGIME_MAP = {
     "v5_base": {"TREND"},
-    "v5_tuned": {"TREND"},
     "v9_breakout": {"TREND", "BREAKOUT", "RANGE"},  # RANGE allowed but penalized
     "v10_mean_reversion": {"RANGE", "CRASH"},        # CRASH allowed for SHORTs only
 }

@@ -434,13 +434,11 @@ class V10MeanReversion:
         self.max_hold = 10          # ~40 hours on 4H bars (short-duration trades)
         self.risk_pct = 0.015       # 1.5% risk per trade (slightly lower than trend strategies)
 
-    # Assets that consistently lose on mean reversion — suppress
-    SUPPRESS_ASSETS = {"COIN", "SOLUSD", "BNBUSD", "DOTUSD", "ADAUSD"}
-
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         """Evaluate for mean reversion setup — LONG, SHORT, and CRASH SHORT."""
-        # Hard suppress list
-        if asset in self.SUPPRESS_ASSETS:
+        # Canonical suppress check
+        from bahamut.config_assets import is_suppressed
+        if is_suppressed(asset, self.name):
             return None
 
         # Use regime from indicators (now honest — only CRASH if structurally confirmed)

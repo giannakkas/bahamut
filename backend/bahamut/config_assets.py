@@ -33,10 +33,6 @@ MAX_TOTAL_OPEN_POSITIONS = 4
 # TRAINING UNIVERSE (paper trading only)
 # ═══════════════════════════════════════════
 
-# ═══════════════════════════════════════════
-# TRAINING UNIVERSE (paper trading only)
-# ═══════════════════════════════════════════
-
 TRAINING_CRYPTO = [
     # Tier 1: Large caps (high liquidity, tighter spreads)
     "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
@@ -119,3 +115,30 @@ def is_asset_active(asset: str) -> bool:
 TRAINING_VIRTUAL_CAPITAL = 100_000  # $100K virtual portfolio
 TRAINING_RISK_PER_TRADE_PCT = 0.005  # 0.5% per trade (vs 2% production)
 TRAINING_MAX_POSITIONS = 20  # Allow many simultaneous training positions
+
+
+# ═══════════════════════════════════════════
+# CANONICAL SUPPRESS MAP — single source of truth
+# All suppress checks (engine, strategy, orchestrator, selector) read from here.
+# To suppress an asset: add it here. That's it.
+# ═══════════════════════════════════════════
+
+TRAINING_SUPPRESS = {
+    # Global: blocked on ALL strategies, ALL signal paths
+    "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
+    # v5_base: blocked on EMA trend strategy
+    "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
+    # v10_mean_reversion: blocked on mean reversion + crash shorts
+    "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"},
+    # v9_breakout: specific underperformers
+    "v9_breakout": {"ETHUSD", "AMD"},
+}
+
+
+def is_suppressed(asset: str, strategy: str) -> bool:
+    """Check if an asset is suppressed for a given strategy."""
+    if asset in TRAINING_SUPPRESS.get("*", set()):
+        return True
+    if asset in TRAINING_SUPPRESS.get(strategy, set()):
+        return True
+    return False

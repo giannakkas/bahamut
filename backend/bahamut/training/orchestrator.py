@@ -600,10 +600,11 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # Config-driven — disable by setting exploration.debug_override=false
     # ═══════════════════════════════════════════
     if strategy_signals_found == 0:
-        # Global suppress list — these assets are blocked from ALL signal paths
-        SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"}
+        # Canonical suppress check
+        from bahamut.config_assets import TRAINING_SUPPRESS
+        _global_suppress = TRAINING_SUPPRESS.get("*", set())
         debug_enabled = True
-        debug_min_score = 20  # Low floor — most approaching candidates qualify
+        debug_min_score = 20
         try:
             from bahamut.admin.config import get_config
             debug_enabled = get_config("exploration.debug_override", True)
@@ -612,8 +613,8 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             logger.warning("debug_override_config_failed", error=str(e),
                            msg="using defaults: enabled=True, min_score=20")
 
-        # Force-disable for suppressed assets (dead weight, zero PnL)
-        if asset in SUPPRESS_ASSETS:
+        # Force-disable for globally suppressed assets
+        if asset in _global_suppress:
             debug_enabled = False
 
         # ── SENTIMENT GATE: block crypto LONGs when sentiment says block ──
@@ -719,12 +720,12 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         strat_tp = getattr(strat_obj, "tp_pct", 0.07) if strat_obj else 0.07
                     strat_hold = getattr(strat_obj, "max_hold", 20) if strat_obj else 20
 
-                # Check strategy-level suppress lists
+                # Check canonical suppress list
                 context_blocked = False
-                suppress_set = getattr(strat_obj, "SUPPRESS_ASSETS", set()) if strat_obj else set()
-                if asset in suppress_set:
+                from bahamut.config_assets import is_suppressed as _is_sup
+                if _is_sup(asset, strat):
                     logger.info("debug_exploration_suppressed",
-                                asset=asset, strategy=strat, reason="SUPPRESS_ASSETS")
+                                asset=asset, strategy=strat, reason="CANONICAL_SUPPRESS")
                     context_blocked = True
 
                 # Context gate check — even debug exploration must not open in invalid regimes
@@ -887,12 +888,9 @@ def _get_strategies() -> dict:
         logger.info("strategy_loaded", name="v5_base")
     except Exception as e:
         logger.error("strategy_load_failed", name="v5_base", error=str(e))
-    try:
-        from bahamut.strategies.v5_tuned import V5Tuned
-        strats["v5_tuned"] = V5Tuned()
-        logger.info("strategy_loaded", name="v5_tuned")
-    except Exception as e:
-        logger.error("strategy_load_failed", name="v5_tuned", error=str(e))
+    # v5_tuned DISABLED — SL 10%/TP 25% unreachable on any timeframe,
+    # no interval-aware SL/TP, no SUPPRESS_ASSETS, no quality filters.
+    # 0 trades in 600+ total. Dead weight wasting compute cycles.
     try:
         from bahamut.alpha.v9_candidate import V9Breakout
         strats["v9_breakout"] = V9Breakout()

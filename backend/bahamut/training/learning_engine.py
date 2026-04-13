@@ -385,7 +385,7 @@ def get_trust_overview() -> dict:
     counts = {"provisional": 0, "developing": 0, "mature": 0}
     strategies = {}
 
-    for strat in ["v5_base", "v5_tuned", "v9_breakout", "v10_mean_reversion"]:
+    for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
         data = _load_trust_bucket(r, f"bahamut:training:trust:strategy:{strat}")
         if not data:
             continue

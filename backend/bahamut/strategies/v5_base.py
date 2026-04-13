@@ -24,9 +24,6 @@ class V5Base(BaseStrategy):
     tp_pct = 0.05
     max_hold = 20
 
-    # Assets that consistently produce losses or $0 flat exits — suppress
-    SUPPRESS_ASSETS = {"RNDRUSD", "MATICUSD", "ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"}
-
     # Timeframe-proportional SL/TP targets
     # Key insight: on 15m candles, 20 bars = 5 hours. Price moves ~3-5% max.
     # On 4H candles, 20 bars = 3.3 days. Price moves ~5-8% max.
@@ -39,8 +36,9 @@ class V5Base(BaseStrategy):
 
     def evaluate(self, candles: list, indicators: dict,
                  prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:
-        # Hard suppress list — proven zero-profit assets
-        if asset in self.SUPPRESS_ASSETS:
+        # Canonical suppress check
+        from bahamut.config_assets import is_suppressed
+        if is_suppressed(asset, self.meta.name):
             return None
 
         close = indicators.get("close", 0)
