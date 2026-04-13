@@ -939,7 +939,7 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
 
         # Per-regime trust for each strategy
         for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
-            for regime in ["TREND", "RANGE", "BREAKOUT"]:
+            for regime in ["TREND", "RANGE", "CRASH", "BREAKOUT"]:
                 for ac in ["crypto", "stock", "forex", "commodity", "index"]:
                     try:
                         t = get_pattern_trust(strat, regime, ac)
@@ -2086,8 +2086,7 @@ async def trust_dashboard():
     Uses the same proven Redis path as diagnostics — single source of truth."""
     try:
         from bahamut.training.learning_engine import (
-            get_trust_overview, get_pattern_trust, _get_redis, _load_trust_bucket,
-            calculate_expectancy,
+            get_trust_overview, get_pattern_trust,
         )
         from bahamut.db.query import run_query
         from bahamut.config_assets import ASSET_CLASS_MAP
