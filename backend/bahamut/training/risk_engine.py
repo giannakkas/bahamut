@@ -17,10 +17,16 @@ All thresholds are configurable constants at the top of this file.
 """
 import json
 import os
+import time
 import structlog
 from datetime import datetime, timezone, timedelta
 
 logger = structlog.get_logger()
+
+# ── State cache (avoids N×3 DB queries per selector cycle) ──
+_cached_state: dict | None = None
+_cached_at: float = 0
+_CACHE_TTL = 30  # seconds — positions don't change faster than this
 
 
 # ═══════════════════════════════════════════
@@ -128,11 +134,17 @@ def _get_equity_and_dd() -> dict:
         return {"equity": 100000, "peak": 100000, "dd": 0, "dd_pct": 0}
 
 
-def get_risk_engine_state() -> dict:
+def get_risk_engine_state(force_refresh: bool = False) -> dict:
     """
     Main entry point. Returns full risk engine state.
     Called by: /training/risk-metrics, selector, orchestrator.
+    Cached for 30s to avoid N×3 DB queries per selector cycle.
     """
+    global _cached_state, _cached_at
+
+    if not force_refresh and _cached_state and (time.time() - _cached_at) < _CACHE_TTL:
+        return _cached_state
+
     from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
     from bahamut.training.portfolio_optimizer import CORRELATION_CLUSTERS, _ASSET_CLUSTERS
 
@@ -279,7 +291,7 @@ def get_risk_engine_state() -> dict:
     if not triggered and not warnings:
         recommendations.append("All risk controls within limits")
 
-    return {
+    result = {
         "risk_engine": {
             "status": "active",
             "mode": mode,
@@ -305,6 +317,8 @@ def get_risk_engine_state() -> dict:
             "method": "rule_based_clusters",
             "top_clusters": cluster_warnings,
             "blocked_candidates_count": sum(1 for cw in cluster_warnings if cw["status"] == "BLOCKED"),
+            # Internal: cluster position counts for can_open_new_trade
+            "_cluster_counts": {cid: info["count"] for cid, info in cluster_counts.items()},
         },
         "limits": {
             "class_caps": CLASS_CAPS,
@@ -317,6 +331,17 @@ def get_risk_engine_state() -> dict:
             "recommendations": recommendations,
         },
     }
+
+    _cached_state = result
+    _cached_at = time.time()
+    return result
+
+
+def invalidate_risk_cache():
+    """Call after a position opens/closes to force fresh state."""
+    global _cached_state, _cached_at
+    _cached_state = None
+    _cached_at = 0
 
 
 def can_open_new_trade(asset: str, strategy: str, direction: str,
@@ -345,6 +370,17 @@ def can_open_new_trade(asset: str, strategy: str, direction: str,
     if strat_exp.get("positions", 0) >= strat_cap["max_positions"]:
         return {"allowed": False, "reason": f"{strategy} at position cap",
                 "size_multiplier": 0}
+
+    # Check cluster limit — would adding this asset breach any cluster?
+    from bahamut.training.portfolio_optimizer import _ASSET_CLUSTERS
+    cluster_counts = state.get("correlation", {}).get("_cluster_counts", {})
+    for cid in _ASSET_CLUSTERS.get(asset, []):
+        if cluster_counts.get(cid, 0) >= MAX_PER_CLUSTER:
+            from bahamut.training.portfolio_optimizer import CORRELATION_CLUSTERS
+            label = CORRELATION_CLUSTERS.get(cid, {}).get("label", cid)
+            return {"allowed": False,
+                    "reason": f"Cluster '{label}' at {cluster_counts[cid]}/{MAX_PER_CLUSTER}",
+                    "size_multiplier": 0}
 
     return {"allowed": True, "reason": "within_limits",
             "size_multiplier": re["size_multiplier"]}

@@ -630,6 +630,13 @@ def open_training_position(
     except Exception:
         pass
 
+    # Invalidate risk engine cache (position count changed)
+    try:
+        from bahamut.training.risk_engine import invalidate_risk_cache
+        invalidate_risk_cache()
+    except Exception:
+        pass
+
     return pos
 # ═══════════════════════════════════════════
 
@@ -815,6 +822,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             _persist_trade(trade)
             _record_recent(trade)
             closed_trades.append(trade)
+
+            # Invalidate risk engine cache (position count changed)
+            try:
+                from bahamut.training.risk_engine import invalidate_risk_cache
+                invalidate_risk_cache()
+            except Exception:
+                pass
 
             # Set per-asset + per-strategy cooldown to prevent immediate re-entry
             try:
