@@ -304,10 +304,11 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                             regime=sig.regime, asset_class=sig.asset_class,
                             expectancy=_tp["expectancy"], samples=_tp["samples"])
                 try:
-                    import redis as _rds, os
-                    _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-                    _rc.incr("bahamut:counters:mature_neg_expectancy_blocks")
-                    _rc.expire("bahamut:counters:mature_neg_expectancy_blocks", 604800)
+                    from bahamut.training.engine import _get_redis as _sel_redis
+                    _sr = _sel_redis()
+                    if _sr:
+                        _sr.incr("bahamut:counters:mature_neg_expectancy_blocks")
+                        _sr.expire("bahamut:counters:mature_neg_expectancy_blocks", 604800)
                 except Exception: pass
                 continue
         except Exception:

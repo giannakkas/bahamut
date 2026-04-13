@@ -21,6 +21,19 @@ from datetime import datetime, timezone
 
 logger = structlog.get_logger()
 
+
+def _incr_containment_counter(name: str):
+    """Increment a containment counter using the proven Redis connection from engine."""
+    try:
+        from bahamut.training.engine import _get_redis
+        r = _get_redis()
+        if r:
+            key = f"bahamut:counters:{name}"
+            r.incr(key)
+            r.expire(key, 604800)  # 7 day TTL
+    except Exception:
+        pass
+
 # Import Celery app
 try:
     from bahamut.celery_app import celery_app
@@ -613,9 +626,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                                 asset=asset, fear_greed=fng.get("value"),
                                 reason="Extreme fear — blocking crypto debug exploration LONGs")
                     debug_enabled = False
-                    try:
-                        import redis as _rds2; _r2 = _rds2.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0")); _r2.incr("bahamut:counters:sentiment_gate_blocks"); _r2.expire("bahamut:counters:sentiment_gate_blocks", 604800)
-                    except Exception: pass
+                    _incr_containment_counter("sentiment_gate_blocks")
             except Exception:
                 pass
 
@@ -625,9 +636,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         asset=asset, regime=regime,
                         reason="v10 crypto RANGE has -0.12 expectancy — blocked")
             debug_enabled = False
-            try:
-                import redis as _rds3; _r3 = _rds3.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0")); _r3.incr("bahamut:counters:v10_crypto_range_blocks"); _r3.expire("bahamut:counters:v10_crypto_range_blocks", 604800)
-            except Exception: pass
+            _incr_containment_counter("v10_crypto_range_blocks")
 
         # Skip assets that already have an open position (no duplicates)
         has_existing_position = False

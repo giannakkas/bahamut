@@ -1767,19 +1767,20 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                         reg = detect_regime(i4h, c4h[-15:])
                         close = i4h.get("close", 0)
                         ema200 = i4h.get("ema_200", 0)
-                        slope = i4h.get("ema50_slope", 0)
+                        # ema50_slope is in RegimeResult.features, not in indicators
+                        slope = reg.features.get("ema50_slope", 0) if reg.features else 0
                         dist = round((close - ema200) / ema200 * 100, 2) if ema200 > 0 else 0
                         structural_crash = dist < 0 and slope < -0.5
                         regime_audit.append({
                             "asset": ca,
-                            "structural_regime": reg.get("regime", "?"),
+                            "structural_regime": reg.regime,  # dataclass attribute, not dict
                             "dist_ema200_pct": dist,
                             "ema50_slope": round(slope, 3) if slope else 0,
                             "would_override_to_crash": structural_crash,
-                            "sentiment_long_block": True,  # F&G ≤ 25
+                            "sentiment_long_block": True,
                         })
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("regime_audit_error", asset=ca, error=str(_e)[:80])
             verification["regime_audit"] = regime_audit
         except Exception:
             pass

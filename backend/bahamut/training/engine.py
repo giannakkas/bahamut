@@ -318,12 +318,7 @@ def open_training_position(
         logger.info("training_engine_suppressed",
                     asset=asset, strategy=strategy, direction=direction,
                     reason="ENGINE_SUPPRESS_MAP")
-        try:
-            import redis as _rds
-            _rc = _rds.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-            _increment_counter(_rc, "bahamut:counters:engine_suppress_blocks")
-        except Exception:
-            pass
+        _increment_counter(_get_redis(), "bahamut:counters:engine_suppress_blocks")
         return None
 
     # Check position limit
