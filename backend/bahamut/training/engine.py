@@ -504,6 +504,28 @@ def open_training_position(
     except Exception:
         pass
 
+    # ── Risk engine size multiplier ──
+    # Applied after strategy-specific circuit breakers, before size calculation.
+    try:
+        from bahamut.training.risk_engine import get_size_multiplier
+        re_mult = get_size_multiplier()
+        if re_mult <= 0:
+            logger.info("training_risk_engine_size_block",
+                        asset=asset, strategy=strategy, multiplier=re_mult,
+                        reason="Risk engine size_multiplier=0 — trade blocked")
+            _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_blocks")
+            return None
+        elif re_mult < 1.0:
+            original_risk = risk_amount
+            risk_amount = round(risk_amount * re_mult, 2)
+            logger.info("training_risk_engine_size_reduced",
+                        asset=asset, strategy=strategy,
+                        multiplier=re_mult, original=original_risk,
+                        reduced_to=risk_amount)
+            _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_reductions")
+    except Exception:
+        pass
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)

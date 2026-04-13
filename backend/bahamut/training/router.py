@@ -1704,6 +1704,9 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 "bahamut:counters:sentiment_gate_blocks",
                 "bahamut:counters:v10_crypto_range_blocks",
                 "bahamut:counters:mature_neg_expectancy_blocks",
+                "bahamut:counters:risk_engine_blocks",
+                "bahamut:counters:risk_engine_size_blocks",
+                "bahamut:counters:risk_engine_size_reductions",
             ]
             counters = {}
             for ck in counter_keys:
@@ -1714,6 +1717,30 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
                 except Exception:
                     pass
             verification["containment_counters"] = counters
+        except Exception:
+            pass
+
+        # Risk engine live state
+        try:
+            from bahamut.training.risk_engine import get_risk_engine_state
+            re_state = get_risk_engine_state()
+            verification["risk_engine"] = {
+                "mode": re_state.get("risk_engine", {}).get("mode", "UNKNOWN"),
+                "block_new_trades": re_state.get("risk_engine", {}).get("block_new_trades", False),
+                "size_multiplier": re_state.get("risk_engine", {}).get("size_multiplier", 1.0),
+                "triggered_rules": re_state.get("controls", {}).get("triggered_rules", []),
+                "warnings_count": len(re_state.get("controls", {}).get("warnings", [])),
+                "open_positions": re_state.get("exposure", {}).get("open_positions", 0),
+                "class_utilization": {
+                    cls: f"{e.get('positions', 0)}/{e.get('cap_positions', '?')}"
+                    for cls, e in re_state.get("exposure", {}).get("by_class", {}).items()
+                },
+                "strategy_utilization": {
+                    s: f"{e.get('positions', 0)}/{e.get('cap_positions', '?')}"
+                    for s, e in re_state.get("exposure", {}).get("by_strategy", {}).items()
+                },
+                "cluster_warnings": len(re_state.get("correlation", {}).get("top_clusters", [])),
+            }
         except Exception:
             pass
 

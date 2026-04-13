@@ -338,6 +338,30 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             except Exception:
                 pass
 
+        # 0.8. RISK ENGINE GATE — portfolio-level risk controls
+        # Daily loss brake, DD guard, class/strategy caps, cluster limits.
+        # Applies to ALL candidates including debug_exploration.
+        try:
+            from bahamut.training.risk_engine import can_open_new_trade
+            re_check = can_open_new_trade(sig.asset, sig.strategy, sig.direction, sig.asset_class)
+            if not re_check["allowed"]:
+                reasons.append(f"Risk engine: {re_check['reason']}")
+                rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                _track_rejection("risk_engine_block")
+                logger.info("selector_risk_engine_blocked",
+                            asset=sig.asset, strategy=sig.strategy,
+                            direction=sig.direction, reason=re_check["reason"])
+                try:
+                    from bahamut.training.engine import _get_redis as _re_redis
+                    _rr = _re_redis()
+                    if _rr:
+                        _rr.incr("bahamut:counters:risk_engine_blocks")
+                        _rr.expire("bahamut:counters:risk_engine_blocks", 604800)
+                except Exception: pass
+                continue
+        except Exception:
+            pass
+
         # 1. Hard threshold (debug_exploration signals bypass this)
         # SHORT signals get minimum threshold — they're new patterns in training.
         # The readiness scorer was designed for LONGs and gives low scores to SHORTs.
