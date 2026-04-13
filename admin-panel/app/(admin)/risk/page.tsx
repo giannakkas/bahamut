@@ -197,6 +197,55 @@ export default function RiskPage() {
         </div>
       )}
 
+      {/* ═══ ADAPTIVE NEWS RISK ═══ */}
+      {d.adaptive_news?.summary && (
+        <Section title="News Event Risk">
+          <div className="space-y-3">
+            <div className="flex gap-3 flex-wrap">
+              {Object.entries(d.adaptive_news.summary?.mode_counts || {}).map(([mode, count]: [string, any]) => {
+                const c = mode === "FROZEN" ? "border-red-500/30 bg-red-500/10 text-red-400"
+                  : mode === "RESTRICTED" ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                  : mode === "CAUTION" ? "border-orange-400/30 bg-orange-400/10 text-orange-400"
+                  : "border-green-500/30 bg-green-500/10 text-green-400";
+                return (
+                  <div key={mode} className={`border rounded-lg px-3 py-2 text-center ${c}`}>
+                    <div className="text-lg font-black">{count as number}</div>
+                    <div className="text-[9px] uppercase font-bold">{mode}</div>
+                  </div>
+                );
+              })}
+              {d.adaptive_news.summary?.starvation_guard_active && (
+                <div className="border border-red-500/40 bg-red-500/10 rounded-lg px-3 py-2 text-center">
+                  <div className="text-lg font-black text-red-400">⚠️</div>
+                  <div className="text-[9px] text-red-400 uppercase font-bold">Starvation Guard</div>
+                </div>
+              )}
+            </div>
+            {Object.entries(d.adaptive_news.assets || {}).filter(([, a]: [string, any]) => a.mode !== "NORMAL").length > 0 && (
+              <div className="space-y-1 mt-2">
+                <div className="text-[10px] text-bah-muted uppercase font-bold">Non-Normal Assets</div>
+                {Object.entries(d.adaptive_news.assets || {}).filter(([, a]: [string, any]) => a.mode !== "NORMAL").map(([asset, a]: [string, any]) => {
+                  const mc = a.mode === "FROZEN" ? "text-red-400" : a.mode === "RESTRICTED" ? "text-yellow-400" : "text-orange-400";
+                  return (
+                    <div key={asset} className="flex items-center justify-between text-xs py-0.5 border-b border-bah-border/20">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-bah-heading">{asset}</span>
+                        <span className={`text-[10px] font-bold ${mc}`}>{a.mode}</span>
+                      </div>
+                      <div className="flex gap-3 text-[10px] text-bah-muted">
+                        <span>bias: {a.bias}</span>
+                        <span>size: {((a.size_multiplier || 1) * 100).toFixed(0)}%</span>
+                        <span>{a.age_seconds ? `${Math.round(a.age_seconds / 60)}m ago` : ""}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* ═══ CORRELATION + RECOMMENDATIONS ═══ */}
       {hasEngine && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

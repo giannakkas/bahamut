@@ -1736,6 +1736,7 @@ async def _build_diagnostics():
                 "bahamut:counters:risk_engine_blocks",
                 "bahamut:counters:risk_engine_size_blocks",
                 "bahamut:counters:risk_engine_size_reductions",
+                "bahamut:counters:news_size_reductions",
             ]
             counters = {}
             for ck in counter_keys:
@@ -2104,6 +2105,15 @@ async def risk_metrics():
         except Exception as re_err:
             risk_state = {"error": str(re_err)}
 
+        # Adaptive news summary for dashboard
+        adaptive_news = {}
+        try:
+            from bahamut.intelligence.adaptive_news_risk import diagnostics_snapshot, ADAPTIVE_NEWS_ENABLED
+            if ADAPTIVE_NEWS_ENABLED:
+                adaptive_news = diagnostics_snapshot()
+        except Exception:
+            pass
+
         return {
             "total_trades": n,
             "total_pnl": round(running - capital, 2),
@@ -2131,6 +2141,8 @@ async def risk_metrics():
             "by_class": class_stats,
             # ── Risk Engine (live controls) ──
             **risk_state,
+            # ── Adaptive News Risk ──
+            "adaptive_news": adaptive_news,
         }
     except Exception as e:
         return {"error": str(e)}

@@ -526,6 +526,26 @@ def open_training_position(
     except Exception:
         pass
 
+    # ── Adaptive news risk size multiplier ──
+    # CAUTION=0.75, RESTRICTED=0.5, FROZEN would have been blocked in selector
+    try:
+        from bahamut.intelligence.adaptive_news_risk import (
+            ADAPTIVE_NEWS_ENABLED, get_asset_news_state, MODES,
+        )
+        if ADAPTIVE_NEWS_ENABLED:
+            news_state = get_asset_news_state(asset)
+            news_mult = MODES.get(news_state.mode, {}).get("size_mult", 1.0)
+            if news_mult < 1.0 and news_mult > 0:
+                original_risk = risk_amount
+                risk_amount = round(risk_amount * news_mult, 2)
+                logger.info("training_news_size_reduced",
+                            asset=asset, strategy=strategy,
+                            news_mode=news_state.mode, multiplier=news_mult,
+                            original=original_risk, reduced_to=risk_amount)
+                _increment_counter(_get_redis(), "bahamut:counters:news_size_reductions")
+    except Exception:
+        pass
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)
