@@ -15,6 +15,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function UtilBar({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = Math.min(100, (value / Math.max(1, max)) * 100);
+  const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-24 text-bah-muted text-right truncate">{label}</span>
+      <div className="flex-1 h-2.5 bg-bah-surface rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-14 text-right text-bah-heading font-bold">{value}/{max}</span>
+    </div>
+  );
+}
+
 export default function RiskPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,16 +43,55 @@ export default function RiskPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); const iv = setInterval(load, 60000); return () => clearInterval(iv); }, [load]);
   if (loading) return <div className="p-8 text-bah-muted">Loading risk metrics...</div>;
   if (!data || data.error) return <div className="p-8 text-red-400">Error: {data?.error || "No data"}</div>;
   const d = data;
+  const re = d.risk_engine || {};
+  const exp = d.exposure || {};
+  const corr = d.correlation || {};
+  const ctrl = d.controls || {};
+  const hasEngine = !!re.status;
+
+  const modeColor = re.mode === "BLOCKED" ? "text-red-400 bg-red-500/10 border-red-500/30"
+    : re.mode === "REDUCED" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
+    : "text-green-400 bg-green-500/10 border-green-500/30";
+  const modeIcon = re.mode === "BLOCKED" ? "🛑" : re.mode === "REDUCED" ? "⚠️" : "✅";
 
   return (
     <div className="space-y-4 p-4 max-w-[1400px] mx-auto">
       <h1 className="text-xl font-black text-bah-heading">Risk Dashboard</h1>
 
-      {/* KPIs */}
+      {/* ═══ RISK ENGINE STATUS ═══ */}
+      {hasEngine && (
+        <div className={`border rounded-xl p-4 ${modeColor}`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{modeIcon}</span>
+              <div>
+                <div className="text-lg font-black">{re.mode || "UNKNOWN"}</div>
+                <div className="text-[10px] opacity-70">Risk Engine · New trades: {re.block_new_trades ? "BLOCKED" : "ALLOWED"} · Size: {((re.size_multiplier || 1) * 100).toFixed(0)}%</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-bold">{ctrl.triggered_rules?.length || 0} rules triggered</div>
+              <div className="text-[10px] opacity-70">{ctrl.warnings?.length || 0} warnings</div>
+            </div>
+          </div>
+          {(ctrl.triggered_rules?.length > 0 || ctrl.warnings?.length > 0) && (
+            <div className="mt-3 pt-3 border-t border-current/20 space-y-1">
+              {(ctrl.triggered_rules || []).map((r: string, i: number) => (
+                <div key={i} className="text-[11px] font-bold">🛑 {r.replace(/_/g, " ").toUpperCase()}</div>
+              ))}
+              {(ctrl.warnings || []).map((w: string, i: number) => (
+                <div key={`w${i}`} className="text-[11px]">⚠️ {w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ KPIs ═══ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
           { l: "Total PnL", v: fmS(d.total_pnl), c: pnlC(d.total_pnl) },
@@ -57,22 +110,133 @@ export default function RiskPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Drawdown */}
-        <Section title="Drawdown">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-3xl font-black text-red-400">{fm(d.max_drawdown)}</div>
-              <div className="text-[11px] text-bah-muted">Max Drawdown ({d.max_drawdown_pct.toFixed(2)}%)</div>
+      {/* ═══ DAILY BRAKE + PORTFOLIO PROTECTION ═══ */}
+      {hasEngine && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Section title="Daily Risk Brake">
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className={`text-2xl font-black ${pnlC(re.current_daily_pnl)}`}>{fmS(re.current_daily_pnl)}</div>
+                  <div className="text-[10px] text-bah-muted">Today realized + unrealized</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-bah-heading">{(re.current_daily_drawdown_pct || 0).toFixed(1)}%</div>
+                  <div className="text-[10px] text-bah-muted">of {re.daily_loss_limit_pct}% limit</div>
+                </div>
+              </div>
+              <div className="h-3 bg-bah-surface rounded-full overflow-hidden">
+                {(() => {
+                  const pct = Math.min(100, ((re.current_daily_drawdown_pct || 0) / Math.max(0.01, re.daily_loss_limit_pct)) * 100);
+                  const c = pct >= 90 ? "bg-red-500" : pct >= 50 ? "bg-yellow-500" : "bg-green-500";
+                  return <div className={`h-full rounded-full ${c}`} style={{ width: `${Math.max(2, pct)}%` }} />;
+                })()}
+              </div>
+              <div className="text-[10px] text-bah-muted">
+                Limit: {fm(re.daily_loss_limit_cash)} / {re.daily_loss_limit_pct}%
+              </div>
             </div>
-            <div>
-              <div className={`text-3xl font-black ${d.current_drawdown > 0 ? "text-orange-400" : "text-green-400"}`}>{fm(d.current_drawdown)}</div>
-              <div className="text-[11px] text-bah-muted">Current Drawdown ({d.current_drawdown_pct.toFixed(2)}%)</div>
-            </div>
-          </div>
-        </Section>
+          </Section>
 
-        {/* Streaks */}
+          <Section title="Portfolio Protection">
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className={`text-2xl font-black ${d.current_drawdown > 0 ? "text-orange-400" : "text-green-400"}`}>{fm(d.current_drawdown)}</div>
+                  <div className="text-[10px] text-bah-muted">Current drawdown ({d.current_drawdown_pct.toFixed(2)}%)</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-red-400">{fm(d.max_drawdown)}</div>
+                  <div className="text-[10px] text-bah-muted">Max historical ({d.max_drawdown_pct.toFixed(1)}%)</div>
+                </div>
+              </div>
+              <div className="h-3 bg-bah-surface rounded-full overflow-hidden">
+                {(() => {
+                  const pct = Math.min(100, ((re.current_portfolio_drawdown_pct || 0) / Math.max(0.01, re.max_portfolio_drawdown_pct || 8)) * 100);
+                  const c = pct >= 90 ? "bg-red-500" : pct >= 60 ? "bg-yellow-500" : "bg-green-500";
+                  return <div className={`h-full rounded-full ${c}`} style={{ width: `${Math.max(2, pct)}%` }} />;
+                })()}
+              </div>
+              <div className="text-[10px] text-bah-muted">
+                Guard: {re.max_portfolio_drawdown_pct || 8}% max · Equity: {fm(re.current_equity || d.current_equity)} / Peak: {fm(re.peak_equity || d.current_equity)}
+              </div>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ EXPOSURE MONITOR ═══ */}
+      {hasEngine && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Section title="Exposure by Class">
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] text-bah-muted mb-1">
+                <span>Notional: {fm(exp.total_notional || 0)}</span>
+                <span>Risk: {fm(exp.total_risk_weighted || 0)}</span>
+                <span>Open: {exp.open_positions || 0}</span>
+              </div>
+              {Object.entries(exp.by_class || {}).map(([cls, e]: [string, any]) => (
+                <UtilBar key={cls} label={cls.toUpperCase()} value={e.positions} max={e.cap_positions} />
+              ))}
+              {Object.keys(exp.by_class || {}).length === 0 && (
+                <div className="text-[11px] text-bah-muted">No open positions</div>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Exposure by Strategy">
+            <div className="space-y-2 mt-5">
+              {Object.entries(exp.by_strategy || {}).map(([s, e]: [string, any]) => (
+                <UtilBar key={s} label={s.replace(/_/g, " ")} value={e.positions} max={e.cap_positions} />
+              ))}
+              {Object.keys(exp.by_strategy || {}).length === 0 && (
+                <div className="text-[11px] text-bah-muted">No open positions</div>
+              )}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ CORRELATION + RECOMMENDATIONS ═══ */}
+      {hasEngine && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Section title="Correlation / Cluster Risk">
+            {corr.top_clusters?.length > 0 ? (
+              <div className="space-y-2">
+                {corr.top_clusters.map((c: any, i: number) => (
+                  <div key={i} className={`text-xs p-2 rounded-lg border ${c.status === "BLOCKED" ? "border-red-500/30 bg-red-500/5" : "border-yellow-500/30 bg-yellow-500/5"}`}>
+                    <div className="flex justify-between">
+                      <span className="font-bold text-bah-heading">{c.label}</span>
+                      <span className={c.status === "BLOCKED" ? "text-red-400 font-bold" : "text-yellow-400 font-bold"}>{c.count}/{c.max}</span>
+                    </div>
+                    <div className="text-[10px] text-bah-muted mt-0.5">{c.assets.join(", ")}</div>
+                  </div>
+                ))}
+                <div className="text-[10px] text-bah-muted">Method: {corr.method} · {corr.blocked_candidates_count || 0} blocked</div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-green-400">No cluster concentration warnings</div>
+            )}
+          </Section>
+
+          <Section title="Risk Recommendations">
+            <div className="space-y-1.5">
+              {(ctrl.recommendations || []).map((r: string, i: number) => (
+                <div key={i} className="text-xs text-bah-heading py-1 border-b border-bah-border/20 flex items-start gap-2">
+                  <span className="text-bah-cyan mt-px">›</span>
+                  <span>{r}</span>
+                </div>
+              ))}
+              {(!ctrl.recommendations || ctrl.recommendations.length === 0) && (
+                <div className="text-[11px] text-bah-muted">No recommendations</div>
+              )}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ EXISTING: Streaks ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Section title="Streaks & Extremes">
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center"><div className="text-2xl font-black text-green-400">{d.best_streak}</div><div className="text-[9px] text-bah-muted">Best Win Streak</div></div>
@@ -84,19 +248,18 @@ export default function RiskPage() {
             <div><div className="text-lg font-bold text-red-400">{fmS(d.biggest_loss?.pnl || 0)}</div><div className="text-[10px] text-bah-muted">Worst — {d.biggest_loss?.asset} ({d.biggest_loss?.strategy})</div></div>
           </div>
         </Section>
+
+        <Section title="R-Multiple Analysis">
+          <div className="grid grid-cols-4 gap-6 text-center">
+            <div><div className={`text-xl font-black ${pnlC(d.avg_r_multiple)}`}>{d.avg_r_multiple.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg R (all)</div></div>
+            <div><div className="text-xl font-black text-green-400">+{d.avg_win_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Win R</div></div>
+            <div><div className="text-xl font-black text-red-400">{d.avg_loss_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Loss R</div></div>
+            <div><div className="text-xl font-black text-bah-heading">{d.avg_bars_held}</div><div className="text-[9px] text-bah-muted">Avg Bars ({(d.avg_bars_held * 4).toFixed(0)}h)</div></div>
+          </div>
+        </Section>
       </div>
 
-      {/* R-Multiples */}
-      <Section title="R-Multiple Analysis">
-        <div className="grid grid-cols-4 gap-6 text-center">
-          <div><div className={`text-xl font-black ${pnlC(d.avg_r_multiple)}`}>{d.avg_r_multiple.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg R (all)</div></div>
-          <div><div className="text-xl font-black text-green-400">+{d.avg_win_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Win R</div></div>
-          <div><div className="text-xl font-black text-red-400">{d.avg_loss_r.toFixed(3)}</div><div className="text-[9px] text-bah-muted">Avg Loss R</div></div>
-          <div><div className="text-xl font-black text-bah-heading">{d.avg_bars_held}</div><div className="text-[9px] text-bah-muted">Avg Bars ({(d.avg_bars_held * 4).toFixed(0)}h)</div></div>
-        </div>
-      </Section>
-
-      {/* Daily PnL */}
+      {/* ═══ Daily PnL ═══ */}
       {d.daily_pnl?.length > 0 && (
         <Section title="Daily P&L (Last 14 Days)">
           <div className="flex items-end gap-1 h-36">
@@ -115,7 +278,7 @@ export default function RiskPage() {
         </Section>
       )}
 
-      {/* By Strategy */}
+      {/* ═══ By Strategy ═══ */}
       <Section title="Risk by Strategy">
         <table className="w-full text-xs">
           <thead><tr className="text-bah-muted text-[10px] uppercase">
@@ -136,7 +299,7 @@ export default function RiskPage() {
         </table>
       </Section>
 
-      {/* By Class */}
+      {/* ═══ By Class ═══ */}
       <Section title="Risk by Asset Class">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {Object.entries(d.by_class || {}).map(([cls, s]: [string, any]) => (

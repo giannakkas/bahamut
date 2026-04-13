@@ -2050,6 +2050,15 @@ async def risk_metrics():
         sorted_days.reverse()
 
         n = len(trades)
+
+        # ── Risk Engine state (live portfolio controls) ──
+        risk_state = {}
+        try:
+            from bahamut.training.risk_engine import get_risk_engine_state
+            risk_state = get_risk_engine_state()
+        except Exception as re_err:
+            risk_state = {"error": str(re_err)}
+
         return {
             "total_trades": n,
             "total_pnl": round(running - capital, 2),
@@ -2075,6 +2084,8 @@ async def risk_metrics():
             "equity_curve_sample": equity_curve[::max(1, len(equity_curve) // 50)],
             "by_strategy": strat_stats,
             "by_class": class_stats,
+            # ── Risk Engine (live controls) ──
+            **risk_state,
         }
     except Exception as e:
         return {"error": str(e)}
