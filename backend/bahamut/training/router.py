@@ -1489,11 +1489,26 @@ async def _build_diagnostics():
                 recommendations.append(f"AGING POSITION: {pa['asset']} {pa['direction']} — {pa['bars_held']}/{pa['max_hold']} bars, still flat — may timeout at $0")
             if pa["execution_platform"] == "internal" and pa["direction"] in ("LONG", "SHORT"):
                 recommendations.append(f"UNMIRRORED: {pa['asset']} {pa['direction']} on internal — should be on exchange")
-        for asset_name, ns in news_snapshots.items():
-            if ns.get("freeze"):
-                recommendations.append(f"NEWS FREEZE: {asset_name} — trading frozen due to high-impact event")
-            if ns.get("shock") in ("HIGH", "EXTREME"):
-                recommendations.append(f"NEWS SHOCK: {asset_name} — {ns['shock']} shock detected, bias={ns['bias']}")
+        # News recommendations — use adaptive news states (not legacy freeze_trading)
+        try:
+            from bahamut.intelligence.adaptive_news_risk import get_all_news_states, ADAPTIVE_NEWS_ENABLED
+            if ADAPTIVE_NEWS_ENABLED:
+                news_states = get_all_news_states()
+                frozen_assets = [a for a, s in news_states.items() if s.mode == "FROZEN"]
+                restricted_assets = [a for a, s in news_states.items() if s.mode == "RESTRICTED"]
+                if frozen_assets:
+                    recommendations.append(f"NEWS FROZEN: {', '.join(frozen_assets[:5])} — all trades blocked")
+                if len(restricted_assets) > 5:
+                    recommendations.append(f"NEWS RESTRICTED: {len(restricted_assets)} assets — only aligned-direction trades at 50% size")
+                elif restricted_assets:
+                    recommendations.append(f"NEWS RESTRICTED: {', '.join(restricted_assets[:5])} — aligned-direction only, 50% size")
+            else:
+                # Legacy fallback
+                for asset_name, ns in news_snapshots.items():
+                    if ns.get("freeze"):
+                        recommendations.append(f"LEGACY NEWS FREEZE: {asset_name}")
+        except Exception:
+            pass
         if not recommendations:
             recommendations.append("System healthy — no critical issues detected")
         ai_section["data"]["recommendations"] = recommendations
@@ -1737,6 +1752,9 @@ async def _build_diagnostics():
                 "bahamut:counters:risk_engine_size_blocks",
                 "bahamut:counters:risk_engine_size_reductions",
                 "bahamut:counters:news_size_reductions",
+                "bahamut:counters:adaptive_news_blocks",
+                "bahamut:counters:adaptive_news_size_reductions",
+                "bahamut:counters:aligned_news_trades_allowed",
             ]
             counters = {}
             for ck in counter_keys:
@@ -1780,6 +1798,15 @@ async def _build_diagnostics():
         verification["debug_trades_use_research_trust_keys"] = True
         verification["regime_override_requires_structural_confirmation"] = True
         verification["sentiment_blocks_longs_without_relabeling_regime"] = True
+
+        # News gate source of truth
+        try:
+            from bahamut.intelligence.adaptive_news_risk import ADAPTIVE_NEWS_ENABLED as _ane
+            verification["news_gate_source_of_truth"] = "adaptive_news_risk" if _ane else "legacy_news_impact"
+            verification["legacy_news_freeze_enabled"] = not _ane
+            verification["adaptive_news_canonical"] = _ane
+        except Exception:
+            verification["news_gate_source_of_truth"] = "unknown"
 
         # Since-containment metrics (trades after deploy)
         try:

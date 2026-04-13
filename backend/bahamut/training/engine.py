@@ -543,6 +543,7 @@ def open_training_position(
                             news_mode=news_state.mode, multiplier=news_mult,
                             original=original_risk, reduced_to=risk_amount)
                 _increment_counter(_get_redis(), "bahamut:counters:news_size_reductions")
+                _increment_counter(_get_redis(), "bahamut:counters:adaptive_news_size_reductions")
     except Exception:
         pass
 

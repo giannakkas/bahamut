@@ -166,7 +166,7 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
 
     total = sum(bd.values())
 
-    # 6. News impact — adaptive risk model replaces binary freeze
+    # 6. News risk — adaptive news is the SINGLE source of truth
     try:
         from bahamut.intelligence.adaptive_news_risk import (
             ADAPTIVE_NEWS_ENABLED, get_asset_news_state, get_news_gate_decision,
@@ -174,9 +174,10 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
         if ADAPTIVE_NEWS_ENABLED:
             state = get_asset_news_state(signal.asset)
             gate = get_news_gate_decision(state, signal.direction)
+            bd["news_mode"] = gate["mode"]
             if not gate["allowed"]:
-                bd["news_freeze"] = True  # Keep key name for rejection tracking
-                bd["news_mode"] = gate["mode"]
+                bd["adaptive_news_block"] = True  # Canonical key — NOT "news_freeze"
+                bd["adaptive_news_reason"] = gate["reason"]
             else:
                 # Apply threshold penalty from news mode
                 if gate["threshold_penalty"] > 0:
@@ -184,9 +185,13 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
                     total -= gate["threshold_penalty"]
                 # Store size multiplier for engine
                 bd["news_size_mult"] = gate["size_multiplier"]
-                bd["news_mode"] = gate["mode"]
+                if gate["size_multiplier"] < 1.0:
+                    bd["adaptive_news_sized"] = True
+                # Track aligned trades that pass through RESTRICTED
+                if gate["mode"] == "RESTRICTED":
+                    bd["adaptive_news_aligned"] = True
         else:
-            # Legacy fallback
+            # Legacy fallback — only runs if ADAPTIVE_NEWS_ENABLED=False
             from bahamut.intelligence.news_impact import compute_news_impact_sync, compute_consensus_modifier
             assessment = compute_news_impact_sync(signal.asset, signal.asset_class)
             if assessment.impact_score > 0.1:
@@ -194,7 +199,7 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
                 bd["news_impact"] = mod["modifier"]
                 total += mod["modifier"]
                 if mod["action"] == "freeze":
-                    bd["news_freeze"] = True
+                    bd["legacy_news_freeze"] = True
     except Exception:
         pass
 
@@ -426,12 +431,27 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             effective_priority -= opt["penalty"]
             reasons.extend(opt["reasons"])
 
-        # 3. News risk check (adaptive model or legacy freeze)
-        if pri.get("components", {}).get("news_freeze"):
-            news_mode = pri.get("components", {}).get("news_mode", "FROZEN")
-            reasons.append(f"News risk: {news_mode} — trade not allowed")
+        # 3. News risk gate — adaptive news is canonical
+        comp = pri.get("components", {})
+        if comp.get("adaptive_news_block"):
+            news_mode = comp.get("news_mode", "FROZEN")
+            news_reason = comp.get("adaptive_news_reason", "blocked")
+            reasons.append(f"Adaptive news: {news_mode} — {news_reason}")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
-            _track_rejection("news_freeze")
+            _track_rejection("adaptive_news_block")
+            try:
+                from bahamut.training.engine import _get_redis as _anr
+                _ar = _anr()
+                if _ar:
+                    _ar.incr("bahamut:counters:adaptive_news_blocks")
+                    _ar.expire("bahamut:counters:adaptive_news_blocks", 604800)
+            except Exception: pass
+            continue
+        elif comp.get("legacy_news_freeze"):
+            # Only fires if ADAPTIVE_NEWS_ENABLED=False
+            reasons.append("Legacy news freeze — trading paused")
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("legacy_news_freeze")
             continue
 
         # 4. Position cap
@@ -490,6 +510,20 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                     score=sig.readiness_score, direction=sig.direction,
                     exec_type=sig.execution_type, priority=effective_priority,
                     total_selected=len(execute))
+
+        # Track adaptive news stats for approved trades
+        try:
+            from bahamut.training.engine import _get_redis as _anr2
+            _ar2 = _anr2()
+            if _ar2:
+                comp2 = pri.get("components", {})
+                if comp2.get("adaptive_news_aligned"):
+                    _ar2.incr("bahamut:counters:aligned_news_trades_allowed")
+                    _ar2.expire("bahamut:counters:aligned_news_trades_allowed", 604800)
+                if comp2.get("adaptive_news_sized"):
+                    _ar2.incr("bahamut:counters:adaptive_news_size_reductions")
+                    _ar2.expire("bahamut:counters:adaptive_news_size_reductions", 604800)
+        except Exception: pass
 
         # Update snapshot so next candidates see this selection
         portfolio_snap["total"] += 1
