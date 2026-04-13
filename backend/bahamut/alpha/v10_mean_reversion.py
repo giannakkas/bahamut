@@ -445,22 +445,34 @@ class V10MeanReversion:
         regime = indicators.get("_regime", "UNKNOWN")
         asset_class = indicators.get("_asset_class", "")
 
+        # ── CRASH SHORT: try first, regardless of regime label ──
+        # CRASH SHORTs detect bear rallies to EMA20 with rejection.
+        # This pattern is valid even when 4H regime says RANGE — the 15m price action
+        # can be bearish while 4H structure hasn't broken EMA200 yet.
+        # Proven edge: FETUSD 100% WR, LINKUSD 100%, WIFUSD 75%.
+        crash_sig = detect_crash_short(candles, indicators, prev_indicators)
+
         # ── PROVEN NEGATIVE EDGE: v10 crypto RANGE LONGs ──
-        # expectancy = -0.1246, 102 mature samples. This is buying dips in a downtrend.
-        # Mean reversion requires actual ranging. Crypto in extreme fear is trending down.
-        if asset_class == "crypto" and regime == "RANGE":
-            return None  # No crypto RANGE signals at all (LONG or SHORT)
+        # expectancy = -0.1246, 102 mature samples.
+        # Block ALL remaining crypto RANGE signals (LONG and regular SHORT).
+        # But if we already have a valid CRASH SHORT, skip this block.
+        if asset_class == "crypto" and regime == "RANGE" and not crash_sig.valid:
+            return None
 
-        # Try LONG first (oversold → bounce) — only in RANGE, only stocks
-        sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
+        # If crash_sig is valid, use it directly (skip LONG/SHORT detection)
+        if crash_sig.valid:
+            sig = crash_sig
+        else:
+            # Try LONG first (oversold → bounce) — only in RANGE, only stocks
+            sig = detect_mean_reversion(candles, indicators, prev_indicators, regime=regime)
 
-        # If no LONG, try SHORT (overbought → rejection) — only in RANGE
-        if not sig.valid:
-            sig = detect_mean_reversion_short(candles, indicators, prev_indicators, regime=regime)
+            # If no LONG, try SHORT (overbought → rejection) — only in RANGE
+            if not sig.valid:
+                sig = detect_mean_reversion_short(candles, indicators, prev_indicators, regime=regime)
 
-        # If no RANGE signal, try CRASH SHORT (bear rally → sell resistance)
-        if not sig.valid and regime == "CRASH":
-            sig = detect_crash_short(candles, indicators, prev_indicators)
+            # If no RANGE signal, try CRASH SHORT in explicit CRASH regime
+            if not sig.valid and regime == "CRASH":
+                sig = detect_crash_short(candles, indicators, prev_indicators)
 
         if not sig.valid:
             return None
