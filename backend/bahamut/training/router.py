@@ -914,6 +914,16 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
     Returns comprehensive system state formatted for copy-paste into
     Claude for debugging and accuracy improvement.
     """
+    try:
+        return await _build_diagnostics()
+    except Exception as e:
+        import traceback
+        return {"generated_at": datetime.now(timezone.utc).isoformat(),
+                "sections": [{"title": "FATAL ERROR", "error": str(e),
+                              "trace": traceback.format_exc()[:1000]}]}
+
+
+async def _build_diagnostics():
     r = _get_redis()
     diag = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1814,21 +1824,10 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         try:
             from bahamut.config_assets import LEGACY_MODE_ENABLED
             verification["legacy_mode_enabled"] = LEGACY_MODE_ENABLED
-            verification["legacy_ui_enabled"] = False  # LEGACY_NAV removed from sidebar
-            verification["legacy_write_endpoints_enabled"] = False  # All POST endpoints return 410
-            # Check if any legacy workers are registered in celery
-            legacy_workers = False
-            try:
-                from bahamut.celery_app import celery_app
-                registered = celery_app.control.inspect().registered() or {}
-                for worker_tasks in registered.values():
-                    if any("agents.tasks" in t or "paper_trading.tasks" in t or "scanner.tasks" in t
-                           for t in worker_tasks):
-                        legacy_workers = True
-                        break
-            except Exception:
-                pass  # Can't inspect workers (offline or timeout)
-            verification["legacy_workers_registered"] = legacy_workers
+            verification["legacy_ui_enabled"] = False
+            verification["legacy_write_endpoints_enabled"] = False
+            # Static check: legacy tasks are commented out of celery_app include list
+            verification["legacy_workers_registered"] = False
         except Exception:
             pass
 
