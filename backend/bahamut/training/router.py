@@ -2645,3 +2645,158 @@ async def news_dashboard():
             pass
 
     return result
+
+
+# ═══════════════════════════════════════════════════════
+# DIAGRAM DASHBOARD — lightweight aggregation endpoint
+# ═══════════════════════════════════════════════════════
+
+@router.get("/diagram-dashboard")
+async def diagram_dashboard():
+    """Aggregated live state for the Diagram Dashboard.
+    Reuses existing functions — no duplicated logic."""
+    import json as _json
+    from fastapi.responses import JSONResponse
+
+    def _safe(obj):
+        if isinstance(obj, set):
+            return sorted(list(obj))
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8", errors="replace")
+        if hasattr(obj, "item"):
+            return obj.item()
+        return str(obj)
+
+    result = {"ts": datetime.now(timezone.utc).isoformat()}
+
+    # 1. Strategy health
+    try:
+        from bahamut.db.query import run_query
+        rows = run_query("""
+            SELECT strategy,
+                   COUNT(*) as trades,
+                   SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                   ROUND(SUM(pnl)::numeric, 2) as pnl
+            FROM training_trades GROUP BY strategy
+        """)
+        strats = {}
+        for r in rows:
+            rd = dict(r)
+            s = rd["strategy"]
+            w, l = int(rd["wins"] or 0), int(rd["losses"] or 0)
+            strats[s] = {
+                "trades": rd["trades"], "wins": w, "losses": l,
+                "win_rate": round(w / max(1, w + l) * 100, 1),
+                "pnl": float(rd["pnl"] or 0),
+            }
+        result["strategies"] = strats
+    except Exception:
+        result["strategies"] = {}
+
+    # 2. Trust overview
+    try:
+        from bahamut.training.learning_engine import get_trust_overview
+        result["trust"] = get_trust_overview()
+    except Exception:
+        result["trust"] = {}
+
+    # 3. Risk engine state
+    try:
+        from bahamut.training.risk_engine import get_risk_engine_state
+        re = get_risk_engine_state()
+        result["risk_engine"] = re.get("risk_engine", {})
+        result["exposure"] = re.get("exposure", {})
+        result["correlation"] = {
+            k: v for k, v in re.get("correlation", {}).items() if not k.startswith("_")
+        }
+    except Exception:
+        result["risk_engine"] = {}
+
+    # 4. Adaptive news
+    try:
+        from bahamut.intelligence.adaptive_news_risk import diagnostics_snapshot, ADAPTIVE_NEWS_ENABLED
+        if ADAPTIVE_NEWS_ENABLED:
+            result["adaptive_news"] = diagnostics_snapshot()
+        else:
+            result["adaptive_news"] = {"adaptive_news_enabled": False}
+    except Exception:
+        result["adaptive_news"] = {}
+
+    # 5. Open positions
+    try:
+        from bahamut.training.engine import _load_positions
+        positions = _load_positions()
+        result["open_positions"] = [{
+            "asset": p["asset"], "strategy": p["strategy"],
+            "direction": p["direction"], "pnl_pct": round(p.get("pnl_pct", 0), 2),
+        } for p in positions[:20]]
+        result["open_count"] = len(positions)
+    except Exception:
+        result["open_positions"] = []
+        result["open_count"] = 0
+
+    # 6. Last cycle decisions
+    try:
+        r = _get_redis()
+        if r:
+            raw = r.get("bahamut:training:last_cycle_decisions")
+            if raw:
+                decisions = _json.loads(raw)
+                result["last_cycle"] = {
+                    "executed": len([d for d in decisions if d.get("decision") == "EXECUTE"]),
+                    "rejected": len([d for d in decisions if d.get("decision") == "REJECT"]),
+                    "watchlist": len([d for d in decisions if d.get("decision") == "WATCHLIST"]),
+                    "total": len(decisions),
+                }
+            last_scan = r.get("bahamut:training:last_scan_time")
+            result["last_scan_time"] = last_scan.decode() if last_scan else None
+            cycle_count = r.get("bahamut:training:cycle_count")
+            result["cycle_count"] = int(cycle_count) if cycle_count else 0
+    except Exception:
+        pass
+
+    # 7. Containment counters
+    try:
+        r = _get_redis()
+        if r:
+            counters = {}
+            for ck in [
+                "bahamut:counters:engine_suppress_blocks",
+                "bahamut:counters:sentiment_gate_blocks",
+                "bahamut:counters:risk_engine_blocks",
+                "bahamut:counters:news_size_reductions",
+                "bahamut:counters:mature_neg_expectancy_blocks",
+            ]:
+                val = r.get(ck)
+                counters[ck.split(":")[-1]] = int(val) if val else 0
+            result["counters"] = counters
+    except Exception:
+        result["counters"] = {}
+
+    # 8. Execution status
+    try:
+        from bahamut.execution.router import get_execution_status
+        result["execution"] = get_execution_status()
+    except Exception:
+        result["execution"] = {}
+
+    # 9. Sentiment
+    try:
+        from bahamut.intelligence.sentiment import get_cached_sentiment
+        result["sentiment"] = get_cached_sentiment()
+    except Exception:
+        result["sentiment"] = {}
+
+    # 10. Health
+    try:
+        r = _get_redis()
+        result["health"] = {
+            "redis": r is not None and r.ping() if r else False,
+            "legacy_disabled": True,
+        }
+    except Exception:
+        result["health"] = {"redis": False}
+
+    body = _json.dumps(result, default=_safe)
+    return JSONResponse(content=_json.loads(body))
