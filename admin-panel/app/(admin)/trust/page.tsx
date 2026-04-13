@@ -50,11 +50,11 @@ export default function TrustPage() {
 
   const strategies = data.strategies || {};
   const patterns = data.patterns || {};
-  const STRAT_NAMES: Record<string, string> = { "v5_base": "S1 · EMA Trend", "v9_breakout": "S3 · Breakout", "v10_mean_reversion": "S4 · Mean Reversion" };
+  const STRAT_NAMES: Record<string, string> = { "v5_base": "V5 · EMA Trend", "v9_breakout": "V9 · Breakout", "v10_mean_reversion": "V10 · Mean Reversion" };
 
   return (
     <div className="space-y-4 p-4 max-w-[1400px] mx-auto">
-      <h1 className="text-xl font-black text-bah-heading">Trust & Learning Dashboard</h1>
+      <h1 className="text-xl font-black text-bah-heading">Trust Dashboard</h1>
       <p className="text-xs text-bah-muted -mt-2">Monitor trust scores, pattern performance, and learning progress to optimize the system.</p>
 
       {/* Strategy Trust Overview */}

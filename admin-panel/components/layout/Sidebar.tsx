@@ -15,7 +15,7 @@ const OPERATIONAL_NAV = [
   { href: "/binance-trades", label: "Binance Trades", icon: "/binance-logo.png" },
   { href: "/alpaca-trades", label: "Alpaca Trades", icon: "🦙" },
   { href: "/risk", label: "Risk Dashboard", icon: "📉" },
-  { href: "/trust", label: "Trust & Learning", icon: "🧠" },
+  { href: "/trust", label: "Trust Dashboard", icon: "🧠" },
   { href: "/settings-notifications", label: "Notifications", icon: "🔔" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
   { href: "/users", label: "Users", icon: "👥" },
