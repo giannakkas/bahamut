@@ -909,18 +909,29 @@ async def get_adaptive_state(user=Depends(get_current_user)):
 
 @router.get("/diagnostics")
 async def get_training_diagnostics(user=Depends(get_current_user)):
-    """Structured diagnostic logs for AI analysis.
+    """Structured diagnostic logs for AI analysis."""
+    import json as _json
+    from fastapi.responses import JSONResponse
 
-    Returns comprehensive system state formatted for copy-paste into
-    Claude for debugging and accuracy improvement.
-    """
+    def _safe(obj):
+        """Handle non-JSON-serializable types."""
+        if isinstance(obj, set):
+            return sorted(list(obj))
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8", errors="replace")
+        if hasattr(obj, "item"):  # numpy scalar
+            return obj.item()
+        return str(obj)
+
     try:
-        return await _build_diagnostics()
+        result = await _build_diagnostics()
+        body = _json.dumps(result, default=_safe)
+        return JSONResponse(content=_json.loads(body))
     except Exception as e:
         import traceback
         return {"generated_at": datetime.now(timezone.utc).isoformat(),
                 "sections": [{"title": "FATAL ERROR", "error": str(e),
-                              "trace": traceback.format_exc()[:1000]}]}
+                              "trace": traceback.format_exc()[:2000]}]}
 
 
 async def _build_diagnostics():
