@@ -50,7 +50,7 @@ export default function TrustPage() {
 
   const strategies = data.strategies || {};
   const patterns = data.patterns || {};
-  const STRAT_NAMES: Record<string, string> = { "v5_base": "S1 · EMA Trend", "v5_tuned": "S2 · EMA Tuned", "v9_breakout": "S3 · Breakout", "v10_mean_reversion": "S4 · Mean Reversion" };
+  const STRAT_NAMES: Record<string, string> = { "v5_base": "S1 · EMA Trend", "v9_breakout": "S3 · Breakout", "v10_mean_reversion": "S4 · Mean Reversion" };
 
   return (
     <div className="space-y-4 p-4 max-w-[1400px] mx-auto">

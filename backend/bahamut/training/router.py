@@ -2034,7 +2034,7 @@ async def risk_metrics():
         # Per-class risk
         class_stats = {}
         for t in trades:
-            cls = ASSET_CLASS_MAP.get(t.get("asset", ""), "unknown")
+            cls = ASSET_CLASS_MAP.get(t.get("asset", ""), "other")
             if cls not in class_stats:
                 class_stats[cls] = {"trades": 0, "pnl": 0, "wins": 0, "losses": 0}
             class_stats[cls]["trades"] += 1
@@ -2082,34 +2082,58 @@ async def risk_metrics():
 
 @router.get("/trust-dashboard")
 async def trust_dashboard():
-    """Trust scores, pattern performance, and learning metrics for admin monitoring."""
+    """Trust scores, pattern performance, and learning metrics.
+    Uses the same proven Redis path as diagnostics — single source of truth."""
     try:
         from bahamut.training.learning_engine import (
-            get_all_strategy_trusts, get_all_pattern_trusts,
+            get_trust_overview, get_pattern_trust, _get_redis, _load_trust_bucket,
+            calculate_expectancy,
         )
         from bahamut.db.query import run_query
         from bahamut.config_assets import ASSET_CLASS_MAP
 
-        strategies = get_all_strategy_trusts()
-        patterns = get_all_pattern_trusts()
+        # ── Strategy trust: proven Redis path (same as diagnostics) ──
+        overview = get_trust_overview()
+        strategies = {}
+        for name, s in overview.get("strategies", {}).items():
+            w = s.get("wins", 0)
+            l = s.get("losses", 0)
+            strategies[name] = {
+                "trust": round(s.get("trust", 0.5), 4),
+                "samples": s.get("samples", 0),
+                "maturity": s.get("maturity", "provisional"),
+                "confidence": round(s.get("confidence", 0), 3),
+                "wins": w, "losses": l,
+                "wr": round(w / max(1, w + l), 3),
+                "quick_stops": s.get("quick_stops", 0),
+            }
 
-        # Best/worst patterns
+        # ── Pattern trust: iterate strategy×regime×class (same as diagnostics) ──
         pattern_list = []
-        for key, p in patterns.items():
-            pattern_list.append({
-                "key": key,
-                "trust": round(p.get("blended_trust", 0.5), 4),
-                "confidence": round(p.get("blended_confidence", 0), 3),
-                "maturity": p.get("maturity", "unknown"),
-                "expectancy": round(p.get("expectancy", 0), 4),
-                "trades": p.get("total_trades", 0),
-            })
+        regimes = ["TREND", "RANGE", "CRASH", "BREAKOUT"]
+        classes = ["crypto", "stock", "forex", "commodity", "index"]
+        for strat in ["v5_base", "v9_breakout", "v10_mean_reversion"]:
+            for regime in regimes:
+                for ac in classes:
+                    t = get_pattern_trust(strat, regime, ac)
+                    if t.get("total_trades", 0) > 0 or t.get("expectancy", 0) != 0:
+                        pattern_list.append({
+                            "key": f"{strat}:{regime}:{ac}",
+                            "trust": round(t.get("blended_trust", 0.5), 4),
+                            "confidence": round(t.get("blended_confidence", 0), 3),
+                            "maturity": t.get("maturity", "provisional"),
+                            "expectancy": round(t.get("expectancy", 0), 4),
+                            "trades": t.get("total_trades", 0),
+                            "quick_stops": t.get("quick_stops", 0),
+                        })
 
-        best_patterns = sorted(pattern_list, key=lambda x: x["expectancy"], reverse=True)[:10]
-        worst_patterns = sorted(pattern_list, key=lambda x: x["expectancy"])[:10]
-        most_traded = sorted(pattern_list, key=lambda x: x["trades"], reverse=True)[:10]
+        # Sort for best/worst/most traded
+        with_exp = [p for p in pattern_list if p["trades"] > 0]
+        best_patterns = sorted(with_exp, key=lambda x: x["expectancy"], reverse=True)[:10]
+        worst_patterns = sorted(with_exp, key=lambda x: x["expectancy"])[:10]
+        most_traded = sorted(with_exp, key=lambda x: x["trades"], reverse=True)[:10]
 
-        # Per-asset performance
+        # ── Per-asset performance from training_trades DB ──
         asset_rows = run_query("""
             SELECT asset, COUNT(*) as trades,
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
@@ -2122,33 +2146,39 @@ async def trust_dashboard():
         best_assets = []
         worst_assets = []
         for r in (asset_rows or []):
+            w = int(r.get("wins", 0) or 0)
+            l = int(r.get("losses", 0) or 0)
             entry = {
                 "asset": r["asset"],
-                "class": ASSET_CLASS_MAP.get(r["asset"], "unknown"),
+                "class": ASSET_CLASS_MAP.get(r["asset"], "other"),
                 "trades": r["trades"],
-                "wins": r["wins"],
-                "losses": r["losses"],
-                "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
-                "pnl": round(r["total_pnl"], 2),
-                "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+                "wins": w, "losses": l,
+                "wr": round(w / max(1, w + l), 3),
+                "pnl": round(float(r.get("total_pnl", 0) or 0), 2),
+                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
             }
-            if r["total_pnl"] > 0:
+            if entry["pnl"] > 0:
                 best_assets.append(entry)
             else:
                 worst_assets.append(entry)
         worst_assets.sort(key=lambda x: x["pnl"])
 
-        # Exit reason distribution
+        # ── Exit reason distribution ──
         exit_rows = run_query("""
             SELECT exit_reason, COUNT(*) as count,
                    COALESCE(AVG(pnl), 0) as avg_pnl,
                    COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
             FROM training_trades GROUP BY exit_reason
         """)
-        exit_stats = {r["exit_reason"]: {"count": r["count"], "avg_pnl": round(r["avg_pnl"], 2),
-                      "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3)} for r in (exit_rows or [])}
+        exit_stats = {}
+        for r in (exit_rows or []):
+            exit_stats[r["exit_reason"] or "UNKNOWN"] = {
+                "count": r["count"],
+                "avg_pnl": round(float(r.get("avg_pnl", 0) or 0), 2),
+                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+            }
 
-        # Direction performance
+        # ── Direction + regime performance ──
         dir_rows = run_query("""
             SELECT direction, COUNT(*) as trades,
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
@@ -2157,12 +2187,11 @@ async def trust_dashboard():
         """)
         direction_stats = {}
         for r in (dir_rows or []):
-            direction_stats[r["direction"]] = {
-                "trades": r["trades"], "wins": r["wins"],
-                "pnl": round(r["pnl"], 2),
+            direction_stats[r["direction"] or "UNKNOWN"] = {
+                "trades": r["trades"], "wins": int(r.get("wins", 0) or 0),
+                "pnl": round(float(r.get("pnl", 0) or 0), 2),
             }
 
-        # Regime performance
         regime_rows = run_query("""
             SELECT regime, COUNT(*) as trades,
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
@@ -2173,10 +2202,13 @@ async def trust_dashboard():
         """)
         regime_stats = {}
         for r in (regime_rows or []):
-            regime_stats[r["regime"]] = {
-                "trades": r["trades"], "wins": r["wins"], "losses": r["losses"],
-                "pnl": round(r["pnl"], 2), "avg_r": round((r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
-                "wr": round(r["wins"] / max(1, r["wins"] + r["losses"]), 3),
+            w = int(r.get("wins", 0) or 0)
+            l = int(r.get("losses", 0) or 0)
+            regime_stats[r["regime"] or "UNKNOWN"] = {
+                "trades": r["trades"], "wins": w, "losses": l,
+                "pnl": round(float(r.get("pnl", 0) or 0), 2),
+                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+                "wr": round(w / max(1, w + l), 3),
             }
 
         return {
@@ -2189,7 +2221,8 @@ async def trust_dashboard():
             "regime_stats": regime_stats,
         }
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        return {"error": str(e), "trace": traceback.format_exc()[:500]}
 
 
 @router.get("/asset-leaderboard")
