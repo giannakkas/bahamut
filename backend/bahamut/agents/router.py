@@ -1,16 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import json
 import structlog
 
 from bahamut.auth.router import get_current_user
 from bahamut.models import User
-from bahamut.agents.tasks import run_single_cycle
 from bahamut.consensus.trust_store import trust_store
 from bahamut.shared.redis_client import redis_manager
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+_RETIRED = JSONResponse(
+    status_code=410,
+    content={"ok": False, "retired": True, "message": "Legacy endpoint retired. Use /training-operations and the production training pipeline."},
+)
 
 
 class TriggerCycleRequest(BaseModel):
@@ -22,8 +27,7 @@ class TriggerCycleRequest(BaseModel):
 
 @router.post("/trigger")
 async def trigger_signal_cycle(req: TriggerCycleRequest, user: User = Depends(get_current_user)):
-    task = run_single_cycle.delay(req.asset, req.asset_class, req.timeframe, req.trading_profile)
-    return {"task_id": task.id, "status": "queued", "asset": req.asset}
+    return _RETIRED
 
 
 @router.get("/latest-cycle/{asset}")

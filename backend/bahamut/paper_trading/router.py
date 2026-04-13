@@ -191,50 +191,24 @@ async def get_learning_log(
     }
 
 
+_LEGACY_RETIRED = {
+    "ok": False, "retired": True,
+    "message": "Legacy endpoint retired. Use /training-operations and the production training pipeline.",
+}
+
+
 @router.post("/reset")
-async def reset_portfolio(session: AsyncSession = Depends(get_db)):
-    """Reset paper portfolio to starting state. USE WITH CAUTION."""
-    result = await session.execute(
-        select(PaperPortfolio).where(PaperPortfolio.name == "SYSTEM_DEMO")
-    )
-    portfolio = result.scalar_one_or_none()
-
-    if portfolio:
-        portfolio.current_balance = portfolio.initial_balance
-        portfolio.total_pnl = 0.0
-        portfolio.total_pnl_pct = 0.0
-        portfolio.total_trades = 0
-        portfolio.winning_trades = 0
-        portfolio.losing_trades = 0
-        portfolio.win_rate = 0.0
-        portfolio.best_trade_pnl = 0.0
-        portfolio.worst_trade_pnl = 0.0
-        portfolio.max_drawdown = 0.0
-        portfolio.peak_balance = portfolio.initial_balance
-        portfolio.is_active = True
-        portfolio.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-
-    logger.warning("paper_portfolio_reset")
-    return {"status": "reset", "balance": portfolio.initial_balance if portfolio else 100_000.0}
+async def reset_portfolio():
+    """Legacy endpoint — retired."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=410, content=_LEGACY_RETIRED)
 
 
 @router.post("/toggle")
-async def toggle_paper_trading(
-    active: bool = Query(..., description="Enable or disable paper trading"),
-    session: AsyncSession = Depends(get_db),
-):
-    """Enable/disable automatic paper trading."""
-    result = await session.execute(
-        select(PaperPortfolio).where(PaperPortfolio.name == "SYSTEM_DEMO")
-    )
-    portfolio = result.scalar_one_or_none()
-
-    if portfolio:
-        portfolio.is_active = active
-        await session.commit()
-
-    return {"active": active}
+async def toggle_paper_trading():
+    """Legacy endpoint — retired."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=410, content=_LEGACY_RETIRED)
 
 
 @router.get("/stats")
@@ -311,36 +285,6 @@ async def get_performance_stats(session: AsyncSession = Depends(get_db)):
 
 @router.post("/debug-test")
 async def debug_test_trade():
-    """
-    Debug: directly test the sync executor with a fake trade.
-    This bypasses Celery to isolate if the issue is DB or task queue.
-    """
-    from bahamut.agents.persistence import ensure_tables
-    try:
-        ensure_tables()
-        tables_ok = True
-    except Exception as e:
-        return {"error": f"ensure_tables failed: {str(e)}"}
-
-    from bahamut.paper_trading.sync_executor import process_signal_sync
-    try:
-        result = process_signal_sync(
-            asset="BTCUSD",
-            direction="LONG",
-            consensus_score=0.65,
-            signal_label="SIGNAL",
-            entry_price=84000.0,
-            atr=1200.0,
-            agent_votes={
-                "technical": {"direction": "LONG", "confidence": 0.8},
-                "macro": {"direction": "LONG", "confidence": 0.5},
-                "sentiment": {"direction": "NEUTRAL", "confidence": 0.35},
-                "volatility": {"direction": "LONG", "confidence": 0.6},
-                "liquidity": {"direction": "LONG", "confidence": 0.7},
-            },
-            cycle_id="debug-test-001",
-        )
-        return {"tables_ok": tables_ok, "result": result}
-    except Exception as e:
-        import traceback
-        return {"tables_ok": tables_ok, "error": str(e), "traceback": traceback.format_exc()}
+    """Legacy endpoint — retired."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=410, content=_LEGACY_RETIRED)

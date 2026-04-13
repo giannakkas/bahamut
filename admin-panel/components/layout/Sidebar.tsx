@@ -23,20 +23,6 @@ const OPERATIONAL_NAV = [
   { href: "/overrides", label: "Overrides", icon: "🎛", minRole: "super_admin" },
 ];
 
-const LEGACY_NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: "◉" },
-  { href: "/top-picks", label: "Top Picks", icon: "🔥" },
-  { href: "/alerts", label: "Alerts", icon: "🔔" },
-  { href: "/paper-trading", label: "Paper Trading", icon: "💰" },
-  { href: "/agent-council", label: "Agent Council", icon: "◎" },
-  { href: "/learning", label: "Learning", icon: "🧬" },
-  { href: "/learning-lab", label: "Learning Lab", icon: "◐" },
-  { href: "/ai-opt", label: "AI Optimizer", icon: "🤖" },
-  { href: "/execution", label: "Execution Monitor", icon: "⚡" },
-  { href: "/trade-journal", label: "Trade Journal", icon: "☰" },
-  { href: "/agent-ranking", label: "Agent Ranking", icon: "🏆", minRole: "super_admin" },
-];
-
 const ROLE_LEVELS: Record<string, number> = {
   user: 0, viewer: 0, trader: 1, admin: 2, super_admin: 3,
 };
@@ -47,7 +33,6 @@ export function Sidebar() {
   const { data: alerts } = useAlerts();
   const { data: overrides } = useOverrides();
   const { status: wsStatus } = useAdminSocket();
-  const [showLegacy, setShowLegacy] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hideHamburger, setHideHamburger] = useState(false);
 
@@ -135,22 +120,6 @@ export function Sidebar() {
           Trading Operations
         </div>
         {OPERATIONAL_NAV.map(renderItem)}
-
-        {/* Legacy Section */}
-        <div className="mt-3 border-t border-bah-border/40">
-          <button
-            onClick={() => setShowLegacy(!showLegacy)}
-            className="w-full px-4 py-2 text-[10px] text-bah-muted font-semibold uppercase tracking-widest flex items-center justify-between hover:text-bah-heading transition-colors"
-          >
-            <span>Legacy / Research</span>
-            <span className="text-[11px]">{showLegacy ? "▾" : "▸"}</span>
-          </button>
-          {showLegacy && (
-            <div className="opacity-60">
-              {LEGACY_NAV.map(renderItem)}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Footer */}

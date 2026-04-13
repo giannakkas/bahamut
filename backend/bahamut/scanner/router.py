@@ -78,11 +78,12 @@ async def get_all_scanned(
 
 @router.post("/trigger")
 async def trigger_scan(user=Depends(get_current_user)):
-    """Manually trigger a full market scan."""
-    from bahamut.scanner.tasks import run_market_scan
-    task = run_market_scan.delay()
-    return {"task_id": task.id, "status": "scan_queued",
-            "message": "Full scan started. ~57 assets, takes ~2 minutes."}
+    """Legacy endpoint — retired."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=410, content={
+        "ok": False, "retired": True,
+        "message": "Legacy endpoint retired. Use /training-operations and the production training pipeline.",
+    })
 
 
 @router.get("/deep-results")

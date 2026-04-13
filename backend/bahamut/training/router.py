@@ -1783,6 +1783,28 @@ async def get_training_diagnostics(user=Depends(get_current_user)):
         except Exception:
             pass
 
+        # Legacy system status
+        try:
+            from bahamut.config_assets import LEGACY_MODE_ENABLED
+            verification["legacy_mode_enabled"] = LEGACY_MODE_ENABLED
+            verification["legacy_ui_enabled"] = False  # LEGACY_NAV removed from sidebar
+            verification["legacy_write_endpoints_enabled"] = False  # All POST endpoints return 410
+            # Check if any legacy workers are registered in celery
+            legacy_workers = False
+            try:
+                from bahamut.celery_app import celery_app
+                registered = celery_app.control.inspect().registered() or {}
+                for worker_tasks in registered.values():
+                    if any("agents.tasks" in t or "paper_trading.tasks" in t or "scanner.tasks" in t
+                           for t in worker_tasks):
+                        legacy_workers = True
+                        break
+            except Exception:
+                pass  # Can't inspect workers (offline or timeout)
+            verification["legacy_workers_registered"] = legacy_workers
+        except Exception:
+            pass
+
         ai_section["data"]["verification"] = verification
 
         # SL/TP configuration awareness

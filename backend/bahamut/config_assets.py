@@ -142,3 +142,12 @@ def is_suppressed(asset: str, strategy: str) -> bool:
     if asset in TRAINING_SUPPRESS.get(strategy, set()):
         return True
     return False
+
+
+# ═══════════════════════════════════════════
+# LEGACY MODE — defensive flag
+# When False: all legacy write endpoints return 410 Gone,
+# legacy celery tasks are not registered, legacy UI nav is hidden.
+# When True: legacy system is re-enabled (for research/debugging only).
+# ═══════════════════════════════════════════
+LEGACY_MODE_ENABLED = False
