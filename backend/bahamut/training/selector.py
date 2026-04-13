@@ -166,18 +166,37 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
 
     total = sum(bd.values())
 
-    # 6. News impact modifier (0 to ±15 pts) — from deterministic news equations
+    # 6. News impact — adaptive risk model replaces binary freeze
     try:
-        from bahamut.intelligence.news_impact import compute_news_impact_sync, compute_consensus_modifier
-        assessment = compute_news_impact_sync(signal.asset, signal.asset_class)
-        if assessment.impact_score > 0.1:
-            mod = compute_consensus_modifier(assessment, signal.direction)
-            bd["news_impact"] = mod["modifier"]
-            total += mod["modifier"]
-            if mod["action"] == "freeze":
-                bd["news_freeze"] = True
+        from bahamut.intelligence.adaptive_news_risk import (
+            ADAPTIVE_NEWS_ENABLED, get_asset_news_state, get_news_gate_decision,
+        )
+        if ADAPTIVE_NEWS_ENABLED:
+            state = get_asset_news_state(signal.asset)
+            gate = get_news_gate_decision(state, signal.direction)
+            if not gate["allowed"]:
+                bd["news_freeze"] = True  # Keep key name for rejection tracking
+                bd["news_mode"] = gate["mode"]
+            else:
+                # Apply threshold penalty from news mode
+                if gate["threshold_penalty"] > 0:
+                    bd["news_threshold_penalty"] = -gate["threshold_penalty"]
+                    total -= gate["threshold_penalty"]
+                # Store size multiplier for engine
+                bd["news_size_mult"] = gate["size_multiplier"]
+                bd["news_mode"] = gate["mode"]
+        else:
+            # Legacy fallback
+            from bahamut.intelligence.news_impact import compute_news_impact_sync, compute_consensus_modifier
+            assessment = compute_news_impact_sync(signal.asset, signal.asset_class)
+            if assessment.impact_score > 0.1:
+                mod = compute_consensus_modifier(assessment, signal.direction)
+                bd["news_impact"] = mod["modifier"]
+                total += mod["modifier"]
+                if mod["action"] == "freeze":
+                    bd["news_freeze"] = True
     except Exception:
-        pass  # News impact unavailable — no modifier applied
+        pass
 
     return {"components": bd, "total": total}
 
@@ -407,9 +426,10 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             effective_priority -= opt["penalty"]
             reasons.extend(opt["reasons"])
 
-        # 3. News impact freeze check
+        # 3. News risk check (adaptive model or legacy freeze)
         if pri.get("components", {}).get("news_freeze"):
-            reasons.append("News/event freeze active — trading paused")
+            news_mode = pri.get("components", {}).get("news_mode", "FROZEN")
+            reasons.append(f"News risk: {news_mode} — trade not allowed")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             _track_rejection("news_freeze")
             continue

@@ -1467,6 +1467,14 @@ async def _build_diagnostics():
             pass
         ai_section["data"]["news_impact_snapshot"] = news_snapshots
 
+        # Adaptive news risk states
+        try:
+            from bahamut.intelligence.adaptive_news_risk import diagnostics_snapshot, ADAPTIVE_NEWS_ENABLED
+            if ADAPTIVE_NEWS_ENABLED:
+                ai_section["data"]["adaptive_news"] = diagnostics_snapshot()
+        except Exception:
+            pass
+
         # Recommendations engine
         recommendations = []
         for name, sh in strat_health.items():

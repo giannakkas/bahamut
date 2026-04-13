@@ -113,6 +113,19 @@ def run_training_cycle():
     except Exception as e:
         logger.debug("training_news_prefetch_failed", error=str(e)[:80])
 
+    # Update adaptive news risk states for all assets
+    try:
+        from bahamut.intelligence.adaptive_news_risk import update_batch_news_states, ADAPTIVE_NEWS_ENABLED
+        if ADAPTIVE_NEWS_ENABLED:
+            news_summary = update_batch_news_states(TRAINING_ASSETS, ASSET_CLASS_MAP)
+            logger.info("adaptive_news_updated",
+                        frozen=news_summary.get("mode_counts", {}).get("FROZEN", 0),
+                        restricted=news_summary.get("mode_counts", {}).get("RESTRICTED", 0),
+                        caution=news_summary.get("mode_counts", {}).get("CAUTION", 0),
+                        starvation=news_summary.get("starvation_guard_active", False))
+    except Exception as e:
+        logger.debug("adaptive_news_update_failed", error=str(e)[:80])
+
     # Decrement pattern suppression timers
     try:
         from bahamut.training.context_gate import decrement_suppression_cycles
