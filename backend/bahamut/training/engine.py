@@ -223,35 +223,35 @@ def _remove_position(position_id: str) -> bool:
     """Remove a closed position from Redis + mark CLOSED in DB.
     Returns True if position was actually removed (first caller wins).
     Returns False if already removed (duplicate close attempt)."""
-    removed = False
+    removed_from_redis = False
 
     # Redis: hdel returns count of keys removed — 0 means already gone
     r = _get_redis()
     if r:
         try:
             count = r.hdel(REDIS_KEY_POSITIONS, position_id)
-            removed = count > 0
+            removed_from_redis = count > 0
         except Exception:
             pass
 
-    if not removed:
-        # Position wasn't in Redis — already closed by another call
-        return False
-
-    # DB: mark as CLOSED (don't delete — keep for audit)
+    # DB: ALWAYS mark as CLOSED — even if Redis didn't have it.
+    # Without this, Railway redeploys that clear Redis leave ghost OPEN rows
+    # in DB, which get reloaded as duplicates on next DB reconciliation.
     try:
         from bahamut.database import sync_engine
         from sqlalchemy import text
         with sync_engine.connect() as conn:
-            conn.execute(text(
-                "UPDATE training_positions SET status = 'CLOSED' WHERE position_id = :pid"
+            result = conn.execute(text(
+                "UPDATE training_positions SET status = 'CLOSED' WHERE position_id = :pid AND status = 'OPEN'"
             ), {"pid": position_id})
             conn.commit()
+            if result.rowcount > 0:
+                return True  # DB had it as OPEN → we closed it
     except Exception as e:
         logger.error("training_remove_position_db_failed",
                      position_id=position_id, error=str(e))
 
-    return True
+    return removed_from_redis
 
 
 def get_open_position_count() -> int:
@@ -579,14 +579,22 @@ def open_training_position(
 
     # ── Execute on exchange FIRST (Binance/Alpaca) ──
     # Position is only saved if exchange execution succeeds or is not required.
+    _expected_platform = "internal"
     try:
-        from bahamut.execution.router import execute_open as exec_open
+        from bahamut.execution.router import execute_open as exec_open, _get_platform
+        _expected_platform = _get_platform(asset, asset_class)
         exec_result = exec_open(
             asset=asset, asset_class=asset_class, direction=direction,
             size=pos.size, risk_amount=risk_amount,
         )
         pos.execution_platform = exec_result.get("platform", "internal")
         pos.exchange_order_id = exec_result.get("order_id", "")
+        _status = exec_result.get("status", "unknown")
+        logger.info("execution_route_result",
+                     asset=asset, expected_platform=_expected_platform,
+                     actual_platform=pos.execution_platform,
+                     status=_status, order_id=pos.exchange_order_id[:20] if pos.exchange_order_id else "")
+
         if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
             old_entry = pos.entry_price
             pos.entry_price = round(exec_result["fill_price"], 6)
@@ -606,17 +614,26 @@ def open_training_position(
                 invalidate_platform_cache(pos.execution_platform)
             except Exception:
                 pass
-        elif exec_result.get("status") == "error":
-            # Exchange execution failed — do NOT create internal-only position
+        elif _status in ("error", "internal") and _expected_platform != "internal":
+            # Broker was expected but execution failed or fell back to internal
+            # Do NOT create a phantom internal-only position
             logger.warning("execution_failed_position_aborted",
                            asset=asset, strategy=strategy, direction=direction,
-                           platform=exec_result.get("platform"),
+                           expected_platform=_expected_platform,
+                           actual_platform=pos.execution_platform,
+                           status=_status,
                            error=exec_result.get("error", "")[:100])
             _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
             return None
     except Exception as e:
+        if _expected_platform != "internal":
+            # Broker was expected but router import/call failed entirely
+            logger.warning("execution_exception_position_aborted",
+                           asset=asset, expected_platform=_expected_platform,
+                           error=str(e)[:100])
+            _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+            return None
         logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
-        # Exchange router not available — allow internal position for paper trading
 
     # Save position only after exchange execution is resolved
     _save_position(pos)

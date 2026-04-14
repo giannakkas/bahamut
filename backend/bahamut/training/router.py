@@ -1961,6 +1961,36 @@ async def _build_diagnostics():
         except Exception:
             pass
 
+        # ── Duplicate detection and execution audit ──
+        try:
+            _dup_keys = {}
+            _dup_list = []
+            _mirroring_issues = []
+            for p in positions:
+                dk = f"{p.asset}:{p.strategy}:{p.direction}"
+                if dk in _dup_keys:
+                    _dup_list.append(dk)
+                else:
+                    _dup_keys[dk] = p.position_id
+                # Check mirroring
+                _platform = getattr(p, "execution_platform", "internal")
+                _order_id = getattr(p, "exchange_order_id", "")
+                if _platform == "internal" and not _order_id:
+                    _expected = "unknown"
+                    try:
+                        from bahamut.execution.router import _get_platform as _gp
+                        _expected = _gp(p.asset, p.asset_class)
+                    except Exception:
+                        pass
+                    if _expected != "internal":
+                        _mirroring_issues.append(f"{p.asset}: expected={_expected}, actual=internal")
+
+            verification["open_position_uniqueness_ok"] = len(_dup_list) == 0
+            verification["duplicate_open_position_keys"] = _dup_list if _dup_list else []
+            verification["mirroring_failures"] = _mirroring_issues if _mirroring_issues else []
+        except Exception:
+            pass
+
         ai_section["data"]["verification"] = verification
 
         # SL/TP configuration awareness
