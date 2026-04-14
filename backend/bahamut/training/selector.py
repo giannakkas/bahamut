@@ -170,7 +170,7 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     if strat_class_key in STRAT_CLASS_BOOSTS:
         bd["class_boost"] = STRAT_CLASS_BOOSTS[strat_class_key]
 
-    total = sum(bd.values())
+    total = sum(v for v in bd.values() if isinstance(v, (int, float)))
 
     # 6. News risk — adaptive news is the SINGLE source of truth
     try:
