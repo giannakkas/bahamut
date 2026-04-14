@@ -2980,11 +2980,14 @@ async def diagram_dashboard():
 @router.get("/market-intelligence")
 async def market_intelligence():
     """AI Market Intelligence — unified aggregation of all market context."""
+    import json as _mij
+    import traceback as _tb
     try:
         from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
-        import json as _mij
         snap = build_market_intelligence_snapshot()
         body = _mij.dumps(snap, default=str)
         return JSONResponse(content=_mij.loads(body))
     except Exception as e:
-        return JSONResponse(content={"error": str(e)[:200]}, status_code=500)
+        logger.error("market_intelligence_endpoint_error", error=str(e)[:200],
+                     traceback=_tb.format_exc()[-500:])
+        return JSONResponse(content={"error": str(e)[:200], "trace": _tb.format_exc()[-300:]}, status_code=500)

@@ -78,7 +78,10 @@ export default function MarketIntelligencePage() {
       const t = localStorage.getItem("bahamut_admin_token");
       const h: Record<string, string> = t ? { Authorization: `Bearer ${t}` } : {};
       const r = await fetch(`${apiBase()}/training/market-intelligence`, { headers: h });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({}));
+        throw new Error(errBody.error || errBody.trace || `HTTP ${r.status}`);
+      }
       const j = await r.json();
       setData(j);
       setError("");
