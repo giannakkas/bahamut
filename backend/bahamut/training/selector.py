@@ -539,6 +539,10 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         for d in watchlist[:5]:
             all_decisions.append({**d, "_action": "WATCHLIST"})
         rc.setex("bahamut:training:last_cycle_decisions", 300, json.dumps(all_decisions, default=str))
+        # Persist rejection_reasons as proven source for diagnostics counters
+        # This uses the SAME rc connection that successfully writes decisions.
+        # Router's PROVEN_MAP reads this key as the authoritative counter source.
+        rc.setex("bahamut:training:rejection_stats", 900, json.dumps(rejection_reasons, default=str))
     except Exception:
         pass
 
