@@ -40,6 +40,7 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_routes={
         "bahamut.execution.*": {"queue": "critical"},
+        "bahamut.training.*": {"queue": "critical"},
     },
     beat_schedule={
         # ══════════════════════════════════════════════
