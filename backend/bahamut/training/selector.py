@@ -131,8 +131,14 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     # 5. Pattern trust (0-30 pts) — maturity-aware from learning engine
     try:
         from bahamut.training.learning_engine import compute_trust_points
-        tp = compute_trust_points(signal.strategy, signal.regime, signal.asset_class, max_points=30)
+        # crash_short signals use CRASH bucket for trust, not raw 4H regime
+        _trust_regime = "CRASH" if signal.execution_type == "crash_short" else signal.regime
+        tp = compute_trust_points(signal.strategy, _trust_regime, signal.asset_class, max_points=30)
         bd["trust"] = tp["points"]
+        bd["_exp_bucket"] = f"{signal.strategy}:{_trust_regime}:{signal.asset_class}"
+        bd["_exp_value"] = tp.get("expectancy", 0)
+        bd["_exp_maturity"] = tp.get("maturity", "unknown")
+        bd["_exp_samples"] = tp.get("samples", 0)
 
         # Extra penalty for mature bad patterns
         if tp["maturity"] == "mature" and tp["trust"] < 0.35:
@@ -535,7 +541,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     try:
         import os as _os2, redis as _redis2
         _rc2 = _redis2.from_url(_os2.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _rc2.ping()  # Verify connection before writing
+        _rc2.ping()
         COUNTER_MAP = {
             "mature_negative_expectancy_block": "bahamut:counters:mature_neg_expectancy_blocks",
             "risk_engine_block":                "bahamut:counters:risk_engine_blocks",
@@ -544,17 +550,21 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             "_adaptive_news_size_reductions":    "bahamut:counters:adaptive_news_size_reductions",
         }
         _written = 0
+        _cycle_counts = {}
         for reason_key, redis_key in COUNTER_MAP.items():
             count = rejection_reasons.get(reason_key, 0)
+            short = redis_key.split(":")[-1]
+            _cycle_counts[short] = count
             if count > 0:
                 _rc2.incrby(redis_key, count)
                 _rc2.expire(redis_key, 604800)
                 _written += 1
-        if _written > 0:
-            logger.info("selector_counters_persisted", written=_written,
-                        keys={k: rejection_reasons.get(k, 0) for k in COUNTER_MAP})
+        # Write proof: store this cycle's counter writes for diagnostics verification
+        _rc2.setex("bahamut:counters:_last_cycle_writes", 600,
+                    json.dumps(_cycle_counts, default=str))
+        logger.info("selector_counters_persisted", written=_written, counts=_cycle_counts)
     except Exception as _ce:
-        logger.warning("selector_counter_persist_failed", error=str(_ce)[:100])
+        logger.warning("selector_counter_persist_failed", error=str(_ce)[:200])
 
     return {
         "execute": execute,

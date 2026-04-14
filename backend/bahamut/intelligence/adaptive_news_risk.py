@@ -140,10 +140,11 @@ def compute_news_mode(
             and confidence >= ft.get("min_confidence", 0.6)):
         return "FROZEN"
 
-    # Legacy freeze from time-based event proximity: cap at RESTRICTED (not FROZEN)
-    # unless impact is genuinely high
-    if freeze_trading and effective_impact < ft["min_impact"]:
-        return "RESTRICTED"
+    # NOTE: Legacy freeze_trading shortcut REMOVED.
+    # The old binary freeze flag (from news_impact.py EXTREME_SHOCK_BLOCK) was True
+    # for ALL assets permanently, bypassing all decay/confidence/bias logic.
+    # The adaptive system now makes its own mode decisions using impact, shock,
+    # confidence, bias, and time decay — no legacy override.
 
     # RESTRICTED: high impact or genuinely high shock (confidence-weighted)
     rt = MODE_THRESHOLDS["RESTRICTED"]
@@ -312,47 +313,64 @@ def compute_adaptive_news_state(
 ) -> AssetNewsState:
     """Compute the adaptive news risk state for a single asset.
 
-    Args:
-        asset: asset symbol
-        assessment: from compute_news_impact / compute_news_impact_sync
-        existing_state: previous state (for decay tracking)
-        normalized_impact: from normalize_impacts() or None for raw
-
-    Returns: AssetNewsState with mode, sizing params, and explanations
+    Mode pipeline:
+      1. raw_mode: from impact/shock/confidence (no decay)
+      2. decayed_mode: from time decay of existing mode
+      3. stale check: if data unchanged, use only decay (never re-escalate from stale data)
+      4. final_mode: min(raw_mode, decayed_mode) for fresh data; decayed_mode for stale data
     """
     now = time.time()
     impact = normalized_impact if normalized_impact is not None else assessment.impact_score
 
-    # Compute mode age: how long the current mode has been active
-    # This is used for time decay — stale high-impact should fade
-    mode_age = (now - existing_state.mode_set_at) if existing_state and existing_state.mode_set_at > 0 else 0
-
-    # Compute fresh mode WITH time decay applied to the assessment
-    # If the same news data has persisted for hours, effective impact decays
-    fresh_mode = compute_news_mode(
+    # ── Step 1: Compute raw mode (no time decay) ──
+    raw_mode = compute_news_mode(
         impact_score=impact,
         shock=assessment.shock_level,
         bias=assessment.directional_bias,
         confidence=assessment.confidence,
         freeze_trading=assessment.freeze_trading,
-        age_seconds=mode_age,
+        age_seconds=0,
     )
 
-    # If we have existing state, also compute pure time-based decay
+    # ── Step 2: Check if underlying data has changed ──
+    data_changed = True
+    if existing_state and existing_state.normalized_impact > 0:
+        data_changed = (
+            abs(impact - existing_state.normalized_impact) > 0.01
+            or assessment.shock_level != existing_state.shock
+            or assessment.directional_bias != existing_state.bias
+        )
+
+    # ── Step 3: Compute decayed mode from existing state ──
+    decayed_mode = "NORMAL"
     if existing_state and existing_state.mode != "NORMAL":
         decayed_mode = apply_time_decay(existing_state)
-        # Use the LESS restrictive of fresh-with-decay and pure-decay
-        # Time always de-escalates. Fresh data can only re-escalate if impact truly increased.
-        mode_rank = {"NORMAL": 0, "CAUTION": 1, "RESTRICTED": 2, "FROZEN": 3}
-        final_mode = fresh_mode if mode_rank.get(fresh_mode, 0) <= mode_rank.get(decayed_mode, 0) else decayed_mode
-    else:
-        final_mode = fresh_mode
 
-    # Track when mode was set (for future decay)
-    if existing_state and existing_state.mode == final_mode:
-        mode_set_at = existing_state.mode_set_at
+    # ── Step 4: Final mode resolution ──
+    mode_rank = {"NORMAL": 0, "CAUTION": 1, "RESTRICTED": 2, "FROZEN": 3}
+    if not data_changed:
+        if existing_state and existing_state.mode != "NORMAL":
+            # STALE DATA + elevated → only time decay, never re-escalate
+            final_mode = decayed_mode
+        else:
+            # STALE DATA + already NORMAL → stay NORMAL (don't re-escalate from stale data)
+            final_mode = "NORMAL"
+    elif existing_state and existing_state.mode != "NORMAL":
+        # FRESH DATA with existing elevation → min(raw, decayed)
+        final_mode = raw_mode if mode_rank.get(raw_mode, 0) <= mode_rank.get(decayed_mode, 0) else decayed_mode
     else:
-        mode_set_at = now
+        # FRESH DATA, no existing elevation → use raw mode
+        final_mode = raw_mode
+
+    # ── Track elevated_since: when the non-NORMAL period started ──
+    # Don't reset during oscillation between elevated modes
+    if final_mode != "NORMAL":
+        if existing_state and existing_state.mode_set_at > 0:
+            mode_set_at = existing_state.mode_set_at  # Keep original elevation timestamp
+        else:
+            mode_set_at = now  # Newly elevated
+    else:
+        mode_set_at = 0  # Not elevated
 
     return AssetNewsState(
         asset=asset,
@@ -516,8 +534,17 @@ def diagnostics_snapshot() -> dict:
     per_asset = {}
     for asset, s in states.items():
         age = time.time() - s.mode_set_at if s.mode_set_at > 0 else 0
+        # Compute raw mode (what would fresh evaluation return without decay)
+        raw_mode_pre_decay = compute_news_mode(
+            impact_score=s.normalized_impact, shock=s.shock, bias=s.bias,
+            confidence=s.confidence, freeze_trading=False, age_seconds=0,
+        )
+        decayed = apply_time_decay(s) if s.mode != "NORMAL" else "NORMAL"
         per_asset[asset] = {
             "mode": s.mode,
+            "raw_mode_pre_decay": raw_mode_pre_decay,
+            "decayed_mode": decayed,
+            "final_mode": s.mode,
             "raw_impact": s.raw_impact,
             "normalized_impact": s.normalized_impact,
             "shock": s.shock,
@@ -527,8 +554,8 @@ def diagnostics_snapshot() -> dict:
             "size_multiplier": MODES[s.mode]["size_mult"],
             "threshold_penalty": MODES[s.mode]["threshold_add"],
             "freeze_reason": s.freeze_reason,
-            "age_seconds": round(age),
-            "decay_state": apply_time_decay(s) if s.mode != "NORMAL" else "NORMAL",
+            "elevated_since_seconds": round(age),
+            "mode_consistent": s.mode == "NORMAL" or decayed != "NORMAL",  # True if no contradiction
         }
 
     mode_counts = {"NORMAL": 0, "CAUTION": 0, "RESTRICTED": 0, "FROZEN": 0}

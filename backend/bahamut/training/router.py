@@ -1765,6 +1765,32 @@ async def _build_diagnostics():
                 except Exception:
                     pass
             verification["containment_counters"] = counters
+
+            # Counter write/read verification test
+            try:
+                test_key = "bahamut:counters:_diag_write_test"
+                r.set(test_key, "1", ex=60)
+                test_read = r.get(test_key)
+                verification["counter_redis_write_test"] = test_read is not None
+                r.delete(test_key)
+
+                # Check if selector counter keys exist at all
+                counter_exists = {}
+                for ck in counter_keys:
+                    short = ck.split(":")[-1]
+                    exists = r.exists(ck)
+                    counter_exists[short] = bool(exists)
+                verification["counter_keys_exist"] = counter_exists
+
+                # Read selector's proof-of-write from last cycle
+                import json as _jc
+                raw_proof = r.get("bahamut:counters:_last_cycle_writes")
+                if raw_proof:
+                    verification["last_cycle_counter_writes"] = _jc.loads(raw_proof)
+                else:
+                    verification["last_cycle_counter_writes"] = "no_proof_key_found"
+            except Exception as _cte:
+                verification["counter_redis_write_test"] = f"error: {str(_cte)[:60]}"
         except Exception:
             pass
 
