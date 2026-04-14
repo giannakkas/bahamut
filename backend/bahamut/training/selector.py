@@ -209,6 +209,24 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     except Exception:
         pass
 
+    # 7. AI Market Intelligence — combined context layer
+    try:
+        from bahamut.intelligence.market_intelligence import get_ai_context_for_asset
+        ai_ctx = get_ai_context_for_asset(signal.asset)
+        bd["ai_market_mode"] = ai_ctx["ai_market_mode"]
+        bd["ai_bias"] = ai_ctx["ai_bias"]
+        bd["ai_confidence"] = round(ai_ctx["ai_confidence"], 2)
+        # Apply AI threshold penalty (additive with news penalty)
+        if ai_ctx["ai_threshold_penalty"] > 0 and "news_threshold_penalty" not in bd:
+            # Only apply if news didn't already penalize (avoid double-count)
+            bd["ai_threshold_penalty"] = -ai_ctx["ai_threshold_penalty"]
+            total -= ai_ctx["ai_threshold_penalty"]
+        # Store AI size mult for engine (min of news + AI)
+        existing_size = bd.get("news_size_mult", 1.0)
+        bd["ai_size_mult"] = min(existing_size, ai_ctx["ai_size_mult"])
+    except Exception:
+        pass
+
     return {"components": bd, "total": total}
 
 

@@ -2940,3 +2940,20 @@ async def diagram_dashboard():
 
     body = _json.dumps(result, default=_safe)
     return JSONResponse(content=_json.loads(body))
+
+
+# ═══════════════════════════════════════════
+# MARKET INTELLIGENCE ENDPOINT
+# ═══════════════════════════════════════════
+
+@router.get("/market-intelligence")
+async def market_intelligence():
+    """AI Market Intelligence — unified aggregation of all market context."""
+    try:
+        from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
+        import json as _mij
+        snap = build_market_intelligence_snapshot()
+        body = _mij.dumps(snap, default=str)
+        return JSONResponse(content=_mij.loads(body))
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)[:200]}, status_code=500)

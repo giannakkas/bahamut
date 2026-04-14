@@ -12,6 +12,7 @@ import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const OPERATIONAL_NAV = [
   { href: "/training-operations", label: "Training Operations", icon: "🧪" },
+  { href: "/market-intelligence", label: "AI Market Intelligence", icon: "🧠" },
   { href: "/binance-trades", label: "Binance Trades", icon: "/binance-logo.png" },
   { href: "/alpaca-trades", label: "Alpaca Trades", icon: "🦙" },
   { href: "/risk", label: "Risk Dashboard", icon: "📉" },
