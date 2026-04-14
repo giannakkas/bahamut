@@ -2988,6 +2988,18 @@ async def market_intelligence():
         body = _mij.dumps(snap, default=str)
         return JSONResponse(content=_mij.loads(body))
     except Exception as e:
-        logger.error("market_intelligence_endpoint_error", error=str(e)[:200],
-                     traceback=_tb.format_exc()[-500:])
-        return JSONResponse(content={"error": str(e)[:200], "trace": _tb.format_exc()[-300:]}, status_code=500)
+        err_msg = str(e)[:200]
+        err_trace = _tb.format_exc()[-500:]
+        logger.error("market_intelligence_endpoint_error", error=err_msg, traceback=err_trace)
+        # Return a minimal valid snapshot so the page renders
+        fallback = {
+            "timestamp": "",
+            "summary": {"pipeline_posture": "UNKNOWN", "crypto_fear_greed": 0, "stocks_fear_greed": 0,
+                         "crypto_market_mode": "UNKNOWN", "stocks_market_mode": "UNKNOWN",
+                         "macro_risk_mode": "UNKNOWN", "active_headlines": 0, "upcoming_high_events": 0,
+                         "news_modes": {}, "ai_narrative": f"ERROR: {err_msg}"},
+            "class_context": {}, "asset_context": {}, "headline_context": [], "event_context": [],
+            "pipeline_directives": {}, "source_of_truth": "error_fallback",
+            "_error": err_msg, "_trace": err_trace,
+        }
+        return JSONResponse(content=fallback)

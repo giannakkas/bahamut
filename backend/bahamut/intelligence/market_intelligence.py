@@ -81,18 +81,12 @@ def build_market_intelligence_snapshot() -> dict:
     fg_crypto = {"value": 50, "classification": "Neutral"}
     fg_stocks = {"value": 50, "classification": "Neutral"}
     try:
-        from bahamut.sentiment.fear_greed import get_fear_greed
-        fg = get_fear_greed()
-        if fg and "value" in fg:
-            fg_crypto = {"value": int(fg["value"]), "classification": fg.get("classification", _classify_fear_greed(int(fg["value"])))}
-    except Exception:
-        pass
-
-    try:
-        from bahamut.sentiment.cnn_fear_greed import get_stock_fear_greed
-        cnn = get_stock_fear_greed()
-        if cnn and "value" in cnn:
-            fg_stocks = {"value": int(cnn["value"]), "classification": cnn.get("classification", _classify_fear_greed(int(cnn["value"])))}
+        from bahamut.sentiment.gate import get_full_sentiment
+        full_sent = get_full_sentiment()
+        if full_sent.get("fear_greed") and "value" in full_sent["fear_greed"]:
+            fg_crypto = {"value": int(full_sent["fear_greed"]["value"]), "classification": full_sent["fear_greed"].get("classification", "")}
+        if full_sent.get("cnn_fear_greed") and "value" in full_sent["cnn_fear_greed"]:
+            fg_stocks = {"value": int(full_sent["cnn_fear_greed"]["value"]), "classification": full_sent["cnn_fear_greed"].get("classification", "")}
     except Exception:
         pass
 
