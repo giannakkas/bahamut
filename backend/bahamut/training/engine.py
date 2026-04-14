@@ -547,6 +547,23 @@ def open_training_position(
     except Exception:
         pass
 
+    # ── AI Market Intelligence global sizing ──
+    # Applies pipeline posture sizing (DEFENSIVE=0.75, SELECTIVE=0.9, AGGRESSIVE=1.0)
+    try:
+        from bahamut.intelligence.market_intelligence import get_pipeline_directives
+        directives = get_pipeline_directives()
+        ai_mult = directives.get("global_size_multiplier", 1.0)
+        if ai_mult < 1.0 and ai_mult > 0:
+            original_risk = risk_amount
+            risk_amount = round(risk_amount * ai_mult, 2)
+            logger.info("execution_ai_sizing_applied",
+                        asset=asset, strategy=strategy,
+                        posture=directives.get("posture", "unknown"),
+                        multiplier=ai_mult, original=original_risk,
+                        reduced_to=risk_amount)
+    except Exception:
+        pass
+
     # Calculate SL/TP prices
     if direction == "LONG":
         stop_price = entry_price * (1 - sl_pct)

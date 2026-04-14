@@ -1991,6 +1991,37 @@ async def _build_diagnostics():
         except Exception:
             pass
 
+        # ── Market Intelligence verification ──
+        try:
+            from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
+            mi = build_market_intelligence_snapshot()
+            verification["market_intelligence_source_of_truth"] = mi.get("source_of_truth", "unknown")
+            verification["ai_market_summary"] = {
+                "posture": mi.get("summary", {}).get("pipeline_posture", "unknown"),
+                "crypto_mode": mi.get("summary", {}).get("crypto_market_mode", "unknown"),
+                "stocks_mode": mi.get("summary", {}).get("stocks_market_mode", "unknown"),
+                "macro_risk": mi.get("summary", {}).get("macro_risk_mode", "unknown"),
+                "crypto_fg": mi.get("summary", {}).get("crypto_fear_greed", 0),
+                "stocks_fg": mi.get("summary", {}).get("stocks_fear_greed", 0),
+                "active_headlines": mi.get("summary", {}).get("active_headlines", 0),
+                "high_events_24h": mi.get("summary", {}).get("upcoming_high_events", 0),
+            }
+            verification["ai_pipeline_directives"] = mi.get("pipeline_directives", {})
+            # Spot-check: verify selector sees same AI context as diagnostics
+            _sample_assets = ["BTCUSD", "AAPL"]
+            for _sa in _sample_assets:
+                _ac = mi.get("asset_context", {}).get(_sa)
+                if _ac:
+                    verification[f"ai_context_{_sa}"] = {
+                        "combined_mode": _ac.get("combined_mode"),
+                        "size_mult": _ac.get("size_multiplier"),
+                        "penalty": _ac.get("threshold_penalty"),
+                        "directions": _ac.get("allowed_directions"),
+                    }
+                    break
+        except Exception:
+            pass
+
         ai_section["data"]["verification"] = verification
 
         # SL/TP configuration awareness
