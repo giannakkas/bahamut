@@ -547,20 +547,36 @@ def open_training_position(
     except Exception:
         pass
 
-    # ── AI Market Intelligence global sizing ──
-    # Applies pipeline posture sizing (DEFENSIVE=0.75, SELECTIVE=0.9, AGGRESSIVE=1.0)
+    # ── AI Decision Service sizing (per-candidate + global) ──
+    # Uses clamped values from ai_decision_service (Opus or rule-based fallback)
     try:
-        from bahamut.intelligence.market_intelligence import get_pipeline_directives
-        directives = get_pipeline_directives()
-        ai_mult = directives.get("global_size_multiplier", 1.0)
-        if ai_mult < 1.0 and ai_mult > 0:
+        from bahamut.intelligence.ai_decision_service import get_ai_decision
+        ai_dec = get_ai_decision(
+            asset=asset, asset_class=asset_class,
+            strategy=strategy, direction=direction,
+        )
+        ad = ai_dec.get("asset_decision", {})
+        ga = ai_dec.get("global_adjustments", {})
+
+        # Per-candidate size multiplier (clamped 0.25-1.0)
+        candidate_mult = ad.get("size_multiplier", 1.0)
+        # Global posture multiplier (clamped 0.25-1.0)
+        global_mult = ga.get("size_multiplier", 1.0)
+        # Combined (both already clamped by decision service)
+        combined_mult = round(candidate_mult * global_mult, 3)
+
+        if combined_mult < 1.0 and combined_mult > 0:
             original_risk = risk_amount
-            risk_amount = round(risk_amount * ai_mult, 2)
+            risk_amount = round(risk_amount * combined_mult, 2)
             logger.info("execution_ai_sizing_applied",
                         asset=asset, strategy=strategy,
-                        posture=directives.get("posture", "unknown"),
-                        multiplier=ai_mult, original=original_risk,
-                        reduced_to=risk_amount)
+                        posture=ai_dec.get("posture", "unknown"),
+                        candidate_mult=candidate_mult,
+                        global_mult=global_mult,
+                        combined_mult=combined_mult,
+                        original=original_risk,
+                        reduced_to=risk_amount,
+                        source=ai_dec.get("_source", "unknown"))
     except Exception:
         pass
 

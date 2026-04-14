@@ -2007,18 +2007,30 @@ async def _build_diagnostics():
                 "high_events_24h": mi.get("summary", {}).get("upcoming_high_events", 0),
             }
             verification["ai_pipeline_directives"] = mi.get("pipeline_directives", {})
-            # Spot-check: verify selector sees same AI context as diagnostics
-            _sample_assets = ["BTCUSD", "AAPL"]
-            for _sa in _sample_assets:
-                _ac = mi.get("asset_context", {}).get(_sa)
-                if _ac:
-                    verification[f"ai_context_{_sa}"] = {
-                        "combined_mode": _ac.get("combined_mode"),
-                        "size_mult": _ac.get("size_multiplier"),
-                        "penalty": _ac.get("threshold_penalty"),
-                        "directions": _ac.get("allowed_directions"),
-                    }
-                    break
+        except Exception:
+            pass
+
+        # ── AI Decision Service verification ──
+        try:
+            from bahamut.intelligence.ai_decision_service import get_ai_decision
+            from bahamut.intelligence.ai_market_analyst import get_analysis_status
+            ai_status = get_analysis_status()
+            verification["ai_decision_active"] = ai_status.get("cached", False)
+            verification["ai_opus_model"] = ai_status.get("model", "unknown")
+            verification["ai_opus_calls"] = ai_status.get("total_calls", 0)
+            verification["ai_opus_latency_ms"] = ai_status.get("last_latency_ms")
+            verification["ai_opus_last_error"] = ai_status.get("last_error")
+            # Spot-check: get decision for BTCUSD
+            btc_dec = get_ai_decision("BTCUSD", "crypto", "v5_base", "LONG")
+            verification["ai_decision_BTCUSD"] = {
+                "posture": btc_dec.get("posture"),
+                "allowed": btc_dec["asset_decision"]["allowed"],
+                "bias": btc_dec["asset_decision"]["bias"],
+                "penalty": btc_dec["asset_decision"]["threshold_penalty"],
+                "size_mult": btc_dec["asset_decision"]["size_multiplier"],
+                "fallback": btc_dec.get("_fallback_used"),
+                "source": btc_dec.get("_source"),
+            }
         except Exception:
             pass
 

@@ -209,23 +209,49 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     except Exception:
         pass
 
-    # 7. AI Market Intelligence — combined context layer
+    # 7. AI Decision Layer (Opus 4.6 with guardrails)
+    # Layer order: Hard Rules → AI Decision → Clamp → Selector
     try:
-        from bahamut.intelligence.market_intelligence import get_ai_context_for_asset
-        ai_ctx = get_ai_context_for_asset(signal.asset)
-        bd["ai_market_mode"] = ai_ctx["ai_market_mode"]
-        bd["ai_bias"] = ai_ctx["ai_bias"]
-        bd["ai_confidence"] = round(ai_ctx["ai_confidence"], 2)
-        # Apply AI threshold penalty (additive with news penalty)
-        if ai_ctx["ai_threshold_penalty"] > 0 and "news_threshold_penalty" not in bd:
-            # Only apply if news didn't already penalize (avoid double-count)
-            bd["ai_threshold_penalty"] = -ai_ctx["ai_threshold_penalty"]
-            total -= ai_ctx["ai_threshold_penalty"]
-        # Store AI size mult for engine (min of news + AI)
-        existing_size = bd.get("news_size_mult", 1.0)
-        bd["ai_size_mult"] = min(existing_size, ai_ctx["ai_size_mult"])
+        from bahamut.intelligence.ai_decision_service import get_ai_decision
+        ai_decision = get_ai_decision(
+            asset=signal.asset,
+            asset_class=signal.asset_class,
+            strategy=signal.strategy,
+            direction=signal.direction,
+            priority_score=total,
+            system_allowed_directions=None,  # hard rules already applied above
+        )
+        ad = ai_decision.get("asset_decision", {})
+        bd["ai_posture"] = ai_decision.get("posture", "UNKNOWN")
+        bd["ai_bias"] = ad.get("bias", "NEUTRAL")
+        bd["ai_confidence"] = ad.get("confidence", 0)
+        bd["ai_market_mode"] = ai_decision.get("posture", "UNKNOWN")
+        bd["ai_reason"] = ad.get("reason", "")[:100]
+        bd["ai_source"] = ai_decision.get("_source", "unknown")
+        bd["ai_fallback_used"] = ai_decision.get("_fallback_used", True)
+        bd["ai_latency_ms"] = ai_decision.get("_latency_ms", 0)
+
+        # Block if AI says not allowed
+        if not ad.get("allowed", True):
+            bd["ai_direction_block"] = True
+            bd["ai_block_reason"] = ad.get("reason", "ai_blocked")
+
+        # Block if direction not in AI allowed directions
+        if signal.direction not in ad.get("allowed_directions", ["LONG", "SHORT"]):
+            bd["ai_direction_block"] = True
+            bd["ai_block_reason"] = f"direction_{signal.direction}_not_in_{ad.get('allowed_directions')}"
+
+        # Apply threshold penalty (clamped -10 to 0, no double-count with news)
+        ai_penalty = ad.get("threshold_penalty", 0)
+        if ai_penalty < 0 and "news_threshold_penalty" not in bd:
+            bd["ai_threshold_penalty"] = ai_penalty
+            total += ai_penalty  # penalty is already negative
+
+        # Store size multiplier for engine (per-candidate + global)
+        bd["ai_size_mult"] = ad.get("size_multiplier", 1.0)
+        bd["ai_global_size_mult"] = ai_decision.get("global_adjustments", {}).get("size_multiplier", 1.0)
     except Exception:
-        pass
+        bd["ai_fallback_used"] = True
 
     return {"components": bd, "total": total}
 
@@ -478,6 +504,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             _track_rejection("legacy_news_freeze")
             continue
 
+        # 3b. AI direction gate — Opus decision layer
+        if comp.get("ai_direction_block"):
+            ai_reason = comp.get("ai_block_reason", "ai_blocked")
+            reasons.append(f"AI decision: {ai_reason}")
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            _track_rejection("ai_direction_block")
+            continue
+
         # 4. Position cap
         if current_count + len(execute) >= max_total:
             reasons.append(f"Portfolio full ({current_count + len(execute)}/{max_total})")
@@ -587,6 +621,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             "mature_negative_expectancy_block": "bahamut:counters:mature_neg_expectancy_blocks",
             "risk_engine_block":                "bahamut:counters:risk_engine_blocks",
             "adaptive_news_block":              "bahamut:counters:adaptive_news_blocks",
+            "ai_direction_block":               "bahamut:counters:ai_direction_blocks",
             "_aligned_news_trades_allowed":      "bahamut:counters:aligned_news_trades_allowed",
             "_adaptive_news_size_reductions":    "bahamut:counters:adaptive_news_size_reductions",
         }
