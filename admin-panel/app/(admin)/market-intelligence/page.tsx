@@ -15,6 +15,8 @@ interface Snapshot {
   event_context: any[];
   pipeline_directives: any;
   source_of_truth: string;
+  ai_analysis_status?: any;
+  ai_analysis_raw?: any;
 }
 
 /* ═══════════════════════════════════════════
