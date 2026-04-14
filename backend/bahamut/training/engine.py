@@ -577,12 +577,8 @@ def open_training_position(
         regime=regime,
     )
 
-    _save_position(pos)
-    _opened_this_cycle.add(dedup_key)
-    _opened_this_cycle.add(asset_key)
-    open_training_position._opened_this_cycle = _opened_this_cycle
-
-    # ── Execute on exchange (Binance/Alpaca) ──
+    # ── Execute on exchange FIRST (Binance/Alpaca) ──
+    # Position is only saved if exchange execution succeeds or is not required.
     try:
         from bahamut.execution.router import execute_open as exec_open
         exec_result = exec_open(
@@ -592,10 +588,8 @@ def open_training_position(
         pos.execution_platform = exec_result.get("platform", "internal")
         pos.exchange_order_id = exec_result.get("order_id", "")
         if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
-            # Use actual fill price from exchange
             old_entry = pos.entry_price
             pos.entry_price = round(exec_result["fill_price"], 6)
-            # Recalculate SL/TP based on actual fill
             if direction == "LONG":
                 pos.stop_price = round(pos.entry_price * (1 - sl_pct), 6)
                 pos.tp_price = round(pos.entry_price * (1 + tp_pct), 6)
@@ -607,20 +601,28 @@ def open_training_position(
                         asset=asset, platform=pos.execution_platform,
                         old_entry=old_entry, fill_price=pos.entry_price,
                         order_id=pos.exchange_order_id)
-            # Invalidate platform cache so pages refresh
             try:
                 from bahamut.execution.router import invalidate_platform_cache
                 invalidate_platform_cache(pos.execution_platform)
             except Exception:
                 pass
         elif exec_result.get("status") == "error":
-            logger.warning("exchange_execution_failed_using_internal",
-                           asset=asset, platform=exec_result.get("platform"),
+            # Exchange execution failed — do NOT create internal-only position
+            logger.warning("execution_failed_position_aborted",
+                           asset=asset, strategy=strategy, direction=direction,
+                           platform=exec_result.get("platform"),
                            error=exec_result.get("error", "")[:100])
-        # Always re-save to persist execution_platform + exchange_order_id
-        _save_position(pos)
+            _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+            return None
     except Exception as e:
         logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
+        # Exchange router not available — allow internal position for paper trading
+
+    # Save position only after exchange execution is resolved
+    _save_position(pos)
+    _opened_this_cycle.add(dedup_key)
+    _opened_this_cycle.add(asset_key)
+    open_training_position._opened_this_cycle = _opened_this_cycle
 
     logger.info("training_position_opened",
                 asset=asset, strategy=strategy, direction=direction,

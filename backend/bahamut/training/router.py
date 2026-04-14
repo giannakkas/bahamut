@@ -1380,11 +1380,11 @@ async def _build_diagnostics():
                 ORDER BY SUM(pnl) ASC
             """)
             for row in rows:
-                r = dict(row)
+                rd = dict(row)
                 dead_weight.append({
-                    "asset": r["asset"], "strategy": r["strategy"],
-                    "trades": r["trades"], "flats": r["flats"],
-                    "pnl": float(r["total_pnl"] or 0),
+                    "asset": rd["asset"], "strategy": rd["strategy"],
+                    "trades": rd["trades"], "flats": rd["flats"],
+                    "pnl": float(rd["total_pnl"] or 0),
                 })
         except Exception:
             pass
@@ -1532,17 +1532,17 @@ async def _build_diagnostics():
             """)
             exit_breakdown = {}
             for row in exit_rows:
-                r = dict(row)
-                s = r["strategy"]
+                rd = dict(row)
+                s = rd["strategy"]
                 if s not in exit_breakdown:
                     exit_breakdown[s] = {}
-                reason = r["exit_reason"] or "UNKNOWN"
+                reason = rd["exit_reason"] or "UNKNOWN"
                 exit_breakdown[s][reason] = {
-                    "count": r["cnt"],
-                    "wins": int(r["wins"] or 0),
-                    "losses": int(r["losses"] or 0),
-                    "avg_pnl": float(r["avg_pnl"] or 0),
-                    "avg_bars": float(r["avg_bars"] or 0),
+                    "count": rd["cnt"],
+                    "wins": int(rd["wins"] or 0),
+                    "losses": int(rd["losses"] or 0),
+                    "avg_pnl": float(rd["avg_pnl"] or 0),
+                    "avg_bars": float(rd["avg_bars"] or 0),
                 }
             ai_section["data"]["exit_reason_breakdown"] = exit_breakdown
         except Exception:
@@ -1590,15 +1590,15 @@ async def _build_diagnostics():
             """)
             crash_shorts = []
             for row in crash_rows:
-                r = dict(row)
-                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                rd = dict(row)
+                w, l = int(rd["wins"] or 0), int(rd["losses"] or 0)
                 crash_shorts.append({
-                    "asset": r["asset"],
-                    "trades": r["trades"],
+                    "asset": rd["asset"],
+                    "trades": rd["trades"],
                     "wins": w, "losses": l,
                     "win_rate": round(w / max(1, w + l) * 100, 1),
-                    "total_pnl": float(r["total_pnl"] or 0),
-                    "avg_pnl": float(r["avg_pnl"] or 0),
+                    "total_pnl": float(rd["total_pnl"] or 0),
+                    "avg_pnl": float(rd["avg_pnl"] or 0),
                 })
             ai_section["data"]["crash_short_performance"] = crash_shorts
         except Exception:
@@ -1625,14 +1625,14 @@ async def _build_diagnostics():
             """)
             class_strat = []
             for row in class_rows:
-                r = dict(row)
-                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                rd = dict(row)
+                w, l = int(rd["wins"] or 0), int(rd["losses"] or 0)
                 class_strat.append({
-                    "class": r["asset_class"],
-                    "strategy": r["strategy"],
-                    "trades": r["trades"],
+                    "class": rd["asset_class"],
+                    "strategy": rd["strategy"],
+                    "trades": rd["trades"],
                     "win_rate": round(w / max(1, w + l) * 100, 1),
-                    "pnl": float(r["total_pnl"] or 0),
+                    "pnl": float(rd["total_pnl"] or 0),
                 })
             ai_section["data"]["class_strategy_matrix"] = class_strat
         except Exception:

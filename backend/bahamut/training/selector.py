@@ -331,17 +331,29 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             pri["components"]["_exp_value"] = round(_tp.get("expectancy", 0), 4)
             pri["components"]["_exp_samples"] = _tp.get("samples", 0)
             pri["components"]["_exp_maturity"] = _tp.get("maturity", "unknown")
-            if _tp["maturity"] == "mature" and _tp.get("expectancy", 0) < -0.05 and _tp.get("samples", 0) >= 15:
-                reasons.append(f"Mature negative expectancy {_tp['expectancy']:.3f} — hard blocked (bucket={sig.strategy}:{_exp_regime}:{sig.asset_class})")
-                rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
-                _track_rejection("mature_negative_expectancy_block")
-                logger.info("selector_mature_neg_blocked",
-                            asset=sig.asset, strategy=sig.strategy,
-                            regime=sig.regime, exp_regime=_exp_regime,
-                            asset_class=sig.asset_class,
-                            expectancy=_tp["expectancy"], samples=_tp["samples"],
-                            execution_type=sig.execution_type)
-                continue
+            if _tp["maturity"] == "mature" and _tp.get("samples", 0) >= 15:
+                _exp = _tp.get("expectancy", 0)
+                if _exp < -0.07:
+                    # HARD BLOCK: clearly proven loser
+                    reasons.append(f"Mature negative expectancy {_exp:.3f} — hard blocked (bucket={sig.strategy}:{_exp_regime}:{sig.asset_class})")
+                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                    _track_rejection("mature_negative_expectancy_block")
+                    logger.info("selector_mature_neg_blocked",
+                                asset=sig.asset, strategy=sig.strategy,
+                                regime=sig.regime, exp_regime=_exp_regime,
+                                asset_class=sig.asset_class,
+                                expectancy=_exp, samples=_tp["samples"],
+                                execution_type=sig.execution_type)
+                    continue
+                elif _exp < -0.03:
+                    # PENALTY BAND: marginal negative — allow with reduced size and priority penalty
+                    pri["components"]["expectancy_penalty"] = max(-5, int(_exp * 40))
+                    pri["components"]["_exp_penalty_mode"] = "reduced"
+                    pri["total"] = sum(v for v in pri["components"].values() if isinstance(v, (int, float)))
+                    logger.info("selector_mature_neg_penalty",
+                                asset=sig.asset, strategy=sig.strategy,
+                                expectancy=_exp, penalty=pri["components"]["expectancy_penalty"],
+                                execution_type=sig.execution_type)
         except Exception:
             pass
 
