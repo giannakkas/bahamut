@@ -2982,6 +2982,7 @@ async def market_intelligence():
     """AI Market Intelligence — unified aggregation of all market context."""
     import json as _mij
     import traceback as _tb
+    from fastapi.responses import JSONResponse
     try:
         from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
         snap = build_market_intelligence_snapshot()
