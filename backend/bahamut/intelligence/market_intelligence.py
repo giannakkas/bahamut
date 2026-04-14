@@ -134,58 +134,91 @@ def build_market_intelligence_snapshot() -> dict:
     except Exception:
         pass
 
-    # ── 4. Economic Calendar (from Redis cache — same source as training-operations) ──
+    # ── 4. Economic Calendar (from Redis cache, with direct fetch fallback) ──
     events = []
+    _rc_cal = None
     try:
         import os, redis as _redis_cal, json as _jcal
-        _rc = _redis_cal.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        _cached = _rc.get("bahamut:calendar:events_v6")
+        _rc_cal = _redis_cal.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        _cached = _rc_cal.get("bahamut:calendar:events_v6")
         if _cached:
             raw_events = _jcal.loads(_cached)
-            for ev in (raw_events or [])[:30]:
-                impact_raw = (ev.get("impact", "low") or "low").upper()
-                # Map impact labels
-                if impact_raw in ("HIGH", "H"): impact = "HIGH"
-                elif impact_raw in ("MEDIUM", "MED", "M"): impact = "MEDIUM"
-                else: impact = "LOW"
-                # Determine affected asset classes
-                event_name = ev.get("event", "Unknown")
-                country = ev.get("country", "")
-                affected = ["all"]
-                if any(k in event_name.lower() for k in ["interest rate", "fed", "fomc", "cpi", "gdp", "employment", "nonfarm"]):
-                    affected = ["stock", "forex", "index", "crypto"]
-                elif any(k in event_name.lower() for k in ["earnings", "revenue"]):
-                    affected = ["stock"]
-                elif "oil" in event_name.lower() or "crude" in event_name.lower():
-                    affected = ["commodity"]
-
-                # Trade policy based on impact
-                if impact == "HIGH":
-                    trade_policy = "reduce_size"
-                    size_reduction = 25
-                elif impact == "MEDIUM":
-                    trade_policy = "caution"
-                    size_reduction = 10
-                else:
-                    trade_policy = "normal"
-                    size_reduction = 0
-
-                events.append({
-                    "event": event_name,
-                    "country": country,
-                    "date": ev.get("date", ""),
-                    "impact": impact,
-                    "actual": ev.get("actual"),
-                    "forecast": ev.get("estimate") or ev.get("forecast"),
-                    "previous": ev.get("prev") or ev.get("previous"),
-                    "source": ev.get("source", "unknown"),
-                    "affected_classes": affected,
-                    "risk_level": impact,
-                    "trade_policy": trade_policy,
-                    "size_reduction_pct": size_reduction,
-                })
+        else:
+            raw_events = None
     except Exception:
-        pass
+        raw_events = None
+
+    # If no cache, fetch fresh from ForexFactory
+    if not raw_events:
+        try:
+            import httpx, json as _jcal2
+            with httpx.Client(timeout=15, headers={
+                "User-Agent": "Mozilla/5.0 Chrome/120.0.0.0",
+                "Accept": "application/json",
+            }, follow_redirects=True) as client:
+                resp = client.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+                if resp.status_code == 200:
+                    raw_events = []
+                    for ev in resp.json()[:40]:
+                        imp = ev.get("impact", "Low")
+                        if imp == "Holiday":
+                            continue
+                        raw_events.append({
+                            "event": ev.get("title", "Unknown"),
+                            "country": ev.get("country", ""),
+                            "impact": "high" if imp == "High" else "medium" if imp == "Medium" else "low",
+                            "actual": ev.get("actual") or None,
+                            "estimate": ev.get("forecast") or None,
+                            "prev": ev.get("previous") or None,
+                            "date": ev.get("date", ""),
+                            "source": "forexfactory",
+                        })
+                    # Cache for 2 hours
+                    if _rc_cal and raw_events:
+                        try:
+                            _rc_cal.setex("bahamut:calendar:events_v6", 7200, _jcal2.dumps(raw_events))
+                        except Exception:
+                            pass
+        except Exception:
+            raw_events = []
+
+    for ev in (raw_events or [])[:30]:
+        impact_raw = (ev.get("impact", "low") or "low").upper()
+        if impact_raw in ("HIGH", "H"): impact = "HIGH"
+        elif impact_raw in ("MEDIUM", "MED", "M"): impact = "MEDIUM"
+        else: impact = "LOW"
+        event_name = ev.get("event", "Unknown")
+        country = ev.get("country", "")
+        affected = ["all"]
+        if any(k in event_name.lower() for k in ["interest rate", "fed", "fomc", "cpi", "gdp", "employment", "nonfarm"]):
+            affected = ["stock", "forex", "index", "crypto"]
+        elif any(k in event_name.lower() for k in ["earnings", "revenue"]):
+            affected = ["stock"]
+        elif "oil" in event_name.lower() or "crude" in event_name.lower():
+            affected = ["commodity"]
+        if impact == "HIGH":
+            trade_policy = "reduce_size"
+            size_reduction = 25
+        elif impact == "MEDIUM":
+            trade_policy = "caution"
+            size_reduction = 10
+        else:
+            trade_policy = "normal"
+            size_reduction = 0
+        events.append({
+            "event": event_name,
+            "country": country,
+            "date": ev.get("date", ""),
+            "impact": impact,
+            "actual": ev.get("actual"),
+            "forecast": ev.get("estimate") or ev.get("forecast"),
+            "previous": ev.get("prev") or ev.get("previous"),
+            "source": ev.get("source", "unknown"),
+            "affected_classes": affected,
+            "risk_level": impact,
+            "trade_policy": trade_policy,
+            "size_reduction_pct": size_reduction,
+        })
 
     # ── 5. Asset Class Context ──
     crypto_mode = _mode_from_sentiment(fg_crypto["value"], is_crypto=True)
