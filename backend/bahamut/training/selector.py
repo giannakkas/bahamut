@@ -327,13 +327,6 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                             asset=sig.asset, strategy=sig.strategy,
                             regime=sig.regime, asset_class=sig.asset_class,
                             expectancy=_tp["expectancy"], samples=_tp["samples"])
-                try:
-                    from bahamut.training.engine import _get_redis as _sel_redis
-                    _sr = _sel_redis()
-                    if _sr:
-                        _sr.incr("bahamut:counters:mature_neg_expectancy_blocks")
-                        _sr.expire("bahamut:counters:mature_neg_expectancy_blocks", 604800)
-                except Exception: pass
                 continue
         except Exception:
             pass
@@ -375,13 +368,6 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 logger.info("selector_risk_engine_blocked",
                             asset=sig.asset, strategy=sig.strategy,
                             direction=sig.direction, reason=re_check["reason"])
-                try:
-                    from bahamut.training.engine import _get_redis as _re_redis
-                    _rr = _re_redis()
-                    if _rr:
-                        _rr.incr("bahamut:counters:risk_engine_blocks")
-                        _rr.expire("bahamut:counters:risk_engine_blocks", 604800)
-                except Exception: pass
                 continue
         except Exception:
             pass
@@ -439,13 +425,6 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             reasons.append(f"Adaptive news: {news_mode} — {news_reason}")
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
             _track_rejection("adaptive_news_block")
-            try:
-                from bahamut.training.engine import _get_redis as _anr
-                _ar = _anr()
-                if _ar:
-                    _ar.incr("bahamut:counters:adaptive_news_blocks")
-                    _ar.expire("bahamut:counters:adaptive_news_blocks", 604800)
-            except Exception: pass
             continue
         elif comp.get("legacy_news_freeze"):
             # Only fires if ADAPTIVE_NEWS_ENABLED=False
@@ -511,19 +490,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                     exec_type=sig.execution_type, priority=effective_priority,
                     total_selected=len(execute))
 
-        # Track adaptive news stats for approved trades
-        try:
-            from bahamut.training.engine import _get_redis as _anr2
-            _ar2 = _anr2()
-            if _ar2:
-                comp2 = pri.get("components", {})
-                if comp2.get("adaptive_news_aligned"):
-                    _ar2.incr("bahamut:counters:aligned_news_trades_allowed")
-                    _ar2.expire("bahamut:counters:aligned_news_trades_allowed", 604800)
-                if comp2.get("adaptive_news_sized"):
-                    _ar2.incr("bahamut:counters:adaptive_news_size_reductions")
-                    _ar2.expire("bahamut:counters:adaptive_news_size_reductions", 604800)
-        except Exception: pass
+        # Track adaptive news stats for approved trades (in-memory, persisted post-loop)
+        comp2 = pri.get("components", {})
+        if comp2.get("adaptive_news_aligned"):
+            _track_rejection("_aligned_news_trades_allowed")  # positive counter, not a rejection
+        if comp2.get("adaptive_news_sized"):
+            _track_rejection("_adaptive_news_size_reductions")  # positive counter
 
         # Update snapshot so next candidates see this selection
         portfolio_snap["total"] += 1
@@ -553,6 +525,23 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         for d in watchlist[:5]:
             all_decisions.append({**d, "_action": "WATCHLIST"})
         rc.setex("bahamut:training:last_cycle_decisions", 300, json.dumps(all_decisions, default=str))
+
+        # ── Batch counter persistence ──
+        # Uses same proven rc connection. Maps in-memory rejection_reasons to Redis counters.
+        COUNTER_MAP = {
+            "mature_negative_expectancy_block": "bahamut:counters:mature_neg_expectancy_blocks",
+            "risk_engine_block":                "bahamut:counters:risk_engine_blocks",
+            "adaptive_news_block":              "bahamut:counters:adaptive_news_blocks",
+            "_aligned_news_trades_allowed":      "bahamut:counters:aligned_news_trades_allowed",
+            "_adaptive_news_size_reductions":    "bahamut:counters:adaptive_news_size_reductions",
+        }
+        for reason_key, redis_key in COUNTER_MAP.items():
+            count = rejection_reasons.get(reason_key, 0)
+            if count > 0:
+                rc.incrby(redis_key, count)
+                rc.expire(redis_key, 604800)
+    except Exception:
+        pass
     except Exception:
         pass
 

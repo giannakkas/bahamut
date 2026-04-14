@@ -1805,6 +1805,31 @@ async def _build_diagnostics():
             verification["news_gate_source_of_truth"] = "adaptive_news_risk" if _ane else "legacy_news_impact"
             verification["legacy_news_freeze_enabled"] = not _ane
             verification["adaptive_news_canonical"] = _ane
+
+            # Verify counters are live (non-zero when rejections fire)
+            if r:
+                _anb = r.get("bahamut:counters:adaptive_news_blocks")
+                _mnb = r.get("bahamut:counters:mature_neg_expectancy_blocks")
+                verification["adaptive_news_counters_live"] = int(_anb) > 0 if _anb else False
+                verification["mature_neg_counter_live"] = int(_mnb) > 0 if _mnb else False
+
+            # Verify selector state matches diagnostics state
+            try:
+                from bahamut.intelligence.adaptive_news_risk import get_asset_news_state, get_all_news_states
+                diag_states = get_all_news_states()
+                if diag_states:
+                    # Check a sample asset
+                    sample = next(iter(diag_states))
+                    selector_state = get_asset_news_state(sample)
+                    diag_mode = diag_states[sample].mode
+                    verification["adaptive_news_selector_state_matches_diagnostics"] = (
+                        selector_state.mode == diag_mode
+                    )
+                    verification["_sample_asset"] = sample
+                    verification["_sample_selector_mode"] = selector_state.mode
+                    verification["_sample_diagnostics_mode"] = diag_mode
+            except Exception:
+                verification["adaptive_news_selector_state_matches_diagnostics"] = "error"
         except Exception:
             verification["news_gate_source_of_truth"] = "unknown"
 

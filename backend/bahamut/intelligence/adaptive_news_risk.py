@@ -123,11 +123,20 @@ def compute_news_mode(
 
     shock_rank = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "EXTREME": 4}.get(shock, 0)
 
+    # Confidence-weighted shock: low-confidence EXTREME shouldn't force RESTRICTED
+    # news_impact.py labels EXTREME too eagerly (impact=0.27 can be EXTREME via surprise magnitude)
+    # If confidence < 0.5, downgrade effective shock by 1 level
+    effective_shock = shock_rank
+    if confidence < 0.5 and shock_rank >= 3:
+        effective_shock = shock_rank - 1  # EXTREME→HIGH, HIGH→MEDIUM
+    if confidence < 0.35 and shock_rank >= 2:
+        effective_shock = max(1, shock_rank - 2)  # Even more aggressive downgrade
+
     # FROZEN: requires high impact + high confidence + extreme shock
     # Low confidence should NOT trigger FROZEN (prevents false positives)
     ft = MODE_THRESHOLDS["FROZEN"]
     if (effective_impact >= ft["min_impact"]
-            and shock_rank >= 4
+            and effective_shock >= 4
             and confidence >= ft.get("min_confidence", 0.6)):
         return "FROZEN"
 
@@ -136,14 +145,14 @@ def compute_news_mode(
     if freeze_trading and effective_impact < ft["min_impact"]:
         return "RESTRICTED"
 
-    # RESTRICTED: high impact or high shock
+    # RESTRICTED: high impact or genuinely high shock (confidence-weighted)
     rt = MODE_THRESHOLDS["RESTRICTED"]
-    if effective_impact >= rt["min_impact"] or shock_rank >= 3:
+    if effective_impact >= rt["min_impact"] or effective_shock >= 3:
         return "RESTRICTED"
 
-    # CAUTION: moderate impact
+    # CAUTION: moderate impact or moderate shock
     ct = MODE_THRESHOLDS["CAUTION"]
-    if effective_impact >= ct["min_impact"] or shock_rank >= 2:
+    if effective_impact >= ct["min_impact"] or effective_shock >= 2:
         return "CAUTION"
 
     return "NORMAL"
@@ -516,6 +525,18 @@ def diagnostics_snapshot() -> dict:
     for s in states.values():
         mode_counts[s.mode] = mode_counts.get(s.mode, 0) + 1
 
+    # Per-class summary
+    summary_by_class = {}
+    try:
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        for asset, s in states.items():
+            cls = ASSET_CLASS_MAP.get(asset, "other")
+            if cls not in summary_by_class:
+                summary_by_class[cls] = {"NORMAL": 0, "CAUTION": 0, "RESTRICTED": 0, "FROZEN": 0}
+            summary_by_class[cls][s.mode] = summary_by_class[cls].get(s.mode, 0) + 1
+    except Exception:
+        pass
+
     return {
         "adaptive_news_enabled": ADAPTIVE_NEWS_ENABLED,
         "assets": per_asset,
@@ -524,6 +545,7 @@ def diagnostics_snapshot() -> dict:
             "frozen_pct": round(mode_counts["FROZEN"] / max(1, len(states)) * 100, 1),
             "starvation_guard_active": mode_counts["FROZEN"] / max(1, len(states)) > MAX_FROZEN_PCT / 100,
         },
+        "summary_by_class": summary_by_class,
     }
 
 
