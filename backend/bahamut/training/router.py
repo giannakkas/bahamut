@@ -2979,12 +2979,29 @@ async def diagram_dashboard():
 
 @router.get("/market-intelligence")
 async def market_intelligence():
-    """AI Market Intelligence — unified aggregation of all market context."""
+    """AI Market Intelligence — unified aggregation with Claude Opus 4.6 analysis."""
     import json as _mij
     import traceback as _tb
     from fastapi.responses import JSONResponse
     try:
         from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
+
+        # Trigger Opus analysis in background (non-blocking, cached 5min)
+        try:
+            from bahamut.intelligence.ai_market_analyst import call_opus_analysis, get_cached_analysis
+            from bahamut.sentiment.gate import get_full_sentiment
+            _sent = get_full_sentiment()
+            # Only call Opus if no cached analysis
+            if not get_cached_analysis():
+                snap_pre = build_market_intelligence_snapshot()
+                await call_opus_analysis(
+                    sentiment=_sent,
+                    headlines=snap_pre.get("headline_context", []),
+                    events=snap_pre.get("event_context", []),
+                )
+        except Exception:
+            pass
+
         snap = build_market_intelligence_snapshot()
         body = _mij.dumps(snap, default=str)
         return JSONResponse(content=_mij.loads(body))

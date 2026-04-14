@@ -313,11 +313,66 @@ def build_market_intelligence_snapshot() -> dict:
         "crypto_fear_greed": fg_crypto["value"],
         "stocks_fear_greed": fg_stocks["value"],
         "pipeline_posture": posture,
-        "active_headlines": len([h for h in headlines if h["freshness"] != "stale"]),
+        "active_headlines": len([h for h in headlines if h.get("freshness") != "stale"]),
         "upcoming_high_events": pipeline_directives["high_impact_events_next_24h"],
         "news_modes": news_summary,
         "ai_narrative": _generate_narrative(crypto_mode, stock_mode, macro_mode, fg_crypto["value"], fg_stocks["value"], posture),
     }
+
+    # ── 9. Claude Opus 4.6 AI Analysis (overlay on rule-based) ──
+    ai_analysis = None
+    ai_status = {}
+    try:
+        from bahamut.intelligence.ai_market_analyst import get_cached_analysis, get_analysis_status
+        ai_analysis = get_cached_analysis()
+        ai_status = get_analysis_status()
+    except Exception:
+        pass
+
+    if ai_analysis:
+        # Override narrative with AI-generated one
+        if ai_analysis.get("narrative"):
+            summary["ai_narrative"] = ai_analysis["narrative"]
+            summary["ai_narrative_source"] = "claude-opus-4.6"
+        # Override posture if AI has a stronger opinion
+        if ai_analysis.get("overall_posture"):
+            summary["ai_posture"] = ai_analysis["overall_posture"]
+        # Merge class analysis
+        if ai_analysis.get("class_analysis"):
+            for cls, analysis in ai_analysis["class_analysis"].items():
+                if cls in class_context:
+                    class_context[cls]["ai_bias"] = analysis.get("bias", "NEUTRAL")
+                    class_context[cls]["ai_confidence"] = analysis.get("confidence", 0)
+                    class_context[cls]["ai_reasoning"] = analysis.get("reasoning", "")
+                    # If AI says a class should be more restricted, upgrade mode
+                    ai_mode = analysis.get("mode", "NORMAL")
+                    mode_rank = {"NORMAL": 0, "CAUTION": 1, "RESTRICTED": 2, "FROZEN": 3}
+                    if mode_rank.get(ai_mode, 0) > mode_rank.get(class_context[cls].get("mode", "NORMAL"), 0):
+                        class_context[cls]["mode"] = ai_mode
+                        class_context[cls]["ai_upgraded_mode"] = True
+        # Add headline interpretations
+        if ai_analysis.get("headline_interpretations"):
+            for interp in ai_analysis["headline_interpretations"]:
+                idx = interp.get("headline_index", -1)
+                if 0 <= idx < len(headlines):
+                    headlines[idx]["ai_impact"] = interp.get("impact", "NONE")
+                    headlines[idx]["ai_bias"] = interp.get("bias", "NEUTRAL")
+                    headlines[idx]["ai_reasoning"] = interp.get("reasoning", "")
+                    headlines[idx]["ai_affected_classes"] = interp.get("affected_classes", [])
+        # Add event risk assessments
+        if ai_analysis.get("event_risk_assessments"):
+            for assess in ai_analysis["event_risk_assessments"]:
+                idx = assess.get("event_index", -1)
+                if 0 <= idx < len(events):
+                    events[idx]["ai_risk_level"] = assess.get("risk_level", events[idx].get("risk_level"))
+                    events[idx]["ai_policy"] = assess.get("pre_event_policy", "normal")
+                    events[idx]["ai_reasoning"] = assess.get("reasoning", "")
+        # High conviction calls
+        if ai_analysis.get("high_conviction_calls"):
+            summary["ai_high_conviction"] = ai_analysis["high_conviction_calls"]
+
+    snapshot["ai_analysis_status"] = ai_status
+    snapshot["ai_analysis_raw"] = ai_analysis if ai_analysis else None
 
     snapshot["summary"] = summary
     snapshot["class_context"] = class_context

@@ -163,9 +163,74 @@ export default function MarketIntelligencePage() {
         </div>
 
         <div className="bg-black/30 rounded-md p-3 text-xs text-gray-300 font-mono leading-relaxed">
+          {summary?.ai_narrative_source === "claude-opus-4.6" && (
+            <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-purple-500/20 text-purple-400 rounded border border-purple-500/30 mr-2 mb-1">OPUS 4.6</span>
+          )}
           {summary?.ai_narrative || "No narrative available."}
         </div>
+
+        {/* High Conviction Calls */}
+        {summary?.ai_high_conviction && summary.ai_high_conviction.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">High Conviction Calls</div>
+            {summary.ai_high_conviction.map((call: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${call.direction === "LONG" ? "bg-green-500/20 text-green-400" : call.direction === "SHORT" ? "bg-red-500/20 text-red-400" : "bg-gray-500/20 text-gray-400"}`}>
+                  {call.direction}
+                </span>
+                <span className="text-gray-200">{call.asset_or_class}</span>
+                <span className="text-gray-500">conf: {(call.confidence * 100).toFixed(0)}%</span>
+                <span className="text-gray-600">— {call.reasoning}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* ═══ AI ANALYSIS STATUS ═══ */}
+      {data.ai_analysis_status && (
+        <div className="rounded-lg border border-purple-500/20 bg-purple-500/[0.03] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm">🤖</span>
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider font-mono">Claude Opus 4.6 Analysis</h3>
+            {data.ai_analysis_status.cached && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">ACTIVE</span>
+            )}
+            {!data.ai_analysis_status.cached && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-500/20 text-gray-400 border border-gray-500/30">WAITING</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+            <div>
+              <span className="text-gray-500">Model:</span>{" "}
+              <span className="text-purple-300">{data.ai_analysis_status.model}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Calls:</span>{" "}
+              <span className="text-gray-300">{data.ai_analysis_status.total_calls}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Latency:</span>{" "}
+              <span className="text-gray-300">{data.ai_analysis_status.last_latency_ms ?? "–"}ms</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Cache age:</span>{" "}
+              <span className="text-gray-300">{data.ai_analysis_status.cache_age_seconds ?? "–"}s</span>
+            </div>
+          </div>
+          {data.ai_analysis_status.last_error && (
+            <div className="mt-2 text-[10px] text-red-400 font-mono">Error: {data.ai_analysis_status.last_error}</div>
+          )}
+          {data.ai_analysis_raw?.overall_posture && (
+            <div className="mt-2 text-xs font-mono">
+              <span className="text-gray-500">AI Posture:</span>{" "}
+              <span className={MODE_COLORS[data.ai_analysis_raw.overall_posture] || "text-gray-300"}>
+                {data.ai_analysis_raw.overall_posture}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ PIPELINE DIRECTIVES ═══ */}
       <div className="rounded-lg border border-gray-800 bg-[#0d1220] p-4">
