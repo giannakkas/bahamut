@@ -54,6 +54,68 @@ function Badge({ mode }: { mode: string }) {
   );
 }
 
+function _getEventPrediction(ev: any): { summary: string; impact: string } {
+  const name = (ev.event || "").toLowerCase();
+  const impact = (ev.impact || "LOW").toUpperCase();
+  const country = ev.country || "Unknown";
+  const actual = ev.actual;
+  const forecast = ev.forecast;
+  const previous = ev.previous;
+  const hasResult = actual !== null && actual !== undefined && actual !== "–";
+
+  // Generate summary based on event type
+  let summary = "";
+  let marketImpact = "";
+
+  if (name.includes("interest rate") || name.includes("fed") || name.includes("fomc")) {
+    summary = `Central bank interest rate decision for ${country}. This is one of the most market-moving events. Rate changes affect currency values, bond yields, equity valuations, and crypto risk appetite.`;
+    if (hasResult && forecast) {
+      const surprise = parseFloat(actual) !== parseFloat(forecast);
+      marketImpact = surprise
+        ? `Actual (${actual}) differs from forecast (${forecast}) — expect elevated volatility across forex, equities, and crypto. Surprise rate decisions cause rapid repricing.`
+        : `Actual (${actual}) matches forecast — market already priced this in. Expect muted reaction unless forward guidance changes.`;
+    } else {
+      marketImpact = `If rates are higher than expected: USD strengthens, equities/crypto sell off. If lower: risk assets rally. Hold periods near announcement carry elevated risk.`;
+    }
+  } else if (name.includes("cpi") || name.includes("inflation")) {
+    summary = `Consumer Price Index (CPI) measures inflation for ${country}. Higher-than-expected inflation signals potential rate hikes, while lower readings suggest easing.`;
+    marketImpact = hasResult
+      ? `With actual at ${actual} (forecast: ${forecast}, prev: ${previous}): ${parseFloat(actual) > parseFloat(forecast) ? "Higher than expected — hawkish pressure on central bank, negative for risk assets, USD strengthens." : "Lower than expected — dovish signal, positive for equities and crypto."}`
+      : `Hot CPI → bearish for stocks/crypto, bullish USD. Cool CPI → bullish risk assets. Position sizes should be reduced 30 minutes before release.`;
+  } else if (name.includes("nonfarm") || name.includes("employment") || name.includes("jobs") || name.includes("unemployment")) {
+    summary = `Employment data for ${country}. Strong jobs data supports economic growth but may delay rate cuts. Weak data raises recession fears but accelerates easing expectations.`;
+    marketImpact = hasResult
+      ? `Actual: ${actual} (forecast: ${forecast}). ${parseFloat(actual) > parseFloat(forecast) ? "Stronger than expected — mixed: good for economy but delays rate cuts." : "Weaker than expected — risk-off initially but rate cut expectations increase."}`
+      : `Strong NFP → USD up, bonds down, stocks mixed. Weak NFP → initial risk-off then recovery on rate cut hopes. High volatility period.`;
+  } else if (name.includes("gdp")) {
+    summary = `Gross Domestic Product measures economic output for ${country}. GDP surprises affect growth expectations and monetary policy outlook.`;
+    marketImpact = hasResult
+      ? `GDP at ${actual} vs forecast ${forecast}: ${parseFloat(actual) > parseFloat(forecast) ? "Stronger growth — bullish for domestic equities, potentially hawkish for central bank." : "Weaker growth — recession concerns, flight to safety, but potential for dovish policy."}`
+      : `Above-forecast GDP → bullish equities, bearish bonds. Below-forecast → risk-off, safe havens rally. Crypto correlated with risk sentiment.`;
+  } else if (name.includes("pmi") || name.includes("manufacturing") || name.includes("services")) {
+    summary = `PMI/business activity indicator for ${country}. Readings above 50 indicate expansion, below 50 indicate contraction.`;
+    marketImpact = `PMI data provides leading indicators for economic direction. ${impact === "HIGH" ? "This is a high-impact release — expect volatility." : "Moderate impact — watch for trend confirmation."} Affects sector rotation and currency pairs.`;
+  } else if (name.includes("retail sales") || name.includes("consumer")) {
+    summary = `Consumer spending data for ${country}. Retail sales reflect consumer confidence and economic health.`;
+    marketImpact = `Strong retail → bullish domestic equities, consumer discretionary. Weak retail → defensive rotation, recession signal. ${impact === "HIGH" ? "Reduce position sizes before release." : ""}`;
+  } else if (name.includes("earnings") || name.includes("q1") || name.includes("q2") || name.includes("q3") || name.includes("q4")) {
+    summary = `Corporate earnings report. Individual stock catalyst — affects the company directly and potentially its sector.`;
+    marketImpact = hasResult
+      ? `Reported: ${actual} (est: ${forecast}). ${actual && forecast && parseFloat(actual) > parseFloat(forecast) ? "Beat expectations — bullish for stock and sector." : "Missed expectations — potential selloff. Watch guidance."}`
+      : `Earnings beats typically drive 2-5% moves. Misses can cause 5-10% drops. Guidance matters more than the number.`;
+  } else if (name.includes("trade balance") || name.includes("current account")) {
+    summary = `Trade data for ${country}. Trade balances affect currency flows and economic outlook.`;
+    marketImpact = `Trade surplus → currency strengthening. Trade deficit → currency weakening. ${impact === "HIGH" ? "Significant for forex pairs." : "Lower impact for equities."}`;
+  } else {
+    summary = `Economic indicator: ${ev.event} (${country}). ${impact === "HIGH" ? "This is a high-impact event that can move markets significantly." : impact === "MEDIUM" ? "Medium-impact event — may cause moderate volatility." : "Low-impact event — minimal market effect expected."}`;
+    marketImpact = hasResult
+      ? `Actual: ${actual}, Forecast: ${forecast}, Previous: ${previous}. ${actual && forecast && parseFloat(actual) !== parseFloat(forecast) ? "Deviation from forecast — watch for market reaction." : "In-line with expectations — limited reaction expected."}`
+      : `Monitor for surprises. ${impact === "HIGH" ? "Consider reducing exposure before this release." : "Normal trading conditions expected."}`;
+  }
+
+  return { summary, impact: marketImpact };
+}
+
 function Pill({ label, value, color }: { label: string; value: string | number; color?: string }) {
   return (
     <div className="flex flex-col items-center px-3 py-2">
@@ -72,6 +134,9 @@ export default function MarketIntelligencePage() {
   const [error, setError] = useState("");
   const [assetFilter, setAssetFilter] = useState("");
   const [classFilter, setClassFilter] = useState("all");
+  const [showAllAssets, setShowAllAssets] = useState(false);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
 
   const fetchData = async () => {
     try {
@@ -322,7 +387,7 @@ export default function MarketIntelligencePage() {
               </tr>
             </thead>
             <tbody>
-              {assetEntries.map(([asset, ctx]: [string, any]) => (
+              {(showAllAssets ? assetEntries : assetEntries.slice(0, 10)).map(([asset, ctx]: [string, any]) => (
                 <tr key={asset} className="border-b border-gray-800/50 hover:bg-white/[0.02]">
                   <td className="px-3 py-1.5 text-gray-200 font-semibold">{asset}</td>
                   <td className="px-3 py-1.5 text-gray-500">{ctx.asset_class}</td>
@@ -338,6 +403,12 @@ export default function MarketIntelligencePage() {
               ))}
             </tbody>
           </table>
+          {assetEntries.length > 10 && (
+            <button onClick={() => setShowAllAssets(!showAllAssets)}
+              className="w-full py-2 text-xs font-mono text-cyan-400 hover:text-cyan-300 bg-black/20 border-t border-gray-800 transition-colors">
+              {showAllAssets ? `▲ Show Less` : `▼ Show All ${assetEntries.length} Assets`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -377,10 +448,11 @@ export default function MarketIntelligencePage() {
             No calendar events cached. Events are fetched from ForexFactory / Finnhub and cached in Redis for 2 hours.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-800">
+          <div className="rounded-lg border border-gray-800 overflow-hidden">
             <table className="w-full text-xs font-mono">
               <thead>
                 <tr className="text-gray-500 uppercase tracking-wider border-b border-gray-800 bg-black/30">
+                  <th className="px-3 py-2 text-left w-6"></th>
                   <th className="px-3 py-2 text-left">Impact</th>
                   <th className="px-3 py-2 text-left">Event</th>
                   <th className="px-3 py-2 text-left">Country</th>
@@ -390,34 +462,85 @@ export default function MarketIntelligencePage() {
                   <th className="px-3 py-2 text-center">Previous</th>
                   <th className="px-3 py-2 text-center">Risk</th>
                   <th className="px-3 py-2 text-left">Policy</th>
-                  <th className="px-3 py-2 text-left">Affected</th>
                 </tr>
               </thead>
               <tbody>
-                {event_context.map((ev: any, i: number) => (
-                  <tr key={i} className={`border-b border-gray-800/50 hover:bg-white/[0.02] ${ev.impact === "HIGH" ? "bg-red-500/[0.03]" : ""}`}>
-                    <td className="px-3 py-1.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${ev.impact === "HIGH" ? "bg-red-500/20 text-red-400" : ev.impact === "MEDIUM" ? "bg-yellow-500/20 text-yellow-400" : "bg-gray-500/20 text-gray-400"}`}>
-                        {ev.impact}
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-200 max-w-[250px] truncate">{ev.event}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{ev.country}</td>
-                    <td className="px-3 py-1.5 text-gray-500">{ev.date}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-300">{ev.actual ?? "–"}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-400">{ev.forecast ?? "–"}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-500">{ev.previous ?? "–"}</td>
-                    <td className="px-3 py-1.5 text-center"><Badge mode={ev.risk_level === "HIGH" ? "RESTRICTED" : ev.risk_level === "MEDIUM" ? "CAUTION" : "NORMAL"} /></td>
-                    <td className="px-3 py-1.5">
-                      <span className={`text-[10px] ${ev.trade_policy === "reduce_size" ? "text-orange-400" : ev.trade_policy === "caution" ? "text-yellow-400" : "text-gray-500"}`}>
-                        {ev.trade_policy}{ev.size_reduction_pct > 0 ? ` (-${ev.size_reduction_pct}%)` : ""}
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-600 text-[10px]">{(ev.affected_classes || []).join(", ")}</td>
-                  </tr>
-                ))}
+                {(showAllEvents ? event_context : event_context.slice(0, 10)).map((ev: any, i: number) => {
+                  const isExpanded = expandedEvent === i;
+                  const eventName = (ev.event || "").toLowerCase();
+                  // Generate prediction based on event type and data
+                  const prediction = _getEventPrediction(ev);
+                  return (
+                    <React.Fragment key={i}>
+                      <tr
+                        onClick={() => setExpandedEvent(isExpanded ? null : i)}
+                        className={`border-b border-gray-800/50 cursor-pointer transition-colors ${ev.impact === "HIGH" ? "bg-red-500/[0.03]" : ""} ${isExpanded ? "bg-cyan-500/[0.05]" : "hover:bg-white/[0.02]"}`}
+                      >
+                        <td className="px-2 py-1.5 text-gray-600 text-center">
+                          <span className={`inline-block transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}>▶</span>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${ev.impact === "HIGH" ? "bg-red-500/20 text-red-400" : ev.impact === "MEDIUM" ? "bg-yellow-500/20 text-yellow-400" : "bg-gray-500/20 text-gray-400"}`}>
+                            {ev.impact}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-200 max-w-[250px] truncate">{ev.event}</td>
+                        <td className="px-3 py-1.5 text-gray-500">{ev.country}</td>
+                        <td className="px-3 py-1.5 text-gray-500">{ev.date}</td>
+                        <td className="px-3 py-1.5 text-center text-gray-300">{ev.actual ?? "–"}</td>
+                        <td className="px-3 py-1.5 text-center text-gray-400">{ev.forecast ?? "–"}</td>
+                        <td className="px-3 py-1.5 text-center text-gray-500">{ev.previous ?? "–"}</td>
+                        <td className="px-3 py-1.5 text-center"><Badge mode={ev.risk_level === "HIGH" ? "RESTRICTED" : ev.risk_level === "MEDIUM" ? "CAUTION" : "NORMAL"} /></td>
+                        <td className="px-3 py-1.5">
+                          <span className={`text-[10px] ${ev.trade_policy === "reduce_size" ? "text-orange-400" : ev.trade_policy === "caution" ? "text-yellow-400" : "text-gray-500"}`}>
+                            {ev.trade_policy}{ev.size_reduction_pct > 0 ? ` (-${ev.size_reduction_pct}%)` : ""}
+                          </span>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-3 bg-[#0a0f1a] border-b border-gray-800">
+                            <div className="space-y-2">
+                              {/* Event Summary */}
+                              <div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1">Event Summary</div>
+                                <div className="text-xs text-gray-300 leading-relaxed">{prediction.summary}</div>
+                              </div>
+                              {/* Market Impact Prediction */}
+                              <div>
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-1">Market Impact Prediction</div>
+                                <div className="text-xs text-gray-300 leading-relaxed">{prediction.impact}</div>
+                              </div>
+                              {/* Affected Assets */}
+                              <div className="flex gap-4 text-[10px] text-gray-500">
+                                <span>Affected: <span className="text-gray-400">{(ev.affected_classes || []).join(", ")}</span></span>
+                                <span>Source: <span className="text-gray-400">{ev.source}</span></span>
+                                {ev.size_reduction_pct > 0 && (
+                                  <span>Size reduction: <span className="text-orange-400">-{ev.size_reduction_pct}%</span></span>
+                                )}
+                              </div>
+                              {/* AI Analysis (if available) */}
+                              {ev.ai_reasoning && (
+                                <div className="mt-1 px-2 py-1.5 rounded bg-purple-500/[0.05] border border-purple-500/20">
+                                  <span className="text-[9px] text-purple-400 font-bold uppercase">Opus 4.6:</span>
+                                  <span className="text-xs text-purple-300 ml-2">{ev.ai_reasoning}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
+            {event_context.length > 10 && (
+              <button onClick={() => setShowAllEvents(!showAllEvents)}
+                className="w-full py-2 text-xs font-mono text-cyan-400 hover:text-cyan-300 bg-black/20 border-t border-gray-800 transition-colors">
+                {showAllEvents ? `▲ Show Less` : `▼ Show All ${event_context.length} Events`}
+              </button>
+            )}
           </div>
         )}
       </div>
