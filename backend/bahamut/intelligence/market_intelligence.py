@@ -134,24 +134,56 @@ def build_market_intelligence_snapshot() -> dict:
     except Exception:
         pass
 
-    # ── 4. Economic Calendar ──
+    # ── 4. Economic Calendar (from Redis cache — same source as training-operations) ──
     events = []
     try:
-        from bahamut.intelligence.event_impact_analyzer import get_upcoming_events
-        raw_events = get_upcoming_events(hours_ahead=48)
-        for ev in (raw_events or [])[:15]:
-            impact = ev.get("impact", "LOW").upper()
-            events.append({
-                "event": ev.get("event", ev.get("title", "Unknown")),
-                "date": ev.get("date", ""),
-                "impact": impact,
-                "actual": ev.get("actual"),
-                "forecast": ev.get("forecast"),
-                "previous": ev.get("previous"),
-                "affected_classes": ev.get("affected_classes", ["all"]),
-                "risk_level": "HIGH" if impact == "HIGH" else "MEDIUM" if impact == "MEDIUM" else "LOW",
-                "trade_policy": "reduce_size" if impact == "HIGH" else "normal",
-            })
+        import os, redis as _redis_cal, json as _jcal
+        _rc = _redis_cal.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        _cached = _rc.get("bahamut:calendar:events_v6")
+        if _cached:
+            raw_events = _jcal.loads(_cached)
+            for ev in (raw_events or [])[:30]:
+                impact_raw = (ev.get("impact", "low") or "low").upper()
+                # Map impact labels
+                if impact_raw in ("HIGH", "H"): impact = "HIGH"
+                elif impact_raw in ("MEDIUM", "MED", "M"): impact = "MEDIUM"
+                else: impact = "LOW"
+                # Determine affected asset classes
+                event_name = ev.get("event", "Unknown")
+                country = ev.get("country", "")
+                affected = ["all"]
+                if any(k in event_name.lower() for k in ["interest rate", "fed", "fomc", "cpi", "gdp", "employment", "nonfarm"]):
+                    affected = ["stock", "forex", "index", "crypto"]
+                elif any(k in event_name.lower() for k in ["earnings", "revenue"]):
+                    affected = ["stock"]
+                elif "oil" in event_name.lower() or "crude" in event_name.lower():
+                    affected = ["commodity"]
+
+                # Trade policy based on impact
+                if impact == "HIGH":
+                    trade_policy = "reduce_size"
+                    size_reduction = 25
+                elif impact == "MEDIUM":
+                    trade_policy = "caution"
+                    size_reduction = 10
+                else:
+                    trade_policy = "normal"
+                    size_reduction = 0
+
+                events.append({
+                    "event": event_name,
+                    "country": country,
+                    "date": ev.get("date", ""),
+                    "impact": impact,
+                    "actual": ev.get("actual"),
+                    "forecast": ev.get("estimate") or ev.get("forecast"),
+                    "previous": ev.get("prev") or ev.get("previous"),
+                    "source": ev.get("source", "unknown"),
+                    "affected_classes": affected,
+                    "risk_level": impact,
+                    "trade_policy": trade_policy,
+                    "size_reduction_pct": size_reduction,
+                })
     except Exception:
         pass
 

@@ -303,47 +303,59 @@ export default function MarketIntelligencePage() {
       )}
 
       {/* ═══ ECONOMIC CALENDAR ═══ */}
-      {event_context && event_context.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 font-mono">
-            Economic Calendar AI Layer ({event_context.length})
-          </h3>
+      <div>
+        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 font-mono">
+          Economic Calendar ({(event_context || []).length} events)
+        </h3>
+        {(!event_context || event_context.length === 0) ? (
+          <div className="rounded border border-gray-800 bg-black/20 p-4 text-xs text-gray-500 font-mono">
+            No calendar events cached. Events are fetched from ForexFactory / Finnhub and cached in Redis for 2 hours.
+          </div>
+        ) : (
           <div className="overflow-x-auto rounded-lg border border-gray-800">
             <table className="w-full text-xs font-mono">
               <thead>
                 <tr className="text-gray-500 uppercase tracking-wider border-b border-gray-800 bg-black/30">
                   <th className="px-3 py-2 text-left">Impact</th>
                   <th className="px-3 py-2 text-left">Event</th>
+                  <th className="px-3 py-2 text-left">Country</th>
                   <th className="px-3 py-2 text-left">Date</th>
                   <th className="px-3 py-2 text-center">Actual</th>
                   <th className="px-3 py-2 text-center">Forecast</th>
                   <th className="px-3 py-2 text-center">Previous</th>
                   <th className="px-3 py-2 text-center">Risk</th>
                   <th className="px-3 py-2 text-left">Policy</th>
+                  <th className="px-3 py-2 text-left">Affected</th>
                 </tr>
               </thead>
               <tbody>
                 {event_context.map((ev: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-white/[0.02]">
+                  <tr key={i} className={`border-b border-gray-800/50 hover:bg-white/[0.02] ${ev.impact === "HIGH" ? "bg-red-500/[0.03]" : ""}`}>
                     <td className="px-3 py-1.5">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${ev.impact === "HIGH" ? "bg-red-500/20 text-red-400" : ev.impact === "MEDIUM" ? "bg-yellow-500/20 text-yellow-400" : "bg-gray-500/20 text-gray-400"}`}>
                         {ev.impact}
                       </span>
                     </td>
-                    <td className="px-3 py-1.5 text-gray-200">{ev.event}</td>
+                    <td className="px-3 py-1.5 text-gray-200 max-w-[250px] truncate">{ev.event}</td>
+                    <td className="px-3 py-1.5 text-gray-500">{ev.country}</td>
                     <td className="px-3 py-1.5 text-gray-500">{ev.date}</td>
                     <td className="px-3 py-1.5 text-center text-gray-300">{ev.actual ?? "–"}</td>
                     <td className="px-3 py-1.5 text-center text-gray-400">{ev.forecast ?? "–"}</td>
                     <td className="px-3 py-1.5 text-center text-gray-500">{ev.previous ?? "–"}</td>
                     <td className="px-3 py-1.5 text-center"><Badge mode={ev.risk_level === "HIGH" ? "RESTRICTED" : ev.risk_level === "MEDIUM" ? "CAUTION" : "NORMAL"} /></td>
-                    <td className="px-3 py-1.5 text-gray-400">{ev.trade_policy}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[10px] ${ev.trade_policy === "reduce_size" ? "text-orange-400" : ev.trade_policy === "caution" ? "text-yellow-400" : "text-gray-500"}`}>
+                        {ev.trade_policy}{ev.size_reduction_pct > 0 ? ` (-${ev.size_reduction_pct}%)` : ""}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-600 text-[10px]">{(ev.affected_classes || []).join(", ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ═══ DEBUG PANEL ═══ */}
       <details className="rounded-lg border border-gray-800 bg-[#0d1220]">
