@@ -559,3 +559,4 @@ export default function MarketIntelligencePage() {
     </div>
   );
 }
+// v2 — show more buttons + expandable events + opus 4.6
