@@ -148,6 +148,11 @@ def compute_news_mode(
     # RESTRICTED: high impact or genuinely high shock (confidence-weighted)
     rt = MODE_THRESHOLDS["RESTRICTED"]
     if effective_impact >= rt["min_impact"] or effective_shock >= 3:
+        # NEUTRAL bias cap: RESTRICTED means "only aligned direction allowed"
+        # but with NEUTRAL bias, ALL directions are "aligned" — RESTRICTED is meaningless.
+        # Cap at CAUTION unless confidence is high enough to justify directional filtering.
+        if bias == "NEUTRAL" and confidence < 0.4:
+            return "CAUTION"
         return "RESTRICTED"
 
     # CAUTION: moderate impact or moderate shock
@@ -318,23 +323,28 @@ def compute_adaptive_news_state(
     now = time.time()
     impact = normalized_impact if normalized_impact is not None else assessment.impact_score
 
-    # Compute fresh mode from current data
+    # Compute mode age: how long the current mode has been active
+    # This is used for time decay — stale high-impact should fade
+    mode_age = (now - existing_state.mode_set_at) if existing_state and existing_state.mode_set_at > 0 else 0
+
+    # Compute fresh mode WITH time decay applied to the assessment
+    # If the same news data has persisted for hours, effective impact decays
     fresh_mode = compute_news_mode(
         impact_score=impact,
         shock=assessment.shock_level,
         bias=assessment.directional_bias,
         confidence=assessment.confidence,
         freeze_trading=assessment.freeze_trading,
-        age_seconds=0,  # Fresh computation — no age decay yet
+        age_seconds=mode_age,
     )
 
-    # If we have existing state, apply time decay
+    # If we have existing state, also compute pure time-based decay
     if existing_state and existing_state.mode != "NORMAL":
         decayed_mode = apply_time_decay(existing_state)
-        # Use the LESS restrictive of fresh and decayed
-        # (fresh data can re-escalate, but time always de-escalates)
+        # Use the LESS restrictive of fresh-with-decay and pure-decay
+        # Time always de-escalates. Fresh data can only re-escalate if impact truly increased.
         mode_rank = {"NORMAL": 0, "CAUTION": 1, "RESTRICTED": 2, "FROZEN": 3}
-        final_mode = fresh_mode if mode_rank.get(fresh_mode, 0) >= mode_rank.get(decayed_mode, 0) else decayed_mode
+        final_mode = fresh_mode if mode_rank.get(fresh_mode, 0) <= mode_rank.get(decayed_mode, 0) else decayed_mode
     else:
         final_mode = fresh_mode
 

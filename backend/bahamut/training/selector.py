@@ -315,18 +315,21 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         # 0.5. MATURE-NEGATIVE EXPECTANCY HARD BLOCK
         # If a pattern has mature negative expectancy below -0.05 with 15+ samples,
         # this is a proven losing edge. Block it completely, not just penalize.
-        # This is separate from selector penalties — it's a gate.
+        # For crash_short signals: use CRASH regime bucket (not the raw 4H regime which may be RANGE)
         try:
             from bahamut.training.learning_engine import compute_trust_points
-            _tp = compute_trust_points(sig.strategy, sig.regime, sig.asset_class, max_points=30)
+            _exp_regime = "CRASH" if sig.execution_type == "crash_short" else sig.regime
+            _tp = compute_trust_points(sig.strategy, _exp_regime, sig.asset_class, max_points=30)
             if _tp["maturity"] == "mature" and _tp.get("expectancy", 0) < -0.05 and _tp.get("samples", 0) >= 15:
-                reasons.append(f"Mature negative expectancy {_tp['expectancy']:.3f} — hard blocked")
+                reasons.append(f"Mature negative expectancy {_tp['expectancy']:.3f} — hard blocked (bucket={sig.strategy}:{_exp_regime}:{sig.asset_class})")
                 rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
                 _track_rejection("mature_negative_expectancy_block")
                 logger.info("selector_mature_neg_blocked",
                             asset=sig.asset, strategy=sig.strategy,
-                            regime=sig.regime, asset_class=sig.asset_class,
-                            expectancy=_tp["expectancy"], samples=_tp["samples"])
+                            regime=sig.regime, exp_regime=_exp_regime,
+                            asset_class=sig.asset_class,
+                            expectancy=_tp["expectancy"], samples=_tp["samples"],
+                            execution_type=sig.execution_type)
                 continue
         except Exception:
             pass
@@ -525,9 +528,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         for d in watchlist[:5]:
             all_decisions.append({**d, "_action": "WATCHLIST"})
         rc.setex("bahamut:training:last_cycle_decisions", 300, json.dumps(all_decisions, default=str))
+    except Exception:
+        pass
 
-        # ── Batch counter persistence ──
-        # Uses same proven rc connection. Maps in-memory rejection_reasons to Redis counters.
+    # ── Batch counter persistence (own try block — must not share fate with decisions) ──
+    try:
+        import os as _os2, redis as _redis2
+        _rc2 = _redis2.from_url(_os2.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        _rc2.ping()  # Verify connection before writing
         COUNTER_MAP = {
             "mature_negative_expectancy_block": "bahamut:counters:mature_neg_expectancy_blocks",
             "risk_engine_block":                "bahamut:counters:risk_engine_blocks",
@@ -535,15 +543,18 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             "_aligned_news_trades_allowed":      "bahamut:counters:aligned_news_trades_allowed",
             "_adaptive_news_size_reductions":    "bahamut:counters:adaptive_news_size_reductions",
         }
+        _written = 0
         for reason_key, redis_key in COUNTER_MAP.items():
             count = rejection_reasons.get(reason_key, 0)
             if count > 0:
-                rc.incrby(redis_key, count)
-                rc.expire(redis_key, 604800)
-    except Exception:
-        pass
-    except Exception:
-        pass
+                _rc2.incrby(redis_key, count)
+                _rc2.expire(redis_key, 604800)
+                _written += 1
+        if _written > 0:
+            logger.info("selector_counters_persisted", written=_written,
+                        keys={k: rejection_reasons.get(k, 0) for k in COUNTER_MAP})
+    except Exception as _ce:
+        logger.warning("selector_counter_persist_failed", error=str(_ce)[:100])
 
     return {
         "execute": execute,
