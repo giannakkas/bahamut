@@ -2994,23 +2994,24 @@ async def market_intelligence():
     """AI Market Intelligence — unified aggregation with Claude Opus 4.6 analysis."""
     import json as _mij
     import traceback as _tb
+    import asyncio
     from fastapi.responses import JSONResponse
     try:
         from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
 
-        # Trigger Opus analysis in background (non-blocking, cached 5min)
+        # Fire Opus analysis in background (non-blocking — do NOT await)
         try:
             from bahamut.intelligence.ai_market_analyst import call_opus_analysis, get_cached_analysis
             from bahamut.sentiment.gate import get_full_sentiment
-            _sent = get_full_sentiment()
-            # Only call Opus if no cached analysis
             if not get_cached_analysis():
+                _sent = get_full_sentiment()
                 snap_pre = build_market_intelligence_snapshot()
-                await call_opus_analysis(
+                # Fire and forget — response returns immediately
+                asyncio.ensure_future(call_opus_analysis(
                     sentiment=_sent,
                     headlines=snap_pre.get("headline_context", []),
                     events=snap_pre.get("event_context", []),
-                )
+                ))
         except Exception:
             pass
 
