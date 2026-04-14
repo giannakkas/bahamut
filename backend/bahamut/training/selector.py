@@ -539,10 +539,11 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         for d in watchlist[:5]:
             all_decisions.append({**d, "_action": "WATCHLIST"})
         rc.setex("bahamut:training:last_cycle_decisions", 300, json.dumps(all_decisions, default=str))
-        # Persist rejection_reasons as proven source for diagnostics counters
-        # This uses the SAME rc connection that successfully writes decisions.
-        # Router's PROVEN_MAP reads this key as the authoritative counter source.
-        rc.setex("bahamut:training:rejection_stats", 900, json.dumps(rejection_reasons, default=str))
+        # NOTE: Do NOT overwrite bahamut:training:rejection_stats here.
+        # record_rejection_reason() in learning_engine accumulates it cumulatively (TTL=24h).
+        # A per-cycle setex here would destroy the cumulative totals.
+        # Instead, persist per-cycle snapshot under a separate key for debugging.
+        rc.setex("bahamut:training:rejection_stats_cycle", 900, json.dumps(rejection_reasons, default=str))
     except Exception:
         pass
 

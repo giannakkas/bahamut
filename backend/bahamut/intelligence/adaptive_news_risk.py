@@ -333,12 +333,13 @@ def compute_adaptive_news_state(
     )
 
     # ── Step 2: Check if underlying data has MEANINGFULLY changed ──
-    # Tolerance 0.05 absorbs normalization jitter (typically ±0.03).
-    # Without this, normalization noise triggers false re-escalation from NORMAL.
+    # Compare RAW impact (not normalized) to avoid normalization jitter.
+    # Normalization shifts all values when any one asset changes slightly.
+    # Also compare shock and bias for genuine news changes.
     data_changed = True
-    if existing_state and existing_state.normalized_impact > 0:
+    if existing_state and existing_state.raw_impact > 0:
         data_changed = (
-            abs(impact - existing_state.normalized_impact) > 0.05
+            abs(assessment.impact_score - existing_state.raw_impact) > 0.03
             or assessment.shock_level != existing_state.shock
             or assessment.directional_bias != existing_state.bias
         )
