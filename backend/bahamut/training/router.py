@@ -2016,21 +2016,40 @@ async def _build_diagnostics():
             from bahamut.intelligence.ai_market_analyst import get_analysis_status
             ai_status = get_analysis_status()
             verification["ai_decision_active"] = ai_status.get("cached", False)
+            verification["ai_is_global_only"] = True
+            verification["ai_per_asset_decision_mode"] = "derived_not_llm"
             verification["ai_opus_model"] = ai_status.get("model", "unknown")
             verification["ai_opus_calls"] = ai_status.get("total_calls", 0)
             verification["ai_opus_latency_ms"] = ai_status.get("last_latency_ms")
             verification["ai_opus_last_error"] = ai_status.get("last_error")
-            # Spot-check: get decision for BTCUSD
+            verification["ai_cache_hits"] = ai_status.get("cache_hits", 0)
+            verification["ai_stale_uses"] = ai_status.get("stale_uses", 0)
+            verification["ai_timeout_count"] = ai_status.get("timeout_count", 0)
+            verification["ai_fallback_uses"] = ai_status.get("fallback_uses", 0)
+            verification["ai_latency_acceptable"] = (ai_status.get("last_latency_ms") or 0) < 2000
+            # Spot-check
             btc_dec = get_ai_decision("BTCUSD", "crypto", "v5_base", "LONG")
             verification["ai_decision_BTCUSD"] = {
                 "posture": btc_dec.get("posture"),
                 "allowed": btc_dec["asset_decision"]["allowed"],
-                "bias": btc_dec["asset_decision"]["bias"],
+                "class_mode": btc_dec.get("_class_mode"),
                 "penalty": btc_dec["asset_decision"]["threshold_penalty"],
                 "size_mult": btc_dec["asset_decision"]["size_multiplier"],
-                "fallback": btc_dec.get("_fallback_used"),
                 "source": btc_dec.get("_source"),
             }
+            # Uniformity check
+            try:
+                from bahamut.intelligence.adaptive_news_risk import get_all_news_states, ADAPTIVE_NEWS_ENABLED
+                if ADAPTIVE_NEWS_ENABLED:
+                    states = get_all_news_states()
+                    modes = [s.mode for s in states.values()] if states else []
+                    unique_modes = set(modes)
+                    verification["adaptive_news_uniformity_flag"] = len(unique_modes) == 1 and len(modes) > 10
+                    verification["adaptive_news_unique_modes"] = list(unique_modes)
+                    if len(unique_modes) == 1 and len(modes) > 10:
+                        verification["why_all_assets_same_mode"] = f"All {len(modes)} assets in {list(unique_modes)[0]} — likely class-wide headline impact not asset-specific"
+            except Exception:
+                pass
         except Exception:
             pass
 

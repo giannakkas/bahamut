@@ -209,47 +209,36 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     except Exception:
         pass
 
-    # 7. AI Decision Layer (Opus 4.6 with guardrails)
-    # Layer order: Hard Rules → AI Decision → Clamp → Selector
+    # 7. AI Decision Layer (global posture → derived per-candidate)
+    # Layer A = Opus global posture (cached). Layer B = deterministic derivation.
     try:
         from bahamut.intelligence.ai_decision_service import get_ai_decision
         ai_decision = get_ai_decision(
-            asset=signal.asset,
-            asset_class=signal.asset_class,
-            strategy=signal.strategy,
-            direction=signal.direction,
+            asset=signal.asset, asset_class=signal.asset_class,
+            strategy=signal.strategy, direction=signal.direction,
             priority_score=total,
-            system_allowed_directions=None,  # hard rules already applied above
         )
         ad = ai_decision.get("asset_decision", {})
         bd["ai_posture"] = ai_decision.get("posture", "UNKNOWN")
-        bd["ai_bias"] = ad.get("bias", "NEUTRAL")
-        bd["ai_confidence"] = ad.get("confidence", 0)
-        bd["ai_market_mode"] = ai_decision.get("posture", "UNKNOWN")
-        bd["ai_reason"] = ad.get("reason", "")[:100]
+        bd["ai_class_mode"] = ai_decision.get("_class_mode", "NORMAL")
+        bd["ai_global_size_mult"] = ai_decision.get("global_adjustments", {}).get("size_multiplier", 1.0)
+        bd["ai_direction_allowed"] = ad.get("allowed", True)
         bd["ai_source"] = ai_decision.get("_source", "unknown")
-        bd["ai_fallback_used"] = ai_decision.get("_fallback_used", True)
-        bd["ai_latency_ms"] = ai_decision.get("_latency_ms", 0)
+        bd["ai_reason_compact"] = ad.get("reason", "")[:60]
 
         # Block if AI says not allowed
         if not ad.get("allowed", True):
             bd["ai_direction_block"] = True
-            bd["ai_block_reason"] = ad.get("reason", "ai_blocked")
+            bd["ai_block_reason"] = f"ai:{ai_decision.get('posture')}/{ai_decision.get('_class_mode')}"
 
-        # Block if direction not in AI allowed directions
-        if signal.direction not in ad.get("allowed_directions", ["LONG", "SHORT"]):
-            bd["ai_direction_block"] = True
-            bd["ai_block_reason"] = f"direction_{signal.direction}_not_in_{ad.get('allowed_directions')}"
-
-        # Apply threshold penalty (clamped -10 to 0, no double-count with news)
+        # Apply threshold penalty (clamped to -4, no double-count with news)
         ai_penalty = ad.get("threshold_penalty", 0)
         if ai_penalty < 0 and "news_threshold_penalty" not in bd:
             bd["ai_threshold_penalty"] = ai_penalty
-            total += ai_penalty  # penalty is already negative
+            total += ai_penalty
 
-        # Store size multiplier for engine (per-candidate + global)
+        # Store size multiplier for engine
         bd["ai_size_mult"] = ad.get("size_multiplier", 1.0)
-        bd["ai_global_size_mult"] = ai_decision.get("global_adjustments", {}).get("size_multiplier", 1.0)
     except Exception:
         bd["ai_fallback_used"] = True
 
