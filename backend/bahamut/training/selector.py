@@ -367,6 +367,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                     strategy=sig.strategy, regime=sig.regime,
                     asset_class=sig.asset_class, asset=sig.asset,
                     mode="TRAINING",
+                    execution_type=sig.execution_type,
                 )
                 if not qf["passed"]:
                     reasons.append(qf["summary"])

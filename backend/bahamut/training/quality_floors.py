@@ -57,6 +57,7 @@ def check_quality_floors(
     asset_class: str,
     asset: str,
     mode: str = "TRAINING",
+    execution_type: str = "",
 ) -> dict:
     """Check all hard quality floors for a candidate.
 
@@ -83,7 +84,8 @@ def check_quality_floors(
     # CRASH SHORTs are quick scalps — lower R:R is acceptable
     rr = tp_pct / max(sl_pct, 0.001)
     min_rr = floors["min_reward_risk"]
-    if regime == "CRASH" and "mean_reversion" in strategy:
+    # crash_short signals have regime=RANGE (4H structural) but are tactical SHORT scalps
+    if execution_type == "crash_short" or (regime == "CRASH" and "mean_reversion" in strategy):
         min_rr = 0.8  # Mean reversion SHORTs in crash are quick scalps, lower R:R OK
     if rr < min_rr:
         failures.append({
@@ -95,9 +97,11 @@ def check_quality_floors(
 
     # ── C) Trust floor (only for non-provisional patterns) ──
     min_trust = floors["min_effective_trust"]
+    # crash_short signals use CRASH bucket (not raw 4H regime which may be RANGE)
+    _trust_regime = "CRASH" if execution_type == "crash_short" else regime
     try:
         from bahamut.training.learning_engine import get_pattern_trust
-        trust = get_pattern_trust(strategy, regime, asset_class)
+        trust = get_pattern_trust(strategy, _trust_regime, asset_class)
 
         effective_trust = trust["blended_trust"] * trust["blended_confidence"]
         maturity = trust["maturity"]
@@ -144,7 +148,10 @@ def check_quality_floors(
         if pattern_trades >= 50:
             # Use pattern-level expectancy if available, else blended
             pattern_expectancy = trust.get("expectancy", 0.0)
-            if pattern_expectancy < -0.05:
+            # crash_short: use -0.07 threshold to match the selector tolerance band
+            # (selector already penalized -0.03 to -0.07, don't re-block here)
+            exp_threshold = -0.07 if execution_type == "crash_short" else -0.05
+            if pattern_expectancy < exp_threshold:
                 failures.append({
                     "floor": "expectancy_mature",
                     "value": round(pattern_expectancy, 3),
