@@ -56,14 +56,34 @@ function Badge({ mode }: { mode: string }) {
   );
 }
 
-function _getEventPrediction(ev: any): { summary: string; impact: string } {
+function _getEventPrediction(ev: any): { summary: string; impact: string; direction: "up" | "down" | "neutral" } {
   const name = (ev.event || "").toLowerCase();
   const impact = (ev.impact || "LOW").toUpperCase();
   const country = ev.country || "Unknown";
   const actual = ev.actual;
   const forecast = ev.forecast;
   const previous = ev.previous;
-  const hasResult = actual !== null && actual !== undefined && actual !== "–";
+  const hasResult = actual !== null && actual !== undefined && actual !== "–" && actual !== "";
+  const hasForecast = forecast !== null && forecast !== undefined && forecast !== "–" && forecast !== "";
+
+  // Determine direction based on actual vs forecast and event type
+  let direction: "up" | "down" | "neutral" = "neutral";
+  if (hasResult && hasForecast) {
+    const a = parseFloat(String(actual).replace(/[%,]/g, ""));
+    const f = parseFloat(String(forecast).replace(/[%,]/g, ""));
+    if (!isNaN(a) && !isNaN(f)) {
+      // For most events: beat = bullish, miss = bearish
+      if (name.includes("unemployment") || name.includes("jobless") || name.includes("cpi") || name.includes("inflation")) {
+        // Inverse: lower is better for markets
+        direction = a < f ? "up" : a > f ? "down" : "neutral";
+      } else {
+        direction = a > f ? "up" : a < f ? "down" : "neutral";
+      }
+    }
+  } else if (impact === "HIGH") {
+    // No result yet — high impact events create uncertainty
+    direction = "down"; // defensive bias before high-impact
+  }
 
   // Generate summary based on event type
   let summary = "";
@@ -115,7 +135,7 @@ function _getEventPrediction(ev: any): { summary: string; impact: string } {
       : `Monitor for surprises. ${impact === "HIGH" ? "Consider reducing exposure before this release." : "Normal trading conditions expected."}`;
   }
 
-  return { summary, impact: marketImpact };
+  return { summary, impact: marketImpact, direction };
 }
 
 function Pill({ label, value, color }: { label: string; value: string | number; color?: string }) {
@@ -486,7 +506,14 @@ export default function MarketIntelligencePage() {
                             {ev.impact}
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 text-gray-200 max-w-[250px] truncate">{ev.event}</td>
+                        <td className="px-3 py-1.5 text-gray-200 max-w-[250px] truncate">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`text-base leading-none ${prediction.direction === "up" ? "text-green-400" : prediction.direction === "down" ? "text-red-400" : "text-gray-600"}`}>
+                              {prediction.direction === "up" ? "▲" : prediction.direction === "down" ? "▼" : "◆"}
+                            </span>
+                            {ev.event}
+                          </span>
+                        </td>
                         <td className="px-3 py-1.5 text-gray-500">{ev.country}</td>
                         <td className="px-3 py-1.5 text-gray-500">{ev.date}</td>
                         <td className="px-3 py-1.5 text-center text-gray-300">{ev.actual ?? "–"}</td>
