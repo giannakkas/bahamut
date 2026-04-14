@@ -1764,6 +1764,28 @@ async def _build_diagnostics():
                     counters[short_name] = int(val) if val else 0
                 except Exception:
                     pass
+
+            # Proven source: rejection_stats (JSON dict, accumulated by _track_rejection)
+            # This is the AUTHORITATIVE source — it uses the same Redis path as REJECTION REASONS
+            try:
+                raw_rs = r.get("bahamut:training:rejection_stats")
+                if raw_rs:
+                    import json as _rj
+                    rs = _rj.loads(raw_rs)
+                    PROVEN_MAP = {
+                        "adaptive_news_block": "adaptive_news_blocks",
+                        "_adaptive_news_size_reductions": "adaptive_news_size_reductions",
+                        "_aligned_news_trades_allowed": "aligned_news_trades_allowed",
+                        "mature_negative_expectancy_block": "mature_neg_expectancy_blocks",
+                        "risk_engine_block": "risk_engine_blocks",
+                    }
+                    for rs_key, counter_name in PROVEN_MAP.items():
+                        rs_val = rs.get(rs_key, 0)
+                        if rs_val > 0:
+                            counters[counter_name] = rs_val  # Override with proven source
+            except Exception:
+                pass
+
             verification["containment_counters"] = counters
 
             # Counter write/read verification test
@@ -1838,6 +1860,16 @@ async def _build_diagnostics():
                 _mnb = r.get("bahamut:counters:mature_neg_expectancy_blocks")
                 verification["adaptive_news_counters_live"] = int(_anb) > 0 if _anb else False
                 verification["mature_neg_counter_live"] = int(_mnb) > 0 if _mnb else False
+
+                # Raw counter debug — shows exact Redis state
+                _lcw = r.get("bahamut:counters:_last_cycle_writes")
+                verification["counter_debug"] = {
+                    "adaptive_news_blocks_redis": int(_anb) if _anb else 0,
+                    "mature_neg_blocks_redis": int(_mnb) if _mnb else 0,
+                    "aligned_allowed_redis": int(r.get("bahamut:counters:aligned_news_trades_allowed") or 0),
+                    "news_size_reductions_redis": int(r.get("bahamut:counters:adaptive_news_size_reductions") or 0),
+                    "last_cycle_writes": _lcw.decode() if _lcw else "never",
+                }
 
             # Verify selector state matches diagnostics state
             try:

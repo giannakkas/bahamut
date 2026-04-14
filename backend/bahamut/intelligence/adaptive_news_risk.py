@@ -332,11 +332,13 @@ def compute_adaptive_news_state(
         age_seconds=0,
     )
 
-    # ── Step 2: Check if underlying data has changed ──
+    # ── Step 2: Check if underlying data has MEANINGFULLY changed ──
+    # Tolerance 0.05 absorbs normalization jitter (typically ±0.03).
+    # Without this, normalization noise triggers false re-escalation from NORMAL.
     data_changed = True
     if existing_state and existing_state.normalized_impact > 0:
         data_changed = (
-            abs(impact - existing_state.normalized_impact) > 0.01
+            abs(impact - existing_state.normalized_impact) > 0.05
             or assessment.shock_level != existing_state.shock
             or assessment.directional_bias != existing_state.bias
         )
@@ -353,14 +355,24 @@ def compute_adaptive_news_state(
             # STALE DATA + elevated → only time decay, never re-escalate
             final_mode = decayed_mode
         else:
-            # STALE DATA + already NORMAL → stay NORMAL (don't re-escalate from stale data)
+            # STALE DATA + already NORMAL → stay NORMAL
             final_mode = "NORMAL"
     elif existing_state and existing_state.mode != "NORMAL":
-        # FRESH DATA with existing elevation → min(raw, decayed)
+        # FRESH DATA with existing elevation → take less restrictive
         final_mode = raw_mode if mode_rank.get(raw_mode, 0) <= mode_rank.get(decayed_mode, 0) else decayed_mode
     else:
-        # FRESH DATA, no existing elevation → use raw mode
-        final_mode = raw_mode
+        # FRESH DATA, no existing elevation (mode is NORMAL or no prior state)
+        # Guard against re-escalation from normalization jitter:
+        # If existing state was NORMAL and raw says RESTRICTED+, require genuine impact increase
+        if existing_state and raw_mode in ("RESTRICTED", "FROZEN"):
+            delta = impact - existing_state.normalized_impact if existing_state.normalized_impact > 0 else impact
+            if delta < 0.1:
+                # Jitter, not real escalation → cap at CAUTION
+                final_mode = min(raw_mode, "CAUTION", key=lambda m: mode_rank.get(m, 0))
+            else:
+                final_mode = raw_mode
+        else:
+            final_mode = raw_mode
 
     # ── Track elevated_since: when the non-NORMAL period started ──
     # Don't reset during oscillation between elevated modes
@@ -453,6 +465,48 @@ def get_news_gate_decision(
 _asset_states: dict[str, AssetNewsState] = {}
 _last_batch_update: float = 0
 _BATCH_TTL = 60  # seconds
+_REDIS_STATE_KEY = "bahamut:adaptive_news:states"
+_REDIS_STATE_TTL = 7200  # 2 hours — survives deploys, expires if system down
+
+
+def _persist_states_to_redis(states: dict[str, AssetNewsState]):
+    """Save mode_set_at timestamps to Redis so deploys don't reset decay clocks."""
+    try:
+        import os, redis as _r, json
+        r = _r.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        blob = {a: {"mode": s.mode, "mode_set_at": s.mode_set_at,
+                     "normalized_impact": s.normalized_impact,
+                     "shock": s.shock, "bias": s.bias,
+                     "confidence": s.confidence}
+                for a, s in states.items()}
+        r.setex(_REDIS_STATE_KEY, _REDIS_STATE_TTL, json.dumps(blob))
+    except Exception:
+        pass
+
+
+def _restore_states_from_redis():
+    """Restore mode timestamps from Redis on cold start (deploy recovery)."""
+    global _asset_states
+    try:
+        import os, redis as _r, json
+        r = _r.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        raw = r.get(_REDIS_STATE_KEY)
+        if raw:
+            blob = json.loads(raw)
+            for asset, data in blob.items():
+                _asset_states[asset] = AssetNewsState(
+                    asset=asset,
+                    mode=data.get("mode", "NORMAL"),
+                    mode_set_at=data.get("mode_set_at", 0),
+                    normalized_impact=data.get("normalized_impact", 0),
+                    shock=data.get("shock", "NONE"),
+                    bias=data.get("bias", "NEUTRAL"),
+                    confidence=data.get("confidence", 0),
+                    last_updated=time.time(),
+                )
+            logger.info("adaptive_news_states_restored", count=len(_asset_states))
+    except Exception:
+        pass
 
 
 def get_all_news_states() -> dict[str, AssetNewsState]:
@@ -472,6 +526,10 @@ def update_batch_news_states(assets: list[str], asset_classes: dict[str, str]) -
         # Use cached
         states = _asset_states
     else:
+        # Restore from Redis on cold start (deploy recovery)
+        if not _asset_states:
+            _restore_states_from_redis()
+
         # Recompute
         from bahamut.intelligence.news_impact import compute_news_impact_sync
         assessments = {}
@@ -504,6 +562,9 @@ def update_batch_news_states(assets: list[str], asset_classes: dict[str, str]) -
 
         _asset_states = states
         _last_batch_update = time.time()
+
+        # Persist to Redis for deploy recovery
+        _persist_states_to_redis(states)
 
     # Build summary
     mode_counts = {"NORMAL": 0, "CAUTION": 0, "RESTRICTED": 0, "FROZEN": 0}

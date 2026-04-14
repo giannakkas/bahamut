@@ -326,6 +326,11 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             from bahamut.training.learning_engine import compute_trust_points
             _exp_regime = "CRASH" if sig.execution_type == "crash_short" else sig.regime
             _tp = compute_trust_points(sig.strategy, _exp_regime, sig.asset_class, max_points=30)
+            # Add expectancy audit to priority breakdown for all candidates (not just blocked ones)
+            pri["components"]["_exp_bucket"] = f"{sig.strategy}:{_exp_regime}:{sig.asset_class}"
+            pri["components"]["_exp_value"] = round(_tp.get("expectancy", 0), 4)
+            pri["components"]["_exp_samples"] = _tp.get("samples", 0)
+            pri["components"]["_exp_maturity"] = _tp.get("maturity", "unknown")
             if _tp["maturity"] == "mature" and _tp.get("expectancy", 0) < -0.05 and _tp.get("samples", 0) >= 15:
                 reasons.append(f"Mature negative expectancy {_tp['expectancy']:.3f} — hard blocked (bucket={sig.strategy}:{_exp_regime}:{sig.asset_class})")
                 rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
