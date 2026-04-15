@@ -370,159 +370,6 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
-      {/* ═══ MARKET INTELLIGENCE ═══ */}
-      {newsDash && (
-        <div className="anim-slide" style={{ animationDelay: "0.09s" }}>
-          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3 border-b border-bah-border">
-              <span className="text-sm font-bold text-bah-heading tracking-tight">📰 Market Intelligence</span>
-              <span className="text-[11px] text-bah-muted">News & Events driving decisions</span>
-            </div>
-            <div className="p-4 space-y-3">
-
-              {/* ── NEWS TICKER — rotating last 5 headlines ── */}
-              {(newsDash.headlines || []).length > 0 && (() => {
-                const headlines = (newsDash.headlines || []).slice(0, 5);
-                const current = headlines[tickerIdx % headlines.length];
-                if (!current) return null;
-                return (
-                  <div className="relative overflow-hidden rounded-lg border border-bah-border bg-bah-bg/50 px-4 py-3">
-                    <div className="flex flex-col items-center text-center" key={tickerIdx}>
-                      <div className="text-[12px] text-red-400 font-bold uppercase leading-snug" style={{ animation: "slideUp 0.4s ease" }}>
-                        {current.title}
-                      </div>
-                      <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-1">
-                        <span className="font-semibold">{current.source}</span>
-                        <span>·</span>
-                        <span>{current.asset}</span>
-                        {current.published && <span>· {(() => { try { return new Date(current.published).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>}
-                      </div>
-                    </div>
-                    <div className="flex gap-1.5 justify-center mt-2">
-                      {headlines.map((_: any, i: number) => (
-                        <button key={i} onClick={() => setTickerIdx(i)}
-                          className={`w-1.5 h-1.5 rounded-full transition-all ${i === tickerIdx % headlines.length ? "bg-bah-cyan" : "bg-bah-border"}`} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ── SENTIMENT GAUGES — compact ── */}
-              <div className="grid grid-cols-2 gap-2">
-                {newsDash.sentiment?.fear_greed && (() => {
-                  const fg = newsDash.sentiment.fear_greed;
-                  const val = fg.value || 0;
-                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
-                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
-                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
-                  return (
-                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
-                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
-                        <span className={`text-lg font-black ${clr}`}>{val}</span>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Crypto</div>
-                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{fg.classification}</div>
-                        {fg.should_block_longs && <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[8px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase">Longs Blocked</span>}
-                      </div>
-                    </div>
-                  );
-                })()}
-                {newsDash.sentiment?.cnn_fear_greed && (() => {
-                  const cnn = newsDash.sentiment.cnn_fear_greed;
-                  const val = cnn.value || 0;
-                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
-                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
-                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
-                  return (
-                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
-                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
-                        <span className={`text-lg font-black ${clr}`}>{val}</span>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Stocks</div>
-                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{cnn.classification}</div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* ── ECONOMIC CALENDAR — 3 events default, expand to 30 ── */}
-              {(() => {
-                const allEvents = newsDash?.upcoming_events || [];
-                const debug = newsDash?._events_debug;
-                return (
-                  <div>
-                    <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
-                      📅 Economic Calendar
-                      <span className="text-bah-cyan">{allEvents.length} events</span>
-                    </div>
-                    {allEvents.length > 0 ? (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-[12px]">
-                            <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
-                              <th className="py-1.5 pr-2">Impact</th>
-                              <th className="py-1.5 pr-2">Event</th>
-                              <th className="py-1.5 pr-2">Date</th>
-                              <th className="py-1.5 pr-2 text-center">Est.</th>
-                              <th className="py-1.5 pr-2 text-right">Actual</th>
-                              <th className="py-1.5 pr-2 text-right">Forecast</th>
-                              <th className="py-1.5 pr-2 text-right">Prev</th>
-                            </tr></thead>
-                            <tbody>{(showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3)).map((ev: any, i: number) => {
-                              const isHigh = ev.impact === "high";
-                              const isMed = ev.impact === "medium";
-                              const ai = ev.ai_estimate || {};
-                              const aiDir = ai.direction || "";
-                              const aiConf = ai.confidence || 0;
-                              const fmtDate = (d: string) => { try { if (!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); } catch { return d?.slice(5, 10) || "—"; } };
-                              return (
-                                <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-red-500/[0.05]" : ""}`}>
-                                  <td className="py-1.5 pr-2">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
-                                      isHigh ? "bg-red-500/25 text-red-300 border border-red-500/40" : isMed ? "bg-amber-500/20 text-amber-300" : "bg-bah-cyan/15 text-bah-cyan"
-                                    }`}>{(ev.impact || "low").toUpperCase()}</span>
-                                  </td>
-                                  <td className={`py-1.5 pr-2 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
-                                  <td className="py-1.5 pr-2 text-bah-muted text-[11px] whitespace-nowrap">{fmtDate(ev.date)}</td>
-                                  <td className="py-1.5 pr-2 text-center" title={ai.reason || ""}>
-                                    {aiDir === "UP" ? (
-                                      <span className="text-green-400 text-[15px] font-black">▲</span>
-                                    ) : aiDir === "DOWN" ? (
-                                      <span className="text-red-400 text-[15px] font-black">▼</span>
-                                    ) : (
-                                      <span className="text-yellow-500/50 text-[10px]">●</span>
-                                    )}
-                                  </td>
-                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
-                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
-                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
-                                </tr>
-                              );
-                            })}</tbody>
-                          </table>
-                        </div>
-                        {allEvents.length > 3 && (
-                          <button onClick={() => setShowAllEvents(!showAllEvents)}
-                            className="w-full py-2 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5 mt-1">
-                            {showAllEvents ? "▲ Show Less" : `▼ Show All ${Math.min(allEvents.length, 30)} Events`}
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-[11px] text-bah-muted py-3 text-center">Loading economic events... (cached hourly)</div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
         <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
@@ -648,6 +495,157 @@ export default function TrainingOperationsPage() {
         {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
         {tab === "risk" && <RiskTab expo={expo} />}
       </div>
+
+      {/* ═══ MARKET INTELLIGENCE (bottom) ═══ */}
+      {newsDash && (
+        <div className="anim-slide" style={{ animationDelay: "0.09s" }}>
+          <div className="bg-bah-surface border border-bah-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3 border-b border-bah-border">
+              <span className="text-sm font-bold text-bah-heading tracking-tight">📰 Market Intelligence</span>
+              <span className="text-[11px] text-bah-muted">News & Events driving decisions</span>
+            </div>
+            <div className="p-4 space-y-3">
+
+              {/* ── NEWS TICKER ── */}
+              {(newsDash.headlines || []).length > 0 && (() => {
+                const headlines = (newsDash.headlines || []).slice(0, 5);
+                const current = headlines[tickerIdx % headlines.length];
+                if (!current) return null;
+                return (
+                  <div className="relative overflow-hidden rounded-lg border border-bah-border bg-bah-bg/50 px-4 py-3">
+                    <div className="flex flex-col items-center text-center" key={tickerIdx}>
+                      <div className="text-[12px] text-red-400 font-bold uppercase leading-snug" style={{ animation: "slideUp 0.4s ease" }}>
+                        {current.title}
+                      </div>
+                      <div className="text-[10px] text-bah-muted flex items-center gap-2 mt-1">
+                        <span className="font-semibold">{current.source}</span>
+                        <span>·</span>
+                        <span>{current.asset}</span>
+                        {current.published && <span>· {(() => { try { return new Date(current.published).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })()}</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 justify-center mt-2">
+                      {headlines.map((_: any, i: number) => (
+                        <button key={i} onClick={() => setTickerIdx(i)}
+                          className={`w-1.5 h-1.5 rounded-full transition-all ${i === tickerIdx % headlines.length ? "bg-bah-cyan" : "bg-bah-border"}`} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── SENTIMENT GAUGES ── */}
+              <div className="grid grid-cols-2 gap-2">
+                {newsDash.sentiment?.fear_greed && (() => {
+                  const fg = newsDash.sentiment.fear_greed;
+                  const val = fg.value || 0;
+                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
+                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
+                  return (
+                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
+                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
+                        <span className={`text-lg font-black ${clr}`}>{val}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Crypto</div>
+                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{fg.classification}</div>
+                        {fg.should_block_longs && <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[8px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 uppercase">Longs Blocked</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {newsDash.sentiment?.cnn_fear_greed && (() => {
+                  const cnn = newsDash.sentiment.cnn_fear_greed;
+                  const val = cnn.value || 0;
+                  const clr = val <= 24 ? "text-red-400" : val <= 39 ? "text-orange-400" : val <= 60 ? "text-yellow-400" : "text-green-400";
+                  const ring = val <= 24 ? "border-red-500/40" : val <= 39 ? "border-orange-500/40" : val <= 60 ? "border-yellow-500/40" : "border-green-500/40";
+                  const bg = val <= 24 ? "bg-red-500/[0.05]" : val <= 39 ? "bg-orange-500/[0.05]" : val <= 60 ? "bg-yellow-500/[0.05]" : "bg-green-500/[0.05]";
+                  return (
+                    <div className={`${bg} rounded-lg border border-bah-border px-3 py-2.5 flex items-center gap-3`}>
+                      <div className={`w-11 h-11 rounded-full border-2 ${ring} flex items-center justify-center shrink-0`}>
+                        <span className={`text-lg font-black ${clr}`}>{val}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[9px] text-bah-muted uppercase tracking-wider font-bold">Stocks</div>
+                        <div className={`text-[12px] font-bold ${clr} leading-tight`}>{cnn.classification}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* ── ECONOMIC CALENDAR ── */}
+              {(() => {
+                const allEvents = newsDash?.upcoming_events || [];
+                return (
+                  <div>
+                    <div className="text-[10px] text-bah-muted uppercase tracking-wider mb-2 font-bold flex items-center gap-2">
+                      📅 Economic Calendar
+                      <span className="text-bah-cyan">{allEvents.length} events</span>
+                    </div>
+                    {allEvents.length > 0 ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[12px]">
+                            <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
+                              <th className="py-1.5 pr-2">Impact</th>
+                              <th className="py-1.5 pr-2">Event</th>
+                              <th className="py-1.5 pr-2">Date</th>
+                              <th className="py-1.5 pr-2 text-center">Est.</th>
+                              <th className="py-1.5 pr-2 text-right">Actual</th>
+                              <th className="py-1.5 pr-2 text-right">Forecast</th>
+                              <th className="py-1.5 pr-2 text-right">Prev</th>
+                            </tr></thead>
+                            <tbody>{(showAllEvents ? allEvents.slice(0, 30) : allEvents.slice(0, 3)).map((ev: any, i: number) => {
+                              const isHigh = ev.impact === "high";
+                              const isMed = ev.impact === "medium";
+                              const ai = ev.ai_estimate || {};
+                              const aiDir = ai.direction || "";
+                              const fmtDate = (d: string) => { try { if (!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); } catch { return d?.slice(5, 10) || "—"; } };
+                              return (
+                                <tr key={i} className={`border-b border-bah-border/30 ${isHigh ? "bg-red-500/[0.05]" : ""}`}>
+                                  <td className="py-1.5 pr-2">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
+                                      isHigh ? "bg-red-500/25 text-red-300 border border-red-500/40" : isMed ? "bg-amber-500/20 text-amber-300" : "bg-bah-cyan/15 text-bah-cyan"
+                                    }`}>{(ev.impact || "low").toUpperCase()}</span>
+                                  </td>
+                                  <td className={`py-1.5 pr-2 font-bold ${isHigh ? "text-red-300" : "text-bah-heading"}`}>{isHigh ? "⚡ " : ""}{ev.event}</td>
+                                  <td className="py-1.5 pr-2 text-bah-muted text-[11px] whitespace-nowrap">{fmtDate(ev.date)}</td>
+                                  <td className="py-1.5 pr-2 text-center" title={ai.reason || ""}>
+                                    {aiDir === "UP" ? (
+                                      <span className="text-green-400 text-[15px] font-black">▲</span>
+                                    ) : aiDir === "DOWN" ? (
+                                      <span className="text-red-400 text-[15px] font-black">▼</span>
+                                    ) : (
+                                      <span className="text-yellow-500/50 text-[10px]">●</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-text">{ev.actual ?? "—"}</td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.estimate ?? "—"}</td>
+                                  <td className="py-1.5 pr-2 text-right font-mono text-bah-muted">{ev.prev ?? "—"}</td>
+                                </tr>
+                              );
+                            })}</tbody>
+                          </table>
+                        </div>
+                        {allEvents.length > 3 && (
+                          <button onClick={() => setShowAllEvents(!showAllEvents)}
+                            className="w-full py-2 text-[12px] font-bold text-bah-cyan hover:bg-bah-cyan/5 border-t border-bah-border transition-all flex items-center justify-center gap-1.5 mt-1">
+                            {showAllEvents ? "▲ Show Less" : `▼ Show All ${Math.min(allEvents.length, 30)} Events`}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-bah-muted py-3 text-center">Loading economic events... (cached hourly)</div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
