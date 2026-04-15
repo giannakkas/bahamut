@@ -63,22 +63,22 @@ export default function LoginPage() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-bah-bg">
-      <div className="relative overflow-hidden w-[420px] rounded-xl border border-bah-border bg-bah-surface/80 p-8 backdrop-blur-xl">
+      <div className="relative overflow-hidden w-[calc(100%-2rem)] max-w-[380px] rounded-xl border border-bah-border bg-bah-surface/80 p-6 sm:p-8 backdrop-blur-xl mx-4">
         {/* Glow */}
         <div className="absolute top-0 left-0 right-0 h-0.5 opacity-60 bg-gradient-to-r from-transparent via-bah-cyan to-transparent" />
 
         {/* Header */}
-        <div className="text-center mb-6">
-          <img src="/logo.png" alt="Bahamut.AI" className="h-28 mx-auto object-contain" />
-          <div className="text-[12px] text-bah-muted tracking-[0.2em] uppercase mt-2">
+        <div className="text-center mb-5">
+          <img src="/logo.png" alt="Bahamut.AI" className="h-20 sm:h-28 mx-auto object-contain" />
+          <div className="text-[10px] sm:text-[12px] text-bah-muted tracking-[0.2em] uppercase mt-2">
             Trading Intelligence Control Center
           </div>
         </div>
 
         {/* Form */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2.5">
           <input
-            className="w-full bg-white/[0.04] border border-bah-border rounded-lg px-4 py-3 text-sm text-bah-heading font-mono outline-none focus:border-bah-cyan/40 placeholder:text-bah-muted"
+            className="w-full bg-white/[0.04] border border-bah-border rounded-lg px-3 py-2.5 text-sm text-bah-heading font-mono outline-none focus:border-bah-cyan/40 placeholder:text-bah-muted"
             placeholder="Email"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -86,7 +86,7 @@ export default function LoginPage() {
             autoFocus
           />
           <input
-            className="w-full bg-white/[0.04] border border-bah-border rounded-lg px-4 py-3 text-sm text-bah-heading font-mono outline-none focus:border-bah-cyan/40 placeholder:text-bah-muted"
+            className="w-full bg-white/[0.04] border border-bah-border rounded-lg px-3 py-2.5 text-sm text-bah-heading font-mono outline-none focus:border-bah-cyan/40 placeholder:text-bah-muted"
             type="password"
             placeholder="Password"
             value={password}
@@ -101,7 +101,7 @@ export default function LoginPage() {
           <Button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full py-3 text-sm mt-1 justify-center"
+            className="w-full py-2.5 text-sm mt-1 justify-center"
           >
             {loading ? "Authenticating..." : "Sign In"}
           </Button>
