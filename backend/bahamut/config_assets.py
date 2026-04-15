@@ -128,18 +128,44 @@ TRAINING_SUPPRESS = {
     "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
     # v5_base: blocked on EMA trend strategy
     "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
-    # v10_mean_reversion: blocked on mean reversion + crash shorts
-    "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD"},
+    # v10_mean_reversion: blocked on mean reversion (standard path)
+    "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD", "UNIUSD"},
     # v9_breakout: specific underperformers
     "v9_breakout": {"ETHUSD", "AMD"},
 }
 
+# ═══════════════════════════════════════════
+# CRASH-SHORT SUPPRESS — separate from standard v10
+# Only applied when execution_type == "crash_short"
+# Criteria: ≥4 trades AND (WR<45% AND pnl<-100) OR pnl<-250
+# ═══════════════════════════════════════════
+CRASH_SHORT_SUPPRESS = {
+    # Hard block: proven losers on crash-short path
+    "DOTUSD",    # 4 trades, 25% WR, -695
+    "SOLUSD",    # 8 trades, 42.9% WR, -528
+    "UNIUSD",    # 4 trades, 75% WR, -341 (massive avg loss)
+    "SUIUSD",    # 1 trade, -310 (single catastrophic loss)
+    "ETHUSD",    # 1 trade, -159 (single large loss)
+    "COIN",      # 7 trades, 42.9% WR, -136
+}
 
-def is_suppressed(asset: str, strategy: str) -> bool:
-    """Check if an asset is suppressed for a given strategy."""
+# Crash-short penalty: reduced sizing for borderline assets
+# Criteria: WR<50% OR recent negative streak
+CRASH_SHORT_PENALIZE = {
+    "BNBUSD",    # 5 trades, 40% WR, -79
+    "TIAUSD",    # 3 trades, 33.3% WR, -60
+    "OPUSD",     # 1 trade, 0% WR, -73
+    "MSFT",      # 1 trade, 0% WR, -77 (stock crash-short)
+}
+
+
+def is_suppressed(asset: str, strategy: str, execution_type: str = "standard") -> bool:
+    """Check if an asset is suppressed for a given strategy/execution type."""
     if asset in TRAINING_SUPPRESS.get("*", set()):
         return True
     if asset in TRAINING_SUPPRESS.get(strategy, set()):
+        return True
+    if execution_type == "crash_short" and asset in CRASH_SHORT_SUPPRESS:
         return True
     return False
 

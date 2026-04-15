@@ -1509,6 +1509,22 @@ async def _build_diagnostics():
                         recommendations.append(f"LEGACY NEWS FREEZE: {asset_name}")
         except Exception:
             pass
+        # Crash-short specific recommendations
+        try:
+            from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
+            if crash_shorts:
+                for cs in crash_shorts:
+                    a = cs["asset"]
+                    if a in CRASH_SHORT_SUPPRESS:
+                        recommendations.append(f"CRASH-SHORT SUPPRESSED: {a} — {cs['trades']} trades, PnL {cs['total_pnl']}, WR {cs['win_rate']}%")
+                    elif a in CRASH_SHORT_PENALIZE:
+                        recommendations.append(f"CRASH-SHORT PENALIZED: {a} — {cs['trades']} trades, PnL {cs['total_pnl']}, WR {cs['win_rate']}% (50% risk)")
+                    elif cs["total_pnl"] > 100 and cs["wins"] >= 2:
+                        recommendations.append(f"CRASH-SHORT EDGE: {a} — {cs['trades']} trades, PnL +{cs['total_pnl']}, WR {cs['win_rate']}%")
+                    elif cs["trades"] >= 3 and cs["total_pnl"] < -50:
+                        recommendations.append(f"CRASH-SHORT MONITOR: {a} — {cs['trades']} trades, PnL {cs['total_pnl']} — consider adding to suppress")
+        except Exception:
+            pass
         if not recommendations:
             recommendations.append("System healthy — no critical issues detected")
         ai_section["data"]["recommendations"] = recommendations
@@ -1604,6 +1620,109 @@ async def _build_diagnostics():
         except Exception:
             pass
 
+        # V10 CRYPTO SPLIT: standard vs crash_short
+        try:
+            v10_std = run_query("""
+                SELECT COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl
+                FROM training_trades
+                WHERE strategy = 'v10_mean_reversion'
+                  AND asset LIKE '%%USD'
+                  AND (regime != 'CRASH' OR regime IS NULL)
+            """)
+            v10_cs = run_query("""
+                SELECT COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                       ROUND(AVG(pnl)::numeric, 2) as avg_pnl
+                FROM training_trades
+                WHERE strategy = 'v10_mean_reversion'
+                  AND asset LIKE '%%USD'
+                  AND direction = 'SHORT' AND regime = 'CRASH'
+            """)
+            if v10_std:
+                r = dict(v10_std[0])
+                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                ai_section["data"]["v10_standard_crypto_performance"] = {
+                    "trades": r["trades"], "wins": w, "losses": l,
+                    "win_rate": round(w / max(1, w+l) * 100, 1),
+                    "total_pnl": float(r["total_pnl"] or 0),
+                    "avg_pnl": float(r["avg_pnl"] or 0),
+                }
+            if v10_cs:
+                r = dict(v10_cs[0])
+                w, l = int(r["wins"] or 0), int(r["losses"] or 0)
+                ai_section["data"]["v10_crash_short_crypto_performance"] = {
+                    "trades": r["trades"], "wins": w, "losses": l,
+                    "win_rate": round(w / max(1, w+l) * 100, 1),
+                    "total_pnl": float(r["total_pnl"] or 0),
+                    "avg_pnl": float(r["avg_pnl"] or 0),
+                }
+            # Per-asset execution matrix
+            v10_matrix = run_query("""
+                SELECT asset,
+                       CASE WHEN direction='SHORT' AND regime='CRASH' THEN 'crash_short' ELSE 'standard' END as exec_path,
+                       COUNT(*) as trades,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       ROUND(SUM(pnl)::numeric, 2) as total_pnl
+                FROM training_trades
+                WHERE strategy = 'v10_mean_reversion' AND asset LIKE '%%USD'
+                GROUP BY asset, 2
+                HAVING COUNT(*) >= 2
+                ORDER BY SUM(pnl) ASC
+            """)
+            if v10_matrix:
+                ai_section["data"]["v10_asset_execution_matrix"] = [
+                    {"asset": dict(r)["asset"], "exec_path": dict(r)["exec_path"],
+                     "trades": dict(r)["trades"],
+                     "wins": int(dict(r)["wins"] or 0), "losses": int(dict(r)["losses"] or 0),
+                     "total_pnl": float(dict(r)["total_pnl"] or 0)}
+                    for r in v10_matrix
+                ]
+        except Exception:
+            pass
+
+        # Crash-short suppress/penalty maps + last 3 trades
+        try:
+            from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
+            ai_section["data"]["crash_short_suppress_map"] = sorted(list(CRASH_SHORT_SUPPRESS))
+            ai_section["data"]["crash_short_penalty_map"] = sorted(list(CRASH_SHORT_PENALIZE))
+            # Last 3 crash-short trades per asset
+            last3_rows = run_query("""
+                SELECT asset, pnl FROM (
+                    SELECT asset, pnl,
+                           ROW_NUMBER() OVER (PARTITION BY asset ORDER BY exit_time DESC) as rn
+                    FROM training_trades
+                    WHERE direction = 'SHORT' AND regime = 'CRASH'
+                ) sub WHERE rn <= 3
+                ORDER BY asset, rn
+            """)
+            if last3_rows:
+                last3 = {}
+                for r in last3_rows:
+                    rd = dict(r)
+                    a = rd["asset"]
+                    if a not in last3: last3[a] = []
+                    last3[a].append(round(float(rd["pnl"] or 0), 2))
+                ai_section["data"]["crash_short_last3_pnl_by_asset"] = last3
+            # Cooldown escalations from Redis
+            _rc2 = _get_redis()
+            if _rc2:
+                escalations = {}
+                for cs_key in _rc2.keys("bahamut:crash_short:losses:*"):
+                    asset_name = cs_key.decode().split(":")[-1] if isinstance(cs_key, bytes) else cs_key.split(":")[-1]
+                    val = int(_rc2.get(cs_key) or 0)
+                    if val > 0:
+                        escalations[asset_name] = val
+                ai_section["data"]["crash_short_cooldown_escalations"] = escalations
+        except Exception:
+            pass
+
         # Win rate by asset class + strategy
         try:
             class_rows = run_query("""
@@ -1640,10 +1759,12 @@ async def _build_diagnostics():
 
         # Active engine suppress map (show what's blocked)
         try:
-            from bahamut.config_assets import TRAINING_SUPPRESS
+            from bahamut.config_assets import TRAINING_SUPPRESS, CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
             ai_section["data"]["engine_suppress_map"] = {
                 k: sorted(list(v)) for k, v in TRAINING_SUPPRESS.items()
             }
+            ai_section["data"]["crash_short_suppress_active"] = sorted(list(CRASH_SHORT_SUPPRESS))
+            ai_section["data"]["crash_short_penalize_active"] = sorted(list(CRASH_SHORT_PENALIZE))
             ai_section["data"]["containment_rules"] = {
                 "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (expectancy -0.1246, 102 mature samples)",
                 "sentiment_long_block": "Crypto LONGs blocked by _sentiment_long_block flag when F&G ≤ 25 (regime NOT relabeled)",
@@ -1651,6 +1772,9 @@ async def _build_diagnostics():
                 "debug_exploration_full_separation": "Debug trades update RESEARCH trust keys only. ZERO effect on production trust/expectancy/suppression",
                 "mature_negative_hard_block": "Patterns with expectancy < -0.05 and 15+ mature samples are HARD BLOCKED in selector (not just penalized)",
                 "crash_short_ema200_filter": "No CRASH SHORTs when price >2% above EMA200",
+                "crash_short_suppress": f"Crash-short blocked for: {sorted(list(CRASH_SHORT_SUPPRESS))}",
+                "crash_short_penalize": f"Crash-short 50% risk for: {sorted(list(CRASH_SHORT_PENALIZE))}",
+                "crash_short_cooldown_escalation": "2 losses = 2h cooldown, 3+ losses = 4h cooldown (24h rolling window, resets on win)",
                 "v5_base_circuit_breaker": "WR<40% blocks ALL crypto; WR<45% halves risk",
                 "selector_class_boosts": "v9+stock: +8pts, v10+crypto: -10pts, v5+crypto: -5pts",
                 "selector_expectancy_penalty": "Mature negative expectancy → priority penalty (max -15pts)",

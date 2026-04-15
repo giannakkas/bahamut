@@ -318,6 +318,22 @@ def open_training_position(
         _increment_counter(_get_redis(), "bahamut:counters:engine_suppress_blocks")
         return None
 
+    # ── Crash-short specific suppress ──
+    if execution_type == "crash_short":
+        from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
+        if asset in CRASH_SHORT_SUPPRESS:
+            logger.info("training_engine_suppressed",
+                        asset=asset, strategy=strategy, direction=direction,
+                        reason="CRASH_SHORT_SUPPRESS_MAP")
+            _increment_counter(_get_redis(), "bahamut:counters:crash_short_suppress_blocks")
+            return None
+        # Crash-short penalty: halve risk for borderline assets
+        if asset in CRASH_SHORT_PENALIZE:
+            risk_amount = round(risk_amount * 0.5, 2)
+            logger.info("crash_short_penalty_applied",
+                        asset=asset, original_risk=risk_amount * 2,
+                        reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
+
     # Check position limit
     current_count = get_open_position_count()
     if current_count >= TRAINING_MAX_POSITIONS:
@@ -910,6 +926,30 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     # Strategy-specific cooldown duration
                     COOLDOWN_BY_STRATEGY = {"v5_base": 14400}
                     cd_time = COOLDOWN_BY_STRATEGY.get(pos.strategy, 1800)
+
+                    # Crash-short cooldown escalation for losing trades
+                    if pos.execution_type == "crash_short" and trade.pnl < 0:
+                        # Track consecutive losses for this asset's crash-shorts
+                        cs_loss_key = f"bahamut:crash_short:losses:{pos.asset}"
+                        cs_count = int(r.get(cs_loss_key) or 0) + 1
+                        r.setex(cs_loss_key, 86400, str(cs_count))  # 24h rolling window
+                        if cs_count >= 3:
+                            # 3+ consecutive losses → 4h cooldown (temporary suppress)
+                            cd_time = max(cd_time, 14400)
+                            logger.info("crash_short_cooldown_escalated",
+                                        asset=pos.asset, losses=cs_count, cooldown=cd_time,
+                                        reason="3_consecutive_losses")
+                        elif cs_count >= 2:
+                            # 2 consecutive losses → 2h cooldown
+                            cd_time = max(cd_time, 7200)
+                            logger.info("crash_short_cooldown_escalated",
+                                        asset=pos.asset, losses=cs_count, cooldown=cd_time,
+                                        reason="2_consecutive_losses")
+                    elif pos.execution_type == "crash_short" and trade.pnl > 0:
+                        # Reset loss counter on win
+                        cs_loss_key = f"bahamut:crash_short:losses:{pos.asset}"
+                        r.delete(cs_loss_key)
+
                     r.setex(f"bahamut:training:cooldown:{pos.asset}", cd_time, "1")
                     r.setex(f"bahamut:training:cooldown:{pos.asset}:{pos.strategy}", cd_time, "1")
             except Exception:
