@@ -379,6 +379,17 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
+      {/* ═══ TAB CONTENT (immediately below buttons) ═══ */}
+      <div className="anim-fade" key={tab}>
+        {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
+        {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
+        {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
+        {tab === "failed" && <FailedTab signals={failedSignals} />}
+        {tab === "assets" && <AssetsTab data={allAssets} />}
+        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
+        {tab === "risk" && <RiskTab expo={expo} />}
+      </div>
+
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
         <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
@@ -484,17 +495,6 @@ export default function TrainingOperationsPage() {
           <ExecutionDecisions decisions={decisions} />
         </div>
       )}
-
-      {/* ═══ TAB CONTENT ═══ */}
-      <div className="anim-fade" key={tab}>
-        {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
-        {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
-        {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
-        {tab === "failed" && <FailedTab signals={failedSignals} />}
-        {tab === "assets" && <AssetsTab data={allAssets} />}
-        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
-        {tab === "risk" && <RiskTab expo={expo} />}
-      </div>
 
       {/* ═══ MARKET INTELLIGENCE (bottom) ═══ */}
       {newsDash && (
