@@ -370,6 +370,15 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
+      {/* ═══ TABS (top navigation) ═══ */}
+      <div className="flex border-b border-bah-border overflow-x-auto bg-bah-surface/50 rounded-t-xl -mb-2">
+        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+          </button>
+        ))}
+      </div>
+
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
         <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
@@ -475,15 +484,6 @@ export default function TrainingOperationsPage() {
           <ExecutionDecisions decisions={decisions} />
         </div>
       )}
-
-      {/* ═══ TABS ═══ */}
-      <div className="flex border-b border-bah-border overflow-x-auto">
-        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
-          </button>
-        ))}
-      </div>
 
       {/* ═══ TAB CONTENT ═══ */}
       <div className="anim-fade" key={tab}>
