@@ -370,26 +370,6 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
-      {/* ═══ TABS (top navigation) ═══ */}
-      <div className="flex border-b border-bah-border overflow-x-auto bg-bah-surface/50 rounded-t-xl -mb-2">
-        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
-          </button>
-        ))}
-      </div>
-
-      {/* ═══ TAB CONTENT (immediately below buttons) ═══ */}
-      <div className="anim-fade" key={tab}>
-        {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
-        {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
-        {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
-        {tab === "failed" && <FailedTab signals={failedSignals} />}
-        {tab === "assets" && <AssetsTab data={allAssets} />}
-        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
-        {tab === "risk" && <RiskTab expo={expo} />}
-      </div>
-
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
         <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
@@ -483,6 +463,26 @@ export default function TrainingOperationsPage() {
           </div>
         </div>
       )}
+
+      {/* ═══ TABS (top navigation) ═══ */}
+      <div className="flex border-b border-bah-border overflow-x-auto bg-bah-surface/50 rounded-t-xl -mb-2">
+        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ TAB CONTENT (immediately below buttons) ═══ */}
+      <div className="anim-fade" key={tab}>
+        {tab === "overview" && <OverviewTab strats={strats} classes={classes} rankings={rankings} cy={cy} recentCycles={recentCycles} fmtPnl={fmtPnl} fmtPct={fmtPct} fmtT={fmtT} pnlC={pnlC} />}
+        {tab === "positions" && <PositionsTab positions={data.positions || []} fmtPnl={fmtPnl} pnlC={pnlC} />}
+        {tab === "trades" && <TradesTab trades={data.closed_trades || []} fmtPnl={fmtPnl} pnlC={pnlC} fmtT={fmtT} />}
+        {tab === "failed" && <FailedTab signals={failedSignals} />}
+        {tab === "assets" && <AssetsTab data={allAssets} />}
+        {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
+        {tab === "risk" && <RiskTab expo={expo} />}
+      </div>
 
       {/* ═══ TRADE CANDIDATES ═══ */}
       <div className="anim-slide" style={{ animationDelay: "0.12s" }}>
