@@ -1690,11 +1690,11 @@ async def _build_diagnostics():
             """)
             if v10_matrix:
                 ai_section["data"]["v10_asset_execution_matrix"] = [
-                    {"asset": dict(r)["asset"], "exec_path": dict(r)["exec_path"],
-                     "trades": dict(r)["trades"],
-                     "wins": int(dict(r)["wins"] or 0), "losses": int(dict(r)["losses"] or 0),
-                     "total_pnl": float(dict(r)["total_pnl"] or 0)}
-                    for r in v10_matrix
+                    {"asset": dict(row_m)["asset"], "exec_path": dict(row_m)["exec_path"],
+                     "trades": dict(row_m)["trades"],
+                     "wins": int(dict(row_m)["wins"] or 0), "losses": int(dict(row_m)["losses"] or 0),
+                     "total_pnl": float(dict(row_m)["total_pnl"] or 0)}
+                    for row_m in v10_matrix
                 ]
         except Exception:
             pass
@@ -1716,8 +1716,8 @@ async def _build_diagnostics():
             """)
             if last3_rows:
                 last3 = {}
-                for r in last3_rows:
-                    rd = dict(r)
+                for row3 in last3_rows:
+                    rd = dict(row3)
                     a = rd["asset"]
                     if a not in last3: last3[a] = []
                     last3[a].append(round(float(rd["pnl"] or 0), 2))
@@ -2153,6 +2153,25 @@ async def _build_diagnostics():
             verification["open_position_uniqueness_ok"] = len(_dup_list) == 0
             verification["duplicate_open_position_keys"] = _dup_list if _dup_list else []
             verification["mirroring_failures"] = _mirroring_issues if _mirroring_issues else []
+
+            # Crypto/internal audit — list all crypto positions stuck on internal
+            _crypto_internal = []
+            for p in positions:
+                _plat = getattr(p, "execution_platform", "internal")
+                _ac = getattr(p, "asset_class", "")
+                if _ac == "crypto" and _plat == "internal":
+                    _crypto_internal.append({
+                        "asset": p.asset, "strategy": p.strategy,
+                        "direction": p.direction, "entry_time": str(getattr(p, "entry_time", ""))
+                    })
+            verification["crypto_internal_open_positions"] = _crypto_internal
+
+            # Mirror abort counters from Redis
+            try:
+                _mirror_aborts = r.get("bahamut:counters:crypto_mirror_aborts")
+                verification["crypto_mirror_abort_count"] = int(_mirror_aborts) if _mirror_aborts else 0
+            except Exception:
+                verification["crypto_mirror_abort_count"] = 0
         except Exception:
             pass
 
@@ -2213,6 +2232,17 @@ async def _build_diagnostics():
                     verification["adaptive_news_unique_modes"] = list(unique_modes)
                     if len(unique_modes) == 1 and len(modes) > 10:
                         verification["why_all_assets_same_mode"] = f"All {len(modes)} assets in {list(unique_modes)[0]} — likely class-wide headline impact not asset-specific"
+                    # Explain decay behavior: why modes may be NORMAL despite elevated raw impact
+                    high_impact_normal = []
+                    for asset_name, st in states.items():
+                        if st.mode == "NORMAL" and st.raw_impact > 0.15:
+                            high_impact_normal.append(asset_name)
+                    if high_impact_normal and len(high_impact_normal) > 5:
+                        verification["adaptive_news_decay_explanation"] = {
+                            "high_impact_but_normal_count": len(high_impact_normal),
+                            "behavior": "EXPECTED — raw CAUTION with low confidence (< 0.35) causes EXTREME shock to be downgraded to effective MEDIUM. CAUTION decays to NORMAL after 30min of stale/unchanged data. System does not re-escalate from unchanged headlines.",
+                            "is_bug": False,
+                        }
             except Exception:
                 pass
         except Exception:

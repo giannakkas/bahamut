@@ -674,6 +674,14 @@ def open_training_position(
                            error=exec_result.get("error", "")[:100])
             _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
             return None
+        # Final guard: if broker was expected but platform is still internal, abort
+        if _expected_platform != "internal" and pos.execution_platform == "internal":
+            logger.warning("execution_mirror_mismatch_aborted",
+                           asset=asset, strategy=strategy, direction=direction,
+                           expected_platform=_expected_platform,
+                           actual_platform="internal", status=_status)
+            _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
+            return None
     except Exception as e:
         if _expected_platform != "internal":
             # Broker was expected but router import/call failed entirely
