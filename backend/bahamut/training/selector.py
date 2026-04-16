@@ -91,6 +91,10 @@ class PendingSignal:
     # Phase 3 Item 7: sub-strategy tag (e.g. v10_range_long, v10_crash_short).
     # Non-v10 strategies leave empty — behavior unchanged.
     substrategy: str = ""
+    # Phase 4 Item 12: data origin at signal generation. Inherited
+    # from indicators._data_mode. Engine rejects synthetic_dev signals
+    # in production.
+    data_mode: str = "live"
 
     def __post_init__(self):
         if self.indicators is None:

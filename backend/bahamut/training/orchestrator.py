@@ -275,6 +275,7 @@ def run_training_cycle():
                 confidence_score=sig.confidence_score,
                 trigger_reason=sig.trigger_reason,
                 substrategy=getattr(sig, "substrategy", "") or "",
+                data_mode=getattr(sig, "data_mode", "live") or "live",
             )
             if pos:
                 trades_opened += 1
@@ -493,6 +494,25 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     indicators["_interval"] = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
     indicators["_effective_regime"] = regime  # Post-override regime for strategies
 
+    # Phase 4 Item 12: propagate data_mode from candles → indicators
+    # → PendingSignal → TrainingPosition. The engine's invariant rejects
+    # any non-live position when BLOCK_SYNTHETIC is enabled.
+    try:
+        # Take the mode of the most recent candle (consensus across the series)
+        if candles:
+            modes = {c.get("_data_mode", "live") for c in candles[-5:]}
+            # If any of the last 5 candles is synthetic, the whole series is suspect
+            if "synthetic_dev" in modes:
+                indicators["_data_mode"] = "synthetic_dev"
+            elif "stale_cache" in modes:
+                indicators["_data_mode"] = "stale_cache"
+            else:
+                indicators["_data_mode"] = "live"
+        else:
+            indicators["_data_mode"] = "live"
+    except Exception:
+        indicators["_data_mode"] = "live"
+
     # Make override provenance available to selector / diagnostics
     if regime_result is not None:
         indicators["_sentiment_overlay"] = regime_result.sentiment_overlay
@@ -622,6 +642,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 risk_multiplier=risk_mult,
                 indicators=candidate_indicators,
                 substrategy=getattr(signal, "substrategy", "") or "",
+                data_mode=indicators.get("_data_mode", "live"),
             ))
 
     # ═══════════════════════════════════════════
@@ -807,6 +828,9 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         risk_multiplier=0.5,
                         indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
                         substrategy=inferred_sub,
+                        data_mode=(best_candidate.indicators.get("_data_mode", "live")
+                                   if hasattr(best_candidate, 'indicators') and best_candidate.indicators
+                                   else "live"),
                     ))
             else:
                 logger.info("debug_override_no_qualifying_candidate",

@@ -23,6 +23,30 @@ CACHE_TTL = 180             # 3 minutes — plenty for 4H bars
 STALE_THRESHOLD = 6 * 3600  # 6 hours — default for 24/7 assets (crypto)
 
 
+# ═══════════════════════════════════════════════════════════════
+# Phase 4 Item 12 — DATA MODE PROVENANCE
+# ═══════════════════════════════════════════════════════════════
+# Every candle returned by fetch_candles() carries a _data_mode tag.
+# Downstream code (orchestrator, engine, learning) MUST honor this:
+#
+#   "live"          — fresh candles from a real exchange/data API
+#   "stale_cache"   — last_good Redis snapshot (real data, but old)
+#   "synthetic_dev" — generated np.random data — DEV ONLY
+#
+# Production must never trade on synthetic_dev data:
+#   BAHAMUT_BLOCK_SYNTHETIC=1 (default ON) → fetch_candles returns []
+#   instead of generated candles. Orchestrator skips the asset.
+#   Set to 0 ONLY in dev environments where synthetic data is desired
+#   for offline testing.
+DATA_MODE_LIVE = "live"
+DATA_MODE_STALE_CACHE = "stale_cache"
+DATA_MODE_SYNTHETIC_DEV = "synthetic_dev"
+
+# Default ON: synthetic data is BLOCKED in production. Set to 0 only
+# in dev environments where you want offline testing with seeded data.
+BLOCK_SYNTHETIC = os.environ.get("BAHAMUT_BLOCK_SYNTHETIC", "1") != "0"
+
+
 def _get_stale_threshold(asset: str = "") -> int:
     """Get stale threshold in seconds, adjusted for market hours.
 
@@ -70,17 +94,43 @@ def _is_us_market_open() -> bool:
     return market_open <= now_et <= market_close
 
 
+def _tag_candles(candles: list[dict], mode: str) -> list[dict]:
+    """Phase 4 Item 12: stamp every candle with its data_mode origin.
+
+    Mutates in place AND returns the list for chaining. Downstream code
+    can inspect candles[i].get('_data_mode') or take the consensus from
+    the last candle.
+    """
+    for c in candles:
+        c["_data_mode"] = mode
+    return candles
+
+
 def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
     """
-    Fetch candles for an asset. Tries: Redis cache → Twelve Data API → synthetic fallback.
-    Returns candles in orchestrator format: [{datetime, open, high, low, close, volume}, ...]
+    Fetch candles for an asset. Tries: Redis cache → Twelve Data API →
+    last-good cache → synthetic fallback (if not blocked).
+
+    Phase 4 Item 12: every returned candle carries a _data_mode tag of
+    'live' / 'stale_cache' / 'synthetic_dev'. When BLOCK_SYNTHETIC=True
+    (production default), the synthetic path returns [] instead of
+    generated data — orchestrator must skip the asset.
+
+    Returns candles in orchestrator format:
+      [{datetime, open, high, low, close, volume, _data_mode}, ...]
     """
     source = "UNKNOWN"
 
-    # 1. Try Redis cache
+    # 1. Try Redis cache (these are LIVE candles cached by an earlier fetch)
     cached = _cache_get(asset)
     if cached:
         logger.debug("data_cache_hit", asset=asset, candles=len(cached))
+        # Cached candles inherit their original mode tag (set when first
+        # fetched). If the tag is missing (legacy cache entries), assume
+        # live — Redis only ever stored real Twelve Data candles.
+        for c in cached:
+            if "_data_mode" not in c:
+                c["_data_mode"] = DATA_MODE_LIVE
         return cached
 
     # 2. Try Twelve Data API
@@ -99,11 +149,13 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                 # Validate
                 valid, reason = validate_candles(candles, asset=asset)
                 if valid:
+                    _tag_candles(candles, DATA_MODE_LIVE)
                     _cache_set(asset, candles)
                     _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
                     logger.info("data_live", asset=asset, candles=len(candles),
                                 last=candles[-1].get("datetime", ""),
-                                close=candles[-1].get("close", 0))
+                                close=candles[-1].get("close", 0),
+                                data_mode=DATA_MODE_LIVE)
                     return candles
                 else:
                     logger.warning("data_validation_failed", asset=asset, reason=reason)
@@ -115,12 +167,36 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
     if last_good:
         logger.warning("data_using_last_good", asset=asset, candles=len(last_good))
         _record_data_status(asset, "STALE", len(last_good), "using cached data")
-        return last_good
+        return _tag_candles(last_good, DATA_MODE_STALE_CACHE)
 
-    # 4. Fallback to synthetic
-    logger.warning("data_fallback_synthetic", asset=asset)
-    _record_data_status(asset, "SYNTHETIC", 0, "live data unavailable")
-    return _synthetic_fallback(asset)
+    # 4. Phase 4 Item 12: synthetic block in production
+    if BLOCK_SYNTHETIC:
+        logger.error("data_synthetic_blocked",
+                     asset=asset,
+                     reason="no live data and BAHAMUT_BLOCK_SYNTHETIC=1",
+                     action="returning empty list — orchestrator must skip asset")
+        _record_data_status(asset, "UNAVAILABLE", 0,
+                            "live unavailable, synthetic blocked")
+        # Increment a counter so diagnostics shows how often this fires
+        _increment_synthetic_block_counter()
+        return []
+
+    # 5. Fallback to synthetic (DEV ONLY — block flag is off)
+    logger.warning("data_fallback_synthetic", asset=asset,
+                   warning="DEV MODE — synthetic data in use")
+    _record_data_status(asset, "SYNTHETIC", 0, "DEV: live data unavailable")
+    return _tag_candles(_synthetic_fallback(asset), DATA_MODE_SYNTHETIC_DEV)
+
+
+def _increment_synthetic_block_counter():
+    """Track how many times we've refused to serve synthetic data."""
+    try:
+        import redis as _r
+        r = _r.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                        socket_connect_timeout=1)
+        r.incr("bahamut:counters:synthetic_blocks")
+    except Exception:
+        pass
 
 
 def _fetch_from_twelvedata(symbol: str, count: int) -> list[dict]:

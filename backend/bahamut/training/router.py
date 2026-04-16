@@ -1929,6 +1929,30 @@ async def _build_diagnostics():
             ai_section["data"]["substrategy_suppress_map"] = {
                 k: sorted(list(v)) for k, v in SUBSTRATEGY_SUPPRESS.items()
             }
+            # Phase 4 Item 12: data-mode posture + per-asset breakdown
+            try:
+                from bahamut.data.live_data import BLOCK_SYNTHETIC
+                # Count open positions by data_mode
+                from bahamut.training.engine import _load_positions
+                positions = _load_positions() or []
+                mode_counts = {"live": 0, "stale_cache": 0, "synthetic_dev": 0}
+                non_live_assets = []
+                for p in positions:
+                    m = getattr(p, "data_mode", "live") or "live"
+                    mode_counts[m] = mode_counts.get(m, 0) + 1
+                    if m != "live":
+                        non_live_assets.append({"asset": p.asset, "mode": m,
+                                                "position_id": p.position_id})
+                ai_section["data"]["data_mode_posture"] = {
+                    "block_synthetic_enabled": BLOCK_SYNTHETIC,
+                    "open_positions_by_mode": mode_counts,
+                    "non_live_open_positions": non_live_assets,
+                    "note": ("Production default: BAHAMUT_BLOCK_SYNTHETIC=1 — "
+                             "live data only. Non-live positions should be 0 "
+                             "unless flag was disabled for dev testing."),
+                }
+            except Exception as _dm_err:
+                ai_section["data"]["data_mode_posture_error"] = str(_dm_err)[:150]
             ai_section["data"]["containment_rules"] = {
                 "v10_crypto_range_blocked_debug_only": "v10 crypto RANGE/CRASH blocked for DEBUG_EXPLORATION path only (expectancy -0.15, 165 mature samples). Production path NOT auto-blocked — relies on mature_negative hard_block + per-asset suppress maps.",
                 "sentiment_long_block": "Crypto LONGs blocked by _sentiment_long_block flag when F&G ≤ 25 (regime NOT relabeled)",
@@ -2036,6 +2060,8 @@ async def _build_diagnostics():
                 "bahamut:counters:research_trust_updates",
                 "bahamut:counters:engine_suppress_blocks",
                 "bahamut:counters:substrategy_suppress_blocks",
+                "bahamut:counters:synthetic_blocks",
+                "bahamut:counters:synthetic_position_blocks",
                 "bahamut:counters:sentiment_gate_blocks",
                 "bahamut:counters:v10_crypto_range_blocks",
                 "bahamut:counters:mature_neg_expectancy_blocks",

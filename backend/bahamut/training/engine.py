@@ -43,7 +43,9 @@ _SUBSTRATEGY_MIGRATION_DONE = False
 def _ensure_substrategy_column() -> bool:
     """Add substrategy columns to training_positions and training_trades if
     not already present. Idempotent — safe to call on every write.
-    Returns True if columns exist (either before or after this call)."""
+    Returns True if columns exist (either before or after this call).
+
+    Phase 4 Item 12: also adds data_mode column (same migration pattern)."""
     global _SUBSTRATEGY_MIGRATION_DONE
     if _SUBSTRATEGY_MIGRATION_DONE:
         return True
@@ -59,13 +61,21 @@ def _ensure_substrategy_column() -> bool:
                 "ALTER TABLE training_trades "
                 "ADD COLUMN IF NOT EXISTS substrategy VARCHAR(64) DEFAULT ''"
             ))
+            # Phase 4 Item 12
+            conn.execute(text(
+                "ALTER TABLE training_positions "
+                "ADD COLUMN IF NOT EXISTS data_mode VARCHAR(32) DEFAULT 'live'"
+            ))
+            conn.execute(text(
+                "ALTER TABLE training_trades "
+                "ADD COLUMN IF NOT EXISTS data_mode VARCHAR(32) DEFAULT 'live'"
+            ))
             conn.commit()
         _SUBSTRATEGY_MIGRATION_DONE = True
-        logger.info("training_substrategy_column_ready")
+        logger.info("training_substrategy_and_data_mode_columns_ready")
         return True
     except Exception as e:
-        # Don't crash — INSERTs will fall back to legacy path.
-        logger.warning("training_substrategy_column_migration_failed",
+        logger.warning("training_migration_failed",
                        error=str(e)[:200])
         return False
 
@@ -122,6 +132,13 @@ class TrainingPosition:
     # expectancy, suppression, cooldowns, diagnostics per sub-path.
     substrategy: str = ""
 
+    # ── Phase 4 Item 12: data origin tag at position creation time.
+    # 'live' / 'stale_cache' / 'synthetic_dev'. Used by _save_position
+    # invariant to refuse any non-live position when BLOCK_SYNTHETIC is on.
+    # Defaults to 'live' for legacy positions and code paths that don't
+    # propagate the mode (so we never reject something we couldn't classify).
+    data_mode: str = "live"
+
     @property
     def unrealized_pnl(self):
         if self.direction == "LONG":
@@ -166,6 +183,9 @@ class TrainingTrade:
 
     # ── Phase 3 Item 7: sub-strategy tag propagated from Position ──
     substrategy: str = ""
+
+    # ── Phase 4 Item 12: data origin at trade time ──
+    data_mode: str = "live"
 
 
 # ═══════════════════════════════════════════
@@ -457,9 +477,9 @@ def _save_position(pos: TrainingPosition):
                      entry_price, stop_price, tp_price, size, risk_amount,
                      entry_time, bars_held, max_hold_bars, current_price,
                      execution_type, confidence_score, trigger_reason, status,
-                     substrategy)
+                     substrategy, data_mode)
                     VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
-                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub)
+                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub, :dm)
                     ON CONFLICT (position_id) DO UPDATE SET
                         bars_held = EXCLUDED.bars_held,
                         current_price = EXCLUDED.current_price,
@@ -474,6 +494,7 @@ def _save_position(pos: TrainingPosition):
                     "ext": pos.execution_type, "cs": pos.confidence_score,
                     "tr": pos.trigger_reason,
                     "sub": pos.substrategy or "",
+                    "dm": pos.data_mode or "live",
                 })
             except Exception as _insert_err:
                 # Column missing or unknown — fall back to legacy INSERT
@@ -586,9 +607,29 @@ def open_training_position(
     confidence_score: float = 0.0,
     trigger_reason: str = "4h_close",
     substrategy: str = "",
+    data_mode: str = "live",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
+
+    # ═══════════════════════════════════════════
+    # Phase 4 Item 12: SYNTHETIC DATA HARD BLOCK
+    # Reject any position computed from synthetic_dev candles when
+    # BAHAMUT_BLOCK_SYNTHETIC=1 (production default). This prevents
+    # learning trust/expectancy on np.random outcomes.
+    # ═══════════════════════════════════════════
+    try:
+        from bahamut.data.live_data import BLOCK_SYNTHETIC
+        if BLOCK_SYNTHETIC and data_mode == "synthetic_dev":
+            logger.error("training_position_synthetic_blocked",
+                         asset=asset, strategy=strategy, direction=direction,
+                         data_mode=data_mode,
+                         reason="BAHAMUT_BLOCK_SYNTHETIC=1 prevents synthetic trades")
+            _increment_counter(_get_redis(),
+                               "bahamut:counters:synthetic_position_blocks")
+            return None
+    except Exception:
+        pass
 
     # ═══════════════════════════════════════════
     # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
@@ -921,6 +962,7 @@ def open_training_position(
         trigger_reason=trigger_reason,
         regime=regime,
         substrategy=substrategy,
+        data_mode=data_mode,
     )
 
     # ── Execute on exchange FIRST (Binance/Alpaca) ──
@@ -1194,6 +1236,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 trigger_reason=pos.trigger_reason,
                 regime=pos.regime,
                 substrategy=pos.substrategy,
+                data_mode=pos.data_mode,
             )
 
             actually_removed = _remove_position(pos.position_id)
@@ -1336,10 +1379,10 @@ def _persist_trade(trade: TrainingTrade):
                 (trade_id, position_id, asset, asset_class, strategy, direction,
                  entry_price, exit_price, stop_price, tp_price, size, risk_amount,
                  pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime,
-                 execution_type, confidence_score, trigger_reason, substrategy)
+                 execution_type, confidence_score, trigger_reason, substrategy, data_mode)
                 VALUES (:tid, :pid, :a, :ac, :s, :d, :ep, :xp, :sp, :tp, :sz, :ra,
                         :pnl, :pp, :et, :xt, :xr, :bh, :reg,
-                        :exec_type, :conf, :trig, :sub)
+                        :exec_type, :conf, :trig, :sub, :dm)
             """), {
                 "tid": trade.trade_id, "pid": trade.position_id,
                 "a": trade.asset, "ac": trade.asset_class,
@@ -1355,6 +1398,7 @@ def _persist_trade(trade: TrainingTrade):
                 "conf": trade.confidence_score,
                 "trig": trade.trigger_reason,
                 "sub": trade.substrategy or "",
+                "dm": trade.data_mode or "live",
             })
             conn.commit()
             logger.info("training_trade_persisted_to_db", trade_id=trade.trade_id,
