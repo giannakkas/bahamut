@@ -253,7 +253,8 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                        entry_time, bars_held, max_hold_bars, current_price,
                        execution_type, confidence_score, trigger_reason,
                        execution_platform, exchange_order_id,
-                       COALESCE(substrategy, '') as substrategy
+                       COALESCE(substrategy, '') as substrategy,
+                       COALESCE(data_mode, 'live') as data_mode
                 FROM training_positions WHERE status = 'OPEN'
             """)).mappings().all()
 
@@ -281,6 +282,7 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                     execution_platform=str(row.get("execution_platform") or "internal"),
                     exchange_order_id=str(row.get("exchange_order_id") or ""),
                     substrategy=str(row.get("substrategy") or ""),
+                    data_mode=str(row.get("data_mode") or "live"),
                 )
 
                 # ── Phase 2 Item 5: invariant enforcement on DB reload ──
