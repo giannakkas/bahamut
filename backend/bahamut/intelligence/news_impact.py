@@ -516,6 +516,130 @@ def headline_component(headlines: list[dict]) -> dict:
 # , 0, 1)
 # ═══════════════════════════════════════════════════════════════
 
+# Phase 4 Item 10: origin classification keywords by class.
+# Used to tag headlines as asset-specific vs class-level vs macro.
+_CLASS_KEYWORDS = {
+    "crypto": {
+        "bitcoin", "btc", "ethereum", "eth", "crypto", "cryptocurrency",
+        "altcoin", "stablecoin", "defi", "nft", "sec crypto", "etf",
+        "binance", "coinbase", "kraken", "ftx", "tether", "usdt",
+    },
+    "stock": {
+        "s&p", "s&p 500", "spx", "nasdaq", "dow", "dow jones", "ndx",
+        "nyse", "equities", "equity markets", "wall street", "stocks",
+        "sector", "earnings season", "q1", "q2", "q3", "q4",
+    },
+    "forex": {
+        "fx", "forex", "dollar", "usd", "eur", "euro", "yen", "gbp",
+        "currency", "central bank", "dxy",
+    },
+}
+_MACRO_KEYWORDS = {
+    "fed", "federal reserve", "fomc", "powell", "yellen", "treasury",
+    "inflation", "cpi", "pce", "nfp", "unemployment", "recession",
+    "gdp", "rate hike", "rate cut", "interest rate", "monetary policy",
+    "ecb", "boj", "pboc", "geopolitical", "war", "sanction",
+}
+
+
+def _classify_news_origins(
+    asset: str,
+    asset_class: str,
+    headlines: list[dict],
+    events: list[dict],
+) -> dict:
+    """Split news impact into asset-specific / class-level / macro sources.
+
+    Classification rules (per headline):
+      1. If the asset ticker or its canonical name appears in the title →
+         asset-specific (highest priority; could also be class or macro).
+      2. Else if any class-keyword appears → class-level.
+      3. Else if any macro-keyword appears → macro.
+      4. Else → unclassified (still counted in totals but not attributed).
+
+    Scheduled events are always macro (FOMC, CPI, etc. affect all classes).
+
+    Returns:
+      {asset_specific_score, class_level_score, macro_score,
+       unclassified_score, total_headlines_by_origin (dict),
+       top_sources (list of {source, weight, origin})}
+    """
+    asset_tokens = {asset.lower(), asset.lower().replace("usd", "")}
+    # Add the crypto full names
+    CRYPTO_NAMES = {
+        "btcusd": "bitcoin", "ethusd": "ethereum", "solusd": "solana",
+        "xrpusd": "ripple", "adausd": "cardano", "dogeusd": "dogecoin",
+        "avaxusd": "avalanche", "linkusd": "chainlink", "maticusd": "polygon",
+        "dotusd": "polkadot", "atomusd": "cosmos", "uniusd": "uniswap",
+        "ltcusd": "litecoin", "bnbusd": "binance coin",
+    }
+    if asset.lower() in CRYPTO_NAMES:
+        asset_tokens.add(CRYPTO_NAMES[asset.lower()])
+
+    class_keywords = _CLASS_KEYWORDS.get(asset_class, set())
+
+    asset_weight = class_weight = macro_weight = unc_weight = 0.0
+    counts = {"asset": 0, "class": 0, "macro": 0, "unclassified": 0}
+    source_tags: list[dict] = []
+
+    for h in headlines:
+        title_lower = (h.get("title", "") or "").lower()
+        source = h.get("source", "") or ""
+        published = h.get("published", "") or ""
+        try:
+            rec = recency_weight(published)
+            cred = source_credibility(source)
+            w = rec * cred
+        except Exception:
+            w = 0.5
+
+        # Classify
+        if any(tok and tok in title_lower for tok in asset_tokens):
+            origin = "asset"
+            asset_weight += w
+        elif any(kw in title_lower for kw in class_keywords):
+            origin = "class"
+            class_weight += w
+        elif any(kw in title_lower for kw in _MACRO_KEYWORDS):
+            origin = "macro"
+            macro_weight += w
+        else:
+            origin = "unclassified"
+            unc_weight += w
+        counts[origin] += 1
+        source_tags.append({
+            "source": source, "title": (h.get("title") or "")[:80],
+            "origin": origin, "weight": round(w, 3),
+            "published": published,
+        })
+
+    # Events: weighted as macro (scheduled events are macro by nature)
+    event_macro_boost = 0.0
+    for ev in events:
+        try:
+            event_macro_boost += float(ev.get("importance", 1))
+        except Exception:
+            event_macro_boost += 1
+    # Normalize event boost to headline-equivalent weight
+    macro_weight += event_macro_boost * 0.5
+
+    total_weight = max(
+        asset_weight + class_weight + macro_weight + unc_weight, 1e-9
+    )
+    # Sort sources by weight desc
+    source_tags.sort(key=lambda s: s["weight"], reverse=True)
+
+    return {
+        "asset_specific_score": round(asset_weight / total_weight, 3),
+        "class_level_score": round(class_weight / total_weight, 3),
+        "macro_score": round(macro_weight / total_weight, 3),
+        "unclassified_score": round(unc_weight / total_weight, 3),
+        "counts_by_origin": counts,
+        "event_macro_boost": round(event_macro_boost, 2),
+        "top_sources": source_tags,
+    }
+
+
 def compute_news_impact(
     asset: str,
     asset_class: str,
@@ -638,6 +762,23 @@ def compute_news_impact(
         "sensitivity": sensitivity,
         "raw_impact": round(raw_impact, 3),
     }
+
+    # ── Phase 4 Item 10: origin classification ──
+    # Split the impact into asset-specific, class-wide, and macro components
+    # so downstream gate decisions can distinguish "asset breaking news"
+    # from "market-wide macro caution" from "class-level risk".
+    try:
+        origins = _classify_news_origins(asset, asset_class, headlines, events)
+        assessment.meta["origins"] = origins
+        # Populate top-level shortcut fields on the assessment
+        # (these then get copied to AssetNewsState).
+        assessment.meta["asset_specific_impact"] = origins["asset_specific_score"]
+        assessment.meta["class_risk_impact"] = origins["class_level_score"]
+        assessment.meta["macro_risk_impact"] = origins["macro_score"]
+        # Source list for auditing — first 5 by weight
+        assessment.meta["top_sources"] = origins["top_sources"][:5]
+    except Exception as _orig_err:
+        assessment.meta["origins_error"] = str(_orig_err)[:120]
 
     return assessment
 

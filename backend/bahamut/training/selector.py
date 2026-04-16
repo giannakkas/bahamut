@@ -201,6 +201,11 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
             state = get_asset_news_state(signal.asset)
             gate = get_news_gate_decision(state, signal.direction)
             bd["news_mode"] = gate["mode"]
+            # Phase 4 Item 10: surface provenance in breakdown for diagnostics
+            bd["news_origin"] = gate.get("dominant_origin", "none")
+            bd["news_is_stale"] = gate.get("is_stale", False)
+            bd["news_age_seconds"] = gate.get("age_seconds")
+            bd["news_source_count"] = gate.get("source_count", 0)
             if not gate["allowed"]:
                 bd["adaptive_news_block"] = True  # Canonical key — NOT "news_freeze"
                 bd["adaptive_news_reason"] = gate["reason"]

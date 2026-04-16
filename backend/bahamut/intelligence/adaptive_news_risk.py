@@ -31,6 +31,17 @@ ADAPTIVE_NEWS_ENABLED = True
 
 
 # ═══════════════════════════════════════════
+# FRESHNESS (Phase 4 Item 10)
+# ═══════════════════════════════════════════
+# Data older than this is flagged is_stale=True in the gate decision.
+# The gate still produces a decision, but downstream callers can elect
+# to degrade gracefully (e.g. reduce size, log a warning, fall back to
+# a cached posture). 10 minutes matches the typical batch recompute
+# cadence; beyond that, something is wrong with the pipeline.
+FRESHNESS_STALE_SEC = 600
+
+
+# ═══════════════════════════════════════════
 # MODE DEFINITIONS + DOWNSTREAM BEHAVIOR
 # ═══════════════════════════════════════════
 
@@ -86,6 +97,21 @@ class AssetNewsState:
     asset_specific: float = 0.0     # 0-1: direct asset mention
     class_risk: float = 0.0         # 0-1: class-wide risk
     macro_risk: float = 0.0         # 0-1: market-wide risk
+    # ── Phase 4 Item 10: provenance fields ──
+    # When the underlying assessment was actually computed (not just the
+    # last time we observed the state). This is distinct from last_updated
+    # because a stale-data pass still updates last_updated but should NOT
+    # update assessment_computed_at.
+    assessment_computed_at: float = 0.0
+    # How many source headlines + events contributed to this state.
+    # 0 = no live data; N > 0 = real observations.
+    source_count: int = 0
+    # Top-3 source attributions (list of {source, title, origin, weight}).
+    top_sources: list = None
+
+    def __post_init__(self):
+        if self.top_sources is None:
+            self.top_sources = []
 
 
 def is_trade_aligned(direction: str, bias: str) -> bool:
@@ -385,6 +411,28 @@ def compute_adaptive_news_state(
     else:
         mode_set_at = 0  # Not elevated
 
+    # Phase 4 Item 10: lift origin provenance from assessment.meta into
+    # the state. These enable diagnostics/gate decisions to distinguish
+    # asset-specific news from market-wide macro conditions.
+    meta = assessment.meta if hasattr(assessment, "meta") else {}
+    asset_specific = float(meta.get("asset_specific_impact", 0.0))
+    class_risk = float(meta.get("class_risk_impact", 0.0))
+    macro_risk = float(meta.get("macro_risk_impact", 0.0))
+    top_sources = list(meta.get("top_sources", []))[:3]
+    source_count = int(
+        assessment.headline_count + assessment.event_count
+    )
+    # Freshness: assessment_computed_at is now ONLY when we actually
+    # recomputed from live data. Stale passes preserve the prior value.
+    if data_changed:
+        assessment_computed_at = now
+    else:
+        assessment_computed_at = (
+            existing_state.assessment_computed_at
+            if existing_state and existing_state.assessment_computed_at > 0
+            else now
+        )
+
     return AssetNewsState(
         asset=asset,
         mode=final_mode,
@@ -396,6 +444,12 @@ def compute_adaptive_news_state(
         freeze_reason=assessment.freeze_reason if final_mode == "FROZEN" else "",
         last_updated=now,
         mode_set_at=mode_set_at,
+        asset_specific=asset_specific,
+        class_risk=class_risk,
+        macro_risk=macro_risk,
+        assessment_computed_at=assessment_computed_at,
+        source_count=source_count,
+        top_sources=top_sources,
     )
 
 
@@ -409,18 +463,62 @@ def get_news_gate_decision(
 ) -> dict:
     """Determine if a trade should proceed given the news state.
 
+    Phase 4 Item 10: decision dict now includes provenance fields so the
+    selector / diagnostics can see WHAT drove the gate decision:
+      - age_seconds: freshness of the underlying assessment data
+      - is_stale: True if data is older than FRESHNESS_STALE_SEC
+      - asset_specific / class_risk / macro_risk scores (origin split)
+      - source_count: number of headlines+events driving the state
+      - dominant_origin: 'asset' | 'class' | 'macro' | 'none'
+
     Returns: {
         allowed: bool,
         mode: str,
         size_multiplier: float,
         threshold_penalty: int,
         reason: str,
+        age_seconds: float,
+        is_stale: bool,
+        asset_specific: float,
+        class_risk: float,
+        macro_risk: float,
+        source_count: int,
+        dominant_origin: str,
     }
     """
+    # Freshness metadata available on every decision path below
+    now = time.time()
+    age = (
+        now - state.assessment_computed_at
+        if state.assessment_computed_at > 0
+        else float("inf")
+    )
+    is_stale = age > FRESHNESS_STALE_SEC
+    # Dominant origin — who drove the mode
+    origins = {
+        "asset": state.asset_specific,
+        "class": state.class_risk,
+        "macro": state.macro_risk,
+    }
+    dominant = max(origins, key=lambda k: origins[k])
+    if origins[dominant] <= 0:
+        dominant = "none"
+
+    provenance = {
+        "age_seconds": round(age, 1) if age != float("inf") else None,
+        "is_stale": is_stale,
+        "asset_specific": state.asset_specific,
+        "class_risk": state.class_risk,
+        "macro_risk": state.macro_risk,
+        "source_count": state.source_count,
+        "dominant_origin": dominant,
+    }
+
     if not ADAPTIVE_NEWS_ENABLED:
         # Legacy fallback: use old freeze behavior
         return {"allowed": True, "mode": "LEGACY", "size_multiplier": 1.0,
-                "threshold_penalty": 0, "reason": "adaptive_news_disabled"}
+                "threshold_penalty": 0, "reason": "adaptive_news_disabled",
+                **provenance}
 
     mode_cfg = MODES[state.mode]
 
@@ -430,6 +528,7 @@ def get_news_gate_decision(
             "allowed": False, "mode": state.mode,
             "size_multiplier": 0.0, "threshold_penalty": mode_cfg["threshold_add"],
             "reason": f"FROZEN: {state.freeze_reason or state.shock}",
+            **provenance,
         }
 
     # RESTRICTED: only aligned trades
@@ -440,6 +539,7 @@ def get_news_gate_decision(
                 "allowed": False, "mode": state.mode,
                 "size_multiplier": 0.0, "threshold_penalty": mode_cfg["threshold_add"],
                 "reason": f"RESTRICTED: {trade_direction} opposes news bias {state.bias}",
+                **provenance,
             }
         # Aligned trade in RESTRICTED: allowed but reduced
         return {
@@ -447,6 +547,7 @@ def get_news_gate_decision(
             "size_multiplier": mode_cfg["size_mult"],
             "threshold_penalty": mode_cfg["threshold_add"],
             "reason": f"RESTRICTED but aligned ({trade_direction}={state.bias})",
+            **provenance,
         }
 
     # CAUTION / NORMAL: allowed with adjustments
@@ -455,6 +556,7 @@ def get_news_gate_decision(
         "size_multiplier": mode_cfg["size_mult"],
         "threshold_penalty": mode_cfg["threshold_add"],
         "reason": f"{state.mode}: impact={state.normalized_impact:.2f}",
+        **provenance,
     }
 
 
@@ -471,22 +573,35 @@ _REDIS_STATE_TTL = 7200  # 2 hours — survives deploys, expires if system down
 
 
 def _persist_states_to_redis(states: dict[str, AssetNewsState]):
-    """Save mode_set_at timestamps to Redis so deploys don't reset decay clocks."""
+    """Save state to Redis so deploys don't reset decay clocks or provenance.
+    Phase 4 Item 10: persists the full provenance (origins + sources +
+    assessment_computed_at) so freshness calculations survive redeploy."""
     try:
         import os, redis as _r, json
         r = _r.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-        blob = {a: {"mode": s.mode, "mode_set_at": s.mode_set_at,
-                     "normalized_impact": s.normalized_impact,
-                     "shock": s.shock, "bias": s.bias,
-                     "confidence": s.confidence}
-                for a, s in states.items()}
+        blob = {a: {
+            "mode": s.mode, "mode_set_at": s.mode_set_at,
+            "normalized_impact": s.normalized_impact,
+            "raw_impact": s.raw_impact,
+            "shock": s.shock, "bias": s.bias,
+            "confidence": s.confidence,
+            # Provenance
+            "asset_specific": s.asset_specific,
+            "class_risk": s.class_risk,
+            "macro_risk": s.macro_risk,
+            "assessment_computed_at": s.assessment_computed_at,
+            "source_count": s.source_count,
+            "top_sources": s.top_sources[:3] if s.top_sources else [],
+        } for a, s in states.items()}
         r.setex(_REDIS_STATE_KEY, _REDIS_STATE_TTL, json.dumps(blob))
     except Exception:
         pass
 
 
 def _restore_states_from_redis():
-    """Restore mode timestamps from Redis on cold start (deploy recovery)."""
+    """Restore state from Redis on cold start (deploy recovery).
+    Phase 4 Item 10: restores provenance fields; handles schema drift
+    (older Redis blobs without provenance) by defaulting to 0/empty."""
     global _asset_states
     try:
         import os, redis as _r, json
@@ -500,12 +615,25 @@ def _restore_states_from_redis():
                     mode=data.get("mode", "NORMAL"),
                     mode_set_at=data.get("mode_set_at", 0),
                     normalized_impact=data.get("normalized_impact", 0),
+                    raw_impact=data.get("raw_impact", 0),
                     shock=data.get("shock", "NONE"),
                     bias=data.get("bias", "NEUTRAL"),
                     confidence=data.get("confidence", 0),
                     last_updated=time.time(),
+                    # Provenance — default to 0/empty for legacy blobs
+                    asset_specific=float(data.get("asset_specific", 0) or 0),
+                    class_risk=float(data.get("class_risk", 0) or 0),
+                    macro_risk=float(data.get("macro_risk", 0) or 0),
+                    assessment_computed_at=float(data.get("assessment_computed_at", 0) or 0),
+                    source_count=int(data.get("source_count", 0) or 0),
+                    top_sources=list(data.get("top_sources", []) or []),
                 )
-            logger.info("adaptive_news_states_restored", count=len(_asset_states))
+            logger.info("adaptive_news_states_restored",
+                        count=len(_asset_states),
+                        with_provenance=sum(
+                            1 for s in _asset_states.values()
+                            if s.assessment_computed_at > 0
+                        ))
     except Exception:
         pass
 
@@ -596,6 +724,18 @@ def diagnostics_snapshot() -> dict:
     per_asset = {}
     for asset, s in states.items():
         age = time.time() - s.mode_set_at if s.mode_set_at > 0 else 0
+        # Phase 4 Item 10: freshness of the underlying assessment
+        assessment_age = (
+            time.time() - s.assessment_computed_at
+            if s.assessment_computed_at > 0 else None
+        )
+        is_stale = assessment_age is not None and assessment_age > FRESHNESS_STALE_SEC
+        origins = {
+            "asset": s.asset_specific,
+            "class": s.class_risk,
+            "macro": s.macro_risk,
+        }
+        dominant = max(origins, key=lambda k: origins[k]) if any(origins.values()) else "none"
         # Compute raw mode (what would fresh evaluation return without decay)
         raw_mode_pre_decay = compute_news_mode(
             impact_score=s.normalized_impact, shock=s.shock, bias=s.bias,
@@ -617,7 +757,18 @@ def diagnostics_snapshot() -> dict:
             "threshold_penalty": MODES[s.mode]["threshold_add"],
             "freeze_reason": s.freeze_reason,
             "elevated_since_seconds": round(age),
-            "mode_consistent": s.mode == "NORMAL" or decayed != "NORMAL",  # True if no contradiction
+            "mode_consistent": s.mode == "NORMAL" or decayed != "NORMAL",
+            # Provenance
+            "origin_split": {
+                "asset_specific": s.asset_specific,
+                "class_risk": s.class_risk,
+                "macro_risk": s.macro_risk,
+                "dominant": dominant,
+            },
+            "assessment_age_seconds": round(assessment_age, 1) if assessment_age is not None else None,
+            "is_stale": is_stale,
+            "source_count": s.source_count,
+            "top_sources": s.top_sources[:3] if s.top_sources else [],
         }
 
     mode_counts = {"NORMAL": 0, "CAUTION": 0, "RESTRICTED": 0, "FROZEN": 0}
@@ -636,6 +787,20 @@ def diagnostics_snapshot() -> dict:
     except Exception:
         pass
 
+    # Phase 4 Item 10: portfolio-level freshness + origin aggregates
+    stale_count = sum(1 for a in per_asset.values() if a.get("is_stale"))
+    no_data_count = sum(1 for a in per_asset.values() if a.get("source_count", 0) == 0)
+    # Dominant origin distribution
+    origin_counts = {"asset": 0, "class": 0, "macro": 0, "none": 0}
+    for a in per_asset.values():
+        dom = a.get("origin_split", {}).get("dominant", "none")
+        origin_counts[dom] = origin_counts.get(dom, 0) + 1
+    # Elevated-but-stale: highest-priority alert for operators
+    elevated_stale = [
+        asset for asset, a in per_asset.items()
+        if a["mode"] != "NORMAL" and a.get("is_stale")
+    ]
+
     return {
         "adaptive_news_enabled": ADAPTIVE_NEWS_ENABLED,
         "assets": per_asset,
@@ -643,6 +808,15 @@ def diagnostics_snapshot() -> dict:
             "mode_counts": mode_counts,
             "frozen_pct": round(mode_counts["FROZEN"] / max(1, len(states)) * 100, 1),
             "starvation_guard_active": mode_counts["FROZEN"] / max(1, len(states)) > MAX_FROZEN_PCT / 100,
+            # Phase 4 Item 10 freshness + origin aggregates
+            "freshness": {
+                "stale_count": stale_count,
+                "stale_pct": round(stale_count / max(1, len(states)) * 100, 1),
+                "no_data_count": no_data_count,
+                "freshness_threshold_seconds": FRESHNESS_STALE_SEC,
+                "elevated_but_stale_assets": elevated_stale,
+            },
+            "origin_distribution": origin_counts,
         },
         "summary_by_class": summary_by_class,
     }
