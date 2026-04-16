@@ -45,7 +45,7 @@ export default function TrainingOperationsPage() {
   const [loading, setLoading] = useState(true);
   const [allAssets, setAllAssets] = useState<any>(null);
   const [failedSignals, setFailedSignals] = useState<any[]>([]);
-  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets">("overview");
+  const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets" | "health">("overview");
   const [cycleTriggered, setCycleTriggered] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
@@ -54,6 +54,7 @@ export default function TrainingOperationsPage() {
   const [newsDash, setNewsDash] = useState<any>(null);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [tickerIdx, setTickerIdx] = useState(0);
+  const [health, setHealth] = useState<any>(null);
   const prevCounts = useRef<{ open: number; closed: number; signals: number }>({ open: 0, closed: 0, signals: 0 });
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevLastCycle = useRef<string | null>(null);
@@ -184,6 +185,12 @@ export default function TrainingOperationsPage() {
     fetch(`${apiBase()}/training/news-dashboard`, { headers: h })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setNewsDash(d); })
+      .catch(() => {});
+
+    // ── Phase 1c: Health dashboard — background ──
+    fetch(`${apiBase()}/training/health`, { headers: h })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setHealth(d); })
       .catch(() => {});
 
     // ── Phase 2: Candidates → background, never overwrite good data with empty ──
@@ -466,9 +473,9 @@ export default function TrainingOperationsPage() {
 
       {/* ═══ TABS (top navigation) ═══ */}
       <div className="flex border-b border-bah-border overflow-x-auto bg-bah-surface/50 rounded-t-xl -mb-2">
-        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk"] as const).map(t => (
+        {(["overview", "positions", "trades", "failed", "assets", "learning", "risk", "health"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${tab === t ? "border-bah-cyan text-bah-cyan" : "border-transparent text-bah-muted hover:text-bah-text"}`}>
-            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : "⚖️ Risk"}
+            {t === "overview" ? "📊 Overview" : t === "positions" ? `📦 Positions (${k.open_positions || 0})` : t === "trades" ? `🔁 Trades (${k.closed_trades || 0})` : t === "failed" ? `🚫 Rejected (${failedSignals.length})` : t === "assets" ? `🌐 All Assets (${allAssets?.counts?.total || k.universe_size || 0})` : t === "learning" ? "🧬 Learning" : t === "risk" ? "⚖️ Risk" : `🏥 Health${health?.status ? ` (${health.status === "healthy" ? "✓" : health.status === "degraded" ? "⚠" : "✗"})` : ""}`}
           </button>
         ))}
       </div>
@@ -482,6 +489,7 @@ export default function TrainingOperationsPage() {
         {tab === "assets" && <AssetsTab data={allAssets} />}
         {tab === "learning" && <LearningTab learn={learn} adaptive={adaptive} token={token} />}
         {tab === "risk" && <RiskTab expo={expo} />}
+        {tab === "health" && <HealthTab health={health} />}
       </div>
 
       {/* ═══ TRADE CANDIDATES ═══ */}
@@ -994,12 +1002,14 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
         <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[1000px]">
           <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
             <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th>
+            <th className="py-2.5 pr-2">Sub</th>
             <th className="py-2.5 pr-2">Dir</th><th className="py-2.5 pr-2">Type</th>
             <th className="py-2.5 pr-2 text-right">Entry</th><th className="py-2.5 pr-2 text-right">Current</th>
             <th className="py-2.5 pr-2 text-right">SL</th><th className="py-2.5 pr-2 text-right">TP</th>
             <th className="py-2.5 pr-2 text-right">Size</th><th className="py-2.5 pr-2 text-right">Risk</th>
             <th className="py-2.5 pr-2 text-right">Value</th>
             <th className="py-2.5 pr-2 text-right">Unreal P&L</th><th className="py-2.5">Bars</th>
+            <th className="py-2.5">Data</th>
             <th className="py-2.5">Opened</th>
           </tr></thead>
           <tbody>{positions.map((p: any, i: number) => {
@@ -1012,6 +1022,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                   <div className="text-[10px] text-bah-muted">{p.asset_class}</div>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-text">{sn(p.strategy)}</td>
+                <td className="py-2.5 pr-2 text-[10px] text-bah-muted">{p.substrategy ? p.substrategy.replace("v10_", "") : "—"}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
                 <td className="py-2.5 pr-2"><ExecBadge type={p.execution_type} /></td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(p.entry_price || 0)}</td>
@@ -1023,6 +1034,7 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(value)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(unreal)}`}>{fmtPnl(unreal)}</td>
                 <td className="py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
+                <td className="py-2.5 text-center">{p.data_mode && p.data_mode !== "live" ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.data_mode === "synthetic_dev" ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-300"}`}>{p.data_mode}</span> : <span className="text-[10px] text-bah-muted/40">live</span>}</td>
                 <td className="py-2.5 text-bah-muted text-[11px]">{p.entry_time ? new Date(p.entry_time).toLocaleString("en-GB", { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
               </tr>
             );
@@ -1041,12 +1053,12 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
   return (
     <Section title={`Closed Trades (${trades.length})`}>
       {trades.length > 0 ? (
-        <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[1100px]">
+        <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[1200px]">
           <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-wider text-left">
-            <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th><th className="py-2.5 pr-2">Dir</th>
+            <th className="py-2.5 pr-2">Asset</th><th className="py-2.5 pr-2">Strategy</th><th className="py-2.5 pr-2">Sub</th><th className="py-2.5 pr-2">Dir</th>
             <th className="py-2.5 pr-2 text-right">Entry</th><th className="py-2.5 pr-2 text-right">Exit</th>
             <th className="py-2.5 pr-2 text-right">Risk</th><th className="py-2.5 pr-2 text-right">P&L</th>
-            <th className="py-2.5 pr-2 text-right">R-Mult</th>
+            <th className="py-2.5 pr-2 text-right">R-Mult</th><th className="py-2.5 pr-2 text-right">Costs</th>
             <th className="py-2.5 pr-2">Result</th><th className="py-2.5 pr-2">Reason</th>
             <th className="py-2.5 pr-2 text-center">Bars</th><th className="py-2.5 pr-2">Opened</th><th className="py-2.5">Closed</th>
           </tr></thead>
@@ -1058,6 +1070,7 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
             const isFlat = Math.abs(pnl) < 0.01;
             const resultLabel = isFlat ? "FLAT" : isWin ? "WIN" : "LOSS";
             const resultCls = isFlat ? "bg-white/10 text-white/50 border border-white/15" : isWin ? "bg-green-500/15 text-green-400 border border-green-500/25" : "bg-red-500/15 text-red-400 border border-red-500/25";
+            const totalCosts = (t.entry_commission || 0) + (t.exit_commission || 0) + (t.entry_slippage_abs || 0) + (t.exit_slippage_abs || 0);
             return (
               <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                 <td className="py-2.5 pr-2">
@@ -1065,12 +1078,14 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                   <div className="text-[10px] text-bah-muted">{t.asset_class || ""}</div>
                 </td>
                 <td className="py-2.5 pr-2 text-bah-text">{sn(t.strategy)}</td>
+                <td className="py-2.5 pr-2 text-[10px] text-bah-muted">{t.substrategy ? t.substrategy.replace("v10_", "") : "—"}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.entry_price || 0)}</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.exit_price || 0)}</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-amber-400/70">{fmtMoney(risk)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{pnl >= 0 ? "+" : "-"}{fmtMoney(pnl)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{rMult >= 0 ? "+" : ""}{rMult.toFixed(1)}R</td>
+                <td className="py-2.5 pr-2 font-mono text-right text-bah-muted">{totalCosts > 0.001 ? `$${totalCosts.toFixed(2)}` : "—"}</td>
                 <td className="py-2.5 pr-2">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${resultCls}`}>
                     {resultLabel}
@@ -1197,6 +1212,7 @@ function FailedTab({ signals }: { signals: any[] }) {
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${groupClr[s._group] || groupClr.REJECT}`}>{s._group}</span>
                     <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{s.asset}</span>
                     <span className="text-[11px] text-bah-muted w-[55px] shrink-0">{sn(s.strategy)}</span>
+                    <span className="text-[10px] text-cyan-400/60 w-[65px] shrink-0 truncate">{s.substrategy ? s.substrategy.replace("v10_", "") : ""}</span>
                     <span className={`text-[11px] font-bold w-[40px] shrink-0 ${s.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{s.direction}</span>
                     <span className="text-[11px] text-bah-muted w-[30px] shrink-0 text-center">{s.readiness_score}</span>
                     <span className="text-[11px] text-bah-muted flex-1 truncate">{(s.reasons || []).join(" · ")}</span>
@@ -1207,11 +1223,28 @@ function FailedTab({ signals }: { signals: any[] }) {
                       <div className="text-bah-muted uppercase text-[9px] tracking-widest font-bold mb-2">Decision Trace</div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Asset</span><span className="text-bah-heading">{s.asset} ({s.asset_class})</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Strategy</span><span className="text-bah-heading">{sn(s.strategy)}</span></div>
+                      {s.substrategy && <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Substrategy</span><span className="text-cyan-400">{s.substrategy}</span></div>}
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Direction</span><span className={s.direction === "LONG" ? "text-green-400" : "text-red-400"}>{s.direction}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Readiness</span><span className="text-bah-heading">{s.readiness_score}/100</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Priority</span><span className="text-bah-heading">{s.priority_score}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Regime</span><span className="text-bah-heading">{s.regime}</span></div>
                       <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Decision</span><span className={s.decision === "REJECT" ? "text-red-400" : "text-amber-300"}>{s.decision}</span></div>
+                      {s.blocking_gate && <div className="flex gap-2"><span className="text-bah-muted w-[70px] shrink-0">Blocked by</span><span className="text-red-400 font-bold">{s.blocking_gate}</span><span className="text-bah-muted/60 ml-1">({s.decision_stage})</span></div>}
+                      {/* Gate history — Phase 3 Item 8 */}
+                      {s.gate_history && s.gate_history.length > 0 && (
+                        <div className="border-t border-bah-border pt-1.5 mt-1">
+                          <div className="text-bah-muted mb-1">Gate History:</div>
+                          {s.gate_history.map((g: any, gi: number) => (
+                            <div key={gi} className="flex gap-2 pl-3 items-center">
+                              <span className={`w-[10px] h-[10px] rounded-full shrink-0 ${g.verdict === "allow" ? "bg-green-500/60" : g.verdict === "penalize" ? "bg-amber-500/60" : "bg-red-500/60"}`}></span>
+                              <span className="text-bah-muted/70 w-[80px] shrink-0">{g.stage}</span>
+                              <span className="text-bah-heading w-[120px] shrink-0">{g.gate}</span>
+                              <span className={`font-bold w-[55px] shrink-0 ${g.verdict === "allow" ? "text-green-400" : g.verdict === "penalize" ? "text-amber-300" : "text-red-400"}`}>{g.verdict}</span>
+                              <span className="text-bah-muted/60 truncate">{g.detail}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {s.priority_breakdown && (
                         <div className="border-t border-bah-border pt-1.5 mt-1">
                           <div className="text-bah-muted mb-1">Priority Breakdown:</div>
@@ -1827,6 +1860,73 @@ function AssetBreakdown({ asset: a }: { asset: any }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════
+   HEALTH TAB — Phase 6 Item 16
+   Consolidated system health dashboard.
+   ═══════════════════════════════════════════ */
+function HealthTab({ health }: { health: any }) {
+  if (!health) return <div className="text-center py-10 text-bah-muted text-sm">Loading health data...</div>;
+
+  const statusClr: Record<string, string> = {
+    healthy: "text-green-400 bg-green-500/10 border-green-500/30",
+    degraded: "text-amber-300 bg-amber-500/10 border-amber-500/30",
+    critical: "text-red-400 bg-red-500/10 border-red-500/30",
+  };
+  const checkClr: Record<string, string> = {
+    ok: "bg-green-500/60",
+    warn: "bg-amber-500/60",
+    fail: "bg-red-500/60",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Status banner */}
+      <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${statusClr[health.status] || statusClr.critical}`}>
+        <span className="text-2xl">{health.status === "healthy" ? "✓" : health.status === "degraded" ? "⚠" : "✗"}</span>
+        <div>
+          <div className="text-sm font-bold uppercase tracking-wider">{health.status}</div>
+          <div className="text-[11px] opacity-70">
+            {health.summary?.ok || 0} ok · {health.summary?.warn || 0} warn · {health.summary?.fail || 0} fail — {health.generated_at ? new Date(health.generated_at).toLocaleTimeString("en-GB", { hour12: false }) : ""}
+          </div>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {health.alerts && health.alerts.length > 0 && (
+        <Section title={`Alerts (${health.alerts.length})`}>
+          <div className="space-y-1.5">
+            {health.alerts.map((a: string, i: number) => (
+              <div key={i} className="flex items-start gap-2 text-[12px] text-red-400">
+                <span className="shrink-0 mt-0.5">🚨</span>
+                <span className="font-mono">{a}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Checks grid */}
+      <Section title="Subsystem Checks">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {(health.checks || []).map((c: any, i: number) => (
+            <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-bah-border bg-black/20">
+              <span className={`w-[10px] h-[10px] rounded-full shrink-0 ${checkClr[c.status] || checkClr.fail}`}></span>
+              <span className="text-[11px] text-bah-heading font-bold w-[180px] shrink-0 truncate">{c.name}</span>
+              <span className="text-[11px] text-bah-muted truncate flex-1">{c.detail}</span>
+              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                c.status === "ok" ? "bg-green-500/15 text-green-400" :
+                c.status === "warn" ? "bg-amber-500/15 text-amber-300" :
+                "bg-red-500/15 text-red-400"
+              }`}>{c.status}</span>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 
 /* ═══════════════════════════════════════════
    SHARED COMPONENTS
