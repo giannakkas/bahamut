@@ -1771,6 +1771,53 @@ async def _build_diagnostics():
         except Exception:
             pass
 
+        # Phase 3 Item 7: per-substrategy performance breakdown
+        # Pulls from the substrategy column (populated post-deploy).
+        # Legacy rows have substrategy='' and are pooled under 'v10_unclassified'
+        # for operator visibility — they're excluded from per-substrategy
+        # trust decisions by the learning_engine (which requires non-empty).
+        try:
+            substrat_rows = run_query("""
+                SELECT
+                    CASE WHEN COALESCE(substrategy, '') = ''
+                         THEN CONCAT(strategy, '_unclassified')
+                         ELSE substrategy END as sub,
+                    asset_class,
+                    COUNT(*) as trades,
+                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                    ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+                    ROUND(AVG(pnl)::numeric, 2) as avg_pnl
+                FROM training_trades
+                WHERE strategy = 'v10_mean_reversion'
+                GROUP BY sub, asset_class
+                HAVING COUNT(*) >= 1
+                ORDER BY SUM(pnl) DESC
+            """)
+            if substrat_rows:
+                ai_section["data"]["v10_substrategy_performance"] = [
+                    {
+                        "substrategy": dict(s)["sub"],
+                        "asset_class": dict(s)["asset_class"] or "",
+                        "trades": int(dict(s)["trades"]),
+                        "wins": int(dict(s)["wins"] or 0),
+                        "losses": int(dict(s)["losses"] or 0),
+                        "win_rate": (round(int(dict(s)["wins"] or 0) /
+                                           max(1, int(dict(s)["trades"])) * 100, 1)),
+                        "total_pnl": float(dict(s)["total_pnl"] or 0),
+                        "avg_pnl": float(dict(s)["avg_pnl"] or 0),
+                    }
+                    for s in substrat_rows
+                ]
+            # Substrategy trust buckets from Redis (written by learning_engine)
+            from bahamut.training.learning_engine import get_substrategy_trust
+            substrat_trust = {}
+            for sub_name in ("v10_range_long", "v10_range_short", "v10_crash_short"):
+                substrat_trust[sub_name] = get_substrategy_trust(sub_name, "", "crypto")
+            ai_section["data"]["v10_substrategy_trust"] = substrat_trust
+        except Exception as _e:
+            ai_section["data"]["v10_substrategy_error"] = str(_e)[:200]
+
         # Crash-short suppress/penalty maps + last 3 trades
         try:
             from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
@@ -1872,12 +1919,16 @@ async def _build_diagnostics():
 
         # Active engine suppress map (show what's blocked)
         try:
-            from bahamut.config_assets import TRAINING_SUPPRESS, CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
+            from bahamut.config_assets import TRAINING_SUPPRESS, CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE, SUBSTRATEGY_SUPPRESS
             ai_section["data"]["engine_suppress_map"] = {
                 k: sorted(list(v)) for k, v in TRAINING_SUPPRESS.items()
             }
             ai_section["data"]["crash_short_suppress_active"] = sorted(list(CRASH_SHORT_SUPPRESS))
             ai_section["data"]["crash_short_penalize_active"] = sorted(list(CRASH_SHORT_PENALIZE))
+            # Phase 3 Item 7: substrategy suppress map
+            ai_section["data"]["substrategy_suppress_map"] = {
+                k: sorted(list(v)) for k, v in SUBSTRATEGY_SUPPRESS.items()
+            }
             ai_section["data"]["containment_rules"] = {
                 "v10_crypto_range_blocked_debug_only": "v10 crypto RANGE/CRASH blocked for DEBUG_EXPLORATION path only (expectancy -0.15, 165 mature samples). Production path NOT auto-blocked — relies on mature_negative hard_block + per-asset suppress maps.",
                 "sentiment_long_block": "Crypto LONGs blocked by _sentiment_long_block flag when F&G ≤ 25 (regime NOT relabeled)",
@@ -1892,6 +1943,7 @@ async def _build_diagnostics():
                 "selector_class_boosts": "v9+stock: +8pts, v10+crypto: -10pts, v5+crypto: -5pts",
                 "selector_expectancy_penalty": "Mature negative expectancy → priority penalty (max -15pts)",
                 "crypto_mirror_hard_invariant": "crypto positions with platform=internal OR empty order_id are NEVER persisted — blocked in _save_position",
+                "substrategy_isolation": "v10 signals tagged as v10_range_long / v10_range_short / v10_crash_short. Trust, expectancy, and suppression tracked per substrategy. SUBSTRATEGY_SUPPRESS map blocks specific asset+substrategy pairs.",
             }
         except Exception:
             pass
@@ -1983,6 +2035,7 @@ async def _build_diagnostics():
                 "bahamut:counters:production_trust_updates",
                 "bahamut:counters:research_trust_updates",
                 "bahamut:counters:engine_suppress_blocks",
+                "bahamut:counters:substrategy_suppress_blocks",
                 "bahamut:counters:sentiment_gate_blocks",
                 "bahamut:counters:v10_crypto_range_blocks",
                 "bahamut:counters:mature_neg_expectancy_blocks",

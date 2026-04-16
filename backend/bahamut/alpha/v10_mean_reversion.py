@@ -537,6 +537,15 @@ class V10MeanReversion:
         asset_class = indicators.get("_asset_class", "")
         hold = 30 if asset_class == "forex" else self.max_hold
 
+        # Phase 3 Item 7: tag the sub-strategy so trust/expectancy/suppression
+        # are tracked separately for range_long, range_short, crash_short.
+        if sig.entry_type == "crash_short":
+            substrategy = "v10_crash_short"
+        elif sig.direction == "LONG":
+            substrategy = "v10_range_long"
+        else:
+            substrategy = "v10_range_short"
+
         return Signal(
             strategy=self.name,
             asset=asset,
@@ -547,6 +556,7 @@ class V10MeanReversion:
             quality=sig.confidence,
             reason=sig.reason,
             signal_id=f"{self.name}:{asset}:{bar_ts}",
+            substrategy=substrategy,
         )
 
 

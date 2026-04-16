@@ -274,6 +274,7 @@ def run_training_cycle():
                 execution_type=sig.execution_type,
                 confidence_score=sig.confidence_score,
                 trigger_reason=sig.trigger_reason,
+                substrategy=getattr(sig, "substrategy", "") or "",
             )
             if pos:
                 trades_opened += 1
@@ -620,6 +621,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 trigger_reason=trigger,
                 risk_multiplier=risk_mult,
                 indicators=candidate_indicators,
+                substrategy=getattr(signal, "substrategy", "") or "",
             ))
 
     # ═══════════════════════════════════════════
@@ -777,6 +779,16 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         pass
 
                 if not context_blocked:
+                    # Phase 3 Item 7: infer substrategy for v10 debug signals
+                    # so trust/suppression can be tracked per sub-path.
+                    inferred_sub = ""
+                    if strat == "v10_mean_reversion":
+                        if regime == "CRASH" and direction == "SHORT":
+                            inferred_sub = "v10_crash_short"
+                        elif direction == "LONG":
+                            inferred_sub = "v10_range_long"
+                        else:
+                            inferred_sub = "v10_range_short"
                     result["signals"].append(PendingSignal(
                         asset=asset,
                         asset_class=asset_class,
@@ -794,6 +806,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                         trigger_reason="debug_exploration_override",
                         risk_multiplier=0.5,
                         indicators=best_candidate.indicators if hasattr(best_candidate, 'indicators') else {},
+                        substrategy=inferred_sub,
                     ))
             else:
                 logger.info("debug_override_no_qualifying_candidate",

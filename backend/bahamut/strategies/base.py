@@ -32,6 +32,12 @@ class Signal:
     reason: str = ""
     timestamp: str = ""
     signal_id: str = ""
+    # Phase 3 Item 7: sub-strategy tag for trust/suppression isolation.
+    # Example: v10_mean_reversion emits one of "v10_range_long",
+    # "v10_range_short", "v10_crash_short". Other strategies leave this
+    # empty (""), in which case the learning engine keys on parent
+    # strategy only — behavior unchanged for v5/v9.
+    substrategy: str = ""
 
     def __post_init__(self):
         if not self.timestamp:

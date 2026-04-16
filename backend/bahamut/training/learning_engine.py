@@ -117,6 +117,10 @@ class LearningContext:
     bars_held: int
     quick_stop: bool
     outcome_score: float
+    # Phase 3 Item 7: sub-strategy tag for isolated trust/expectancy tracking.
+    # Empty string → no substrategy bucket written (behavior unchanged for
+    # v5/v9 and legacy v10 trades pre-dating this change).
+    substrategy: str = ""
 
 
 def compute_learning_context(trade_dict: dict) -> LearningContext:
@@ -150,6 +154,7 @@ def compute_learning_context(trade_dict: dict) -> LearningContext:
         exit_reason=exit_reason, pnl=round(pnl, 2),
         r_multiple=round(r_multiple, 4), bars_held=bars,
         quick_stop=quick_stop, outcome_score=round(score, 4),
+        substrategy=str(trade_dict.get("substrategy", "")),
     )
 
 
@@ -158,12 +163,27 @@ def compute_learning_context(trade_dict: dict) -> LearningContext:
 # ═══════════════════════════════════════════
 
 def _build_trust_keys(ctx: LearningContext) -> list[str]:
-    return [
+    """Return the trust bucket keys to update for this trade.
+
+    Phase 3 Item 7: when ctx.substrategy is non-empty, ALSO write
+    substrategy-keyed buckets alongside the parent-strategy buckets.
+    Parent buckets are preserved so aggregate views still work; the
+    new substrategy buckets give per-subpath granularity for selector
+    decisions.
+    """
+    keys = [
         f"bahamut:training:trust:strategy:{ctx.strategy}",
         f"bahamut:training:trust:strategy_regime:{ctx.strategy}:{ctx.regime}",
         f"bahamut:training:trust:strategy_class:{ctx.strategy}:{ctx.asset_class}",
         f"bahamut:training:trust:pattern:{ctx.strategy}:{ctx.regime}:{ctx.asset_class}",
     ]
+    if ctx.substrategy:
+        keys.extend([
+            f"bahamut:training:trust:substrategy:{ctx.substrategy}",
+            f"bahamut:training:trust:substrategy_class:{ctx.substrategy}:{ctx.asset_class}",
+            f"bahamut:training:trust:substrategy_pattern:{ctx.substrategy}:{ctx.regime}:{ctx.asset_class}",
+        ])
+    return keys
 
 
 def update_trust_from_trade(ctx: LearningContext):
@@ -329,6 +349,58 @@ def _calc_expectancy_from_buckets(buckets: dict, r, strategy: str, regime: str, 
     key = f"bahamut:training:trust:pattern:{strategy}:{regime}:{asset_class}"
     data = _load_trust_bucket(r, key)
     return calculate_expectancy(data.get("recent_r_multiples", []))
+
+
+def get_substrategy_trust(substrategy: str, regime: str = "", asset_class: str = "") -> dict:
+    """Phase 3 Item 7: read per-substrategy trust + expectancy.
+
+    Returns:
+      {
+        "substrategy": str,
+        "trust": float,       # blended from available buckets (strategy → class → pattern)
+        "samples": int,       # total trades on this substrategy
+        "expectancy": float,  # from substrategy_pattern if available, else substrategy_class
+        "maturity": str,      # provisional / developing / mature
+        "buckets": dict       # raw bucket contents
+      }
+    Missing/empty substrategy returns zeros.
+    """
+    r = _get_redis()
+    if not r or not substrategy:
+        return {"substrategy": substrategy, "trust": 0.5, "samples": 0,
+                "expectancy": 0.0, "maturity": "provisional", "buckets": {}}
+
+    base_key = f"bahamut:training:trust:substrategy:{substrategy}"
+    base = _load_trust_bucket(r, base_key)
+    samples = int(base.get("total_trades", 0))
+    trust = float(base.get("trust", 0.5))
+
+    buckets = {"substrategy": base}
+    if asset_class:
+        class_key = f"bahamut:training:trust:substrategy_class:{substrategy}:{asset_class}"
+        buckets["substrategy_class"] = _load_trust_bucket(r, class_key)
+    if regime and asset_class:
+        pattern_key = f"bahamut:training:trust:substrategy_pattern:{substrategy}:{regime}:{asset_class}"
+        buckets["substrategy_pattern"] = _load_trust_bucket(r, pattern_key)
+
+    # Expectancy: prefer pattern > class > base
+    r_multiples = []
+    for k in ("substrategy_pattern", "substrategy_class", "substrategy"):
+        if k in buckets and buckets[k].get("recent_r_multiples"):
+            r_multiples = buckets[k]["recent_r_multiples"]
+            break
+    expectancy = calculate_expectancy(r_multiples) if r_multiples else 0.0
+
+    maturity = get_maturity_state(samples)
+
+    return {
+        "substrategy": substrategy,
+        "trust": trust,
+        "samples": samples,
+        "expectancy": expectancy,
+        "maturity": maturity,
+        "buckets": buckets,
+    }
 
 
 def calculate_expectancy(r_multiples: list) -> float:

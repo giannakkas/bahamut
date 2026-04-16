@@ -33,6 +33,44 @@ def _get_redis():
 
 
 # ═══════════════════════════════════════════
+# Phase 3 Item 7 — Idempotent substrategy column migration
+# Runs once per process. Uses ALTER TABLE IF NOT EXISTS (Postgres 9.6+).
+# Failure is non-fatal: INSERTs fall back to the no-substrategy code path.
+# ═══════════════════════════════════════════
+_SUBSTRATEGY_MIGRATION_DONE = False
+
+
+def _ensure_substrategy_column() -> bool:
+    """Add substrategy columns to training_positions and training_trades if
+    not already present. Idempotent — safe to call on every write.
+    Returns True if columns exist (either before or after this call)."""
+    global _SUBSTRATEGY_MIGRATION_DONE
+    if _SUBSTRATEGY_MIGRATION_DONE:
+        return True
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE training_positions "
+                "ADD COLUMN IF NOT EXISTS substrategy VARCHAR(64) DEFAULT ''"
+            ))
+            conn.execute(text(
+                "ALTER TABLE training_trades "
+                "ADD COLUMN IF NOT EXISTS substrategy VARCHAR(64) DEFAULT ''"
+            ))
+            conn.commit()
+        _SUBSTRATEGY_MIGRATION_DONE = True
+        logger.info("training_substrategy_column_ready")
+        return True
+    except Exception as e:
+        # Don't crash — INSERTs will fall back to legacy path.
+        logger.warning("training_substrategy_column_migration_failed",
+                       error=str(e)[:200])
+        return False
+
+
+# ═══════════════════════════════════════════
 # POSITION MODEL
 # ═══════════════════════════════════════════
 
@@ -79,6 +117,11 @@ class TrainingPosition:
     slippage_abs: float = 0.0
     slippage_pct: float = 0.0
 
+    # ── Phase 3 Item 7: sub-strategy tag (v10_range_long / v10_range_short
+    # / v10_crash_short / empty for non-v10). Enables independent trust,
+    # expectancy, suppression, cooldowns, diagnostics per sub-path.
+    substrategy: str = ""
+
     @property
     def unrealized_pnl(self):
         if self.direction == "LONG":
@@ -120,6 +163,9 @@ class TrainingTrade:
     exit_slippage_abs: float = 0.0
     entry_lifecycle: str = ""             # lifecycle at entry
     exit_lifecycle: str = ""              # lifecycle at exit
+
+    # ── Phase 3 Item 7: sub-strategy tag propagated from Position ──
+    substrategy: str = ""
 
 
 # ═══════════════════════════════════════════
@@ -186,7 +232,8 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                        entry_price, stop_price, tp_price, size, risk_amount,
                        entry_time, bars_held, max_hold_bars, current_price,
                        execution_type, confidence_score, trigger_reason,
-                       execution_platform, exchange_order_id
+                       execution_platform, exchange_order_id,
+                       COALESCE(substrategy, '') as substrategy
                 FROM training_positions WHERE status = 'OPEN'
             """)).mappings().all()
 
@@ -213,6 +260,7 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                     trigger_reason=str(row["trigger_reason"] or "4h_close"),
                     execution_platform=str(row.get("execution_platform") or "internal"),
                     exchange_order_id=str(row.get("exchange_order_id") or ""),
+                    substrategy=str(row.get("substrategy") or ""),
                 )
 
                 # ── Phase 2 Item 5: invariant enforcement on DB reload ──
@@ -399,29 +447,62 @@ def _save_position(pos: TrainingPosition):
     try:
         from bahamut.database import sync_engine
         from sqlalchemy import text
+        # Phase 3 Item 7: ensure substrategy column exists (idempotent)
+        _ensure_substrategy_column()
         with sync_engine.connect() as conn:
-            conn.execute(text("""
-                INSERT INTO training_positions
-                (position_id, asset, asset_class, strategy, direction,
-                 entry_price, stop_price, tp_price, size, risk_amount,
-                 entry_time, bars_held, max_hold_bars, current_price,
-                 execution_type, confidence_score, trigger_reason, status)
-                VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
-                        :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN')
-                ON CONFLICT (position_id) DO UPDATE SET
-                    bars_held = EXCLUDED.bars_held,
-                    current_price = EXCLUDED.current_price,
-                    status = 'OPEN'
-            """), {
-                "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
-                "s": pos.strategy, "d": pos.direction,
-                "ep": pos.entry_price, "sp": pos.stop_price,
-                "tp": pos.tp_price, "sz": pos.size, "ra": pos.risk_amount,
-                "et": pos.entry_time, "bh": pos.bars_held,
-                "mhb": pos.max_hold_bars, "cp": pos.current_price,
-                "ext": pos.execution_type, "cs": pos.confidence_score,
-                "tr": pos.trigger_reason,
-            })
+            try:
+                conn.execute(text("""
+                    INSERT INTO training_positions
+                    (position_id, asset, asset_class, strategy, direction,
+                     entry_price, stop_price, tp_price, size, risk_amount,
+                     entry_time, bars_held, max_hold_bars, current_price,
+                     execution_type, confidence_score, trigger_reason, status,
+                     substrategy)
+                    VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
+                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub)
+                    ON CONFLICT (position_id) DO UPDATE SET
+                        bars_held = EXCLUDED.bars_held,
+                        current_price = EXCLUDED.current_price,
+                        status = 'OPEN'
+                """), {
+                    "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
+                    "s": pos.strategy, "d": pos.direction,
+                    "ep": pos.entry_price, "sp": pos.stop_price,
+                    "tp": pos.tp_price, "sz": pos.size, "ra": pos.risk_amount,
+                    "et": pos.entry_time, "bh": pos.bars_held,
+                    "mhb": pos.max_hold_bars, "cp": pos.current_price,
+                    "ext": pos.execution_type, "cs": pos.confidence_score,
+                    "tr": pos.trigger_reason,
+                    "sub": pos.substrategy or "",
+                })
+            except Exception as _insert_err:
+                # Column missing or unknown — fall back to legacy INSERT
+                # without substrategy so production never hard-fails.
+                conn.rollback()
+                conn.execute(text("""
+                    INSERT INTO training_positions
+                    (position_id, asset, asset_class, strategy, direction,
+                     entry_price, stop_price, tp_price, size, risk_amount,
+                     entry_time, bars_held, max_hold_bars, current_price,
+                     execution_type, confidence_score, trigger_reason, status)
+                    VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
+                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN')
+                    ON CONFLICT (position_id) DO UPDATE SET
+                        bars_held = EXCLUDED.bars_held,
+                        current_price = EXCLUDED.current_price,
+                        status = 'OPEN'
+                """), {
+                    "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
+                    "s": pos.strategy, "d": pos.direction,
+                    "ep": pos.entry_price, "sp": pos.stop_price,
+                    "tp": pos.tp_price, "sz": pos.size, "ra": pos.risk_amount,
+                    "et": pos.entry_time, "bh": pos.bars_held,
+                    "mhb": pos.max_hold_bars, "cp": pos.current_price,
+                    "ext": pos.execution_type, "cs": pos.confidence_score,
+                    "tr": pos.trigger_reason,
+                })
+                logger.debug("training_position_insert_fallback_no_substrategy",
+                             reason=str(_insert_err)[:100])
             conn.commit()
     except Exception as e:
         logger.error("training_save_position_db_failed",
@@ -504,20 +585,19 @@ def open_training_position(
     execution_type: str = "standard",
     confidence_score: float = 0.0,
     trigger_reason: str = "4h_close",
+    substrategy: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
 
     # ═══════════════════════════════════════════
     # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
-    # This is the single choke point every trade must pass through.
-    # Strategy.evaluate(), debug_exploration, and CRASH SHORT all converge here.
+    # Single choke point every trade must pass through. Strategy.evaluate(),
+    # debug_exploration, and CRASH SHORT all converge here.
+    # Canonical sources: config_assets.TRAINING_SUPPRESS +
+    # Phase 3 Item 7: config_assets.SUBSTRATEGY_SUPPRESS (per substrategy).
     # ═══════════════════════════════════════════
-    # ═══════════════════════════════════════════
-    # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
-    # Single canonical source: config_assets.TRAINING_SUPPRESS
-    # ═══════════════════════════════════════════
-    from bahamut.config_assets import TRAINING_SUPPRESS
+    from bahamut.config_assets import TRAINING_SUPPRESS, SUBSTRATEGY_SUPPRESS
     global_block = TRAINING_SUPPRESS.get("*", set())
     strat_block = TRAINING_SUPPRESS.get(strategy, set())
     if asset in global_block or asset in strat_block:
@@ -525,6 +605,13 @@ def open_training_position(
                     asset=asset, strategy=strategy, direction=direction,
                     reason="ENGINE_SUPPRESS_MAP")
         _increment_counter(_get_redis(), "bahamut:counters:engine_suppress_blocks")
+        return None
+    # Phase 3 Item 7 — substrategy block
+    if substrategy and asset in SUBSTRATEGY_SUPPRESS.get(substrategy, set()):
+        logger.info("training_engine_substrategy_suppressed",
+                    asset=asset, strategy=strategy, substrategy=substrategy,
+                    direction=direction, reason="SUBSTRATEGY_SUPPRESS_MAP")
+        _increment_counter(_get_redis(), "bahamut:counters:substrategy_suppress_blocks")
         return None
 
     # ── Crash-short specific suppress ──
@@ -833,6 +920,7 @@ def open_training_position(
         confidence_score=confidence_score,
         trigger_reason=trigger_reason,
         regime=regime,
+        substrategy=substrategy,
     )
 
     # ── Execute on exchange FIRST (Binance/Alpaca) ──
@@ -1105,6 +1193,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 confidence_score=pos.confidence_score,
                 trigger_reason=pos.trigger_reason,
                 regime=pos.regime,
+                substrategy=pos.substrategy,
             )
 
             actually_removed = _remove_position(pos.position_id)
@@ -1235,6 +1324,8 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
 def _persist_trade(trade: TrainingTrade):
     """Persist closed trade to training_trades table + feed learning."""
+    # Phase 3 Item 7: ensure substrategy column exists (idempotent)
+    _ensure_substrategy_column()
     # DB — primary persistence
     try:
         from bahamut.database import sync_engine
@@ -1245,10 +1336,10 @@ def _persist_trade(trade: TrainingTrade):
                 (trade_id, position_id, asset, asset_class, strategy, direction,
                  entry_price, exit_price, stop_price, tp_price, size, risk_amount,
                  pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime,
-                 execution_type, confidence_score, trigger_reason)
+                 execution_type, confidence_score, trigger_reason, substrategy)
                 VALUES (:tid, :pid, :a, :ac, :s, :d, :ep, :xp, :sp, :tp, :sz, :ra,
                         :pnl, :pp, :et, :xt, :xr, :bh, :reg,
-                        :exec_type, :conf, :trig)
+                        :exec_type, :conf, :trig, :sub)
             """), {
                 "tid": trade.trade_id, "pid": trade.position_id,
                 "a": trade.asset, "ac": trade.asset_class,
@@ -1263,6 +1354,7 @@ def _persist_trade(trade: TrainingTrade):
                 "exec_type": trade.execution_type,
                 "conf": trade.confidence_score,
                 "trig": trade.trigger_reason,
+                "sub": trade.substrategy or "",
             })
             conn.commit()
             logger.info("training_trade_persisted_to_db", trade_id=trade.trade_id,

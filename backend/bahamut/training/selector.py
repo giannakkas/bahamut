@@ -88,6 +88,9 @@ class PendingSignal:
     trigger_reason: str = "4h_close"       # "4h_close" | "early_signal"
     risk_multiplier: float = 1.0           # 0.5 for early trades
     indicators: dict = None
+    # Phase 3 Item 7: sub-strategy tag (e.g. v10_range_long, v10_crash_short).
+    # Non-v10 strategies leave empty — behavior unchanged.
+    substrategy: str = ""
 
     def __post_init__(self):
         if self.indicators is None:

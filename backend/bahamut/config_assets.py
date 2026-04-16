@@ -159,13 +159,40 @@ CRASH_SHORT_PENALIZE = {
 }
 
 
-def is_suppressed(asset: str, strategy: str, execution_type: str = "standard") -> bool:
-    """Check if an asset is suppressed for a given strategy/execution type."""
+# ═══════════════════════════════════════════
+# Phase 3 Item 7 — SUB-STRATEGY SUPPRESS MAP
+# Per-substrategy hard blocks. A v10 signal tags itself with one of:
+#   "v10_range_long"  — LONG in RANGE regime
+#   "v10_range_short" — SHORT in RANGE regime (non-crash)
+#   "v10_crash_short" — SHORT triggered by CRASH SHORT detector
+#
+# This lets us block an asset on (e.g.) v10_range_short without
+# also blocking it on v10_crash_short — the two have different edge.
+# Starts empty; populated by operator as per-substrategy trust data matures.
+# ═══════════════════════════════════════════
+SUBSTRATEGY_SUPPRESS: dict = {
+    # Example entry — kept empty until we have per-substrategy stats:
+    # "v10_range_short": {"XRPUSD"},
+    # "v10_crash_short": {"SUIUSD"},
+}
+
+
+def is_suppressed(asset: str, strategy: str, execution_type: str = "standard",
+                  substrategy: str = "") -> bool:
+    """Check if an asset is suppressed for a given strategy/execution type.
+
+    Phase 3 Item 7: also checks SUBSTRATEGY_SUPPRESS when substrategy is
+    non-empty. Callers that don't know the substrategy pass empty string
+    and only the parent-strategy maps apply — behavior unchanged for
+    v5/v9 and legacy v10 callers.
+    """
     if asset in TRAINING_SUPPRESS.get("*", set()):
         return True
     if asset in TRAINING_SUPPRESS.get(strategy, set()):
         return True
     if execution_type == "crash_short" and asset in CRASH_SHORT_SUPPRESS:
+        return True
+    if substrategy and asset in SUBSTRATEGY_SUPPRESS.get(substrategy, set()):
         return True
     return False
 
