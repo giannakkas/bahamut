@@ -1247,6 +1247,40 @@ async def _build_diagnostics():
         indicator_section["error"] = str(e)
     diag["sections"].append(indicator_section)
 
+    # ── 13b. CLOSED-CANDLE ENFORCEMENT (Phase 1 Item 1) ──
+    candle_section = {"title": "CANDLE CLOSED-STATE", "rows": [], "data": {}}
+    try:
+        from bahamut.data.binance_data import last_candle_closed_state
+        state = last_candle_closed_state()
+        # Summarize
+        total = len(state)
+        any_forming_used_for_signals = [
+            k for k, v in state.items()
+            if v.get("used_for_signals") and not v.get("is_closed")
+        ]
+        total_dropped_forming = sum(v.get("dropped_forming", 0) for v in state.values())
+        candle_section["data"] = {
+            "total_tracked_asset_intervals": total,
+            "any_forming_candle_used_for_signals": len(any_forming_used_for_signals),
+            "forming_leak_assets": any_forming_used_for_signals[:10],
+            "total_forming_dropped_across_fetches": total_dropped_forming,
+            "enforcement_ok": len(any_forming_used_for_signals) == 0,
+            "source": "bahamut.data.binance_data.last_candle_closed_state",
+        }
+        # Show per-asset-interval detail for the most-recent entries
+        for k, v in sorted(state.items(), key=lambda x: -x[1].get("recorded_at", 0))[:8]:
+            candle_section["rows"].append({
+                "asset_interval": k,
+                "last_datetime": v.get("last_datetime"),
+                "is_closed": v.get("is_closed"),
+                "dropped_forming": v.get("dropped_forming", 0),
+                "used_for_signals": v.get("used_for_signals"),
+                "source": v.get("source"),
+            })
+    except Exception as e:
+        candle_section["error"] = str(e)
+    diag["sections"].append(candle_section)
+
     # ── 14. LAST CYCLE SIGNALS (from Redis) ──
     signals_section = {"title": "LAST CYCLE SIGNALS", "rows": []}
     try:

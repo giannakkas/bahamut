@@ -124,7 +124,12 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
 
 
 def _fetch_from_twelvedata(symbol: str, count: int) -> list[dict]:
-    """Fetch from Twelve Data API (sync wrapper around async adapter)."""
+    """Fetch from Twelve Data API (sync wrapper around async adapter).
+
+    Adds closed-candle enforcement + provenance fields. Twelve Data /time_series
+    returns closed bars by convention, but we still verify the last bar's
+    open_time vs now to detect any forming-bar contamination.
+    """
     from bahamut.ingestion.adapters.twelvedata import twelve_data
 
     if not twelve_data.configured:
@@ -141,16 +146,70 @@ def _fetch_from_twelvedata(symbol: str, count: int) -> list[dict]:
         return []
 
     # Convert from TwelveData format (time) to orchestrator format (datetime)
+    # and add provenance fields.
+    # Twelve Data 4H bar open_time + 4h = close_time.
+    now_ts = int(time.time())
+    _INTERVAL_SEC_4H = 14400
     candles = []
     for c in raw:
+        dt_str = c.get("time", c.get("datetime", ""))
+        # Parse open_time for closed-state verification
+        open_time_ts = 0
+        try:
+            if dt_str:
+                # Twelve Data returns "YYYY-MM-DD HH:MM:SS" in UTC
+                from datetime import datetime as _dt
+                parsed = _dt.strptime(dt_str, "%Y-%m-%d %H:%M:%S") if " " in dt_str else _dt.fromisoformat(dt_str.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                open_time_ts = int(parsed.timestamp())
+        except Exception:
+            pass
+        close_time_ts = open_time_ts + _INTERVAL_SEC_4H if open_time_ts else 0
+        # For Twelve Data: bar is closed when now > close_time
+        is_closed = (now_ts > close_time_ts) if close_time_ts > 0 else True
         candles.append({
-            "datetime": c.get("time", c.get("datetime", "")),
+            "datetime": dt_str,
             "open": float(c.get("open", 0)),
             "high": float(c.get("high", 0)),
             "low": float(c.get("low", 0)),
             "close": float(c.get("close", 0)),
             "volume": float(c.get("volume", 0)),
+            # Provenance
+            "open_time": open_time_ts * 1000 if open_time_ts else 0,
+            "close_time": close_time_ts * 1000 if close_time_ts else 0,
+            "is_closed": is_closed,
+            "source": "twelvedata",
         })
+
+    # Drop any trailing forming candle — Twelve Data rarely sends one, but
+    # defense in depth: strategies must never see open bars.
+    dropped_forming = 0
+    while candles and not candles[-1]["is_closed"]:
+        candles.pop()
+        dropped_forming += 1
+
+    if dropped_forming > 0:
+        logger.warning("twelvedata_dropped_forming_candle",
+                       symbol=symbol, dropped=dropped_forming)
+
+    # Record to shared diagnostics state
+    try:
+        from bahamut.data.binance_data import _LAST_CANDLE_STATE
+        if candles:
+            last = candles[-1]
+            _LAST_CANDLE_STATE[f"{symbol}:4h"] = {
+                "last_open_time": last["open_time"],
+                "last_close_time": last["close_time"],
+                "last_datetime": last["datetime"],
+                "is_closed": last["is_closed"],
+                "dropped_forming": dropped_forming,
+                "used_for_signals": True,
+                "source": "twelvedata",
+                "recorded_at": now_ts,
+            }
+    except Exception:
+        pass
 
     return candles
 

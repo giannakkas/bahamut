@@ -13,10 +13,24 @@ def compute_indicators(candles: list[dict]) -> dict:
     Compute all technical indicators from OHLCV candle data.
     Returns a flat dict of indicator values based on the most recent candles.
     Requires at least 200 candles for EMA-200.
+
+    HARD INVARIANT: the last candle must be closed. If it has is_closed=False,
+    we drop it before computing indicators. This prevents strategies from
+    acting on in-progress bars. Legacy lists without is_closed field are
+    assumed closed (backward-compatible).
     """
     if len(candles) < 20:
         logger.warning("insufficient_candles", count=len(candles))
         return {}
+
+    # Closed-candle invariant
+    if candles and candles[-1].get("is_closed") is False:
+        logger.warning("features_indicators_dropping_forming_candle",
+                       datetime=candles[-1].get("datetime", ""),
+                       source=candles[-1].get("source", "unknown"))
+        candles = candles[:-1]
+        if len(candles) < 20:
+            return {}
 
     closes = np.array([c["close"] for c in candles], dtype=float)
     highs = np.array([c["high"] for c in candles], dtype=float)
