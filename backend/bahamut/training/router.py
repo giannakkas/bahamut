@@ -1251,6 +1251,7 @@ async def _build_diagnostics():
     candle_section = {"title": "CANDLE CLOSED-STATE", "rows": [], "data": {}}
     try:
         from bahamut.data.binance_data import last_candle_closed_state
+        from bahamut.features.indicators import INDICATOR_ENGINE_VERSION as _IEV
         state = last_candle_closed_state()
         # Summarize
         total = len(state)
@@ -1266,6 +1267,9 @@ async def _build_diagnostics():
             "total_forming_dropped_across_fetches": total_dropped_forming,
             "enforcement_ok": len(any_forming_used_for_signals) == 0,
             "source": "bahamut.data.binance_data.last_candle_closed_state",
+            # Phase 1 Item 2: canonical indicator engine provenance
+            "indicator_engine_version": _IEV,
+            "indicator_engine_source": "bahamut.features.indicators (canonical, shared by crypto and stock paths)",
         }
         # Show per-asset-interval detail for the most-recent entries
         for k, v in sorted(state.items(), key=lambda x: -x[1].get("recorded_at", 0))[:8]:

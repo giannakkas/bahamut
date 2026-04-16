@@ -78,6 +78,52 @@ def test_last_candle_closed_state_helper_exists():
     assert isinstance(state, dict)
 
 
+# ──────────────────────────────────────────────────────────────
+# Phase 1 Item 2 — unified indicator engine
+# ──────────────────────────────────────────────────────────────
+
+def test_binance_and_features_indicators_identical_values():
+    """Both callers must now produce the same indicator values for the
+    same input. Previously Binance had its own simpler math with unsmoothed
+    RSI/ATR/ADX that diverged materially from the stock path."""
+    from bahamut.data.binance_data import compute_indicators as binance_ci
+    from bahamut.features.indicators import compute_indicators as features_ci
+
+    candles = _make_candles(250, forming_last=False)
+    b = binance_ci(candles)
+    f = features_ci(candles)
+    assert b and f
+
+    # Critical overlapping keys must match
+    for key in ("close", "ema_20", "ema_50", "ema_200", "rsi_14",
+                "atr_14", "adx_14", "bollinger_upper", "bollinger_lower",
+                "bollinger_mid"):
+        assert key in b and key in f, f"{key} missing in one engine"
+        assert _approx(b[key], f[key]), \
+            f"{key} diverges: binance={b[key]} features={f[key]}"
+
+
+def test_indicators_carry_provenance():
+    from bahamut.features.indicators import compute_indicators, INDICATOR_ENGINE_VERSION
+    candles = _make_candles(250)
+    result = compute_indicators(candles)
+    assert result.get("indicator_engine_version") == INDICATOR_ENGINE_VERSION
+    assert result.get("indicator_source") in ("canonical", "canonical_via_binance_wrapper")
+
+
+def test_binance_wrapper_preserves_contract_keys():
+    """Callers rely on a specific key set. The wrapper must not drop any."""
+    from bahamut.data.binance_data import compute_indicators
+    candles = _make_candles(250)
+    result = compute_indicators(candles)
+    required = {"close", "open", "high", "low", "volume",
+                "ema_20", "ema_50", "ema_200",
+                "rsi_14", "atr_14", "adx_14",
+                "bollinger_upper", "bollinger_mid", "bollinger_lower"}
+    missing = required - set(result.keys())
+    assert not missing, f"wrapper missing keys: {missing}"
+
+
 if __name__ == "__main__":
     import sys
     tests = [
@@ -87,6 +133,9 @@ if __name__ == "__main__":
         test_features_indicators_drops_forming,
         test_features_indicators_closed_last_used,
         test_last_candle_closed_state_helper_exists,
+        test_binance_and_features_indicators_identical_values,
+        test_indicators_carry_provenance,
+        test_binance_wrapper_preserves_contract_keys,
     ]
     passed = failed = 0
     for t in tests:

@@ -1,11 +1,32 @@
 """
 Feature Engineering Service
 Computes technical indicators from raw OHLCV candle data.
+
+CANONICAL indicator engine — used by all asset classes (crypto via
+bahamut.data.binance_data wrapper, stocks directly). There is ONE math
+implementation here so values are reproducible and asset-class-agnostic.
+
+Indicators implemented:
+  - EMA (recursive, exact)
+  - RSI (Wilder smoothing)
+  - ATR (Wilder smoothing)
+  - ADX (Wilder-smoothed +DI/-DI then DX, default 20 when insufficient data)
+  - Bollinger Bands (20, 2σ, population std)
+  - MACD (12/26/9)
+  - Stochastic (14, 3)
+  - Volume SMA
+  - Realized volatility (log-returns, annualized √252)
+
+Every returned dict carries indicator_engine_version and indicator_source
+so diagnostics can prove which math produced a given snapshot.
 """
 import numpy as np
 import structlog
 
 logger = structlog.get_logger()
+
+# Bump on any math change — downstream caches can key on this.
+INDICATOR_ENGINE_VERSION = "v2.0-canonical-2026-04-16"
 
 
 def compute_indicators(candles: list[dict]) -> dict:
@@ -91,6 +112,10 @@ def compute_indicators(candles: list[dict]) -> dict:
         result["realized_vol_20"] = float(np.std(returns) * np.sqrt(252))
     else:
         result["realized_vol_20"] = 0.0
+
+    # Provenance — every caller can see which engine + version produced these.
+    result["indicator_engine_version"] = INDICATOR_ENGINE_VERSION
+    result["indicator_source"] = "canonical"
 
     logger.info("indicators_computed", close=result["close"],
                 rsi=round(result["rsi_14"], 1), atr=round(result["atr_14"], 6))

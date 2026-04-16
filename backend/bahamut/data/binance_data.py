@@ -203,20 +203,25 @@ def get_price(asset: str) -> float:
 def compute_indicators(candles: list[dict]) -> dict:
     """Compute technical indicators from Binance candles.
 
-    Returns same indicator dict format as Twelve Data compute_indicators(),
-    so strategies work without changes.
+    CANONICAL: delegates to bahamut.features.indicators.compute_indicators so
+    crypto and stock paths share one indicator math implementation. Previously
+    this module had its own simpler (and less correct) math — notably RSI/ATR
+    without Wilder smoothing and a single-period unsmoothed DX as 'ADX'. That
+    produced materially different values for the same data vs the stock path
+    and made v8 regime detection asset-class-dependent.
 
-    HARD INVARIANT: the last candle must be closed. If it has an is_closed
-    field equal to False, we drop it before computing indicators. This
-    prevents strategies from acting on in-progress bars.
+    HARD INVARIANT: the last candle must be closed. If is_closed=False we
+    drop it. Legacy candles without the field are assumed closed.
+
+    Return contract is unchanged — existing callers read the same keys.
+    Indicator provenance fields (indicator_engine_version, indicator_source)
+    are added to make the engine identity visible in diagnostics.
     """
     if not candles or len(candles) < 30:
         return {}
 
-    # Closed-candle invariant: strip any trailing forming bar.
-    # Callers that produced this list with include_forming=True will have
-    # is_closed=False on the last element. Legacy lists without is_closed
-    # are assumed closed (backward compatibility for non-Binance sources).
+    # Closed-candle invariant (kept here for defense-in-depth; features/indicators
+    # has its own version that also fires if this one is bypassed)
     if candles and candles[-1].get("is_closed") is False:
         logger.warning("compute_indicators_dropping_forming_candle",
                        datetime=candles[-1].get("datetime", ""),
@@ -225,87 +230,22 @@ def compute_indicators(candles: list[dict]) -> dict:
         if len(candles) < 30:
             return {}
 
-    closes = np.array([c["close"] for c in candles])
-    highs = np.array([c["high"] for c in candles])
-    lows = np.array([c["low"] for c in candles])
-    volumes = np.array([c["volume"] for c in candles])
+    from bahamut.features.indicators import compute_indicators as canonical
+    result = canonical(candles)
+    if not result:
+        return {}
 
-    close = closes[-1]
+    # Provenance: which engine produced these values?
+    result["indicator_engine_version"] = INDICATOR_ENGINE_VERSION
+    result["indicator_source"] = "canonical_via_binance_wrapper"
+    return result
 
-    # EMAs
-    def _ema(data, period):
-        if len(data) < period:
-            return float(np.mean(data))
-        alpha = 2 / (period + 1)
-        ema = data[0]
-        for val in data[1:]:
-            ema = alpha * val + (1 - alpha) * ema
-        return float(ema)
 
-    ema_20 = _ema(closes, 20)
-    ema_50 = _ema(closes, 50)
-    ema_200 = _ema(closes, 200) if len(closes) >= 200 else _ema(closes, min(len(closes), 100))
-
-    # RSI
-    deltas = np.diff(closes[-15:])
-    gains = np.where(deltas > 0, deltas, 0)
-    losses = np.where(deltas < 0, -deltas, 0)
-    avg_gain = np.mean(gains) if len(gains) > 0 else 0
-    avg_loss = np.mean(losses) if len(losses) > 0 else 0.001
-    rs = avg_gain / max(avg_loss, 0.0001)
-    rsi = 100 - (100 / (1 + rs))
-
-    # ATR
-    trs = []
-    for i in range(max(1, len(candles) - 14), len(candles)):
-        h = highs[i]
-        l = lows[i]
-        pc = closes[i - 1] if i > 0 else l
-        tr = max(h - l, abs(h - pc), abs(l - pc))
-        trs.append(tr)
-    atr = float(np.mean(trs)) if trs else 0
-
-    # Bollinger Bands (20-period, 2 std dev)
-    bb_data = closes[-20:]
-    bb_mid = float(np.mean(bb_data))
-    bb_std = float(np.std(bb_data))
-    bb_upper = bb_mid + 2 * bb_std
-    bb_lower = bb_mid - 2 * bb_std
-
-    # ADX (simplified)
-    adx = 25.0  # Default neutral
-    if len(candles) >= 20:
-        dm_plus = []
-        dm_minus = []
-        for i in range(max(1, len(candles) - 14), len(candles)):
-            up = highs[i] - highs[i - 1]
-            down = lows[i - 1] - lows[i]
-            dm_plus.append(up if up > down and up > 0 else 0)
-            dm_minus.append(down if down > up and down > 0 else 0)
-        if trs and sum(trs) > 0:
-            di_plus = sum(dm_plus) / max(sum(trs), 0.001) * 100
-            di_minus = sum(dm_minus) / max(sum(trs), 0.001) * 100
-            dx = abs(di_plus - di_minus) / max(di_plus + di_minus, 0.001) * 100
-            adx = dx
-
-    return {
-        "close": close,
-        "open": float(candles[-1]["open"]),
-        "high": float(candles[-1]["high"]),
-        "low": float(candles[-1]["low"]),
-        "volume": float(candles[-1]["volume"]),
-        "ema_20": round(ema_20, 6),
-        "ema_50": round(ema_50, 6),
-        "ema_200": round(ema_200, 6),
-        "rsi_14": round(float(rsi), 2),
-        "atr_14": round(atr, 6),
-        "adx_14": round(adx, 2),
-        "bollinger_upper": round(bb_upper, 6),
-        "bollinger_mid": round(bb_mid, 6),
-        "bollinger_lower": round(bb_lower, 6),
-    }
+# Version bump this when indicator math changes to invalidate downstream caches.
+INDICATOR_ENGINE_VERSION = "v2.0-canonical-2026-04-16"
 
 
 def is_crypto(asset: str) -> bool:
     """Check if an asset should use Binance data."""
     return asset in SYMBOL_MAP
+
