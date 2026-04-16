@@ -160,8 +160,16 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     except Exception:
         bd["trust"] = 15  # Default neutral if learning engine unavailable
 
-    # ── STRATEGY × CLASS ADJUSTMENTS ──
-    # Based on class_strategy_matrix data (proven over 100+ trades)
+    # ── STRATEGY × CLASS STATIC PRIORS (override terms, not calibrated) ──
+    # Phase 3 Item 8: these are hardcoded empirical priors from early
+    # production data. They are OVERRIDE TERMS applied on top of the learned
+    # trust/expectancy signal — not a substitute for it. Labeled explicitly
+    # in the priority breakdown so operators can see them separately.
+    #
+    # ROADMAP: replace with calibrated priors derived from the actual
+    # trust/expectancy buckets once per-substrategy data matures (Phase 3
+    # Item 7 output). Target: remove these hardcoded numbers and compute
+    # a prior from buckets[strategy_class].trust when samples >= 30.
     strat_class_key = f"{signal.strategy}:{signal.asset_class}"
     STRAT_CLASS_BOOSTS = {
         "v9_breakout:stock": 8,       # 74.4% WR, +$3476 — strongest edge
@@ -171,9 +179,18 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
         "v5_base:crypto": -5,          # 44.7% WR, -$230 — weak
     }
     if strat_class_key in STRAT_CLASS_BOOSTS:
+        # Key name signals this is a static override term, not a learned feature
+        bd["class_boost_static_override"] = STRAT_CLASS_BOOSTS[strat_class_key]
+        # Keep legacy key for existing diagnostics readers (UI expects "class_boost")
         bd["class_boost"] = STRAT_CLASS_BOOSTS[strat_class_key]
 
-    total = sum(v for v in bd.values() if isinstance(v, (int, float)))
+    total = sum(
+        v for k, v in bd.items()
+        if isinstance(v, (int, float))
+        # Avoid double-counting — class_boost is a legacy alias for
+        # class_boost_static_override; count only the canonical one.
+        and k != "class_boost_static_override"
+    )
 
     # 6. News risk — adaptive news is the SINGLE source of truth
     try:
@@ -325,6 +342,9 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         sig = item["signal"]
         pri = item["priority"]
         reasons: list[str] = []
+        # Phase 3 Item 8: per-candidate gate trace — records every gate
+        # evaluation with its verdict for structured decision audit.
+        gate_history: list[dict] = []
 
         # ── HARD LOG: every signal considered ──
         logger.info("selector_considering",
@@ -342,7 +362,11 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                                       sig.direction, mode="TRAINING")
                 if not gate["allowed"]:
                     reasons.append(gate["reason"])
-                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "context_gate",
+                        "verdict": "block", "detail": gate["reason"],
+                    })
+                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
                     _track_rejection(gate["gate"])
                     logger.info("selector_context_blocked",
                                 asset=sig.asset, strategy=sig.strategy,
@@ -351,28 +375,38 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 if gate["penalty"] > 0:
                     pri["components"]["context_penalty"] = -gate["penalty"]
                     pri["total"] -= gate["penalty"]
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "context_gate",
+                        "verdict": "penalize", "detail": f"penalty={gate['penalty']}",
+                    })
+                else:
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "context_gate",
+                        "verdict": "allow", "detail": "",
+                    })
             except Exception:
                 pass
 
         # 0.5. MATURE-NEGATIVE EXPECTANCY HARD BLOCK
-        # If a pattern has mature negative expectancy below -0.05 with 15+ samples,
-        # this is a proven losing edge. Block it completely, not just penalize.
-        # For crash_short signals: use CRASH regime bucket (not the raw 4H regime which may be RANGE)
         try:
             from bahamut.training.learning_engine import compute_trust_points
             _exp_regime = "CRASH" if sig.execution_type == "crash_short" else sig.regime
             _tp = compute_trust_points(sig.strategy, _exp_regime, sig.asset_class, max_points=30)
-            # Add expectancy audit to priority breakdown for all candidates (not just blocked ones)
             pri["components"]["_exp_bucket"] = f"{sig.strategy}:{_exp_regime}:{sig.asset_class}"
             pri["components"]["_exp_value"] = round(_tp.get("expectancy", 0), 4)
             pri["components"]["_exp_samples"] = _tp.get("samples", 0)
             pri["components"]["_exp_maturity"] = _tp.get("maturity", "unknown")
+            _blocked_by_neg = False
             if _tp["maturity"] == "mature" and _tp.get("samples", 0) >= 15:
                 _exp = _tp.get("expectancy", 0)
                 if _exp < -0.07:
-                    # HARD BLOCK: clearly proven loser
                     reasons.append(f"Mature negative expectancy {_exp:.3f} — hard blocked (bucket={sig.strategy}:{_exp_regime}:{sig.asset_class})")
-                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "mature_neg_expectancy",
+                        "verdict": "block",
+                        "detail": f"expectancy={_exp:.3f}, samples={_tp['samples']}",
+                    })
+                    rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
                     _track_rejection("mature_negative_expectancy_block")
                     logger.info("selector_mature_neg_blocked",
                                 asset=sig.asset, strategy=sig.strategy,
@@ -380,20 +414,38 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                                 asset_class=sig.asset_class,
                                 expectancy=_exp, samples=_tp["samples"],
                                 execution_type=sig.execution_type)
-                    continue
+                    _blocked_by_neg = True
                 elif _exp < -0.03:
-                    # PENALTY BAND: marginal negative — allow with reduced size and priority penalty
                     pri["components"]["expectancy_penalty"] = max(-5, int(_exp * 40))
                     pri["components"]["_exp_penalty_mode"] = "reduced"
                     pri["total"] = sum(v for v in pri["components"].values() if isinstance(v, (int, float)))
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "mature_neg_expectancy",
+                        "verdict": "penalize",
+                        "detail": f"expectancy={_exp:.3f}, penalty={pri['components']['expectancy_penalty']}",
+                    })
                     logger.info("selector_mature_neg_penalty",
                                 asset=sig.asset, strategy=sig.strategy,
                                 expectancy=_exp, penalty=pri["components"]["expectancy_penalty"],
                                 execution_type=sig.execution_type)
+                else:
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "mature_neg_expectancy",
+                        "verdict": "allow",
+                        "detail": f"expectancy={_exp:.3f}",
+                    })
+            else:
+                gate_history.append({
+                    "stage": "hard_safety", "gate": "mature_neg_expectancy",
+                    "verdict": "allow",
+                    "detail": f"maturity={_tp.get('maturity', 'unknown')}, samples={_tp.get('samples', 0)}",
+                })
+            if _blocked_by_neg:
+                continue
         except Exception:
             pass
 
-        # 0.6. QUALITY FLOORS — hard minimum requirements before ranking
+        # 0.6. QUALITY FLOORS
         if sig.execution_type != "debug_exploration":
             try:
                 from bahamut.training.quality_floors import check_quality_floors
@@ -407,49 +459,74 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 )
                 if not qf["passed"]:
                     reasons.append(qf["summary"])
+                    verdict = "block" if qf["action"] == "reject" else "watchlist"
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "quality_floors",
+                        "verdict": verdict, "detail": qf["summary"],
+                    })
                     if qf["action"] == "reject":
-                        rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                        rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
                         for f in qf["failures"]:
                             _track_rejection(f"quality_floor_{f['floor']}")
                     else:
-                        watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+                        watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
                         _track_rejection("quality_floor_watchlist")
                     continue
+                else:
+                    gate_history.append({
+                        "stage": "hard_safety", "gate": "quality_floors",
+                        "verdict": "allow", "detail": "",
+                    })
             except Exception:
                 pass
 
-        # 0.8. RISK ENGINE GATE — portfolio-level risk controls
-        # Daily loss brake, DD guard, class/strategy caps, cluster limits.
-        # Applies to ALL candidates including debug_exploration.
+        # 0.8. RISK ENGINE GATE
         try:
             from bahamut.training.risk_engine import can_open_new_trade
             re_check = can_open_new_trade(sig.asset, sig.strategy, sig.direction, sig.asset_class)
             if not re_check["allowed"]:
                 reasons.append(f"Risk engine: {re_check['reason']}")
-                rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+                gate_history.append({
+                    "stage": "hard_safety", "gate": "risk_engine",
+                    "verdict": "block", "detail": re_check["reason"],
+                })
+                rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
                 _track_rejection("risk_engine_block")
                 logger.info("selector_risk_engine_blocked",
                             asset=sig.asset, strategy=sig.strategy,
                             direction=sig.direction, reason=re_check["reason"])
                 continue
+            else:
+                gate_history.append({
+                    "stage": "hard_safety", "gate": "risk_engine",
+                    "verdict": "allow", "detail": "",
+                })
         except Exception:
             pass
 
         # 1. Hard threshold (debug_exploration signals bypass this)
-        # SHORT signals get minimum threshold — they're new patterns in training.
-        # The readiness scorer was designed for LONGs and gives low scores to SHORTs.
-        # Quality floors (min_readiness=25) already filter garbage.
         effective_threshold = threshold
         if sig.direction == "SHORT":
-            effective_threshold = 25  # Match quality floor minimum
+            effective_threshold = 25
         elif sig.regime == "CRASH":
-            effective_threshold = 35  # Relaxed for CRASH regime
+            effective_threshold = 35
 
         if sig.readiness_score < effective_threshold and sig.execution_type != "debug_exploration":
             reasons.append(f"Readiness {sig.readiness_score} < threshold {effective_threshold}")
-            rejected.append(_fmt_decision(sig, pri, "REJECT", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "threshold",
+                "verdict": "block",
+                "detail": f"readiness={sig.readiness_score} < {effective_threshold}",
+            })
+            rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
             _track_rejection("threshold")
             continue
+        else:
+            gate_history.append({
+                "stage": "eligibility", "gate": "threshold",
+                "verdict": "allow",
+                "detail": f"readiness={sig.readiness_score}",
+            })
 
         # 2. Portfolio optimizer check
         opt = evaluate_candidate(
@@ -459,11 +536,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         )
         if opt["decision"] == "BLOCK":
             reasons.extend(opt["reasons"])
-            dec = _fmt_decision(sig, pri, "WATCHLIST", reasons)
+            gate_history.append({
+                "stage": "eligibility", "gate": "portfolio_optimizer",
+                "verdict": "block", "detail": "; ".join(opt["reasons"]),
+            })
+            dec = _fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history)
             dec["optimizer"] = opt
             optimizer_blocked.append(dec)
             watchlist.append(dec)
-            # Track specific block reasons
             for r in opt["reasons"]:
                 if "cluster" in r.lower():
                     _track_rejection("cluster_overlap")
@@ -479,42 +559,82 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         if opt["decision"] == "PENALIZE":
             effective_priority -= opt["penalty"]
             reasons.extend(opt["reasons"])
+            gate_history.append({
+                "stage": "eligibility", "gate": "portfolio_optimizer",
+                "verdict": "penalize",
+                "detail": f"penalty={opt['penalty']}; {'; '.join(opt['reasons'])}",
+            })
+        else:
+            gate_history.append({
+                "stage": "eligibility", "gate": "portfolio_optimizer",
+                "verdict": "allow", "detail": "",
+            })
 
-        # 3. News risk gate — adaptive news is canonical
+        # 3. News risk gate
         comp = pri.get("components", {})
         if comp.get("adaptive_news_block"):
             news_mode = comp.get("news_mode", "FROZEN")
             news_reason = comp.get("adaptive_news_reason", "blocked")
             reasons.append(f"Adaptive news: {news_mode} — {news_reason}")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "adaptive_news",
+                "verdict": "watchlist", "detail": f"{news_mode} — {news_reason}",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("adaptive_news_block")
             continue
         elif comp.get("legacy_news_freeze"):
-            # Only fires if ADAPTIVE_NEWS_ENABLED=False
             reasons.append("Legacy news freeze — trading paused")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "adaptive_news",
+                "verdict": "watchlist", "detail": "legacy news freeze",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("legacy_news_freeze")
             continue
+        else:
+            gate_history.append({
+                "stage": "eligibility", "gate": "adaptive_news",
+                "verdict": "allow", "detail": comp.get("news_mode", "OPEN"),
+            })
 
-        # 3b. AI direction gate — Opus decision layer
+        # 3b. AI direction gate
         if comp.get("ai_direction_block"):
             ai_reason = comp.get("ai_block_reason", "ai_blocked")
             reasons.append(f"AI decision: {ai_reason}")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "ai_direction",
+                "verdict": "watchlist", "detail": ai_reason,
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("ai_direction_block")
             continue
+        else:
+            gate_history.append({
+                "stage": "eligibility", "gate": "ai_direction",
+                "verdict": "allow", "detail": "",
+            })
 
         # 4. Position cap
         if current_count + len(execute) >= max_total:
             reasons.append(f"Portfolio full ({current_count + len(execute)}/{max_total})")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "position_cap",
+                "verdict": "watchlist",
+                "detail": f"full ({current_count + len(execute)}/{max_total})",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("position_cap")
             continue
 
         # 5. Per-cycle cap
         if len(execute) >= max_new:
             reasons.append(f"Cycle cap reached ({max_new} max per cycle)")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "cycle_cap",
+                "verdict": "watchlist", "detail": f"cycle max {max_new}",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("cycle_cap")
             continue
 
@@ -522,14 +642,23 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         cls = sig.asset_class
         if class_counts.get(cls, 0) >= max_per_class:
             reasons.append(f"Class cap reached ({cls}: {max_per_class} max per cycle)")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "class_cap",
+                "verdict": "watchlist",
+                "detail": f"{cls}={class_counts.get(cls, 0)}/{max_per_class}",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("class_cap")
             continue
 
         # 7. Duplicate asset
         if sig.asset in selected_assets:
             reasons.append(f"Already selected {sig.asset} this cycle")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "duplicate_asset",
+                "verdict": "watchlist", "detail": sig.asset,
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("duplicate_asset")
             continue
 
@@ -540,7 +669,11 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         )
         if same_class_same_strat:
             reasons.append(f"Similar setup already selected ({cls}/{sig.strategy})")
-            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons))
+            gate_history.append({
+                "stage": "eligibility", "gate": "near_duplicate",
+                "verdict": "watchlist", "detail": f"{cls}/{sig.strategy}",
+            })
+            watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("duplicate_setup")
             continue
 
@@ -548,7 +681,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         reason_text = _build_selection_reason(sig, pri, open_positions)
         if opt["decision"] == "PENALIZE":
             reason_text += f" (priority -{opt['penalty']}pts for overlap)"
-        dec = _fmt_decision(sig, pri, "EXECUTE", [reason_text])
+        gate_history.append({
+            "stage": "ranking", "gate": "execute",
+            "verdict": "allow",
+            "detail": f"priority={effective_priority}",
+        })
+        dec = _fmt_decision(sig, pri, "EXECUTE", [reason_text], gate_history)
         dec["optimizer"] = opt
         dec["effective_priority"] = effective_priority
         execute.append(dec)
@@ -654,7 +792,33 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     }
 
 
-def _fmt_decision(sig: PendingSignal, priority: dict, decision: str, reasons: list) -> dict:
+def _fmt_decision(sig: PendingSignal, priority: dict, decision: str,
+                  reasons: list, gate_history: list | None = None) -> dict:
+    """Build a structured decision record for an evaluated candidate.
+
+    Phase 3 Item 8 additions:
+      - gate_history: ordered list of dicts recording every gate the
+        candidate was evaluated by. Each entry:
+          {"stage": "hard_safety" | "eligibility" | "ranking",
+           "gate": "context_gate" | "mature_neg_expectancy" | ...,
+           "verdict": "allow" | "penalize" | "block" | "watchlist",
+           "detail": str}
+      - decision_stage: which stage the final verdict came from.
+      - blocking_gate: name of the gate that produced a non-EXECUTE verdict
+        (empty if EXECUTE).
+    Callers can construct gate_history progressively; legacy callers that
+    pass None still work — an empty list is returned.
+    """
+    gh = gate_history or []
+    blocking = ""
+    stage = "ranking"
+    if decision != "EXECUTE":
+        # Find the last block/watchlist verdict in history, if any
+        for entry in reversed(gh):
+            if entry.get("verdict") in ("block", "watchlist"):
+                blocking = entry.get("gate", "")
+                stage = entry.get("stage", "ranking")
+                break
     return {
         "asset": sig.asset,
         "asset_class": sig.asset_class,
@@ -669,6 +833,11 @@ def _fmt_decision(sig: PendingSignal, priority: dict, decision: str, reasons: li
         "execution_type": sig.execution_type,
         "confidence_score": sig.confidence_score,
         "trigger_reason": sig.trigger_reason,
+        # Phase 3 Item 8: structured decision provenance
+        "gate_history": gh,
+        "decision_stage": stage,
+        "blocking_gate": blocking,
+        "substrategy": getattr(sig, "substrategy", "") or "",
     }
 
 
