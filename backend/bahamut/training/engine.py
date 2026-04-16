@@ -59,6 +59,26 @@ class TrainingPosition:
     exchange_order_id: str = ""           # Binance/Alpaca order ID
     execution_platform: str = "internal"  # "binance" | "alpaca" | "internal"
 
+    # ── Phase 2 Item 4: canonical execution state (broker truth) ──
+    # These are populated from ExecutionResult at open time. They exist even
+    # for legacy positions (as empty/zero defaults) so every consumer can
+    # rely on key presence.
+    client_order_id: str = ""
+    order_lifecycle: str = ""             # PENDING/SUBMITTED/ACCEPTED/FILLED/PARTIAL/REJECTED/ERROR/INTERNAL
+    fill_status: str = ""                 # UNFILLED/PARTIAL/FILLED
+    submitted_qty: float = 0.0
+    filled_qty: float = 0.0
+    remaining_qty: float = 0.0
+    avg_fill_price: float = 0.0           # Broker-confirmed (may differ from entry_price pre-fill)
+    submitted_at: str = ""
+    accepted_at: str = ""
+    filled_at: str = ""
+    reference_price: float = 0.0          # Price at submission — used for slippage calc
+    commission: float = 0.0
+    commission_asset: str = ""
+    slippage_abs: float = 0.0
+    slippage_pct: float = 0.0
+
     @property
     def unrealized_pnl(self):
         if self.direction == "LONG":
@@ -92,6 +112,14 @@ class TrainingTrade:
     trigger_reason: str = "4h_close"
     exchange_order_id: str = ""           # Binance/Alpaca order ID
     execution_platform: str = "internal"  # "binance" | "alpaca" | "internal"
+
+    # ── Phase 2 Item 4: execution costs for net-vs-gross PnL (Phase 5 prep) ──
+    entry_commission: float = 0.0
+    exit_commission: float = 0.0
+    entry_slippage_abs: float = 0.0
+    exit_slippage_abs: float = 0.0
+    entry_lifecycle: str = ""             # lifecycle at entry
+    exit_lifecycle: str = ""              # lifecycle at exit
 
 
 # ═══════════════════════════════════════════
@@ -210,26 +238,38 @@ def cleanup_crypto_internal_positions() -> dict:
 
 def _save_position(pos: TrainingPosition):
     """Save a position to Redis + DB (dual write).
-    HARD INVARIANT: crypto positions MUST have non-internal platform + order_id.
-    If a crypto position has platform=internal, this is a mirroring failure
-    and the position is NOT persisted."""
-    # ── HARD INVARIANT: no crypto/internal positions ──
-    if pos.asset_class == "crypto" and (pos.execution_platform == "internal" or not pos.exchange_order_id):
-        r = _get_redis()
-        try:
-            _increment_counter(r, "bahamut:counters:crypto_mirror_aborts")
-            if r:
-                # Track last aborted asset for diagnostics
-                r.sadd("bahamut:crypto_mirror_abort_last_assets", pos.asset)
-                r.expire("bahamut:crypto_mirror_abort_last_assets", 86400)
-        except Exception:
-            pass
-        logger.error("save_position_aborted_crypto_internal_invariant",
-                     asset=pos.asset, strategy=pos.strategy,
-                     platform=pos.execution_platform,
-                     order_id=pos.exchange_order_id,
-                     reason="Crypto must have broker execution; internal fallback is never allowed")
-        return  # Do NOT persist — invariant violation
+    HARD INVARIANT: crypto positions MUST have broker-confirmed execution.
+    Rejects crypto positions where:
+      - execution_platform == 'internal' (should be binance_futures), OR
+      - exchange_order_id is empty, OR
+      - order_lifecycle (if set) is not in FILLED/PARTIAL/ACCEPTED.
+    Internal simulation for crypto is never allowed at the persistence layer."""
+    # ── HARD INVARIANT: crypto must be broker-backed ──
+    if pos.asset_class == "crypto":
+        missing_order_id = not pos.exchange_order_id
+        internal_platform = pos.execution_platform == "internal"
+        # Phase 2 Item 4: also reject if lifecycle is set but indicates failure
+        bad_lifecycle = (
+            pos.order_lifecycle not in ("", "FILLED", "PARTIAL", "ACCEPTED", "SUBMITTED")
+            if pos.order_lifecycle else False
+        )
+        if missing_order_id or internal_platform or bad_lifecycle:
+            r = _get_redis()
+            try:
+                _increment_counter(r, "bahamut:counters:crypto_mirror_aborts")
+                if r:
+                    r.sadd("bahamut:crypto_mirror_abort_last_assets", pos.asset)
+                    r.expire("bahamut:crypto_mirror_abort_last_assets", 86400)
+            except Exception:
+                pass
+            logger.error("save_position_aborted_crypto_internal_invariant",
+                         asset=pos.asset, strategy=pos.strategy,
+                         platform=pos.execution_platform,
+                         order_id=pos.exchange_order_id,
+                         lifecycle=pos.order_lifecycle,
+                         fill_status=pos.fill_status,
+                         reason="Crypto must have broker execution with valid lifecycle; internal/failed not allowed")
+            return  # Do NOT persist — invariant violation
 
     # Redis (fast cache)
     r = _get_redis()
@@ -692,10 +732,32 @@ def open_training_position(
         pos.execution_platform = exec_result.get("platform", "internal")
         pos.exchange_order_id = exec_result.get("order_id", "")
         _status = exec_result.get("status", "unknown")
+        # Phase 2 Item 4: capture canonical execution state on the position
+        # so broker truth is preserved for PnL reporting and diagnostics.
+        pos.client_order_id = exec_result.get("client_order_id", "") or ""
+        pos.order_lifecycle = exec_result.get("lifecycle", "") or ""
+        pos.fill_status = exec_result.get("fill_status", "") or ""
+        pos.submitted_qty = float(exec_result.get("submitted_qty", 0) or 0)
+        pos.filled_qty = float(exec_result.get("filled_qty", 0) or 0)
+        pos.remaining_qty = float(exec_result.get("remaining_qty", 0) or 0)
+        pos.avg_fill_price = float(exec_result.get("avg_fill_price",
+                                                    exec_result.get("fill_price", 0)) or 0)
+        pos.submitted_at = exec_result.get("submitted_at", "") or ""
+        pos.accepted_at = exec_result.get("accepted_at", "") or ""
+        pos.filled_at = exec_result.get("filled_at", "") or ""
+        pos.reference_price = float(exec_result.get("reference_price", 0) or 0)
+        pos.commission = float(exec_result.get("commission", 0) or 0)
+        pos.commission_asset = exec_result.get("commission_asset", "") or ""
+        pos.slippage_abs = float(exec_result.get("slippage_abs", 0) or 0)
+        pos.slippage_pct = float(exec_result.get("slippage_pct", 0) or 0)
         logger.info("execution_route_result",
                      asset=asset, expected_platform=_expected_platform,
                      actual_platform=pos.execution_platform,
-                     status=_status, order_id=pos.exchange_order_id[:20] if pos.exchange_order_id else "")
+                     status=_status, lifecycle=pos.order_lifecycle,
+                     fill_status=pos.fill_status,
+                     filled_qty=pos.filled_qty, submitted_qty=pos.submitted_qty,
+                     slippage_pct=round(pos.slippage_pct, 4),
+                     order_id=pos.exchange_order_id[:20] if pos.exchange_order_id else "")
 
         if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
             old_entry = pos.entry_price

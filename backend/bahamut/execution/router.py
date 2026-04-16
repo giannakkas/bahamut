@@ -46,7 +46,15 @@ logger = structlog.get_logger()
 
 def execute_open(asset: str, asset_class: str, direction: str,
                  size: float, risk_amount: float, **kwargs) -> dict:
-    """Execute a position open on the appropriate platform."""
+    """Execute a position open on the appropriate platform.
+
+    Returns a dict built from ExecutionResult.as_dict() — new canonical
+    fields (lifecycle, fill_status, submitted_at, filled_at, commission,
+    slippage_abs, slippage_pct, reference_price, client_order_id) are
+    present alongside legacy keys (platform, order_id, fill_price,
+    fill_qty, status, error).
+    """
+    from bahamut.execution.canonical import ExecutionResult
     platform = _get_platform(asset, asset_class)
 
     if platform == "binance":
@@ -54,13 +62,17 @@ def execute_open(asset: str, asset_class: str, direction: str,
     elif platform == "alpaca":
         return _alpaca_open(asset, direction, size, risk_amount)
     else:
-        return {"platform": "internal", "order_id": "", "fill_price": 0,
-                "fill_qty": size, "status": "internal"}
+        # Explicitly internal-simulated — platform not configured or not supported.
+        return ExecutionResult.internal_sim(asset, direction, size).as_dict()
 
 
 def execute_close(asset: str, asset_class: str, direction: str,
                   size: float, entry_price: float, **kwargs) -> dict:
-    """Execute a position close on the appropriate platform."""
+    """Execute a position close on the appropriate platform.
+
+    Returns the same canonical-dict shape as execute_open.
+    """
+    from bahamut.execution.canonical import ExecutionResult
     platform = _get_platform(asset, asset_class)
 
     if platform == "binance":
@@ -68,8 +80,7 @@ def execute_close(asset: str, asset_class: str, direction: str,
     elif platform == "alpaca":
         return _alpaca_close(asset, direction, size)
     else:
-        return {"platform": "internal", "order_id": "", "fill_price": 0,
-                "fill_qty": size, "status": "internal"}
+        return ExecutionResult.internal_sim(asset, direction, size).as_dict()
 
 
 def get_execution_status() -> dict:
@@ -143,78 +154,139 @@ def _get_crypto_platform(direction: str) -> str:
 
 
 def _binance_open(asset: str, direction: str, size: float) -> dict:
-    # ALL crypto → Futures (one key for LONG + SHORT)
+    """Open a Binance Futures position. Returns legacy-dict shape built from
+    a canonical ExecutionResult so downstream callers read the same keys
+    while new callers can inspect canonical.* fields."""
+    from bahamut.execution.canonical import ExecutionResult
+    # Capture reference price BEFORE submission for slippage measurement
+    reference_price = 0.0
+    try:
+        from bahamut.data.binance_data import get_price
+        reference_price = float(get_price(asset) or 0.0)
+    except Exception:
+        pass
     try:
         from bahamut.execution.binance_futures import _configured, place_market_order
         if _configured():
             side = "BUY" if direction == "LONG" else "SELL"
             result = place_market_order(asset, side, size)
-            if result and "error" not in result:
-                return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
-                        "fill_price": result.get("fill_price", 0),
-                        "fill_qty": result.get("fill_qty", size), "status": "filled"}
-            error = result.get("error", "Unknown") if result else "No response"
-            logger.error("binance_futures_open_failed", asset=asset, direction=direction, error=error)
-            return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
-                    "order_id": "", "fill_price": 0, "fill_qty": 0}
+            if result is None:
+                return ExecutionResult.error("binance_futures", asset, direction,
+                                             size, "place_market_order returned None").as_dict()
+            canonical = ExecutionResult.from_binance_futures(
+                asset=asset, direction=direction, submitted_qty=size,
+                raw=result, reference_price=reference_price,
+            )
+            if not canonical.is_success():
+                logger.error("binance_futures_open_failed",
+                             asset=asset, direction=direction,
+                             lifecycle=canonical.lifecycle, error=canonical.error[:100])
+            return canonical.as_dict()
     except Exception as e:
         logger.error("binance_futures_exception", asset=asset, error=str(e)[:100])
-    return {"platform": "internal", "order_id": "", "fill_price": 0,
-            "fill_qty": size, "status": "internal"}
+        return ExecutionResult.error("binance_futures", asset, direction,
+                                     size, f"exception: {str(e)[:200]}").as_dict()
+    # _configured() returned False — fall back to explicit internal
+    return ExecutionResult.internal_sim(asset, direction, size, reference_price).as_dict()
 
 
 def _binance_close(asset: str, direction: str, size: float) -> dict:
-    # Close: opposite side on Futures
+    """Close a Binance Futures position. Canonical-result shape."""
+    from bahamut.execution.canonical import ExecutionResult
+    reference_price = 0.0
+    try:
+        from bahamut.data.binance_data import get_price
+        reference_price = float(get_price(asset) or 0.0)
+    except Exception:
+        pass
     try:
         from bahamut.execution.binance_futures import _configured, place_market_order
         if _configured():
+            # Close direction: opposite of the position direction we're closing
             side = "SELL" if direction == "LONG" else "BUY"
             result = place_market_order(asset, side, size)
-            if result and "error" not in result:
-                return {"platform": "binance_futures", "order_id": result.get("order_id", ""),
-                        "fill_price": result.get("fill_price", 0),
-                        "fill_qty": result.get("fill_qty", size), "status": "filled"}
-            error = result.get("error", "Unknown") if result else "No response"
-            return {"platform": "binance_futures", "status": "error", "error": str(error)[:200],
-                    "order_id": "", "fill_price": 0, "fill_qty": 0}
+            if result is None:
+                return ExecutionResult.error("binance_futures", asset, direction,
+                                             size, "place_market_order returned None").as_dict()
+            canonical = ExecutionResult.from_binance_futures(
+                asset=asset, direction=direction, submitted_qty=size,
+                raw=result, reference_price=reference_price,
+            )
+            if not canonical.is_success():
+                logger.error("binance_futures_close_failed",
+                             asset=asset, lifecycle=canonical.lifecycle,
+                             error=canonical.error[:100])
+            return canonical.as_dict()
     except Exception as e:
         logger.error("binance_futures_close_exception", asset=asset, error=str(e)[:100])
-    return {"platform": "internal", "order_id": "", "fill_price": 0,
-            "fill_qty": size, "status": "internal"}
+        return ExecutionResult.error("binance_futures", asset, direction,
+                                     size, f"exception: {str(e)[:200]}").as_dict()
+    return ExecutionResult.internal_sim(asset, direction, size, reference_price).as_dict()
 
 
 def _alpaca_open(asset: str, direction: str, size: float, risk_amount: float) -> dict:
     from bahamut.execution.alpaca_adapter import place_market_buy, place_market_sell, is_market_open
+    from bahamut.execution.canonical import ExecutionResult
     if not is_market_open():
         logger.info("alpaca_market_closed", asset=asset, msg="Will fill at next open")
+    # Reference price for slippage measurement — use previous close from candles if available
+    reference_price = 0.0
+    try:
+        from bahamut.data.live_data import fetch_candles
+        c = fetch_candles(asset, count=2)
+        if c:
+            reference_price = float(c[-1].get("close", 0) or 0)
+    except Exception:
+        pass
     try:
         result = place_market_buy(asset, quantity=size) if direction == "LONG" else place_market_sell(asset, quantity=size)
-        if result and "error" not in result:
-            return {"platform": "alpaca", "order_id": result.get("order_id", ""),
-                    "fill_price": result.get("fill_price", 0),
-                    "fill_qty": result.get("fill_qty", size), "status": result.get("status", "submitted")}
-        error = result.get("error", "Unknown") if result else "No response"
-        return {"platform": "alpaca", "status": "error", "error": str(error)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        if result is None:
+            return ExecutionResult.error("alpaca", asset, direction,
+                                         size, "place_market returned None").as_dict()
+        canonical = ExecutionResult.from_alpaca(
+            asset=asset, direction=direction, submitted_qty=size,
+            raw=result, reference_price=reference_price,
+        )
+        if not canonical.is_success() and canonical.lifecycle != "SUBMITTED":
+            logger.error("alpaca_open_failed",
+                         asset=asset, direction=direction,
+                         lifecycle=canonical.lifecycle, error=canonical.error[:100])
+        return canonical.as_dict()
     except Exception as e:
-        return {"platform": "alpaca", "status": "error", "error": str(e)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        return ExecutionResult.error("alpaca", asset, direction,
+                                     size, f"exception: {str(e)[:200]}").as_dict()
 
 
 def _alpaca_close(asset: str, direction: str, size: float) -> dict:
+    """Close an Alpaca position. Canonical-result shape."""
     from bahamut.execution.alpaca_adapter import place_market_buy, place_market_sell
+    from bahamut.execution.canonical import ExecutionResult
+    reference_price = 0.0
     try:
+        from bahamut.data.live_data import fetch_candles
+        c = fetch_candles(asset, count=2)
+        if c:
+            reference_price = float(c[-1].get("close", 0) or 0)
+    except Exception:
+        pass
+    try:
+        # Close direction: opposite of position direction
         result = place_market_sell(asset, size) if direction == "LONG" else place_market_buy(asset, quantity=size)
-        if result and "error" not in result:
-            return {"platform": "alpaca", "order_id": result.get("order_id", ""),
-                    "fill_price": result.get("fill_price", 0),
-                    "fill_qty": result.get("fill_qty", size), "status": result.get("status", "submitted")}
-        error = result.get("error", "Unknown") if result else "No response"
-        return {"platform": "alpaca", "status": "error", "error": str(error)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        if result is None:
+            return ExecutionResult.error("alpaca", asset, direction,
+                                         size, "place_market returned None").as_dict()
+        canonical = ExecutionResult.from_alpaca(
+            asset=asset, direction=direction, submitted_qty=size,
+            raw=result, reference_price=reference_price,
+        )
+        if not canonical.is_success() and canonical.lifecycle != "SUBMITTED":
+            logger.error("alpaca_close_failed",
+                         asset=asset, lifecycle=canonical.lifecycle,
+                         error=canonical.error[:100])
+        return canonical.as_dict()
     except Exception as e:
-        return {"platform": "alpaca", "status": "error", "error": str(e)[:200],
-                "order_id": "", "fill_price": 0, "fill_qty": 0}
+        return ExecutionResult.error("alpaca", asset, direction,
+                                     size, f"exception: {str(e)[:200]}").as_dict()
 
 
 # ═══════════════════════════════════════════
