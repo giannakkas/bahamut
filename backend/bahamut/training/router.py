@@ -1311,6 +1311,34 @@ async def _build_diagnostics():
         exec_section["data"] = get_execution_status()
     except Exception as e:
         exec_section["error"] = str(e)
+
+    # Phase 2 Item 6: exchange filter visibility
+    try:
+        from bahamut.execution.exchange_filters import _FILTERS, _FILTERS_FETCHED_AT
+        import time as _t
+        if _FILTERS:
+            # Summary
+            exec_section["data"]["exchange_filters"] = {
+                "symbols_cached": len(_FILTERS),
+                "fetched_at": _FILTERS_FETCHED_AT,
+                "age_seconds": round(_t.time() - _FILTERS_FETCHED_AT) if _FILTERS_FETCHED_AT else None,
+                "sample": {
+                    sym: {
+                        "stepSize": _FILTERS[sym]["stepSize"],
+                        "minQty": _FILTERS[sym]["minQty"],
+                        "minNotional": _FILTERS[sym]["minNotional"],
+                        "source": _FILTERS[sym].get("source", "?"),
+                    }
+                    for sym in ("BTCUSDT", "ETHUSDT", "DOGEUSDT", "SOLUSDT", "PEPEUSDT")
+                    if sym in _FILTERS
+                },
+                "any_using_fallback": any(
+                    f.get("source", "").startswith("fallback")
+                    for f in _FILTERS.values()
+                ),
+            }
+    except Exception as e:
+        exec_section["data"]["exchange_filters_error"] = str(e)[:120]
     diag["sections"].append(exec_section)
 
     # ── 16. SHORT SIGNAL DEBUG ──

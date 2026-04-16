@@ -79,17 +79,58 @@ def place_market_order(asset: str, side: str, quantity: float) -> dict | None:
 
     For SHORT: SELL to open, BUY to close.
     For LONG: BUY to open, SELL to close.
+
+    Phase 2 Item 6: validates order locally against exchange filters
+    before submission. Rejected orders return an error dict rather than
+    hitting the network and getting rejected by Binance.
     """
     if not _configured():
         logger.warning("binance_futures_not_configured")
         return None
 
     symbol = _to_symbol(asset)
+
+    # Phase 2 Item 6: local validation using exchange filters.
+    # Validates AFTER rounding (use same formatted qty) — we check the
+    # actual qty we're about to submit.
+    formatted_qty = _format_qty(asset, quantity)
+    if formatted_qty == "INVALID_BELOW_STEP":
+        return {
+            "error": f"qty_below_step_size",
+            "raw_qty": quantity,
+            "symbol": symbol,
+            "pre_submit_rejected": True,
+        }
+    try:
+        from bahamut.execution.exchange_filters import validate_order
+        # Get reference price for notional check
+        ref_price = 0.0
+        try:
+            from bahamut.data.binance_data import get_price
+            ref_price = float(get_price(asset) or 0.0)
+        except Exception:
+            pass
+        valid, reason = validate_order(symbol, float(formatted_qty), ref_price)
+        if not valid:
+            logger.warning("binance_order_pre_submit_rejected",
+                           asset=asset, symbol=symbol, qty=formatted_qty,
+                           ref_price=ref_price, reason=reason)
+            return {
+                "error": f"pre_submit_rejected: {reason}",
+                "raw_qty": quantity,
+                "rounded_qty": float(formatted_qty),
+                "symbol": symbol,
+                "pre_submit_rejected": True,
+            }
+    except Exception as e:
+        logger.debug("binance_pre_submit_validation_skipped",
+                     asset=asset, error=str(e)[:100])
+
     params = _sign({
         "symbol": symbol,
         "side": side,
         "type": "MARKET",
-        "quantity": _format_qty(asset, quantity),
+        "quantity": formatted_qty,
     })
 
     try:
@@ -166,15 +207,40 @@ def get_positions() -> list[dict]:
 
 
 def _format_qty(asset: str, quantity: float) -> str:
-    low_price = {"SHIBUSD", "PEPEUSD", "DOGEUSD", "GALAUSD"}
-    if asset in low_price:
-        return f"{quantity:.0f}"
-    elif asset in {"BTCUSD"}:
-        return f"{quantity:.3f}"
-    elif asset in {"ETHUSD", "SOLUSD", "BNBUSD"}:
-        return f"{quantity:.3f}"
-    else:
-        return f"{quantity:.2f}"
+    """Format quantity according to exchange stepSize/precision.
+
+    Phase 2 Item 6: delegates to exchange_filters.format_qty_canonical which
+    uses /fapi/v1/exchangeInfo (cached 24h) for real stepSize/minQty.
+    Falls back to a hardcoded table if exchangeInfo is unreachable.
+    Logs adjustments so raw-vs-rounded is auditable.
+    """
+    try:
+        from bahamut.execution.exchange_filters import format_qty_canonical
+        formatted, adj = format_qty_canonical(asset, quantity)
+        # Log only when an actual adjustment happened or on error
+        if adj.get("error"):
+            logger.error("qty_format_invalid",
+                         asset=asset, raw_qty=quantity,
+                         symbol=adj["symbol"], stepSize=adj["stepSize"],
+                         error=adj["error"])
+        elif abs(adj["adjustment_delta"]) > 1e-10:
+            logger.info("qty_format_adjusted",
+                        asset=asset, raw=quantity, rounded=adj["rounded_qty"],
+                        stepSize=adj["stepSize"],
+                        source=adj["source"])
+        return formatted
+    except Exception as e:
+        # Last-resort fallback — preserve old behavior on any exception
+        logger.warning("qty_format_exception", asset=asset, error=str(e)[:100])
+        low_price = {"SHIBUSD", "PEPEUSD", "DOGEUSD", "GALAUSD"}
+        if asset in low_price:
+            return f"{quantity:.0f}"
+        elif asset in {"BTCUSD"}:
+            return f"{quantity:.3f}"
+        elif asset in {"ETHUSD", "SOLUSD", "BNBUSD"}:
+            return f"{quantity:.3f}"
+        else:
+            return f"{quantity:.2f}"
 
 
 # Reverse symbol map for display
