@@ -30,6 +30,11 @@ class BreakoutSignal:
     confidence: float = 0.0
     reason: str = ""
     breakout_level: float = 0.0
+    # Phase 3 Item 9: carry forward ATR + ref_high distance so evaluate()
+    # can compute a structure-aware, volatility-scaled SL without
+    # re-reading the candles.
+    atr: float = 0.0
+    dist_above_atr: float = 0.0
 
 
 def detect_confirmed_breakout(
@@ -117,46 +122,130 @@ def detect_confirmed_breakout(
     sig.direction = "LONG"
     sig.confidence = round(min(1.0, quality), 3)
     sig.breakout_level = round(ref_high, 2)
+    sig.atr = round(atr, 6)
+    sig.dist_above_atr = round(dist_above, 4)
     sig.reason = f"20-bar high breakout at ${ref_high:,.0f}, held {confirm_bars} bars, dist={dist_above:.1f}ATR"
 
     return sig
 
 
 class V9Breakout:
-    """Strategy wrapper for the execution framework."""
+    """Strategy wrapper for the execution framework.
+
+    Phase 3 Item 9: SL/TP/hold are now ATR-aware and structure-aware.
+
+    SL reasoning:
+      - ATR floor: SL must be at least atr_mult * ATR / close (volatility-scaled).
+      - Percentage floor/cap: clamp to [sl_floor, sl_cap] so we never submit
+        a 0.2% stop that gets hit on noise OR a 30% stop that's absurd.
+      - Structural cap: SL is also capped by the distance to (ref_high * 0.995)
+        — a breakout that retraces below that level is invalidated, so a
+        wider SL makes no sense.
+      The *tightest* of those three wins, with a lower floor.
+
+    TP reasoning:
+      - R:R floor of 2.0x the final SL (was fixed 2.5x).
+      - ATR target: target_atr_mult * ATR / close as a secondary floor.
+      - TP still capped at tp_cap to avoid unrealistic targets on 4H.
+
+    Hold reasoning:
+      - 4H: tightened from 40 to 20 bars (3.3 days), matching the
+        proven 10-bar horizon from the strategy docstring with 2x margin.
+      - 15m: tightened from 40 to 24 bars (6 hours), matching confirmed
+        breakout continuation window on faster timeframe.
+
+    Set BAHAMUT_V9_ADAPTIVE_SIZING=0 in env to revert to fixed 10%/25%/40
+    legacy behavior for A/B comparison.
+    """
 
     def __init__(self):
         self.name = "v9_breakout"
-        self.sl_pct = 0.10       # 10% SL — wider for BTC noise
-        self.tp_pct = 0.25       # 25% TP — 2.5:1 R:R
-        self.max_hold = 40       # ~6.7 days
+        self.sl_pct = 0.10       # Legacy fixed — used only when adaptive disabled
+        self.tp_pct = 0.25
+        self.max_hold = 40
         self.risk_pct = 0.02
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
+        import os
         sig = detect_confirmed_breakout(candles, indicators)
-        if sig.valid:
-            bar_ts = candles[-1].get("datetime", "") if candles else ""
-            interval = indicators.get("_interval", "4h") if indicators else "4h"
+        if not sig.valid:
+            return None
 
-            # Tighter SL/TP for faster timeframes
+        bar_ts = candles[-1].get("datetime", "") if candles else ""
+        interval = indicators.get("_interval", "4h") if indicators else "4h"
+        close = float(indicators.get("close", 0))
+        atr = float(sig.atr or indicators.get("atr_14", 0))
+        ref_high = float(sig.breakout_level or 0)
+
+        adaptive = os.environ.get("BAHAMUT_V9_ADAPTIVE_SIZING", "1") != "0"
+
+        if not adaptive:
+            # Legacy path — unchanged behavior
             if interval in ("15m", "5m", "1m"):
-                sl = 0.02    # 2% SL (was 10%)
-                tp = 0.05    # 5% TP (was 25%)
-                hold = 40    # 40 × 15m = 10 hours
+                sl, tp, hold = 0.02, 0.05, 40
             else:
-                sl = self.sl_pct   # 10%
-                tp = self.tp_pct   # 25%
-                hold = self.max_hold  # 40 × 4H = 6.7 days
+                sl, tp, hold = self.sl_pct, self.tp_pct, self.max_hold
+        else:
+            # ── Phase 3 Item 9: adaptive sizing ──
+            if interval in ("15m", "5m", "1m"):
+                sl_floor = 0.006   # 0.6% minimum (was 0.2%)
+                sl_cap = 0.025     # 2.5% max
+                atr_mult = 1.8
+                tp_floor = 0.008   # 0.8% min TP
+                tp_cap = 0.06      # 6% max TP
+                target_atr_mult = 2.5
+                rr_floor = 2.0
+                hold = 24          # ~6 hours (was 40)
+            else:
+                sl_floor = 0.035   # 3.5% min SL (was implicit 10%)
+                sl_cap = 0.10      # 10% max
+                atr_mult = 2.0
+                tp_floor = 0.05    # 5% min TP
+                tp_cap = 0.25
+                target_atr_mult = 3.5
+                rr_floor = 2.0
+                hold = 20          # 3.3 days (was 40)
 
-            return Signal(
-                strategy=self.name,
-                asset=asset,
-                direction=sig.direction,
-                sl_pct=sl,
-                tp_pct=tp,
-                max_hold_bars=hold,
-                quality=sig.confidence,
-                reason=sig.reason,
-                signal_id=f"{self.name}:{asset}:{bar_ts}",
-            )
-        return None
+            # ATR-based SL
+            if close > 0 and atr > 0:
+                sl_atr = (atr_mult * atr) / close
+            else:
+                sl_atr = sl_floor
+            sl = max(sl_atr, sl_floor)
+            sl = min(sl, sl_cap)
+
+            # Structural cap: SL cannot be wider than distance-to-(ref_high*0.995)
+            # since that level invalidates the breakout
+            if close > 0 and ref_high > 0:
+                invalidation_level = ref_high * 0.995
+                struct_dist = (close - invalidation_level) / close
+                if struct_dist > sl_floor:
+                    # Tighten SL to the structural stop if it's tighter than ATR
+                    sl = min(sl, struct_dist)
+                # If struct_dist is too small (<sl_floor), we respect the
+                # min floor — price is very close to the breakout level.
+
+            # Ensure we still respect the absolute minimum
+            sl = max(sl, sl_floor)
+
+            # Adaptive TP: max of (RR × SL, ATR target, floor), capped
+            tp_rr = rr_floor * sl
+            if close > 0 and atr > 0:
+                tp_atr = (target_atr_mult * atr) / close
+            else:
+                tp_atr = tp_floor
+            tp = max(tp_rr, tp_atr, tp_floor)
+            tp = min(tp, tp_cap)
+
+        return Signal(
+            strategy=self.name,
+            asset=asset,
+            direction=sig.direction,
+            sl_pct=round(sl, 4),
+            tp_pct=round(tp, 4),
+            max_hold_bars=hold,
+            quality=sig.confidence,
+            reason=sig.reason + (f" | adaptive SL={sl:.3f} TP={tp:.3f} hold={hold}"
+                                 if adaptive else ""),
+            signal_id=f"{self.name}:{asset}:{bar_ts}",
+        )
