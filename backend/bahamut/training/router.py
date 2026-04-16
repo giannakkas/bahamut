@@ -2914,6 +2914,47 @@ async def trust_dashboard():
                 "wr": round(w / max(1, w + l), 3),
             }
 
+        # Phase 5 Item 14: aggregate fee/slippage visibility
+        fee_slippage_summary = {}
+        try:
+            cost_rows = run_query("""
+                SELECT
+                    COUNT(*) as total_trades,
+                    COALESCE(SUM(pnl), 0) as gross_pnl,
+                    COALESCE(SUM(CASE WHEN entry_commission IS NOT NULL
+                                      THEN entry_commission ELSE 0 END
+                                + CASE WHEN exit_commission IS NOT NULL
+                                       THEN exit_commission ELSE 0 END), 0) as total_commissions,
+                    COALESCE(SUM(CASE WHEN entry_slippage_abs IS NOT NULL
+                                      THEN entry_slippage_abs ELSE 0 END
+                                + CASE WHEN exit_slippage_abs IS NOT NULL
+                                       THEN exit_slippage_abs ELSE 0 END), 0) as total_slippage,
+                    SUM(CASE WHEN (COALESCE(entry_commission, 0) + COALESCE(exit_commission, 0)) > 0
+                             THEN 1 ELSE 0 END) as trades_with_costs
+                FROM training_trades
+            """)
+            if cost_rows:
+                cr = dict(cost_rows[0])
+                gross = float(cr.get("gross_pnl", 0) or 0)
+                commissions = float(cr.get("total_commissions", 0) or 0)
+                slippage = float(cr.get("total_slippage", 0) or 0)
+                total_costs = commissions + slippage
+                fee_slippage_summary = {
+                    "total_trades": int(cr.get("total_trades", 0)),
+                    "trades_with_cost_data": int(cr.get("trades_with_costs", 0) or 0),
+                    "gross_pnl": round(gross, 2),
+                    "total_commissions": round(commissions, 2),
+                    "total_slippage": round(slippage, 2),
+                    "total_costs": round(total_costs, 2),
+                    "net_pnl": round(gross - total_costs, 2),
+                    "cost_pct_of_gross": (round(total_costs / abs(gross) * 100, 2)
+                                          if abs(gross) > 0.01 else 0),
+                    "note": ("Costs only populated for trades executed post Phase 5 "
+                             "Item 14 deploy. Legacy trades show 0 costs."),
+                }
+        except Exception:
+            pass
+
         return {
             "strategies": strategies,
             "patterns": {"best": best_patterns, "worst": worst_patterns, "most_traded": most_traded},
@@ -2922,6 +2963,7 @@ async def trust_dashboard():
             "exit_stats": exit_stats,
             "direction_stats": direction_stats,
             "regime_stats": regime_stats,
+            "fee_slippage_summary": fee_slippage_summary,
         }
     except Exception as e:
         import traceback

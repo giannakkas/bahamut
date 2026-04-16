@@ -1237,6 +1237,11 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 regime=pos.regime,
                 substrategy=pos.substrategy,
                 data_mode=pos.data_mode,
+                # Phase 5 Item 14: populate entry costs from position
+                # (captured at open-time by open_training_position)
+                entry_commission=pos.commission,
+                entry_slippage_abs=pos.slippage_abs,
+                entry_lifecycle=pos.order_lifecycle,
             )
 
             actually_removed = _remove_position(pos.position_id)
@@ -1259,6 +1264,10 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 )
                 trade.execution_platform = exec_result.get("platform", "internal")
                 trade.exchange_order_id = exec_result.get("order_id", "")
+                # Phase 5 Item 14: capture exit commission + slippage
+                trade.exit_commission = float(exec_result.get("commission", 0) or 0)
+                trade.exit_slippage_abs = float(exec_result.get("slippage_abs", 0) or 0)
+                trade.exit_lifecycle = exec_result.get("order_lifecycle", "")
                 if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
                     trade.exit_price = round(exec_result["fill_price"], 6)
                     # Recalculate PnL with actual fill
