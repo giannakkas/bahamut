@@ -176,8 +176,61 @@ def _load_positions_from_db() -> list[TrainingPosition]:
         return []
 
 
+def cleanup_crypto_internal_positions() -> dict:
+    """Force-close any crypto positions that violate the broker-only invariant.
+    Runs periodically to clean up legacy violations.
+    Returns stats: {closed: [...], total: N}"""
+    closed = []
+    try:
+        positions = _load_positions()
+        for p in positions:
+            if p.asset_class == "crypto" and (p.execution_platform == "internal" or not p.exchange_order_id):
+                try:
+                    _remove_position(p.position_id)
+                    closed.append({"asset": p.asset, "position_id": p.position_id,
+                                   "strategy": p.strategy, "direction": p.direction})
+                    logger.warning("crypto_internal_position_cleaned",
+                                   asset=p.asset, position_id=p.position_id,
+                                   reason="invariant_violation_cleanup")
+                except Exception as e:
+                    logger.error("crypto_internal_cleanup_failed",
+                                 asset=p.asset, error=str(e)[:100])
+        # Track in Redis
+        r = _get_redis()
+        if r and closed:
+            try:
+                import json as _j
+                r.set("bahamut:crypto_mirror_cleanup_last", _j.dumps(closed), ex=86400)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error("cleanup_crypto_internal_positions_exception", error=str(e)[:200])
+    return {"closed": closed, "total": len(closed)}
+
+
 def _save_position(pos: TrainingPosition):
-    """Save a position to Redis + DB (dual write)."""
+    """Save a position to Redis + DB (dual write).
+    HARD INVARIANT: crypto positions MUST have non-internal platform + order_id.
+    If a crypto position has platform=internal, this is a mirroring failure
+    and the position is NOT persisted."""
+    # ── HARD INVARIANT: no crypto/internal positions ──
+    if pos.asset_class == "crypto" and (pos.execution_platform == "internal" or not pos.exchange_order_id):
+        r = _get_redis()
+        try:
+            _increment_counter(r, "bahamut:counters:crypto_mirror_aborts")
+            if r:
+                # Track last aborted asset for diagnostics
+                r.sadd("bahamut:crypto_mirror_abort_last_assets", pos.asset)
+                r.expire("bahamut:crypto_mirror_abort_last_assets", 86400)
+        except Exception:
+            pass
+        logger.error("save_position_aborted_crypto_internal_invariant",
+                     asset=pos.asset, strategy=pos.strategy,
+                     platform=pos.execution_platform,
+                     order_id=pos.exchange_order_id,
+                     reason="Crypto must have broker execution; internal fallback is never allowed")
+        return  # Do NOT persist — invariant violation
+
     # Redis (fast cache)
     r = _get_redis()
     if r:

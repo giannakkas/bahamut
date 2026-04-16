@@ -1807,7 +1807,7 @@ async def _build_diagnostics():
             ai_section["data"]["crash_short_suppress_active"] = sorted(list(CRASH_SHORT_SUPPRESS))
             ai_section["data"]["crash_short_penalize_active"] = sorted(list(CRASH_SHORT_PENALIZE))
             ai_section["data"]["containment_rules"] = {
-                "v10_crypto_range_blocked": "ALL v10 crypto RANGE signals disabled (expectancy -0.1246, 102 mature samples)",
+                "v10_crypto_range_blocked_debug_only": "v10 crypto RANGE/CRASH blocked for DEBUG_EXPLORATION path only (expectancy -0.15, 165 mature samples). Production path NOT auto-blocked — relies on mature_negative hard_block + per-asset suppress maps.",
                 "sentiment_long_block": "Crypto LONGs blocked by _sentiment_long_block flag when F&G ≤ 25 (regime NOT relabeled)",
                 "regime_override_structural_only": "CRASH override requires price BELOW EMA200 AND negative EMA50 slope (≤-0.5%)",
                 "debug_exploration_full_separation": "Debug trades update RESEARCH trust keys only. ZERO effect on production trust/expectancy/suppression",
@@ -1819,6 +1819,7 @@ async def _build_diagnostics():
                 "v5_base_circuit_breaker": "WR<40% blocks ALL crypto; WR<45% halves risk",
                 "selector_class_boosts": "v9+stock: +8pts, v10+crypto: -10pts, v5+crypto: -5pts",
                 "selector_expectancy_penalty": "Mature negative expectancy → priority penalty (max -15pts)",
+                "crypto_mirror_hard_invariant": "crypto positions with platform=internal OR empty order_id are NEVER persisted — blocked in _save_position",
             }
         except Exception:
             pass
@@ -2170,8 +2171,54 @@ async def _build_diagnostics():
             try:
                 _mirror_aborts = r.get("bahamut:counters:crypto_mirror_aborts")
                 verification["crypto_mirror_abort_count"] = int(_mirror_aborts) if _mirror_aborts else 0
+                # Last aborted assets
+                _abort_assets = r.smembers("bahamut:crypto_mirror_abort_last_assets")
+                verification["crypto_mirror_abort_last_assets"] = sorted([
+                    (a.decode() if isinstance(a, bytes) else a) for a in (_abort_assets or [])
+                ])
+                # Cleanup log
+                _cleanup_log = r.get("bahamut:crypto_mirror_cleanup_last")
+                if _cleanup_log:
+                    import json as _jcl
+                    try:
+                        verification["crypto_mirror_cleanup_last"] = _jcl.loads(_cleanup_log)
+                    except Exception:
+                        pass
             except Exception:
                 verification["crypto_mirror_abort_count"] = 0
+
+            # v10 CRYPTO RANGE BLOCK ENFORCEMENT AUDIT
+            try:
+                # The block exists in orchestrator.py line 648 but ONLY applies to debug_exploration
+                # Production path relies on: mature_negative hard_block + per-asset suppress
+                from bahamut.db.query import run_query
+                v10_range_prod = run_query("""
+                    SELECT asset, COUNT(*) as c, ROUND(SUM(pnl)::numeric, 2) as pnl
+                    FROM training_trades
+                    WHERE strategy = 'v10_mean_reversion'
+                      AND asset LIKE '%%USD'
+                      AND regime = 'RANGE'
+                      AND exit_time > NOW() - INTERVAL '24 hours'
+                    GROUP BY asset
+                    ORDER BY SUM(pnl) ASC
+                """)
+                recent_leaks = [
+                    {"asset": dict(r_)["asset"], "trades": dict(r_)["c"], "pnl": float(dict(r_)["pnl"] or 0)}
+                    for r_ in (v10_range_prod or [])
+                ]
+                verification["v10_crypto_range_block_source"] = "orchestrator.py:648 — DEBUG_EXPLORATION PATH ONLY (not production)"
+                verification["v10_crypto_range_block_enforcement_ok"] = False  # It's only partial
+                verification["v10_crypto_range_block_scope"] = "debug_exploration_only"
+                verification["v10_crypto_range_block_leaked_assets"] = recent_leaks
+                verification["v10_crypto_range_block_note"] = (
+                    "Block only suppresses debug_exploration candidates. "
+                    "Production crypto RANGE trades still flow through selector. "
+                    "Fix via TRAINING_SUPPRESS per-asset maps (already has 7 assets) "
+                    "or convert mature_negative hard_block to regime-level block."
+                )
+            except Exception as _e:
+                verification["v10_crypto_range_block_enforcement_ok"] = "error"
+                verification["v10_crypto_range_block_error"] = str(_e)[:100]
         except Exception:
             pass
 

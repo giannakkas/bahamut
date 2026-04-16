@@ -67,6 +67,17 @@ def run_training_cycle():
     start = time.time()
     logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
 
+    # Cleanup: force-close any crypto positions that slipped into internal
+    try:
+        from bahamut.training.engine import cleanup_crypto_internal_positions
+        cleanup_result = cleanup_crypto_internal_positions()
+        if cleanup_result["total"] > 0:
+            logger.warning("cycle_crypto_cleanup_ran",
+                           closed=cleanup_result["total"],
+                           assets=[c["asset"] for c in cleanup_result["closed"]])
+    except Exception as _e:
+        logger.error("cycle_crypto_cleanup_failed", error=str(_e)[:200])
+
     # Pre-fetch and cache news/events for this cycle (sync-safe)
     try:
         from bahamut.intelligence.news_impact import cache_news_data, dedupe_headlines
