@@ -130,7 +130,11 @@ class TrainingTrade:
 # ═══════════════════════════════════════════
 
 def _load_positions() -> list[TrainingPosition]:
-    """Load all open training positions. Redis first, DB fallback."""
+    """Load all open training positions. Redis first, DB fallback.
+    Phase 2 Item 5: filters out crypto positions that violate the
+    broker-only invariant — consistent with _save_position and
+    _load_positions_from_db. No invariant-violating crypto row can
+    surface to any caller via this function."""
     # Try Redis (fast path)
     r = _get_redis()
     if r:
@@ -138,9 +142,31 @@ def _load_positions() -> list[TrainingPosition]:
             raw = r.hgetall(REDIS_KEY_POSITIONS)
             if raw:
                 positions = []
+                skipped = 0
                 for v in raw.values():
                     d = json.loads(v)
-                    positions.append(TrainingPosition(**d))
+                    try:
+                        pos = TrainingPosition(**d)
+                    except TypeError:
+                        # Drop fields unknown to the current dataclass (schema drift safety)
+                        known = {k: v_ for k, v_ in d.items()
+                                 if k in TrainingPosition.__dataclass_fields__}
+                        pos = TrainingPosition(**known)
+                    # Invariant check — same as _save_position
+                    if (pos.asset_class == "crypto"
+                            and (pos.execution_platform == "internal"
+                                 or not pos.exchange_order_id)):
+                        skipped += 1
+                        # Remove from Redis to prevent re-surface
+                        try:
+                            r.hdel(REDIS_KEY_POSITIONS, pos.position_id)
+                        except Exception:
+                            pass
+                        continue
+                    positions.append(pos)
+                if skipped > 0:
+                    logger.warning("training_load_positions_filtered_invariant_violations",
+                                   skipped=skipped, source="redis")
                 return positions
         except Exception as e:
             logger.warning("training_load_positions_redis_failed", error=str(e))
@@ -159,11 +185,13 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                 SELECT position_id, asset, asset_class, strategy, direction,
                        entry_price, stop_price, tp_price, size, risk_amount,
                        entry_time, bars_held, max_hold_bars, current_price,
-                       execution_type, confidence_score, trigger_reason
+                       execution_type, confidence_score, trigger_reason,
+                       execution_platform, exchange_order_id
                 FROM training_positions WHERE status = 'OPEN'
             """)).mappings().all()
 
             positions = []
+            skipped_invariant_violations = []
             for row in rows:
                 pos = TrainingPosition(
                     position_id=row["position_id"],
@@ -183,17 +211,69 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                     execution_type=str(row["execution_type"] or "standard"),
                     confidence_score=float(row["confidence_score"] or 0),
                     trigger_reason=str(row["trigger_reason"] or "4h_close"),
+                    execution_platform=str(row.get("execution_platform") or "internal"),
+                    exchange_order_id=str(row.get("exchange_order_id") or ""),
                 )
+
+                # ── Phase 2 Item 5: invariant enforcement on DB reload ──
+                # Previously _save_position() blocked NEW crypto/internal writes,
+                # but this load path bypassed it via direct r.hset below —
+                # rehydrating legacy bad rows every Redis miss. Close them
+                # instead of rehydrating.
+                if (pos.asset_class == "crypto"
+                        and (pos.execution_platform == "internal"
+                             or not pos.exchange_order_id)):
+                    skipped_invariant_violations.append({
+                        "position_id": pos.position_id,
+                        "asset": pos.asset,
+                        "platform": pos.execution_platform,
+                        "has_order_id": bool(pos.exchange_order_id),
+                    })
+                    # Mark as CLOSED in DB so we don't keep picking it up
+                    try:
+                        conn.execute(
+                            text("UPDATE training_positions SET status = 'CLOSED' "
+                                 "WHERE position_id = :pid AND status = 'OPEN'"),
+                            {"pid": pos.position_id},
+                        )
+                    except Exception:
+                        pass
+                    continue
                 positions.append(pos)
 
-            # Repopulate Redis cache from DB
+            if skipped_invariant_violations:
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                logger.error("training_positions_load_invariant_violations",
+                             count=len(skipped_invariant_violations),
+                             rows=skipped_invariant_violations[:5])
+                # Record for diagnostics
+                r = _get_redis()
+                if r:
+                    try:
+                        import json as _jinv
+                        r.set("bahamut:crypto_mirror_load_violations_last",
+                              _jinv.dumps(skipped_invariant_violations), ex=86400)
+                    except Exception:
+                        pass
+
+            # Repopulate Redis cache from DB. Phase 2 Item 5: route through
+            # _save_position so it respects the hard invariant. If _save_position
+            # rejects any position, it is already filtered above by the load-time
+            # check, but routing through keeps this one invariant enforcement
+            # point authoritative.
             if positions:
                 r = _get_redis()
                 if r:
                     try:
                         r.delete(REDIS_KEY_POSITIONS)
-                        for pos in positions:
-                            r.hset(REDIS_KEY_POSITIONS, pos.position_id, json.dumps(asdict(pos)))
+                    except Exception:
+                        pass
+                for pos in positions:
+                    try:
+                        _save_position(pos)
                     except Exception:
                         pass
 
@@ -207,8 +287,16 @@ def _load_positions_from_db() -> list[TrainingPosition]:
 def cleanup_crypto_internal_positions() -> dict:
     """Force-close any crypto positions that violate the broker-only invariant.
     Runs periodically to clean up legacy violations.
-    Returns stats: {closed: [...], total: N}"""
+
+    Phase 2 Item 5 additions:
+      - Also closes DB rows where status='OPEN' and
+        (execution_platform='internal' OR exchange_order_id='') for crypto.
+        This catches rows that never reach _load_positions (e.g. a position
+        persisted pre-invariant and never touched since).
+      - Returns both Redis-side and DB-side cleanup counts.
+    Returns stats: {closed: [...], db_closed: N, total: N}"""
     closed = []
+    db_closed = 0
     try:
         positions = _load_positions()
         for p in positions:
@@ -223,17 +311,45 @@ def cleanup_crypto_internal_positions() -> dict:
                 except Exception as e:
                     logger.error("crypto_internal_cleanup_failed",
                                  asset=p.asset, error=str(e)[:100])
+
+        # DB-side cleanup: catch any crypto OPEN rows that slipped past the
+        # Redis layer (e.g. legacy rows from before the invariant).
+        try:
+            from bahamut.database import sync_engine
+            from sqlalchemy import text
+            # List of crypto asset class tags — match what _save_position checks
+            with sync_engine.connect() as conn:
+                result = conn.execute(text("""
+                    UPDATE training_positions
+                    SET status = 'CLOSED'
+                    WHERE status = 'OPEN'
+                      AND asset_class = 'crypto'
+                      AND (execution_platform = 'internal' OR execution_platform IS NULL
+                           OR exchange_order_id = '' OR exchange_order_id IS NULL)
+                """))
+                db_closed = result.rowcount if result.rowcount is not None else 0
+                conn.commit()
+                if db_closed > 0:
+                    logger.warning("crypto_internal_db_cleanup",
+                                   db_rows_closed=db_closed,
+                                   reason="legacy_invariant_violations")
+        except Exception as e:
+            logger.error("crypto_internal_db_cleanup_failed", error=str(e)[:150])
+
         # Track in Redis
         r = _get_redis()
-        if r and closed:
+        if r and (closed or db_closed > 0):
             try:
                 import json as _j
-                r.set("bahamut:crypto_mirror_cleanup_last", _j.dumps(closed), ex=86400)
+                r.set("bahamut:crypto_mirror_cleanup_last",
+                      _j.dumps({"redis_closed": closed, "db_closed": db_closed,
+                                "total": len(closed) + db_closed}),
+                      ex=86400)
             except Exception:
                 pass
     except Exception as e:
         logger.error("cleanup_crypto_internal_positions_exception", error=str(e)[:200])
-    return {"closed": closed, "total": len(closed)}
+    return {"closed": closed, "db_closed": db_closed, "total": len(closed) + db_closed}
 
 
 def _save_position(pos: TrainingPosition):

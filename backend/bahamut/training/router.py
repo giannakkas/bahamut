@@ -2228,8 +2228,24 @@ async def _build_diagnostics():
                         verification["crypto_mirror_cleanup_last"] = _jcl.loads(_cleanup_log)
                     except Exception:
                         pass
+                # Phase 2 Item 5: DB-load violations (positions filtered on rehydration)
+                _load_viol = r.get("bahamut:crypto_mirror_load_violations_last")
+                if _load_viol:
+                    import json as _jlv
+                    try:
+                        verification["crypto_mirror_load_violations_last"] = _jlv.loads(_load_viol)
+                    except Exception:
+                        pass
             except Exception:
                 verification["crypto_mirror_abort_count"] = 0
+
+            # Phase 2 Item 5: enforcement surface audit — all invariant points
+            verification["invariant_enforcement_points"] = {
+                "save_position": "engine._save_position blocks crypto with platform=internal OR empty order_id OR bad lifecycle",
+                "load_positions_redis": "engine._load_positions filters violations from Redis + hdels them",
+                "load_positions_db": "engine._load_positions_from_db filters violations + marks DB row CLOSED",
+                "cleanup_cycle_start": "orchestrator runs cleanup_crypto_internal_positions at start of every cycle (Redis + DB rows)",
+            }
 
             # v10 CRYPTO RANGE BLOCK ENFORCEMENT AUDIT
             try:
