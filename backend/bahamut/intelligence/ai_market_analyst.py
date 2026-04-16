@@ -129,6 +129,34 @@ def get_cached_analysis() -> dict | None:
     return _analysis_cache
 
 
+def get_analysis_source() -> tuple[dict | None, str]:
+    """Phase 4 Item 11: return (analysis, source) with explicit freshness.
+
+    source values:
+      'fresh'          — Opus cache hit within FRESH_TTL (60s)
+      'stale'          — Opus cache within STALE_TTL but older than FRESH_TTL
+                         (Opus call probably failed on last try — using last good)
+      'fallback_rules' — No Opus cache at all; callers should use sentiment rules
+      'disabled'       — Anthropic API key not configured
+
+    Callers that don't want to disambiguate can keep using get_cached_analysis().
+    """
+    now = time.time()
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None, "disabled"
+    if _analysis_cache and _analysis_cache_ts > 0:
+        age = now - _analysis_cache_ts
+        if age < FRESH_TTL:
+            return _analysis_cache, "fresh"
+        if age < STALE_TTL:
+            return _analysis_cache, "stale"
+    if _stale_cache and _stale_cache_ts > 0:
+        if (now - _stale_cache_ts) < STALE_TTL:
+            return _stale_cache, "stale"
+    return None, "fallback_rules"
+
+
 def get_analysis_status() -> dict:
     now = time.time()
     age = round(now - _analysis_cache_ts) if _analysis_cache_ts > 0 else None

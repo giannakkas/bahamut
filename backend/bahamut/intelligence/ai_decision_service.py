@@ -28,24 +28,44 @@ def get_ai_decision(
     asset: str, asset_class: str, strategy: str, direction: str,
     priority_score: float = 0, system_allowed_directions: list | None = None,
 ) -> dict:
-    """Get AI decision for a candidate. Derived deterministically — no API calls."""
+    """Get AI decision for a candidate. Derived deterministically — no API calls.
+
+    Phase 4 Item 11: ai_source is one of:
+      'fresh'          — fresh Opus posture (<60s old)
+      'stale'          — stale Opus posture (60s-5min old; Opus call failed
+                         on last try, using last good)
+      'fallback_rules' — no Opus cache; derived from sentiment rules
+      'disabled'       — ANTHROPIC_API_KEY not set; pure rules
+
+    Downstream selector can elect to degrade gracefully when ai_source is
+    stale or fallback_rules (e.g. soften penalties, widen thresholds).
+    """
     start = time.time()
 
-    # Layer A: get global posture from cached Opus (or rule-based fallback)
+    # Layer A: get global posture + explicit source classification
     posture = "SELECTIVE"
     class_mode = "NORMAL"
     global_mult = 1.0
     dirs_allowed = True
-    source = "rule-based"
     reason = ""
+    ai_source = "fallback_rules"
+    ai_cache_age = None  # seconds since posture was computed
 
     try:
-        from bahamut.intelligence.ai_market_analyst import get_cached_analysis
-        opus = get_cached_analysis()
+        from bahamut.intelligence.ai_market_analyst import (
+            get_analysis_source, _analysis_cache_ts, _stale_cache_ts,
+        )
+        opus, source_cat = get_analysis_source()
+        ai_source = source_cat
         if opus:
             posture = opus.get("posture", "SELECTIVE")
-            source = "opus-4.6"
             reason = opus.get("reason", "")[:100]
+            # Compute cache age for downstream visibility
+            import time as _t
+            ref_ts = _analysis_cache_ts or _stale_cache_ts
+            if ref_ts > 0:
+                ai_cache_age = round(_t.time() - ref_ts, 1)
+
             if asset_class == "crypto":
                 class_mode = opus.get("crypto_mode", "NORMAL")
                 if direction == "LONG" and not opus.get("crypto_longs_allowed", True):
@@ -60,10 +80,10 @@ def get_ai_decision(
                     dirs_allowed = False
             global_mult = _clamp(float(opus.get("global_size_multiplier", 1.0)), 0.25, 1.0)
     except Exception:
-        pass
+        ai_source = "fallback_rules"
 
-    # If no Opus, derive from sentiment
-    if source == "rule-based":
+    # If no Opus (fallback or disabled), derive from sentiment rules
+    if ai_source in ("fallback_rules", "disabled"):
         try:
             from bahamut.intelligence.market_intelligence import get_pipeline_directives
             d = get_pipeline_directives()
@@ -77,14 +97,23 @@ def get_ai_decision(
         except Exception:
             pass
 
-    # Derive penalty from posture + class mode (max -4)
+    # Phase 4 Item 11: stale/fallback/disabled → soften penalties by half
+    # so a 4-minute-old cached DEFENSIVE posture doesn't keep blocking
+    # trades that live data might unblock.
     posture_pen = {"AGGRESSIVE": 0, "SELECTIVE": -1, "DEFENSIVE": -3, "FROZEN": -4}
     mode_pen = {"NORMAL": 0, "CAUTION": -1, "RESTRICTED": -2, "FROZEN": -4}
     penalty = max(-4, posture_pen.get(posture, 0) + mode_pen.get(class_mode, 0))
-
-    # Derive size mult from posture
     posture_mult = {"AGGRESSIVE": 1.0, "SELECTIVE": 0.95, "DEFENSIVE": 0.75, "FROZEN": 0.25}
     size_mult = _clamp(round(posture_mult.get(posture, 0.95) * global_mult, 2), 0.25, 1.0)
+
+    # Track whether we softened (for diagnostics)
+    softened = False
+    if ai_source in ("stale", "fallback_rules", "disabled") and penalty < 0:
+        # Halve penalty magnitude — don't let degraded data drive harsh blocks
+        softened_penalty = max(penalty, int(penalty / 2))  # e.g. -4 → -2
+        if softened_penalty != penalty:
+            softened = True
+            penalty = softened_penalty
 
     # System override
     if system_allowed_directions is not None:
@@ -92,6 +121,15 @@ def get_ai_decision(
             dirs_allowed = False
 
     latency = round((time.time() - start) * 1000, 1)
+
+    # Map ai_source to the legacy _source string for existing callers
+    legacy_source_map = {
+        "fresh": "opus-4.6",
+        "stale": "opus-4.6-stale",
+        "fallback_rules": "rule-based",
+        "disabled": "rule-based-disabled",
+    }
+    legacy_source = legacy_source_map.get(ai_source, "rule-based")
 
     decision = {
         "posture": posture,
@@ -108,8 +146,12 @@ def get_ai_decision(
             "size_multiplier": global_mult,
             "risk_mode": "REDUCED" if posture in ("DEFENSIVE", "FROZEN") else "NORMAL",
         },
-        "_source": source,
-        "_fallback_used": source == "rule-based",
+        "_source": legacy_source,
+        # Phase 4 Item 11: canonical source + cache age + softening flag
+        "ai_source": ai_source,
+        "ai_cache_age_seconds": ai_cache_age,
+        "ai_posture_softened": softened,
+        "_fallback_used": ai_source in ("fallback_rules", "disabled"),
         "_latency_ms": latency,
         "_class_mode": class_mode,
     }
@@ -119,5 +161,7 @@ def get_ai_decision(
                 posture=posture, class_mode=class_mode,
                 allowed=decision["asset_decision"]["allowed"],
                 penalty=penalty, size_mult=size_mult,
-                source=source, latency_ms=latency)
+                source=legacy_source, ai_source=ai_source,
+                cache_age=ai_cache_age, softened=softened,
+                latency_ms=latency)
     return decision

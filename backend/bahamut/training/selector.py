@@ -248,13 +248,22 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
         bd["ai_class_mode"] = ai_decision.get("_class_mode", "NORMAL")
         bd["ai_global_size_mult"] = ai_decision.get("global_adjustments", {}).get("size_multiplier", 1.0)
         bd["ai_direction_allowed"] = ad.get("allowed", True)
+        # Phase 4 Item 11: legacy _source string preserved for UI; canonical
+        # ai_source field exposes one of fresh/stale/fallback_rules/disabled
+        # along with cache age and the softening flag.
         bd["ai_source"] = ai_decision.get("_source", "unknown")
+        bd["ai_source_category"] = ai_decision.get("ai_source", "fallback_rules")
+        bd["ai_cache_age_seconds"] = ai_decision.get("ai_cache_age_seconds")
+        bd["ai_posture_softened"] = ai_decision.get("ai_posture_softened", False)
         bd["ai_reason_compact"] = ad.get("reason", "")[:60]
 
         # Block if AI says not allowed
         if not ad.get("allowed", True):
             bd["ai_direction_block"] = True
-            bd["ai_block_reason"] = f"ai:{ai_decision.get('posture')}/{ai_decision.get('_class_mode')}"
+            bd["ai_block_reason"] = (
+                f"ai:{ai_decision.get('posture')}/{ai_decision.get('_class_mode')}"
+                f" [{bd['ai_source_category']}]"
+            )
 
         # Apply threshold penalty (clamped to -4, no double-count with news)
         ai_penalty = ad.get("threshold_penalty", 0)
