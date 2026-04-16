@@ -2663,8 +2663,16 @@ async def risk_metrics():
                 biggest_win = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
             if pnl < biggest_loss["pnl"]:
                 biggest_loss = {"pnl": round(pnl, 2), "asset": t.get("asset"), "strategy": t.get("strategy")}
-            # R-multiples (approximate from pnl_pct / ~3% risk per trade)
-            r = (t.get("pnl_pct", 0) or 0) / 0.03  # ~3% risk baseline
+            # Phase 5 Item 13: canonical R-multiple from real risk_amount.
+            # Fall back to the legacy ~3% baseline only if risk_amount is
+            # missing/zero (pre-schema rows). Every post-2025-10 trade has
+            # real risk_amount from the sizing engine.
+            _risk = float(t.get("risk_amount", 0) or 0)
+            _pnl = float(t.get("pnl", 0) or 0)
+            if _risk > 0:
+                r = _pnl / _risk
+            else:
+                r = (t.get("pnl_pct", 0) or 0) / 0.03  # legacy approximation
             total_r += r
             if r > 0:
                 win_r.append(r)
@@ -2686,7 +2694,14 @@ async def risk_metrics():
             elif p < -0.01:
                 strat_stats[s]["losses"] += 1
                 strat_stats[s]["max_loss"] = min(strat_stats[s]["max_loss"], p)
-            strat_stats[s]["r_sum"] = round(strat_stats[s]["r_sum"] + ((t.get("pnl_pct", 0) or 0) / 0.03), 2)
+            # Phase 5 Item 13: same canonical R
+            _rs_risk = float(t.get("risk_amount", 0) or 0)
+            _rs_pnl = float(t.get("pnl", 0) or 0)
+            if _rs_risk > 0:
+                _rs_r = _rs_pnl / _rs_risk
+            else:
+                _rs_r = (t.get("pnl_pct", 0) or 0) / 0.03
+            strat_stats[s]["r_sum"] = round(strat_stats[s]["r_sum"] + _rs_r, 2)
 
         # Per-class risk
         class_stats = {}
@@ -2812,12 +2827,18 @@ async def trust_dashboard():
         most_traded = sorted(with_exp, key=lambda x: x["trades"], reverse=True)[:10]
 
         # ── Per-asset performance from training_trades DB ──
+        # Phase 5 Item 13: real R-multiples from pnl/risk_amount instead
+        # of legacy pnl_pct/0.03 approximation. Filter out rows where
+        # risk_amount is 0 or NULL so we don't divide by zero.
         asset_rows = run_query("""
             SELECT asset, COUNT(*) as trades,
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as total_pnl,
-                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
+                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct,
+                   COALESCE(AVG(CASE WHEN risk_amount > 0
+                                     THEN pnl / risk_amount
+                                     ELSE pnl_pct / 0.03 END), 0) as avg_r
             FROM training_trades GROUP BY asset ORDER BY total_pnl DESC
         """)
 
@@ -2833,7 +2854,7 @@ async def trust_dashboard():
                 "wins": w, "losses": l,
                 "wr": round(w / max(1, w + l), 3),
                 "pnl": round(float(r.get("total_pnl", 0) or 0), 2),
-                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+                "avg_r": round(float(r.get("avg_r", 0) or 0), 3),
             }
             if entry["pnl"] > 0:
                 best_assets.append(entry)
@@ -2845,7 +2866,9 @@ async def trust_dashboard():
         exit_rows = run_query("""
             SELECT exit_reason, COUNT(*) as count,
                    COALESCE(AVG(pnl), 0) as avg_pnl,
-                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
+                   COALESCE(AVG(CASE WHEN risk_amount > 0
+                                     THEN pnl / risk_amount
+                                     ELSE pnl_pct / 0.03 END), 0) as avg_r
             FROM training_trades GROUP BY exit_reason
         """)
         exit_stats = {}
@@ -2853,7 +2876,7 @@ async def trust_dashboard():
             exit_stats[r["exit_reason"] or "UNKNOWN"] = {
                 "count": r["count"],
                 "avg_pnl": round(float(r.get("avg_pnl", 0) or 0), 2),
-                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+                "avg_r": round(float(r.get("avg_r", 0) or 0), 3),
             }
 
         # ── Direction + regime performance ──
@@ -2875,7 +2898,9 @@ async def trust_dashboard():
                    SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
                    SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                    COALESCE(SUM(pnl), 0) as pnl,
-                   COALESCE(AVG(pnl_pct), 0) as avg_pnl_pct
+                   COALESCE(AVG(CASE WHEN risk_amount > 0
+                                     THEN pnl / risk_amount
+                                     ELSE pnl_pct / 0.03 END), 0) as avg_r
             FROM training_trades GROUP BY regime
         """)
         regime_stats = {}
@@ -2885,7 +2910,7 @@ async def trust_dashboard():
             regime_stats[r["regime"] or "UNKNOWN"] = {
                 "trades": r["trades"], "wins": w, "losses": l,
                 "pnl": round(float(r.get("pnl", 0) or 0), 2),
-                "avg_r": round(float(r.get("avg_pnl_pct", 0) or 0) / 0.03, 3),
+                "avg_r": round(float(r.get("avg_r", 0) or 0), 3),
                 "wr": round(w / max(1, w + l), 3),
             }
 
