@@ -3529,3 +3529,193 @@ async def market_intelligence():
             "_error": err_msg, "_trace": err_trace,
         }
         return JSONResponse(content=fallback)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Phase 6 Item 16 — CONSOLIDATED HEALTH DASHBOARD
+# Single endpoint that provides a quick operator-level view of
+# system health. Designed to be the first thing checked post-deploy.
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/health")
+async def system_health(user=Depends(get_current_user)):
+    """Consolidated system health — single-screen operator dashboard.
+
+    Returns:
+      status: 'healthy' | 'degraded' | 'critical'
+      checks: list of {name, status, detail} for every subsystem
+      alerts: list of strings requiring immediate operator attention
+    """
+    try:
+        return await _build_health()
+    except Exception as e:
+        import traceback
+        return {"status": "critical", "checks": [],
+                "alerts": [f"Health check itself failed: {e}"],
+                "error": traceback.format_exc()[:500]}
+
+
+async def _build_health():
+    import time as _t
+    r = _get_redis()
+    checks = []
+    alerts = []
+    now = _t.time()
+
+    def _check(name: str, ok: bool, detail: str = "", warn: bool = False):
+        status = "ok" if ok else ("warn" if warn else "fail")
+        checks.append({"name": name, "status": status, "detail": detail})
+        if not ok and not warn:
+            alerts.append(f"{name}: {detail}")
+
+    # ── 1. Redis connectivity ──
+    _check("redis", r is not None, "connected" if r else "UNREACHABLE")
+
+    # ── 2. Open positions count + invariant ──
+    try:
+        from bahamut.training.engine import _load_positions
+        positions = _load_positions()
+        pos_count = len(positions)
+        crypto_internal = [
+            p.asset for p in positions
+            if p.asset_class == "crypto"
+            and (p.execution_platform == "internal" or not p.exchange_order_id)
+        ]
+        _check("open_positions", True, f"{pos_count} open")
+        _check("crypto_internal_invariant",
+               len(crypto_internal) == 0,
+               f"violations: {crypto_internal}" if crypto_internal else "clean")
+    except Exception as e:
+        _check("open_positions", False, str(e)[:100])
+
+    # ── 3. Data mode posture ──
+    try:
+        from bahamut.data.live_data import BLOCK_SYNTHETIC
+        _check("synthetic_data_blocked", BLOCK_SYNTHETIC,
+               "ON (production safe)" if BLOCK_SYNTHETIC else "OFF (dev mode)",
+               warn=not BLOCK_SYNTHETIC)
+        if r:
+            sb = r.get("bahamut:counters:synthetic_blocks")
+            sb_count = int(sb) if sb else 0
+            _check("synthetic_block_events", sb_count == 0,
+                   f"{sb_count} assets had no live data",
+                   warn=sb_count > 0)
+    except Exception as e:
+        _check("synthetic_data_blocked", False, str(e)[:100])
+
+    # ── 4. Exchange filters ──
+    try:
+        from bahamut.execution.exchange_filters import _FILTERS, _FILTERS_FETCHED_AT
+        has_filters = len(_FILTERS) > 0
+        age = round(now - _FILTERS_FETCHED_AT) if _FILTERS_FETCHED_AT > 0 else None
+        any_fallback = any(
+            f.get("source", "").startswith("fallback")
+            for f in _FILTERS.values()
+        ) if _FILTERS else True
+        _check("exchange_filters", has_filters and not any_fallback,
+               f"{len(_FILTERS)} symbols, age={age}s" if has_filters
+               else "NOT LOADED",
+               warn=any_fallback)
+    except Exception as e:
+        _check("exchange_filters", False, str(e)[:100])
+
+    # ── 5. AI posture source ──
+    try:
+        from bahamut.intelligence.ai_market_analyst import get_analysis_source
+        _, ai_source = get_analysis_source()
+        _check("ai_posture_source",
+               ai_source == "fresh",
+               f"source={ai_source}",
+               warn=ai_source in ("stale", "fallback_rules", "disabled"))
+    except Exception as e:
+        _check("ai_posture_source", False, str(e)[:100])
+
+    # ── 6. News pipeline freshness ──
+    try:
+        from bahamut.intelligence.adaptive_news_risk import (
+            get_all_news_states, FRESHNESS_STALE_SEC,
+        )
+        states = get_all_news_states()
+        if states:
+            stale = sum(
+                1 for s in states.values()
+                if s.assessment_computed_at > 0
+                and (now - s.assessment_computed_at) > FRESHNESS_STALE_SEC
+            )
+            elevated_stale = [
+                s.asset for s in states.values()
+                if s.mode != "NORMAL"
+                and s.assessment_computed_at > 0
+                and (now - s.assessment_computed_at) > FRESHNESS_STALE_SEC
+            ]
+            _check("news_freshness",
+                   stale == 0,
+                   f"{stale}/{len(states)} stale" if stale else f"{len(states)} assets fresh",
+                   warn=stale > 0 and not elevated_stale)
+            if elevated_stale:
+                alerts.append(f"ELEVATED NEWS ON STALE DATA: {elevated_stale[:5]}")
+        else:
+            _check("news_freshness", True, "no states computed yet", warn=True)
+    except Exception as e:
+        _check("news_freshness", False, str(e)[:100])
+
+    # ── 7. Candle closed-state (Phase 1) ──
+    try:
+        from bahamut.data.binance_data import last_candle_closed_state
+        state = last_candle_closed_state()
+        if state:
+            forming_leak = [a for a, v in state.items() if not v.get("is_closed", True)]
+            _check("candle_closed_enforcement",
+                   len(forming_leak) == 0,
+                   f"forming leaks: {forming_leak}" if forming_leak else "all closed")
+        else:
+            _check("candle_closed_enforcement", True, "no state yet", warn=True)
+    except Exception:
+        _check("candle_closed_enforcement", True, "check unavailable", warn=True)
+
+    # ── 8. Indicator engine version ──
+    try:
+        from bahamut.data.binance_data import INDICATOR_ENGINE_VERSION
+        _check("indicator_engine", True, INDICATOR_ENGINE_VERSION)
+    except Exception:
+        _check("indicator_engine", False, "version constant missing")
+
+    # ── 9. Key counters ──
+    if r:
+        counter_names = [
+            "engine_suppress_blocks",
+            "substrategy_suppress_blocks",
+            "crypto_mirror_aborts",
+            "mature_neg_expectancy_blocks",
+        ]
+        for cn in counter_names:
+            try:
+                val = r.get(f"bahamut:counters:{cn}")
+                count = int(val) if val else 0
+                # These are informational, not failures
+                _check(f"counter:{cn}", True, str(count))
+            except Exception:
+                pass
+
+    # ── Aggregate status ──
+    fail_count = sum(1 for c in checks if c["status"] == "fail")
+    warn_count = sum(1 for c in checks if c["status"] == "warn")
+    if fail_count > 0:
+        status = "critical"
+    elif warn_count > 0:
+        status = "degraded"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "checks": checks,
+        "alerts": alerts,
+        "summary": {
+            "total_checks": len(checks),
+            "ok": sum(1 for c in checks if c["status"] == "ok"),
+            "warn": warn_count,
+            "fail": fail_count,
+        },
+    }
