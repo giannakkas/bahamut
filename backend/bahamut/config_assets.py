@@ -129,7 +129,7 @@ TRAINING_SUPPRESS = {
     # v5_base: blocked on EMA trend strategy
     "v5_base": {"ARBUSD", "WIFUSD", "BTCUSD", "FILUSD"},
     # v10_mean_reversion: blocked on mean reversion (standard path)
-    "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD", "UNIUSD", "LTCUSD"},
+    "v10_mean_reversion": {"SOLUSD", "BNBUSD", "AAPL", "DOTUSD", "ADAUSD", "UNIUSD", "LTCUSD", "FILUSD", "ATOMUSD"},
     # v9_breakout: specific underperformers
     "v9_breakout": {"ETHUSD", "AMD"},
 }
