@@ -1178,30 +1178,36 @@ async def _build_diagnostics():
         for asset in TRAINING_CRYPTO[:5]:
             try:
                 candles_4h = get_candles(asset, interval="4h", limit=100)
-                if candles_4h and len(candles_4h) >= 30:
+                if candles_4h and len(candles_4h) >= 60:
                     ind_4h = binance_ind(candles_4h)
-                    rr = detect_regime(ind_4h, candles_4h[-15:])
-                    original = rr.regime
-                    effective = original
+                    # Pass full candle list so detector can build true EMA slope.
+                    rr = detect_regime(ind_4h, candles_4h)
+                    structural = rr.structural_regime
+                    effective = structural
                     override = ""
                     sentiment_block = False
 
                     if fng_value <= 25:
                         sentiment_block = True
-                        # Structural CRASH override: requires price BELOW EMA200 + negative slope
-                        close_4h = ind_4h.get("close", 0)
-                        ema200_4h = ind_4h.get("ema_200", 0)
-                        slope_4h = ind_4h.get("ema50_slope", rr.features.get("ema50_slope", 0))
-                        dist_ema200 = (close_4h - ema200_4h) / ema200_4h * 100 if ema200_4h > 0 else 0
+                        # Structural CRASH override: requires price BELOW EMA200 + negative slope.
+                        # Reuse slope from rr.features — detector already computed it.
+                        slope_4h = rr.features.get("ema50_slope", 0)
+                        dist_ema200 = rr.features.get("price_vs_ema200", 0)
                         if dist_ema200 < 0 and slope_4h < -0.5:
                             effective = "CRASH"
-                            override = f"structural (below EMA200 + neg slope)"
+                            override = "structural (below EMA200 + neg slope)"
                         else:
                             override = f"sentiment_long_block (F&G={fng_value})"
 
                     regime_section["rows"].append({
-                        "asset": asset, "regime_4h": original,
-                        "effective": effective, "override": override,
+                        "asset": asset,
+                        "structural_regime": structural,
+                        "effective_regime": effective,
+                        "regime_confidence": rr.regime_confidence,
+                        "sentiment_overlay": "long_block" if sentiment_block else "",
+                        "override_applied": "structural_crash_override" if effective != structural else "",
+                        # Legacy aliases for UI backward compat
+                        "regime_4h": structural, "effective": effective, "override": override,
                         "sentiment_long_block": sentiment_block,
                         "reason": rr.reason,
                         "features": rr.features,
@@ -2131,20 +2137,20 @@ async def _build_diagnostics():
             for ca in TRAINING_CRYPTO[:5]:
                 try:
                     c4h = get_candles(ca, interval="4h", limit=100)
-                    if c4h and len(c4h) >= 50:
+                    if c4h and len(c4h) >= 60:
                         i4h = binance_ind(c4h)
-                        reg = detect_regime(i4h, c4h[-15:])
-                        close = i4h.get("close", 0)
-                        ema200 = i4h.get("ema_200", 0)
-                        # ema50_slope is in RegimeResult.features, not in indicators
-                        slope = reg.features.get("ema50_slope", 0) if reg.features else 0
-                        dist = round((close - ema200) / ema200 * 100, 2) if ema200 > 0 else 0
+                        # Pass full candle list so detector computes true EMA50 slope.
+                        reg = detect_regime(i4h, c4h)
+                        slope = reg.features.get("ema50_slope", 0)
+                        dist = reg.features.get("price_vs_ema200", 0)
                         structural_crash = dist < 0 and slope < -0.5
                         regime_audit.append({
                             "asset": ca,
-                            "structural_regime": reg.regime,  # dataclass attribute, not dict
+                            "structural_regime": reg.structural_regime,
+                            "regime_confidence": reg.regime_confidence,
+                            "ema50_slope": round(slope, 3),
+                            "ema50_slope_method": reg.features.get("ema50_slope_method", "unknown"),
                             "dist_ema200_pct": dist,
-                            "ema50_slope": round(slope, 3) if slope else 0,
                             "would_override_to_crash": structural_crash,
                             "sentiment_long_block": True,
                         })

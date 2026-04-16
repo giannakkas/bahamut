@@ -378,6 +378,8 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         return result
 
     regime = "RANGE"
+    regime_result = None  # Keep the full structural answer for override decisions
+    candles_for_regime = None  # Candles used for regime detection (reused for slope)
     try:
         from bahamut.regime.v8_detector import detect_regime
         from bahamut.data.binance_data import is_crypto
@@ -388,27 +390,38 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             # 4H gives the true macro picture (CRASH/TREND/RANGE).
             from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
             candles_4h = get_candles(asset, interval="4h", limit=100)
-            if candles_4h and len(candles_4h) >= 30:
+            if candles_4h and len(candles_4h) >= 60:
                 ind_4h = binance_ind(candles_4h)
-                regime_result = detect_regime(ind_4h, candles_4h[-15:])
+                # Pass MORE candles (was 15) so the detector can build a true
+                # EMA50 series for slope computation.
+                regime_result = detect_regime(ind_4h, candles_4h)
                 regime = regime_result.regime
+                candles_for_regime = candles_4h
                 logger.debug("training_crypto_dual_regime",
                              asset=asset, regime=regime,
                              reason=regime_result.reason)
             else:
                 # Fallback to 15m indicators
-                regime_result = detect_regime(indicators, candles[-15:])
+                regime_result = detect_regime(indicators, candles)
                 regime = regime_result.regime
+                candles_for_regime = candles
         else:
             # Stocks: standard regime from 4H indicators
-            regime_result = detect_regime(indicators, candles[-15:])
+            regime_result = detect_regime(indicators, candles)
             regime = regime_result.regime
+            candles_for_regime = candles
     except Exception:
         pass
 
     # Inject regime into indicators so strategies (v10) can read it
     indicators["_regime"] = regime
     indicators["_asset_class"] = asset_class
+
+    # Record structural answer for audit BEFORE any overlay/override
+    if regime_result is not None:
+        indicators["_structural_regime"] = regime_result.structural_regime
+        indicators["_regime_confidence"] = regime_result.regime_confidence
+        indicators["_regime_features"] = regime_result.features
 
     # ══════════════════════════════════════════════════════════
     # SENTIMENT + REGIME HANDLING (redesigned)
@@ -424,6 +437,9 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     #      - EMA50 slope is negative (confirmed downtrend)
     #   3. If structure says RANGE but sentiment says fear, regime stays RANGE
     #      but crypto LONGs are blocked by the sentiment flag
+    #
+    # Phase 1 Item 3 change: no longer runs detect_regime a second time —
+    # reuses the already-computed regime_result.features.ema50_slope.
     # ══════════════════════════════════════════════════════════
     indicators["_sentiment_long_block"] = False
 
@@ -436,37 +452,27 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             # Block crypto LONGs when F&G ≤ 25 — but don't touch regime label
             if fng_value <= 25:
                 indicators["_sentiment_long_block"] = True
+                if regime_result is not None:
+                    regime_result.sentiment_overlay = "long_block"
                 logger.info("training_sentiment_long_block",
                             asset=asset, regime=regime, fear_greed=fng_value,
                             reason="F&G extreme fear — crypto LONGs blocked (regime unchanged)")
 
                 # Only override regime to CRASH if STRUCTURAL conditions confirm:
-                # Price must be BELOW EMA200 AND EMA50 slope must be negative
-                if regime != "CRASH":
-                    check_close = indicators.get("close", 0)
-                    check_ema200 = indicators.get("ema_200", 0)
-                    check_slope = 0
-                    try:
-                        from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
-                        from bahamut.regime.v8_detector import detect_regime as _detect
-                        c4h = get_candles(asset, interval="4h", limit=100)
-                        if c4h and len(c4h) >= 50:
-                            i4h = binance_ind(c4h)
-                            check_close = i4h.get("close", check_close)
-                            check_ema200 = i4h.get("ema_200", check_ema200)
-                            # Get slope from regime detector (not in compute_indicators)
-                            rr = _detect(i4h, c4h[-15:])
-                            check_slope = rr.features.get("ema50_slope", 0)
-                    except Exception:
-                        pass
-
-                    dist_from_ema200 = (check_close - check_ema200) / check_ema200 * 100 if check_ema200 > 0 else 0
+                # Price must be BELOW EMA200 AND EMA50 slope must be negative.
+                # We REUSE the regime_result features — no second detect_regime call.
+                if regime != "CRASH" and regime_result is not None:
+                    feats = regime_result.features or {}
+                    check_slope = feats.get("ema50_slope", 0)
+                    dist_from_ema200 = feats.get("price_vs_ema200", 0)
 
                     # Structural crash: price BELOW EMA200 AND negative slope
                     if dist_from_ema200 < 0 and check_slope < -0.5:
                         original = regime
                         regime = "CRASH"
                         indicators["_regime"] = "CRASH"
+                        regime_result.override_applied = "structural_crash_override"
+                        regime_result.effective_regime = "CRASH"
                         logger.info("training_structural_crash_override",
                                     asset=asset, original=original,
                                     fear_greed=fng_value,
@@ -485,6 +491,11 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     from bahamut.data.binance_data import is_crypto
     indicators["_interval"] = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
     indicators["_effective_regime"] = regime  # Post-override regime for strategies
+
+    # Make override provenance available to selector / diagnostics
+    if regime_result is not None:
+        indicators["_sentiment_overlay"] = regime_result.sentiment_overlay
+        indicators["_regime_override_applied"] = regime_result.override_applied
 
     result["regime"] = regime  # For orchestrator regime collection
 
