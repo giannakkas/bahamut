@@ -16,37 +16,88 @@ from bahamut.admin.config import get_config
 
 logger = structlog.get_logger()
 
-# Manual override — allows admin to temporarily resume trading
-# Resets on next server restart or if conditions worsen significantly
+# Manual override — stored in Redis for cross-worker visibility
 import time as _time
-_manual_override = {"active": False, "set_at": 0, "set_by": ""}
+import os as _os
 _OVERRIDE_TTL = 3600  # override expires after 1 hour
+_REDIS_KEY = "bahamut:kill_switch:manual_override"
+
+
+def _get_ks_redis():
+    try:
+        import redis
+        return redis.from_url(
+            _os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+            socket_connect_timeout=1,
+        )
+    except Exception:
+        return None
 
 
 def force_resume_trading(set_by: str = "admin"):
-    """Admin override: temporarily resume trading despite kill switch conditions."""
-    _manual_override["active"] = True
-    _manual_override["set_at"] = _time.time()
-    _manual_override["set_by"] = set_by
+    """Admin override: temporarily resume trading despite kill switch conditions.
+    Stored in Redis so all workers see it immediately."""
+    import json
+    r = _get_ks_redis()
+    if r:
+        try:
+            r.setex(_REDIS_KEY, _OVERRIDE_TTL, json.dumps({
+                "active": True,
+                "set_at": _time.time(),
+                "set_by": set_by,
+            }))
+        except Exception:
+            pass
     logger.warning("kill_switch_manual_override", set_by=set_by)
 
 
 def force_activate_kill_switch(set_by: str = "admin"):
-    """Admin override: force kill switch active."""
-    _manual_override["active"] = False
+    """Admin override: force kill switch active (clear the resume override)."""
+    r = _get_ks_redis()
+    if r:
+        try:
+            r.delete(_REDIS_KEY)
+        except Exception:
+            pass
     logger.warning("kill_switch_force_activated", set_by=set_by)
 
 
 def is_override_active() -> bool:
-    """Check if manual override is still valid."""
-    if not _manual_override["active"]:
+    """Check if manual override is still valid. Reads from Redis."""
+    import json
+    r = _get_ks_redis()
+    if not r:
         return False
-    elapsed = _time.time() - _manual_override["set_at"]
-    if elapsed > _OVERRIDE_TTL:
-        _manual_override["active"] = False
-        logger.info("kill_switch_override_expired")
+    try:
+        raw = r.get(_REDIS_KEY)
+        if not raw:
+            return False
+        data = json.loads(raw)
+        if not data.get("active"):
+            return False
+        elapsed = _time.time() - data.get("set_at", 0)
+        if elapsed > _OVERRIDE_TTL:
+            r.delete(_REDIS_KEY)
+            logger.info("kill_switch_override_expired")
+            return False
+        return True
+    except Exception:
         return False
-    return True
+
+
+def _get_override_info() -> dict:
+    """Get current override state for display."""
+    import json
+    r = _get_ks_redis()
+    if not r:
+        return {"active": False}
+    try:
+        raw = r.get(_REDIS_KEY)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return {"active": False}
 
 
 @dataclass
@@ -185,7 +236,7 @@ def get_current_state() -> dict:
             state = KillSwitchState()  # all defaults = safe
             # Apply manual override check
             if is_override_active():
-                state.triggers = [f"Kill switch overridden by {_manual_override['set_by']} (expires in {int(_OVERRIDE_TTL - (_time.time() - _manual_override['set_at']))}s)"]
+                state.triggers = [f"Kill switch overridden by {_get_override_info().get('set_by', 'admin')} (expires in {int(_OVERRIDE_TTL - (_time.time() - _get_override_info().get('set_at', 0)))}s)"]
             return state.to_dict()
 
         frag = _compute_fragility(snap, bal)
@@ -205,7 +256,7 @@ def get_current_state() -> dict:
         # Apply manual override if admin has resumed trading
         if state.kill_switch_active and is_override_active():
             state.kill_switch_active = False
-            state.triggers = [f"Kill switch overridden by {_manual_override['set_by']} (expires in {int(_OVERRIDE_TTL - (_time.time() - _manual_override['set_at']))}s)"]
+            state.triggers = [f"Kill switch overridden by {_get_override_info().get('set_by', 'admin')} (expires in {int(_OVERRIDE_TTL - (_time.time() - _get_override_info().get('set_at', 0)))}s)"]
 
         if state.kill_switch_active:
             logger.warning("kill_switch_evaluated_active",
