@@ -8,6 +8,7 @@ Paper base:     https://paper-api.alpaca.markets
 Production:     https://api.alpaca.markets
 """
 import os
+import time
 import httpx
 import structlog
 
@@ -63,13 +64,15 @@ def get_account() -> dict | None:
     return None
 
 
-def place_market_buy(asset: str, quantity: float = None, notional: float = None) -> dict | None:
+def place_market_buy(asset: str, quantity: float = None, notional: float = None,
+                     client_order_id: str = "") -> dict | None:
     """Place a market buy order.
 
     Args:
         asset: Stock symbol (e.g. AAPL, NFLX)
         quantity: Number of shares (fractional OK)
         notional: Dollar amount to buy (alternative to quantity)
+        client_order_id: Idempotency key for dedup/retry safety
     """
     if not _configured():
         logger.warning("alpaca_not_configured")
@@ -84,6 +87,7 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None)
         "side": "buy",
         "type": "market",
         "time_in_force": "day",
+        "client_order_id": client_order_id or f"bah_{asset.lower()}_{int(time.time()*1000)}",
     }
 
     if notional:
@@ -120,7 +124,8 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None)
         return {"error": str(e)}
 
 
-def place_market_sell(asset: str, quantity: float) -> dict | None:
+def place_market_sell(asset: str, quantity: float,
+                      client_order_id: str = "") -> dict | None:
     """Place a market sell order."""
     if not _configured():
         return None
@@ -134,6 +139,7 @@ def place_market_sell(asset: str, quantity: float) -> dict | None:
         "type": "market",
         "time_in_force": "day",
         "qty": str(round(quantity, 6)),
+        "client_order_id": client_order_id or f"bah_{asset.lower()}_{int(time.time()*1000)}",
     }
 
     try:
