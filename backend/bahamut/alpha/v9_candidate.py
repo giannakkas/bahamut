@@ -129,6 +129,94 @@ def detect_confirmed_breakout(
     return sig
 
 
+def detect_confirmed_breakdown(
+    candles: list,
+    indicators: dict,
+    lookback: int = 20,
+    confirm_bars: int = 3,
+) -> BreakoutSignal:
+    """Detect a confirmed breakdown SHORT — price breaks N-bar LOW and holds below.
+
+    Mirror of detect_confirmed_breakout for SHORT setups.
+
+    candles: recent 30+ candles
+    indicators: current indicators
+    lookback: period to find the low to break (default 20)
+    confirm_bars: how many bars it must hold below (default 3)
+    """
+    sig = BreakoutSignal()
+
+    if not candles or len(candles) < lookback + confirm_bars + 2:
+        return sig
+
+    close = indicators.get("close", 0)
+    atr = indicators.get("atr_14", 0)
+    ema_200 = indicators.get("ema_200", 0)
+
+    if close <= 0 or atr <= 0:
+        return sig
+
+    # Find the breakdown level: LOW of the lookback bars BEFORE confirmation window
+    ref_candles = candles[-(lookback + confirm_bars + 1):-(confirm_bars + 1)]
+    if len(ref_candles) < lookback - 2:
+        return sig
+
+    ref_low = min(c["low"] for c in ref_candles)
+
+    # Check confirmation: last confirm_bars candles must all close below ref_low
+    confirm_candles = candles[-(confirm_bars + 1):-1]
+    current = candles[-1]
+
+    if len(confirm_candles) < confirm_bars:
+        return sig
+
+    all_held = all(c["close"] < ref_low * 1.005 for c in confirm_candles)  # 0.5% tolerance
+    current_below = current["close"] < ref_low * 1.005
+
+    if not all_held or not current_below:
+        return sig
+
+    # Quality filters
+    quality = 0.5
+
+    dist_below = (ref_low - close) / atr if atr > 0 else 0
+    if dist_below > 0.5:
+        quality += min(0.2, dist_below * 0.1)
+
+    # Not too extended below (avoid shorting lows)
+    if dist_below > 3.0:
+        sig.reason = "too extended below breakdown"
+        return sig
+
+    # Range expansion check
+    recent_ranges = [c["high"] - c["low"] for c in candles[-5:]]
+    prior_ranges = [c["high"] - c["low"] for c in candles[-10:-5]]
+    if prior_ranges and recent_ranges:
+        range_expansion = np.mean(recent_ranges) / (np.mean(prior_ranges) + 1e-10)
+        if range_expansion > 1.2:
+            quality += 0.1
+
+    # Bearish closes in confirmation window
+    bear_count = sum(1 for c in confirm_candles if c["close"] < c["open"])
+    if bear_count >= 2:
+        quality += 0.1
+
+    # Not in a raging bull (basic safety)
+    if ema_200 > 0 and close > ema_200 * 1.10:
+        sig.reason = "deep above EMA200, not a breakdown"
+        return sig
+
+    sig.valid = True
+    sig.direction = "SHORT"
+    sig.confidence = round(min(1.0, quality), 3)
+    sig.breakout_level = round(ref_low, 2)
+    sig.atr = round(atr, 6)
+    sig.dist_above_atr = round(dist_below, 4)
+    sig.reason = f"20-bar low breakdown at ${ref_low:,.0f}, held {confirm_bars} bars below, dist={dist_below:.1f}ATR"
+
+    return sig
+
+
 class V9Breakout:
     """Strategy wrapper for the execution framework.
 
@@ -167,7 +255,11 @@ class V9Breakout:
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         import os
+
+        # Try breakout (LONG) first, then breakdown (SHORT)
         sig = detect_confirmed_breakout(candles, indicators)
+        if not sig.valid:
+            sig = detect_confirmed_breakdown(candles, indicators)
         if not sig.valid:
             return None
 
@@ -175,7 +267,7 @@ class V9Breakout:
         interval = indicators.get("_interval", "4h") if indicators else "4h"
         close = float(indicators.get("close", 0))
         atr = float(sig.atr or indicators.get("atr_14", 0))
-        ref_high = float(sig.breakout_level or 0)
+        ref_level = float(sig.breakout_level or 0)  # breakout high or breakdown low
 
         adaptive = os.environ.get("BAHAMUT_V9_ADAPTIVE_SIZING", "1") != "0"
 
@@ -214,16 +306,18 @@ class V9Breakout:
             sl = max(sl_atr, sl_floor)
             sl = min(sl, sl_cap)
 
-            # Structural cap: SL cannot be wider than distance-to-(ref_high*0.995)
-            # since that level invalidates the breakout
-            if close > 0 and ref_high > 0:
-                invalidation_level = ref_high * 0.995
-                struct_dist = (close - invalidation_level) / close
+            # Structural cap: SL cannot be wider than distance-to-invalidation level
+            # For LONG: ref_level * 0.995 (breakout retraced = invalidated)
+            # For SHORT: ref_level * 1.005 (breakdown reclaimed = invalidated)
+            if close > 0 and ref_level > 0:
+                if sig.direction == "LONG":
+                    invalidation_level = ref_level * 0.995
+                    struct_dist = (close - invalidation_level) / close
+                else:
+                    invalidation_level = ref_level * 1.005
+                    struct_dist = (invalidation_level - close) / close
                 if struct_dist > sl_floor:
-                    # Tighten SL to the structural stop if it's tighter than ATR
                     sl = min(sl, struct_dist)
-                # If struct_dist is too small (<sl_floor), we respect the
-                # min floor — price is very close to the breakout level.
 
             # Ensure we still respect the absolute minimum
             sl = max(sl, sl_floor)

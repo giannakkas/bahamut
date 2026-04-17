@@ -843,3 +843,36 @@ async def get_failed_signals_endpoint(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("failed_signals_endpoint_error", error=str(e))
         return {"signals": []}
+
+
+@router.get("/funding-rates")
+async def get_funding_rates(user=Depends(get_current_user)):
+    """Funding rate costs for open crypto futures positions."""
+    try:
+        from bahamut.execution.funding_rate import check_all_positions_funding
+        from bahamut.training.engine import get_open_positions
+
+        positions = get_open_positions()
+        pos_dicts = [
+            {
+                "asset": p.asset,
+                "direction": p.direction,
+                "size": p.size,
+                "entry_price": p.entry_price,
+                "entry_time": p.entry_time,
+            }
+            for p in positions
+        ]
+
+        estimates = check_all_positions_funding(pos_dicts)
+        total_estimated_cost = sum(e.get("estimated_cost", 0) for e in estimates)
+
+        return {
+            "positions_checked": len(estimates),
+            "total_estimated_funding_cost": round(total_estimated_cost, 2),
+            "high_rate_count": sum(1 for e in estimates if e.get("is_high")),
+            "details": estimates,
+        }
+    except Exception as e:
+        logger.error("funding_rates_endpoint_error", error=str(e))
+        return {"positions_checked": 0, "total_estimated_funding_cost": 0, "details": []}

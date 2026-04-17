@@ -1,8 +1,10 @@
 """
-v5_base — EMA20×50 golden cross in bull regime.
+v5_base — EMA20×50 cross strategy with regime-aware direction.
 
-SL: 8% | TP: 16% | Max hold: 30 bars
-Validated profitable on realistic BTC data (5/5 seeds positive).
+LONG: Golden cross (EMA20 crosses above EMA50) in bull regime (above EMA200)
+SHORT: Death cross (EMA20 crosses below EMA50) in bear regime (below EMA200)
+
+Dynamic SL/TP by timeframe. Multi-confirmation quality scoring.
 """
 from typing import Optional
 from bahamut.strategies.base import BaseStrategy, StrategyMeta, Signal
@@ -11,8 +13,8 @@ from bahamut.strategies.base import BaseStrategy, StrategyMeta, Signal
 class V5Base(BaseStrategy):
     meta = StrategyMeta(
         name="v5_base",
-        version="5.1",
-        description="EMA20x50 golden cross, dynamic SL/TP by timeframe",
+        version="5.2",
+        description="EMA20x50 cross, regime-aware LONG+SHORT, dynamic SL/TP",
         sl_pct=0.03,       # Default (overridden dynamically in evaluate)
         tp_pct=0.06,
         max_hold_bars=20,
@@ -25,13 +27,11 @@ class V5Base(BaseStrategy):
     max_hold = 20
 
     # Timeframe-proportional SL/TP targets
-    # Key insight: on 15m candles, 20 bars = 5 hours. Price moves ~3-5% max.
-    # On 4H candles, 20 bars = 3.3 days. Price moves ~5-8% max.
     SL_TP_BY_INTERVAL = {
-        "15m": {"sl": 0.025, "tp": 0.05, "hold": 20},   # 2.5% SL, 5% TP — achievable in 5hr
-        "5m":  {"sl": 0.015, "tp": 0.03, "hold": 20},    # 1.5% SL, 3% TP
-        "1h":  {"sl": 0.03,  "tp": 0.06, "hold": 20},    # 3% SL, 6% TP
-        "4h":  {"sl": 0.035, "tp": 0.07, "hold": 30},    # 3.5% SL, 7% TP — achievable in 5 days
+        "15m": {"sl": 0.025, "tp": 0.05, "hold": 20},
+        "5m":  {"sl": 0.015, "tp": 0.03, "hold": 20},
+        "1h":  {"sl": 0.03,  "tp": 0.06, "hold": 20},
+        "4h":  {"sl": 0.035, "tp": 0.07, "hold": 30},
     }
 
     def evaluate(self, candles: list, indicators: dict,
@@ -73,46 +73,16 @@ class V5Base(BaseStrategy):
         if prev_20 <= 0 or prev_50 <= 0:
             return None
 
-        # Bull regime: price above EMA200
-        if close <= ema_200:
-            return None
+        interval = indicators.get("_interval", "4h")
+        params = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
+        bar_ts = candles[-1].get("datetime", "") if candles else ""
 
-        # Golden cross: EMA20 crosses above EMA50
-        if prev_20 <= prev_50 and ema_20 > ema_50:
-            # Dynamic SL/TP based on candle timeframe
-            interval = indicators.get("_interval", "4h")
-            params = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
-
-            # ── Multi-confirmation quality scoring ──
-            quality = 0.5  # base score for golden cross + bull regime
-
-            # Volume confirmation: current bar volume > 1.3× average
-            volume = indicators.get("volume", 0)
-            vol_sma = indicators.get("volume_sma_20", 0)
-            if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
-                quality += 0.1  # volume expanding on cross
-
-            # MACD confirmation: histogram positive (momentum aligns)
-            macd_hist = indicators.get("macd_histogram", 0)
-            if macd_hist > 0:
-                quality += 0.1  # MACD momentum confirms
-
-            # RSI mid-range: not overbought (avoid late entries)
-            rsi = indicators.get("rsi_14", 50)
-            if 40 < rsi < 70:
-                quality += 0.05  # healthy RSI zone
-
-            # Strong EMA alignment: EMA20 > EMA50 > EMA200
-            if ema_20 > ema_50 > ema_200:
-                quality += 0.05  # full alignment
-
-            quality = round(min(1.0, quality), 3)
-
-            confirmations = []
-            if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
-                confirmations.append("vol_expand")
-            if macd_hist > 0:
-                confirmations.append("macd_pos")
+        # ═══════════════════════════════════════════
+        # LONG: Golden cross in bull regime
+        # ═══════════════════════════════════════════
+        if close > ema_200 and prev_20 <= prev_50 and ema_20 > ema_50:
+            quality = self._score_quality(indicators, direction="LONG")
+            confirmations = self._get_confirmations(indicators, direction="LONG")
 
             reason = f"EMA20x50 golden cross, bull regime ({asset})"
             if confirmations:
@@ -127,6 +97,80 @@ class V5Base(BaseStrategy):
                 max_hold_bars=params["hold"],
                 quality=quality,
                 reason=reason,
-                signal_id=f"{self.meta.name}:{asset}:{candles[-1].get('datetime', '') if candles else ''}",
+                signal_id=f"{self.meta.name}:{asset}:L:{bar_ts}",
             )
+
+        # ═══════════════════════════════════════════
+        # SHORT: Death cross in bear regime
+        # ═══════════════════════════════════════════
+        if close < ema_200 and prev_20 >= prev_50 and ema_20 < ema_50:
+            quality = self._score_quality(indicators, direction="SHORT")
+            confirmations = self._get_confirmations(indicators, direction="SHORT")
+
+            reason = f"EMA20x50 death cross, bear regime ({asset})"
+            if confirmations:
+                reason += f" [{'+'.join(confirmations)}]"
+
+            return Signal(
+                strategy=self.meta.name,
+                asset=asset,
+                direction="SHORT",
+                sl_pct=params["sl"],
+                tp_pct=params["tp"],
+                max_hold_bars=params["hold"],
+                quality=quality,
+                reason=reason,
+                signal_id=f"{self.meta.name}:{asset}:S:{bar_ts}",
+            )
+
         return None
+
+    @staticmethod
+    def _score_quality(indicators: dict, direction: str = "LONG") -> float:
+        """Graduated quality score based on multi-confirmation."""
+        quality = 0.5  # base for cross + regime
+
+        volume = indicators.get("volume", 0)
+        vol_sma = indicators.get("volume_sma_20", 0)
+        macd_hist = indicators.get("macd_histogram", 0)
+        rsi = indicators.get("rsi_14", 50)
+        ema_20 = indicators.get("ema_20", 0)
+        ema_50 = indicators.get("ema_50", 0)
+        ema_200 = indicators.get("ema_200", 0)
+
+        # Volume expansion
+        if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
+            quality += 0.1
+
+        if direction == "LONG":
+            if macd_hist > 0:
+                quality += 0.1
+            if 40 < rsi < 70:
+                quality += 0.05
+            if ema_20 > ema_50 > ema_200 > 0:
+                quality += 0.05
+        else:  # SHORT
+            if macd_hist < 0:
+                quality += 0.1
+            if 30 < rsi < 60:
+                quality += 0.05
+            if 0 < ema_20 < ema_50 < ema_200:
+                quality += 0.05
+
+        return round(min(1.0, quality), 3)
+
+    @staticmethod
+    def _get_confirmations(indicators: dict, direction: str = "LONG") -> list[str]:
+        """Return list of active confirmation labels."""
+        confs = []
+        volume = indicators.get("volume", 0)
+        vol_sma = indicators.get("volume_sma_20", 0)
+        macd_hist = indicators.get("macd_histogram", 0)
+
+        if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
+            confs.append("vol_expand")
+        if direction == "LONG" and macd_hist > 0:
+            confs.append("macd_pos")
+        elif direction == "SHORT" and macd_hist < 0:
+            confs.append("macd_neg")
+        return confs

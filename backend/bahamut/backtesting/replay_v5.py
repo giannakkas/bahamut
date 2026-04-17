@@ -10,7 +10,7 @@ from bahamut.alpha.signal_engine import generate_signal
 class V5Engine:
     def __init__(self, sl_pct=0.08, tp_pct=0.16, max_hold=30,
                  risk_pct=0.02, initial=100000, slippage_bps=8, spread_bps=12,
-                 warmup=250):
+                 commission_rate=0.0004, warmup=250):
         self.sl_pct = sl_pct
         self.tp_pct = tp_pct
         self.max_hold = max_hold
@@ -19,6 +19,7 @@ class V5Engine:
         self.initial = initial
         self.slippage_bps = slippage_bps
         self.spread_bps = spread_bps
+        self.commission_rate = commission_rate
         self.warmup = warmup
         self.trades = []
         self.equity = []
@@ -68,6 +69,10 @@ class V5Engine:
                     sl_frac = abs(t["entry"] - t["sl"]) / t["entry"]
                     pos = (self.balance * self.risk_pct) / sl_frac if sl_frac > 0 else 0
                     pnl = pos * pnl_pct
+
+                    # Commission: entry + exit notional
+                    commission = (pos + pos * (1 + pnl_pct)) * self.commission_rate
+                    pnl -= commission
 
                     # MFE/MAE from bars held
                     mfe = mae = 0

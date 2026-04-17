@@ -365,6 +365,31 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     latest_time = candles[-1].get("datetime", "")
     is_new_bar = _is_training_new_bar(asset, latest_time)
 
+    # ── DATA STALENESS CIRCUIT BREAKER ──
+    # If the most recent candle is older than 2× the interval, data is stale.
+    # Still update existing positions (mark-to-market) but block NEW signals.
+    # This prevents trading on frozen/delayed data.
+    _data_stale = False
+    try:
+        last_close_time_ms = candles[-1].get("close_time", 0)
+        if last_close_time_ms:
+            import time as _t
+            now_ms = int(_t.time() * 1000)
+            from bahamut.data.binance_data import _INTERVAL_SECONDS, is_crypto
+            interval = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
+            interval_ms = _INTERVAL_SECONDS.get(interval, 900) * 1000
+            staleness_ms = now_ms - last_close_time_ms
+            # Stale if > 2× interval (e.g., 30min for 15m candles)
+            if staleness_ms > interval_ms * 2:
+                _data_stale = True
+                logger.warning("training_data_stale_circuit_breaker",
+                               asset=asset, interval=interval,
+                               staleness_sec=round(staleness_ms / 1000),
+                               threshold_sec=round(interval_ms * 2 / 1000),
+                               action="positions updated but new signals blocked")
+    except Exception:
+        pass
+
     # Always update existing positions with latest price
     bar = _make_bar(candles[-1])
     closed = update_positions_for_asset(asset, bar)
@@ -523,6 +548,11 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # Evaluate strategies and collect as PendingSignals (don't execute)
     strategies = _get_strategies()
     strategy_signals_found = 0
+
+    # DATA STALENESS CIRCUIT BREAKER: skip signal generation if data is stale
+    # Positions were already updated with mark-to-market above.
+    if _data_stale:
+        return result
 
     for strat_name, strategy in strategies.items():
         try:

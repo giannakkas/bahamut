@@ -24,6 +24,7 @@ class V6Config:
     initial: float = 100_000.0
     slippage_bps: float = 8.0
     spread_bps: float = 12.0
+    commission_rate: float = 0.0004  # 0.04% per side (Binance taker)
     warmup: int = 250
     # Pyramid
     enable_pyramid: bool = True
@@ -256,6 +257,10 @@ class V6Engine:
         sl_frac = abs(layer.entry_price - layer.original_sl) / layer.entry_price
         pos = (risk / sl_frac * layer.size_fraction) if sl_frac > 0 else 0
         pnl = pos * pnl_pct
+
+        # Commission: charged on entry + exit notional
+        commission = (pos + pos * (1 + pnl_pct)) * self.cfg.commission_rate
+        pnl -= commission
 
         self.balance += pnl
 
