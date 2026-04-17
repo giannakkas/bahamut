@@ -49,9 +49,9 @@ def execute_open(asset: str, asset_class: str, direction: str,
     """Execute a position open on the appropriate platform.
 
     Production safety:
-      - Circuit breaker checked before every broker call
+      - Per-platform circuit breaker checked before broker call
       - Shutdown flag checked before submission
-      - Broker result feeds circuit breaker state
+      - Broker result feeds the platform-specific circuit breaker
     """
     from bahamut.execution.canonical import ExecutionResult
 
@@ -66,19 +66,25 @@ def execute_open(asset: str, asset_class: str, direction: str,
     except ImportError:
         pass
 
-    # Production gate: circuit breaker
+    platform = _get_platform(asset, asset_class)
+
+    # Production gate: per-platform circuit breaker
+    _cb = None
     try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        if not circuit_breaker.allow_execution():
+        from bahamut.execution.circuit_breaker import circuit_breaker_binance, circuit_breaker_alpaca
+        if platform == "binance":
+            _cb = circuit_breaker_binance
+        elif platform == "alpaca":
+            _cb = circuit_breaker_alpaca
+        if _cb and not _cb.allow_execution():
             logger.warning("execute_open_blocked_circuit_breaker",
-                           asset=asset, status=circuit_breaker.get_status())
+                           asset=asset, platform=platform,
+                           status=_cb.get_status())
             return ExecutionResult.error(
-                "internal", asset, direction, size, "circuit_breaker_open"
+                platform, asset, direction, size, "circuit_breaker_open"
             ).as_dict()
     except ImportError:
         pass
-
-    platform = _get_platform(asset, asset_class)
 
     if platform == "binance":
         result = _binance_open(asset, direction, size)
@@ -87,17 +93,12 @@ def execute_open(asset: str, asset_class: str, direction: str,
     else:
         return ExecutionResult.internal_sim(asset, direction, size).as_dict()
 
-    # Feed circuit breaker with result
-    try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
+    # Feed per-platform circuit breaker with result
+    if _cb:
         if result.get("status") in ("error", "internal") or result.get("error"):
-            circuit_breaker.record_failure(
-                result.get("error", "unknown_error")[:100]
-            )
+            _cb.record_failure(result.get("error", "unknown_error")[:100])
         else:
-            circuit_breaker.record_success()
-    except ImportError:
-        pass
+            _cb.record_success()
 
     return result
 
@@ -106,22 +107,10 @@ def execute_close(asset: str, asset_class: str, direction: str,
                   size: float, entry_price: float, **kwargs) -> dict:
     """Execute a position close on the appropriate platform.
 
-    Production safety: circuit breaker checked before broker call.
-    Close orders are MORE important than opens — we don't want to block
-    closing a losing position. Circuit breaker only blocks if the broker
-    is genuinely unreachable (prevents hammering a dead API).
+    Close orders are NEVER blocked by the circuit breaker (is_close=True).
+    Broker result still feeds the per-platform breaker for open-order gating.
     """
     from bahamut.execution.canonical import ExecutionResult
-
-    # Circuit breaker — but log a warning, don't silently fail
-    try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        if not circuit_breaker.allow_execution(is_close=True):
-            return ExecutionResult.error(
-                "internal", asset, direction, size, "circuit_breaker_open_on_close"
-            ).as_dict()
-    except ImportError:
-        pass
 
     platform = _get_platform(asset, asset_class)
 
@@ -132,15 +121,15 @@ def execute_close(asset: str, asset_class: str, direction: str,
     else:
         return ExecutionResult.internal_sim(asset, direction, size).as_dict()
 
-    # Feed circuit breaker
+    # Feed per-platform circuit breaker with close result
     try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        if result.get("status") in ("error",) or result.get("error"):
-            circuit_breaker.record_failure(
-                result.get("error", "close_error")[:100]
-            )
-        else:
-            circuit_breaker.record_success()
+        from bahamut.execution.circuit_breaker import circuit_breaker_binance, circuit_breaker_alpaca
+        _cb = circuit_breaker_binance if platform == "binance" else circuit_breaker_alpaca if platform == "alpaca" else None
+        if _cb:
+            if result.get("status") in ("error",) or result.get("error"):
+                _cb.record_failure(result.get("error", "close_error")[:100])
+            else:
+                _cb.record_success()
     except ImportError:
         pass
 
