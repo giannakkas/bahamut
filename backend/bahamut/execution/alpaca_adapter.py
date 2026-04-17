@@ -8,6 +8,7 @@ Paper base:     https://paper-api.alpaca.markets
 Production:     https://api.alpaca.markets
 """
 import os
+import time
 import httpx
 import structlog
 
@@ -63,7 +64,8 @@ def get_account() -> dict | None:
     return None
 
 
-def place_market_buy(asset: str, quantity: float = None, notional: float = None) -> dict | None:
+def place_market_buy(asset: str, quantity: float = None, notional: float = None,
+                     client_order_id: str | None = None) -> dict | None:
     """Place a market buy order.
 
     Args:
@@ -93,6 +95,10 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None)
     else:
         return {"error": "Must provide quantity or notional"}
 
+    if client_order_id is None:
+        client_order_id = f"bah_{asset.lower()}_{int(time.time()*1000)}"
+    order["client_order_id"] = client_order_id
+
     try:
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
                        headers=_headers(), timeout=5)
@@ -120,7 +126,8 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None)
         return {"error": str(e)}
 
 
-def place_market_sell(asset: str, quantity: float) -> dict | None:
+def place_market_sell(asset: str, quantity: float,
+                      client_order_id: str | None = None) -> dict | None:
     """Place a market sell order."""
     if not _configured():
         return None
@@ -135,6 +142,10 @@ def place_market_sell(asset: str, quantity: float) -> dict | None:
         "time_in_force": "day",
         "qty": str(round(quantity, 6)),
     }
+
+    if client_order_id is None:
+        client_order_id = f"bah_{asset.lower()}_{int(time.time()*1000)}"
+    order["client_order_id"] = client_order_id
 
     try:
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
