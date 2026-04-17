@@ -132,32 +132,16 @@ async def _safe_broadcast(event_type: str, payload: dict):
 
 def _authenticate(token: str) -> Optional[dict]:
     """Verify token for WebSocket connection.
-    Admin panel is already behind login — we just need to verify
-    the token is a valid JWT from our system."""
+    Requires a valid, non-expired JWT signed by our secret."""
     for secret in [settings.jwt_secret, getattr(settings, "jwt_refresh_secret", "")]:
         if not secret:
             continue
-        for opts in [{}, {"verify_exp": False}]:
-            try:
-                payload = jwt.decode(token, secret, algorithms=["HS256"], options=opts)
-                if payload.get("sub"):
-                    return payload
-            except Exception:
-                continue
-    # Last resort: if token looks like a JWT, accept it
-    # (admin panel already verified auth before showing the page)
-    try:
-        import base64
-        parts = token.split(".")
-        if len(parts) == 3:
-            padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
-            import json as _json
-            payload = _json.loads(base64.urlsafe_b64decode(padded))
-            if payload.get("sub") or payload.get("email"):
-                logger.info("ws_auth_unverified_jwt", sub=payload.get("sub"))
+        try:
+            payload = jwt.decode(token, secret, algorithms=["HS256"])
+            if payload.get("sub"):
                 return payload
-    except Exception:
-        pass
+        except Exception:
+            continue
     logger.warning("ws_auth_failed", token_len=len(token))
     return None
 
