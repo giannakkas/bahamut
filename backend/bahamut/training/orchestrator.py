@@ -396,6 +396,20 @@ def run_training_cycle():
     except Exception as e:
         logger.debug("training_adaptive_failed", error=str(e))
 
+    # Phase 6: Per-cycle broker reconciliation
+    try:
+        from bahamut.execution.reconciliation import reconcile_all
+        recon = reconcile_all()
+        recon_summary = recon.get("summary", {})
+        if recon_summary.get("mismatches", 0) > 0 or recon_summary.get("orphans", 0) > 0:
+            logger.error("cycle_reconciliation_discrepancies",
+                         **recon_summary)
+        else:
+            logger.info("cycle_reconciliation_clean",
+                        matched=recon_summary.get("matched", 0))
+    except Exception as e:
+        logger.warning("cycle_reconciliation_failed", error=str(e)[:100])
+
     return {
         "status": "OK",
         "processed": processed,

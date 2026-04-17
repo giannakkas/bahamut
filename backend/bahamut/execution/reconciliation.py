@@ -187,7 +187,7 @@ def _reconcile_binance() -> dict:
                 logger.error("reconciliation_mismatch",
                              asset=asset, **mismatch)
 
-                # Action: mark for reconciliation
+                # Action: mark for reconciliation + alert
                 try:
                     from bahamut.execution.order_manager import OrderManager, OrderState
                     mgr = OrderManager()
@@ -200,23 +200,83 @@ def _reconcile_binance() -> dict:
                     })
                 except Exception:
                     pass
+                try:
+                    from bahamut.monitoring.telegram import send_alert
+                    send_alert(f"⚠️ RECONCILIATION MISMATCH: {asset} — "
+                               f"broker qty={on_broker['qty']} vs local qty={on_local['filled_qty']}")
+                except Exception:
+                    pass
 
         elif on_broker and not on_local:
             # ORPHAN: position on broker but no local record
-            result["orphans"].append({
+            orphan_info = {
                 "asset": asset,
                 "broker_qty": on_broker["qty"],
                 "broker_side": on_broker["side"],
                 "entry_price": on_broker["entry_price"],
-            })
+            }
+            result["orphans"].append(orphan_info)
             logger.error("reconciliation_orphan_position",
                          asset=asset, qty=on_broker["qty"],
                          side=on_broker["side"])
 
+            # Auto-correct: check order_intents for a matching SUBMISSION_UNKNOWN
+            _resolved = False
+            try:
+                from bahamut.execution.order_manager import OrderManager, OrderState
+                mgr = OrderManager()
+                from bahamut.database import sync_engine
+                from sqlalchemy import text as _text
+                with sync_engine.connect() as _conn:
+                    _rows = _conn.execute(_text(
+                        "SELECT id, asset, direction FROM order_intents "
+                        "WHERE asset = :a AND direction = :d "
+                        "AND order_state IN ('submission_unknown', 'submitted', 'acknowledged') "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    ), {"a": asset, "d": on_broker["side"]}).mappings().all()
+                if _rows:
+                    _intent = _rows[0]
+                    mgr.record_fill(
+                        intent_id=_intent["id"],
+                        fill_price=on_broker["entry_price"],
+                        fill_qty=on_broker["qty"],
+                        broker_order_id="reconciled",
+                        platform="binance_futures",
+                    )
+                    result["actions_taken"].append({
+                        "asset": asset,
+                        "action": "orphan_promoted_to_filled",
+                        "intent_id": _intent["id"],
+                    })
+                    _resolved = True
+                    logger.info("reconciliation_orphan_resolved",
+                                asset=asset, intent_id=_intent["id"])
+            except Exception as _e:
+                logger.warning("reconciliation_orphan_resolve_failed",
+                               asset=asset, error=str(_e)[:100])
+
+            if not _resolved:
+                logger.error("reconciliation_unauthorized_position",
+                             asset=asset, qty=on_broker["qty"],
+                             side=on_broker["side"])
+                # Telegram alert
+                try:
+                    from bahamut.monitoring.telegram import send_alert
+                    send_alert(f"🚨 ORPHAN POSITION: {asset} {on_broker['side']} "
+                               f"qty={on_broker['qty']} on Binance — no local record!")
+                except Exception:
+                    pass
+                # Redis marker
+                try:
+                    import redis as _redis
+                    _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                                         socket_connect_timeout=2)
+                    _r.setex(f"bahamut:reconciliation:unauthorized:{asset}", 3600, "1")
+                except Exception:
+                    pass
+
         elif on_local and not on_broker:
             # MISSING: local says open but broker has no position
-            # This could mean the broker closed it (SL/TP hit on broker side)
-            # or the open never actually filled.
             result["missing_on_broker"].append({
                 "asset": asset,
                 "local_qty": on_local["filled_qty"],
@@ -227,6 +287,56 @@ def _reconcile_binance() -> dict:
                          asset=asset,
                          local_qty=on_local["filled_qty"],
                          state=on_local["order_state"])
+
+            # Auto-correct: check broker userTrades for evidence of a close
+            try:
+                from bahamut.execution.binance_futures import get_trades, SYMBOL_MAP
+                symbol = SYMBOL_MAP.get(asset, asset.replace("USD", "USDT"))
+                trades = get_trades(symbol=symbol, limit=20)
+                if trades:
+                    # Look for a closing trade (opposite side)
+                    close_side = "SELL" if on_local["direction"] == "LONG" else "BUY"
+                    close_trades = [t for t in trades
+                                    if t.get("side") == close_side
+                                    and abs(float(t.get("qty", 0))) > 0]
+                    if close_trades:
+                        latest = close_trades[0]
+                        close_price = float(latest.get("price", 0))
+                        close_commission = float(latest.get("commission", 0))
+                        logger.info("reconciliation_missing_broker_close_found",
+                                    asset=asset, close_price=close_price)
+                        # Record the close via OrderManager
+                        from bahamut.execution.order_manager import OrderManager
+                        mgr = OrderManager()
+                        _intents = mgr.get_open_intents(asset)
+                        for _it in _intents:
+                            if _it.get("direction") == on_local["direction"]:
+                                mgr.record_close(
+                                    _it["id"],
+                                    exit_price=close_price,
+                                    exit_reason="broker_side_close",
+                                    exit_commission=close_commission,
+                                )
+                                result["actions_taken"].append({
+                                    "asset": asset,
+                                    "action": "missing_closed_from_broker_trades",
+                                })
+                                break
+                    else:
+                        logger.warning("reconciliation_missing_no_broker_record",
+                                       asset=asset)
+                        # Transition to RECONCILE_REQUIRED
+                        from bahamut.execution.order_manager import OrderManager, OrderState
+                        mgr = OrderManager()
+                        _intents = mgr.get_open_intents(asset)
+                        for _it in _intents:
+                            if _it.get("direction") == on_local["direction"]:
+                                mgr.transition(_it["id"], OrderState.RECONCILE_REQUIRED,
+                                               {"error": "missing_on_broker_no_evidence"})
+                                break
+            except Exception as _e:
+                logger.warning("reconciliation_missing_resolve_failed",
+                               asset=asset, error=str(_e)[:100])
 
     return result
 
