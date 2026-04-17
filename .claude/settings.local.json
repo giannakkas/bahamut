@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout *)",
+      "Bash(python -c \"from bahamut.main import app; print\\('main imports ok'\\)\")",
+      "Bash(python *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(winget install *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
