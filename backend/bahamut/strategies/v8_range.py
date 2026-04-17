@@ -26,6 +26,16 @@ class V8Range(BaseStrategy):
 
     def evaluate(self, candles: list, indicators: dict,
                  prev_indicators: dict = None, asset: str = "BTCUSD") -> Optional[Signal]:
+        # Canonical suppress check
+        from bahamut.config_assets import is_suppressed
+        if is_suppressed(asset, self.meta.name):
+            return None
+
+        # RANGE regime gate — this strategy ONLY fires in RANGE
+        regime = indicators.get("_regime", "UNKNOWN")
+        if regime != "RANGE":
+            return None
+
         close = indicators.get("close", 0)
         bb_upper = indicators.get("bollinger_upper", 0)
         bb_lower = indicators.get("bollinger_lower", 0)

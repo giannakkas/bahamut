@@ -219,7 +219,16 @@ class V8Backtester:
 
         pnls = [t["pnl"] for t in trades]
         r = np.array(pnls) / self.total
-        sh = float(np.mean(r) / (np.std(r) + 1e-10) * np.sqrt(len(r))) if len(r) > 1 else 0
+        # Sharpe: annualized (not sqrt(trade_count) which grows with sample size)
+        avg_bars = np.mean([t.get("bars", 10) for t in trades]) if trades else 10
+        if len(self.equity_curve) > 20:
+            step = max(1, len(self.equity_curve) // 60)
+            eq_vals = [e["equity"] for e in self.equity_curve[::step]]
+            eq_returns = np.diff(eq_vals) / np.array(eq_vals[:-1])
+            sh = float(np.mean(eq_returns) / (np.std(eq_returns) + 1e-10) * np.sqrt(252)) if len(eq_returns) > 1 else 0
+        else:
+            trades_per_year = min(252, max(12, 365 / max(1, avg_bars * 4 / 24)))
+            sh = float(np.mean(r) / (np.std(r) + 1e-10) * np.sqrt(trades_per_year)) if len(r) > 1 else 0
 
         gp = sum(t["pnl"] for t in wins) if wins else 0
         gl = abs(sum(t["pnl"] for t in losses)) if losses else 1

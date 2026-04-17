@@ -318,7 +318,22 @@ class V6Engine:
         max_dd = max((e["dd"] for e in self.equity), default=0)
 
         r = np.array(pnls) / self.cfg.initial
-        sh = float(np.mean(r) / (np.std(r) + 1e-10) * np.sqrt(len(r))) if len(r) > 1 else 0
+        # Sharpe: annualized using equity curve returns, not sqrt(trade_count)
+        # Previous: sqrt(len(r)) made Sharpe grow with trade count (meaningless)
+        # Now: estimate trades per year from average bars held × bar duration
+        avg_bars_held = np.mean([t.get("bars", 10) for t in trades]) if trades else 10
+        # Estimate bar duration: 4H = 6/day, but we don't know interval here
+        # Use equity curve if available; fallback to trade-based with 252-day year
+        if len(self.equity) > 20:
+            # Daily-ish equity returns (sample every ~6 equity points for 4H bars)
+            step = max(1, len(self.equity) // 60)  # ~60 samples
+            eq_vals = [e["equity"] for e in self.equity[::step]]
+            eq_returns = np.diff(eq_vals) / np.array(eq_vals[:-1])
+            sh = float(np.mean(eq_returns) / (np.std(eq_returns) + 1e-10) * np.sqrt(252)) if len(eq_returns) > 1 else 0
+        else:
+            # Fallback: assume ~120 trades/year for 3-day avg hold
+            trades_per_year = min(252, max(12, 365 / max(1, avg_bars_held * 4 / 24)))
+            sh = float(np.mean(r) / (np.std(r) + 1e-10) * np.sqrt(trades_per_year)) if len(r) > 1 else 0
 
         gp = sum(t["pnl"] for t in wins) if wins else 0
         gl = abs(sum(t["pnl"] for t in losses)) if losses else 1

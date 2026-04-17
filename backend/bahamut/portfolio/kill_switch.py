@@ -149,6 +149,24 @@ def evaluate_kill_switch(
                          deleverage=state.deleverage_recommended,
                          triggers=len(state.triggers))
 
+    # ── 7. CLOSE TRAINING POSITIONS on kill switch activation ──
+    # When kill switch fires, force-close all open training positions.
+    # This is the ONLY path that actually closes positions on emergency.
+    if state.kill_switch_active:
+        try:
+            from bahamut.training.engine import force_close_all_training_positions
+            close_result = force_close_all_training_positions(
+                reason=f"KILL_SWITCH: {state.triggers[0] if state.triggers else 'unknown'}"
+            )
+            if close_result["closed"] > 0:
+                logger.warning("kill_switch_closed_training_positions",
+                               closed=close_result["closed"],
+                               errors=close_result["errors"])
+                state.triggers.append(
+                    f"CLOSED {close_result['closed']} training positions")
+        except Exception as e:
+            logger.error("kill_switch_close_training_failed", error=str(e)[:200])
+
     return state
 
 

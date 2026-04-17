@@ -182,27 +182,39 @@ async def execution_quality(user=Depends(get_current_user)):
     """Execution quality metrics."""
     engine = get_execution_engine()
 
-    # Calculate average slippage from closed trades
-    slippages = []
-    for t in engine.closed_trades:
-        if t.entry_price > 0:
-            slip = abs(t.entry_price - round(t.entry_price)) / t.entry_price * 10000
-            slippages.append(slip)
+    # Slippage: compare entry_price to the order's signal price
+    # For paper trading, slippage is deterministic (broker config),
+    # so we report the configured value rather than computing fake numbers.
+    # For real trading, this should compare fill_price to expected_price.
+    broker_slippage_bps = engine.broker.config.slippage_bps
+    broker_spread_bps = engine.broker.config.spread_bps
+    broker_commission_bps = engine.broker.config.commission_rate * 10000  # convert to bps
 
     # Count states
     total_signals = len(engine._processed_signals) if hasattr(engine, '_processed_signals') else 0
     cancelled = len([o for o in engine.all_orders
                      if hasattr(o, 'status') and str(o.status) == "OrderStatus.CANCELLED"])
 
+    # Compute actual average PnL per trade (with fees)
+    trades = [t for t in engine.closed_trades if not t.strategy.startswith("TEST_")]
+    avg_pnl = sum(t.pnl for t in trades) / max(1, len(trades)) if trades else 0
+    avg_bars = sum(t.bars_held for t in trades) / max(1, len(trades)) if trades else 0
+
     return {
         "total_signals_processed": total_signals,
         "total_orders": len(engine.all_orders),
         "cancelled_orders": cancelled,
-        "closed_trades": len(engine.closed_trades),
+        "closed_trades": len(trades),
         "open_positions": len(engine.open_positions),
         "pending_orders": len(engine.pending_orders),
-        "avg_slippage_bps": round(sum(slippages) / max(1, len(slippages)), 1) if slippages else 0,
+        "configured_slippage_bps": broker_slippage_bps,
+        "configured_spread_bps": broker_spread_bps,
+        "configured_commission_bps": round(broker_commission_bps, 1),
+        "total_execution_cost_bps": round(broker_slippage_bps + broker_spread_bps / 2 + broker_commission_bps, 1),
+        "avg_pnl_per_trade": round(avg_pnl, 2),
+        "avg_bars_held": round(avg_bars, 1),
         "kill_switch": engine.is_kill_switch_active,
+        "note": "slippage/spread are configured values (paper mode). Live trading should report actual fill vs expected.",
     }
 
 

@@ -3719,3 +3719,31 @@ async def _build_health():
             "fail": fail_count,
         },
     }
+
+
+@router.post("/kill-switch")
+async def training_kill_switch(user=Depends(get_current_user)):
+    """Emergency: force-close ALL open training positions.
+
+    Fetches current price per asset, closes internal position,
+    and sends close orders to exchange (Binance/Alpaca) if applicable.
+    """
+    try:
+        from bahamut.training.engine import force_close_all_training_positions
+        result = force_close_all_training_positions(reason="MANUAL_KILL_SWITCH")
+
+        logger.warning("training_kill_switch_manual",
+                        user=getattr(user, 'email', 'unknown'),
+                        closed=result["closed"],
+                        errors=len(result["errors"]))
+
+        return {
+            "status": "executed",
+            "closed_positions": result["closed"],
+            "total_positions": result["total_positions"],
+            "errors": result["errors"],
+            "reason": "Manual kill switch activated",
+        }
+    except Exception as e:
+        logger.error("training_kill_switch_error", error=str(e))
+        return {"status": "error", "error": str(e)}

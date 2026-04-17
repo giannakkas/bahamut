@@ -161,7 +161,8 @@ class TrainingTrade:
     size: float
     risk_amount: float
     pnl: float
-    pnl_pct: float
+    pnl_pct: float          # R-multiple: pnl / risk_amount (how many R's)
+    return_pct: float = 0.0  # Actual percentage return: pnl / (entry_price * size)
     entry_time: str
     exit_time: str
     exit_reason: str     # SL / TP / TIMEOUT / MANUAL
@@ -1100,6 +1101,83 @@ def open_training_position(
     return pos
 # ═══════════════════════════════════════════
 
+def force_close_all_training_positions(reason: str = "KILL_SWITCH") -> dict:
+    """Emergency: force-close ALL open training positions.
+
+    1. Fetches current price per asset
+    2. Closes internal position (Redis + DB)
+    3. Sends close order to exchange (Binance/Alpaca) if position was routed there
+    4. Records trade with exit_reason = reason
+
+    Returns summary dict.
+    """
+    positions = _load_positions()
+    closed_count = 0
+    errors = []
+    closed_trades = []
+
+    for pos in positions:
+        try:
+            # Get current market price for this asset
+            close_price = 0.0
+            try:
+                from bahamut.data.binance_data import is_crypto, get_price
+                if is_crypto(pos.asset):
+                    close_price = get_price(pos.asset)
+            except Exception:
+                pass
+            if close_price <= 0:
+                close_price = pos.current_price if pos.current_price > 0 else pos.entry_price
+
+            # Build exit bar
+            bar = {
+                "open": close_price, "high": close_price,
+                "low": close_price, "close": close_price,
+                "datetime": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Force SL/TP to ensure close triggers on next update
+            if pos.direction == "LONG":
+                pos.stop_price = close_price + 1  # guaranteed SL hit
+            else:
+                pos.stop_price = close_price - 1
+            pos.max_hold_bars = 0  # force timeout
+
+            # Close via normal path (handles exchange close + DB persist + learning)
+            trades = update_positions_for_asset(pos.asset, bar)
+            if trades:
+                closed_trades.extend(trades)
+                closed_count += 1
+            else:
+                # Fallback: direct removal if update didn't close it
+                _remove_position(pos.position_id)
+                closed_count += 1
+                logger.warning("kill_switch_fallback_removal",
+                               asset=pos.asset, position_id=pos.position_id)
+
+        except Exception as e:
+            errors.append({"asset": pos.asset, "error": str(e)[:100]})
+            logger.error("kill_switch_close_failed",
+                         asset=pos.asset, error=str(e)[:200])
+
+    logger.warning("training_kill_switch_executed",
+                     reason=reason, closed=closed_count,
+                     errors=len(errors),
+                     assets=[p.asset for p in positions])
+
+    return {
+        "closed": closed_count,
+        "errors": errors,
+        "total_positions": len(positions),
+        "reason": reason,
+    }
+
+
+def get_open_positions() -> list[TrainingPosition]:
+    """Return all currently open training positions."""
+    return _load_positions()
+
+
 def reset_cycle_dedup():
     """Reset the per-cycle dedup sets. Call once at cycle start."""
     update_positions_for_asset._already_closed = set()
@@ -1235,6 +1313,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 risk_amount=pos.risk_amount,
                 pnl=round(pnl, 2),
                 pnl_pct=round(pnl_pct, 4),
+                return_pct=round(pnl / max(0.01, pos.entry_price * pos.size), 4),
                 entry_time=pos.entry_time,
                 exit_time=datetime.now(timezone.utc).isoformat(),
                 exit_reason=exit_reason,
