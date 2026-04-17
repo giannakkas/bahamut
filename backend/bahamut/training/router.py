@@ -3680,7 +3680,40 @@ async def _build_health():
     except Exception:
         _check("indicator_engine", False, "version constant missing")
 
-    # ── 9. Key counters ──
+    # ── 9. Production safety modules ──
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        cb = circuit_breaker.get_status()
+        _check("circuit_breaker", cb["state"] == "CLOSED",
+               f"state={cb['state']}, failures={cb['failure_count']}",
+               warn=cb["state"] == "HALF_OPEN")
+    except Exception:
+        _check("circuit_breaker", True, "module not loaded", warn=True)
+
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        _check("shutdown_state", not is_shutting_down(),
+               "SHUTTING DOWN" if is_shutting_down() else "normal")
+    except Exception:
+        _check("shutdown_state", True, "module not loaded", warn=True)
+
+    try:
+        from bahamut.execution.reconciliation import get_last_reconciliation
+        last_recon = get_last_reconciliation()
+        if last_recon:
+            summary = last_recon.get("summary", {})
+            has_issues = summary.get("mismatches", 0) > 0 or summary.get("orphans", 0) > 0
+            _check("last_reconciliation", not has_issues,
+                   f"matched={summary.get('matched', 0)}, "
+                   f"mismatches={summary.get('mismatches', 0)}, "
+                   f"orphans={summary.get('orphans', 0)}",
+                   warn=has_issues)
+        else:
+            _check("last_reconciliation", True, "never run", warn=True)
+    except Exception:
+        _check("last_reconciliation", True, "module not loaded", warn=True)
+
+    # ── 10. Key counters ──
     if r:
         counter_names = [
             "engine_suppress_blocks",

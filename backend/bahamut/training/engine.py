@@ -733,7 +733,17 @@ def open_training_position(
                         asset=asset, original_risk=risk_amount * 2,
                         reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
 
-    # Check position limit
+    # Check position limit (with Redis lock for multi-worker safety)
+    _cap_lock_acquired = False
+    try:
+        r = _get_redis()
+        if r:
+            _cap_lock_acquired = bool(r.set(
+                "bahamut:lock:position_cap_check", "1", nx=True, ex=10
+            ))
+    except Exception:
+        pass
+
     current_count = get_open_position_count()
     if current_count >= TRAINING_MAX_POSITIONS:
         logger.warning("training_position_rejected",
