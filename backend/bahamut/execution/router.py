@@ -116,10 +116,7 @@ def execute_close(asset: str, asset_class: str, direction: str,
     # Circuit breaker — but log a warning, don't silently fail
     try:
         from bahamut.execution.circuit_breaker import circuit_breaker
-        if not circuit_breaker.allow_execution():
-            logger.error("execute_close_circuit_breaker_blocking",
-                         asset=asset, direction=direction,
-                         msg="CLOSE blocked by circuit breaker — position remains open!")
+        if not circuit_breaker.allow_execution(is_close=True):
             return ExecutionResult.error(
                 "internal", asset, direction, size, "circuit_breaker_open_on_close"
             ).as_dict()

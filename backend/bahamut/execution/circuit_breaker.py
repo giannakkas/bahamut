@@ -64,8 +64,13 @@ class CircuitBreaker:
         # Try to restore state from Redis
         self._restore_from_redis()
 
-    def allow_execution(self) -> bool:
-        """Check if execution is allowed. Returns True if the order should proceed."""
+    def allow_execution(self, is_close: bool = False) -> bool:
+        """Check if execution is allowed. Returns True if the order should proceed.
+        Close orders (is_close=True) are ALWAYS allowed — the breaker must never
+        lock positions in."""
+        if is_close:
+            return True
+
         with self._lock:
             now = time.time()
 
