@@ -630,9 +630,49 @@ def open_training_position(
     trigger_reason: str = "4h_close",
     substrategy: str = "",
     data_mode: str = "live",
+    signal_id: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRAINING_MAX_POSITIONS
+
+    # ═══════════════════════════════════════════
+    # PRODUCTION: Idempotency guard via OrderManager
+    # Prevents duplicate orders from retries, overlapping cycles,
+    # or multi-worker race conditions. signal_id is UNIQUE in DB.
+    # ═══════════════════════════════════════════
+    if not signal_id:
+        # Generate a deterministic signal_id from the trade params
+        # so the same signal in the same cycle produces the same ID.
+        import hashlib
+        sig_data = f"{asset}:{strategy}:{direction}:{entry_price:.2f}:{trigger_reason}"
+        signal_id = hashlib.sha256(sig_data.encode()).hexdigest()[:24]
+
+    _order_intent_id = None
+    try:
+        from bahamut.execution.order_manager import OrderManager
+        mgr = OrderManager()
+        intent = mgr.create_intent(
+            asset=asset, asset_class=asset_class,
+            direction=direction, strategy=strategy,
+            size=risk_amount / max(0.01, entry_price * sl_pct) if sl_pct > 0 else 0,
+            signal_id=signal_id,
+            risk_amount=risk_amount,
+            sl_pct=sl_pct, tp_pct=tp_pct,
+            substrategy=substrategy,
+            intended_price=entry_price,
+        )
+        if intent is None:
+            # Duplicate signal — already processed
+            logger.info("training_position_duplicate_blocked",
+                        asset=asset, strategy=strategy,
+                        signal_id=signal_id)
+            return None
+        _order_intent_id = intent["intent_id"]
+    except Exception as _idmp_err:
+        # OrderManager not available — continue without idempotency
+        # (safe for paper trading, should be fixed for production)
+        logger.debug("order_manager_unavailable",
+                     error=str(_idmp_err)[:100])
 
     # ═══════════════════════════════════════════
     # Phase 4 Item 12: SYNTHETIC DATA HARD BLOCK

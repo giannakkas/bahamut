@@ -48,39 +48,106 @@ def execute_open(asset: str, asset_class: str, direction: str,
                  size: float, risk_amount: float, **kwargs) -> dict:
     """Execute a position open on the appropriate platform.
 
-    Returns a dict built from ExecutionResult.as_dict() — new canonical
-    fields (lifecycle, fill_status, submitted_at, filled_at, commission,
-    slippage_abs, slippage_pct, reference_price, client_order_id) are
-    present alongside legacy keys (platform, order_id, fill_price,
-    fill_qty, status, error).
+    Production safety:
+      - Circuit breaker checked before every broker call
+      - Shutdown flag checked before submission
+      - Broker result feeds circuit breaker state
     """
     from bahamut.execution.canonical import ExecutionResult
+
+    # Production gate: shutdown check
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        if is_shutting_down():
+            logger.warning("execute_open_blocked_shutdown", asset=asset)
+            return ExecutionResult.error(
+                asset, direction, "system_shutting_down"
+            ).as_dict()
+    except ImportError:
+        pass
+
+    # Production gate: circuit breaker
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        if not circuit_breaker.allow_execution():
+            logger.warning("execute_open_blocked_circuit_breaker",
+                           asset=asset, status=circuit_breaker.get_status())
+            return ExecutionResult.error(
+                asset, direction, "circuit_breaker_open"
+            ).as_dict()
+    except ImportError:
+        pass
+
     platform = _get_platform(asset, asset_class)
 
     if platform == "binance":
-        return _binance_open(asset, direction, size)
+        result = _binance_open(asset, direction, size)
     elif platform == "alpaca":
-        return _alpaca_open(asset, direction, size, risk_amount)
+        result = _alpaca_open(asset, direction, size, risk_amount)
     else:
-        # Explicitly internal-simulated — platform not configured or not supported.
         return ExecutionResult.internal_sim(asset, direction, size).as_dict()
+
+    # Feed circuit breaker with result
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        if result.get("status") in ("error", "internal") or result.get("error"):
+            circuit_breaker.record_failure(
+                result.get("error", "unknown_error")[:100]
+            )
+        else:
+            circuit_breaker.record_success()
+    except ImportError:
+        pass
+
+    return result
 
 
 def execute_close(asset: str, asset_class: str, direction: str,
                   size: float, entry_price: float, **kwargs) -> dict:
     """Execute a position close on the appropriate platform.
 
-    Returns the same canonical-dict shape as execute_open.
+    Production safety: circuit breaker checked before broker call.
+    Close orders are MORE important than opens — we don't want to block
+    closing a losing position. Circuit breaker only blocks if the broker
+    is genuinely unreachable (prevents hammering a dead API).
     """
     from bahamut.execution.canonical import ExecutionResult
+
+    # Circuit breaker — but log a warning, don't silently fail
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        if not circuit_breaker.allow_execution():
+            logger.error("execute_close_circuit_breaker_blocking",
+                         asset=asset, direction=direction,
+                         msg="CLOSE blocked by circuit breaker — position remains open!")
+            return ExecutionResult.error(
+                asset, direction, "circuit_breaker_open_on_close"
+            ).as_dict()
+    except ImportError:
+        pass
+
     platform = _get_platform(asset, asset_class)
 
     if platform == "binance":
-        return _binance_close(asset, direction, size)
+        result = _binance_close(asset, direction, size)
     elif platform == "alpaca":
-        return _alpaca_close(asset, direction, size)
+        result = _alpaca_close(asset, direction, size)
     else:
         return ExecutionResult.internal_sim(asset, direction, size).as_dict()
+
+    # Feed circuit breaker
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        if result.get("status") in ("error",) or result.get("error"):
+            circuit_breaker.record_failure(
+                result.get("error", "close_error")[:100]
+            )
+        else:
+            circuit_breaker.record_success()
+    except ImportError:
+        pass
+
+    return result
 
 
 def get_execution_status() -> dict:

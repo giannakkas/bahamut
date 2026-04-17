@@ -78,6 +78,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("stale_cache_clear_failed", error=str(e))
 
+    # ── Production safety: register shutdown handlers ──
+    try:
+        from bahamut.execution.shutdown import register_shutdown_handlers, startup_reconciliation
+        register_shutdown_handlers()
+        # Check for unclean shutdown from previous deploy
+        startup_reconciliation()
+    except Exception as e:
+        logger.warning("production_safety_init_skipped", error=str(e)[:100])
+
+    # ── Production safety: initialize order manager tables ──
+    try:
+        from bahamut.execution.order_manager import OrderManager
+        OrderManager()  # triggers idempotent table creation
+        logger.info("order_manager_initialized")
+    except Exception as e:
+        logger.warning("order_manager_init_skipped", error=str(e)[:100])
+
     # ── Start background training cycle loop ──
     import asyncio
     training_task = asyncio.create_task(_training_cycle_loop())

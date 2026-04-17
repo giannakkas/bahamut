@@ -3747,3 +3747,81 @@ async def training_kill_switch(user=Depends(get_current_user)):
     except Exception as e:
         logger.error("training_kill_switch_error", error=str(e))
         return {"status": "error", "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# PRODUCTION SAFETY ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/circuit-breaker")
+async def get_circuit_breaker_status(user=Depends(get_current_user)):
+    """Circuit breaker status — shows if execution is blocked."""
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        return circuit_breaker.get_status()
+    except Exception as e:
+        return {"error": str(e), "state": "UNKNOWN"}
+
+
+@router.post("/circuit-breaker/reset")
+async def reset_circuit_breaker(user=Depends(get_current_user)):
+    """Force-reset circuit breaker — use when broker is confirmed back."""
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        circuit_breaker.force_reset()
+        return {"status": "reset", "new_state": circuit_breaker.get_status()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/reconcile")
+async def trigger_reconciliation(user=Depends(get_current_user)):
+    """Trigger manual broker reconciliation."""
+    try:
+        from bahamut.execution.reconciliation import reconcile_all
+        result = reconcile_all()
+        return result
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "trace": traceback.format_exc()[:500]}
+
+
+@router.get("/reconciliation/last")
+async def get_last_reconciliation(user=Depends(get_current_user)):
+    """Get the last reconciliation result."""
+    try:
+        from bahamut.execution.reconciliation import get_last_reconciliation as _get_last
+        result = _get_last()
+        return result or {"message": "no reconciliation has been run yet"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/order-audit/{intent_id}")
+async def get_order_audit_trail(intent_id: str, user=Depends(get_current_user)):
+    """Full audit trail for a specific order intent."""
+    try:
+        from bahamut.execution.order_manager import OrderManager
+        mgr = OrderManager()
+        intent = None
+        # Try to find by intent_id
+        try:
+            from bahamut.database import sync_engine
+            from sqlalchemy import text
+            with sync_engine.connect() as conn:
+                row = conn.execute(text(
+                    "SELECT * FROM order_intents WHERE id = :id"
+                ), {"id": intent_id}).mappings().first()
+                if row:
+                    intent = dict(row)
+        except Exception:
+            pass
+
+        events = mgr.get_audit_trail(intent_id)
+        return {
+            "intent": intent,
+            "events": events,
+            "event_count": len(events),
+        }
+    except Exception as e:
+        return {"error": str(e)}

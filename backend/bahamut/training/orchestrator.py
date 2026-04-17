@@ -67,6 +67,30 @@ def run_training_cycle():
     start = time.time()
     logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
 
+    # ── Production gate: shutdown check ──
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        if is_shutting_down():
+            logger.warning("training_cycle_BLOCKED_shutdown",
+                           reason="system is shutting down — no new trades")
+            _set_running(False, 0)
+            return {"blocked": True, "reason": "shutdown_in_progress"}
+    except ImportError:
+        pass
+
+    # ── Production gate: circuit breaker check ──
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        cb_status = circuit_breaker.get_status()
+        if cb_status["state"] == "OPEN":
+            logger.warning("training_cycle_circuit_breaker_open",
+                           remaining=cb_status["remaining_cooldown"],
+                           failures=cb_status["failure_count"])
+            # Don't block the whole cycle — just log. Individual executions
+            # are blocked by the circuit breaker in execute_open/execute_close.
+    except ImportError:
+        pass
+
     # Cleanup: force-close any crypto positions that slipped into internal
     try:
         from bahamut.training.engine import cleanup_crypto_internal_positions
@@ -276,6 +300,8 @@ def run_training_cycle():
                 trigger_reason=sig.trigger_reason,
                 substrategy=getattr(sig, "substrategy", "") or "",
                 data_mode=getattr(sig, "data_mode", "live") or "live",
+                # Production: deterministic signal_id for idempotency
+                signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{sig.trigger_reason}:{int(time.time() // 600)}",
             )
             if pos:
                 trades_opened += 1
