@@ -41,6 +41,7 @@ def _configured() -> bool:
 
 
 def _sign(params: dict) -> dict:
+    params["recvWindow"] = 5000
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params)
     signature = hmac.new(
@@ -74,7 +75,9 @@ def get_account() -> dict | None:
     return None
 
 
-def place_market_order(asset: str, side: str, quantity: float) -> dict | None:
+def place_market_order(asset: str, side: str, quantity: float,
+                       client_order_id: str | None = None,
+                       reduce_only: bool = False) -> dict | None:
     """Place a futures market order. side = 'BUY' or 'SELL'.
 
     For SHORT: SELL to open, BUY to close.
@@ -126,12 +129,20 @@ def place_market_order(asset: str, side: str, quantity: float) -> dict | None:
         logger.debug("binance_pre_submit_validation_skipped",
                      asset=asset, error=str(e)[:100])
 
-    params = _sign({
+    if client_order_id is None:
+        client_order_id = f"bah_{asset.lower()}_{int(time.time()*1000)}"
+
+    order_params = {
         "symbol": symbol,
         "side": side,
         "type": "MARKET",
         "quantity": formatted_qty,
-    })
+        "newClientOrderId": client_order_id,
+    }
+    if reduce_only:
+        order_params["reduceOnly"] = "true"
+
+    params = _sign(order_params)
 
     try:
         r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,
@@ -165,7 +176,7 @@ def open_short(asset: str, quantity: float) -> dict | None:
 
 def close_short(asset: str, quantity: float) -> dict | None:
     """Close a SHORT position (buy to close)."""
-    return place_market_order(asset, "BUY", quantity)
+    return place_market_order(asset, "BUY", quantity, reduce_only=True)
 
 
 def open_long(asset: str, quantity: float) -> dict | None:
@@ -175,7 +186,7 @@ def open_long(asset: str, quantity: float) -> dict | None:
 
 def close_long(asset: str, quantity: float) -> dict | None:
     """Close a LONG position (sell to close)."""
-    return place_market_order(asset, "SELL", quantity)
+    return place_market_order(asset, "SELL", quantity, reduce_only=True)
 
 
 def get_positions() -> list[dict]:
