@@ -156,13 +156,29 @@ export default function DailyOperations() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-base sm:text-lg font-bold text-bah-heading">Daily Operations Monitor</h1>
-          {p?.kill_switch ? (
-            <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-red-500/20 text-red-400 border-red-500/30">HALTED</span>
-          ) : (
-            <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-green-500/20 text-green-400 border-green-500/30">
-              LIVE{health?.data_source === "LIVE" ? "" : ` · ${health?.data_source || "?"}`}
-            </span>
-          )}
+          {(() => {
+            const ks = p?.kill_switch;
+            const sd = health?.shutdown_in_progress;
+            const cbBin = health?.circuit_breaker_binance;
+            const cbAlp = health?.circuit_breaker_alpaca;
+            const freshSec = health?.training_freshness_sec ?? -1;
+            const unauth = health?.reconciliation_unauthorized_count ?? 0;
+            const isLive = health?.data_source === "LIVE";
+            const degraded: string[] = [];
+            if (cbBin && cbBin !== "CLOSED") degraded.push(`CB:binance=${cbBin}`);
+            if (cbAlp && cbAlp !== "CLOSED") degraded.push(`CB:alpaca=${cbAlp}`);
+            if (freshSec > 1200 || freshSec < 0) degraded.push("cycle stale");
+            if (!isLive) degraded.push(`data:${health?.data_source || "?"}`);
+            if (unauth > 0) degraded.push(`${unauth} orphan(s)`);
+
+            if (ks || sd) {
+              return <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-red-500/20 text-red-400 border-red-500/30">{sd ? "SHUTDOWN" : "HALTED"}</span>;
+            }
+            if (degraded.length > 0) {
+              return <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-amber-500/20 text-amber-300 border-amber-500/30" title={degraded.join(", ")}>DEGRADED</span>;
+            }
+            return <span className="px-2 py-0.5 text-[11px] rounded-full font-semibold border bg-green-500/20 text-green-400 border-green-500/30">LIVE</span>;
+          })()}
           {health?.engine && <span className="px-2 py-0.5 text-[11px] rounded-full text-bah-muted border border-bah-border">{health.engine}</span>}
           {critAlerts > 0 && <button onClick={() => setTab("alerts")} className="px-2 py-0.5 text-[11px] rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse cursor-pointer hover:bg-red-500/30 transition-colors">{critAlerts} CRITICAL</button>}
         </div>
@@ -194,8 +210,16 @@ export default function DailyOperations() {
             </div>
           )}
           <span className="text-[11px] font-bold flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-400">LIVE</span>
+            <span className={`inline-block w-2 h-2 rounded-full animate-pulse ${
+              p?.kill_switch || health?.shutdown_in_progress ? "bg-red-400" :
+              (health?.circuit_breaker_binance && health.circuit_breaker_binance !== "CLOSED") || (health?.circuit_breaker_alpaca && health.circuit_breaker_alpaca !== "CLOSED") || (health?.training_freshness_sec ?? -1) > 1200 ? "bg-amber-400" :
+              "bg-green-400"
+            }`} />
+            <span className={
+              p?.kill_switch || health?.shutdown_in_progress ? "text-red-400" :
+              (health?.circuit_breaker_binance && health.circuit_breaker_binance !== "CLOSED") || (health?.circuit_breaker_alpaca && health.circuit_breaker_alpaca !== "CLOSED") ? "text-amber-400" :
+              "text-green-400"
+            }>{p?.kill_switch ? "HALTED" : health?.shutdown_in_progress ? "SHUTDOWN" : health?.circuit_breaker_binance !== "CLOSED" || health?.circuit_breaker_alpaca !== "CLOSED" ? "DEGRADED" : "LIVE"}</span>
           </span>
           <button onClick={runCycle} disabled={cycleRunning} className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
             cycleRunning ? "bg-bah-cyan/30 border-bah-cyan/50 text-bah-cyan" : "bg-bah-cyan/20 border-bah-cyan/40 text-bah-cyan hover:bg-bah-cyan/30"
@@ -821,7 +845,7 @@ export default function DailyOperations() {
                 let fix = "";
                 let icon = "ℹ️";
                 let advCls = "bg-bah-cyan/5 border-bah-cyan/20";
-                if (t.includes("stale data")) { advice = "Safe to ignore. System using cached prices."; fix = "Set TWELVE_DATA_KEY in Railway to get live prices."; icon = "💤"; advCls = "bg-bah-border/30 border-bah-border"; }
+                if (t.includes("stale data")) { advice = "STALE DATA: new signals blocked. Investigate data source."; fix = "Check Twelve Data API key and connectivity."; icon = "⚠️"; advCls = "bg-amber-500/10 border-amber-500/30"; }
                 else if (t.includes("drawdown exceeded")) { advice = "Review positions immediately."; fix = "Consider closing losers or activating kill switch."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }
                 else if (t.includes("drawdown elevated")) { advice = "Monitor closely. Not critical yet."; fix = "Check open positions."; icon = "👁"; advCls = "bg-amber-500/5 border-amber-500/20"; }
                 else if (t.includes("risk exceeded")) { advice = "Total risk exceeds 5%."; fix = "Reduce positions."; icon = "⚡"; advCls = "bg-red-500/5 border-red-500/20"; }

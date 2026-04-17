@@ -25,6 +25,40 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+def _get_production_health() -> dict:
+    """Gather production safety state for the dashboard health dict."""
+    import time as _t
+    result: dict = {}
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker_binance, circuit_breaker_alpaca
+        result["circuit_breaker_binance"] = circuit_breaker_binance.get_status()["state"]
+        result["circuit_breaker_alpaca"] = circuit_breaker_alpaca.get_status()["state"]
+    except Exception:
+        result["circuit_breaker_binance"] = "UNKNOWN"
+        result["circuit_breaker_alpaca"] = "UNKNOWN"
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        result["shutdown_in_progress"] = is_shutting_down()
+    except Exception:
+        result["shutdown_in_progress"] = False
+    try:
+        import redis, os
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                           socket_connect_timeout=1)
+        ts_raw = r.get("bahamut:training:last_cycle_ts")
+        if ts_raw:
+            result["training_freshness_sec"] = int(_t.time() - int(ts_raw))
+        else:
+            result["training_freshness_sec"] = -1
+        # Check for unauthorized positions from reconciliation
+        unauthorized_keys = r.keys("bahamut:reconciliation:unauthorized:*")
+        result["reconciliation_unauthorized_count"] = len(unauthorized_keys) if unauthorized_keys else 0
+    except Exception:
+        result["training_freshness_sec"] = -1
+        result["reconciliation_unauthorized_count"] = 0
+    return result
+
+
 @router.get("/portfolio")
 async def portfolio_summary(user=Depends(get_current_user)):
     """Core portfolio metrics — the numbers that matter."""
@@ -562,6 +596,7 @@ async def dashboard_all(user=Depends(get_current_user)):
         "strategy_conditions": strategy_conds,
         "health": {
             "engine": "v7/v8/v9", "data_source": data_src, "data": data_status,
+            **_get_production_health(),
         },
     }
 
