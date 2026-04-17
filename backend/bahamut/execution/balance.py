@@ -93,15 +93,18 @@ def get_real_balance(force_refresh: bool = False) -> dict:
     except Exception as e:
         logger.debug("balance_alpaca_fetch_failed", error=str(e)[:100])
 
-    # Virtual fallback
+    # No virtual fallback in live/hybrid mode — report broker_unavailable
     if combined <= 0:
         try:
             from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL
-            combined = TRAINING_VIRTUAL_CAPITAL
-            result["source"] = "virtual"
+            mode = os.environ.get("BAHAMUT_TRADING_MODE", "paper").lower()
+            if mode == "paper":
+                combined = TRAINING_VIRTUAL_CAPITAL
+                result["source"] = "virtual"
+            else:
+                result["source"] = "broker_unavailable"
         except Exception:
-            combined = 100_000
-            result["source"] = "virtual_default"
+            result["source"] = "broker_unavailable"
 
     result["combined_usd"] = round(combined, 2)
 
@@ -123,21 +126,57 @@ def get_real_balance(force_refresh: bool = False) -> dict:
     return result
 
 
-def get_available_risk(risk_pct: float = 0.02) -> dict:
-    """Compute max risk per trade based on real balance.
+def get_available_risk(asset_class: str = "", risk_pct: float = 0.02) -> dict:
+    """Compute max risk per trade based on the broker for this asset class.
+
+    Crypto → Binance Futures available balance (no unrealized PnL).
+    Stock  → Alpaca cash.
+    If broker data unavailable, returns max_risk_usd=0.
 
     Args:
-        risk_pct: fraction of equity to risk per trade (default 2%)
-
-    Returns:
-        {"max_risk_usd": float, "source": str, "combined_equity": float}
+        asset_class: "crypto" or "stock"
+        risk_pct: fraction of available capital to risk per trade (default 2%)
     """
     balance = get_real_balance()
-    equity = balance.get("combined_usd", 0)
-    max_risk = equity * risk_pct
 
+    if asset_class == "crypto":
+        bf = balance.get("binance_futures")
+        if bf and bf.get("available", 0) > 0:
+            return {
+                "max_risk_usd": round(bf["available"] * risk_pct, 2),
+                "risk_pct": risk_pct,
+                "combined_equity": bf["available"],
+                "source": "real_binance",
+            }
+        return {
+            "max_risk_usd": 0,
+            "risk_pct": risk_pct,
+            "combined_equity": 0,
+            "source": "broker_unavailable",
+            "reason": "binance_futures_unavailable",
+        }
+
+    if asset_class == "stock":
+        alp = balance.get("alpaca")
+        if alp and alp.get("cash", 0) > 0:
+            return {
+                "max_risk_usd": round(alp["cash"] * risk_pct, 2),
+                "risk_pct": risk_pct,
+                "combined_equity": alp["cash"],
+                "source": "real_alpaca",
+            }
+        return {
+            "max_risk_usd": 0,
+            "risk_pct": risk_pct,
+            "combined_equity": 0,
+            "source": "broker_unavailable",
+            "reason": "alpaca_unavailable",
+        }
+
+    # Fallback for other asset classes: use combined (paper mode safe)
+    equity = balance.get("combined_usd", 0)
     return {
-        "max_risk_usd": round(max_risk, 2),
+        "max_risk_usd": round(equity * risk_pct, 2),
         "risk_pct": risk_pct,
         "combined_equity": equity,
         "source": balance.get("source", "unknown"),
