@@ -283,60 +283,62 @@ class OrderManager:
                    details: dict = None, broker_response: dict = None) -> bool:
         """Transition an order to a new state. Returns True if valid.
 
-        Validates the transition is legal, persists it, and logs the event.
-        Invalid transitions are REJECTED AND LOGGED — they don't silently fail.
+        Uses conditional UPDATE (optimistic locking): the UPDATE only succeeds
+        if the row's current state is one of the valid source states for the
+        requested transition. If another worker changed the state between our
+        read and our write, rowcount=0 and we return False.
         """
         try:
             from bahamut.database import sync_engine
             from sqlalchemy import text
+
+            # Build the set of valid source states for this transition
+            valid_from = [
+                s.value for s, targets in _VALID_TRANSITIONS.items()
+                if new_state in targets
+            ]
+            if not valid_from:
+                logger.error("order_transition_no_valid_source",
+                             intent_id=intent_id,
+                             attempted=new_state.value)
+                return False
+
+            # Build UPDATE with conditional WHERE
+            sql_parts = ["order_state = :new_state", "updated_at = NOW()"]
+            params: dict = {"new_state": new_state.value, "id": intent_id}
+
+            if new_state in (OrderState.CLOSED, OrderState.CANCELED, OrderState.REJECTED):
+                sql_parts.append("closed_at = NOW()")
+
+            if details and details.get("error"):
+                sql_parts.append("error_message = :err")
+                params["err"] = str(details["error"])[:500]
+
             with sync_engine.connect() as conn:
-                # Read current state
-                row = conn.execute(text(
-                    "SELECT order_state FROM order_intents WHERE id = :id"
-                ), {"id": intent_id}).mappings().first()
-                if not row:
-                    logger.error("order_transition_unknown_intent", intent_id=intent_id)
-                    return False
-
-                current = OrderState(row["order_state"])
-                valid_next = _VALID_TRANSITIONS.get(current, set())
-                if new_state not in valid_next:
-                    logger.error("order_transition_invalid",
-                                 intent_id=intent_id,
-                                 current=current.value,
-                                 attempted=new_state.value,
-                                 valid=sorted(s.value for s in valid_next))
-                    self._log_event(intent_id, "invalid_transition", current.value,
-                                    new_state.value,
-                                    {"error": f"invalid: {current.value} → {new_state.value}"})
-                    return False
-
-                # Apply transition
-                updates = {"os": new_state.value, "id": intent_id}
-                sql_parts = ["order_state = :os", "updated_at = NOW()"]
-
-                # Terminal states
-                if new_state in (OrderState.CLOSED, OrderState.CANCELED, OrderState.REJECTED):
-                    sql_parts.append("closed_at = NOW()")
-
-                # Error message
-                if details and details.get("error"):
-                    sql_parts.append("error_message = :err")
-                    updates["err"] = str(details["error"])[:500]
-
-                conn.execute(text(
-                    f"UPDATE order_intents SET {', '.join(sql_parts)} WHERE id = :id"
-                ), updates)
+                result = conn.execute(text(
+                    f"UPDATE order_intents SET {', '.join(sql_parts)} "
+                    f"WHERE id = :id AND order_state = ANY(:valid_from) "
+                    f"RETURNING order_state"
+                ), {**params, "valid_from": valid_from})
+                row = result.fetchone()
                 conn.commit()
 
-            # Log the event
+            if not row:
+                logger.error("order_transition_stale",
+                             intent_id=intent_id,
+                             attempted=new_state.value,
+                             valid_from=valid_from)
+                self._log_event(intent_id, "stale_transition", None,
+                                new_state.value,
+                                {"error": "conditional UPDATE matched 0 rows"})
+                return False
+
             self._log_event(intent_id, f"transition_{new_state.value}",
-                            current.value, new_state.value,
+                            None, new_state.value,
                             details, broker_response)
 
             logger.info("order_state_transition",
                         intent_id=intent_id,
-                        from_state=current.value,
                         to_state=new_state.value)
             return True
         except Exception as e:
@@ -362,68 +364,65 @@ class OrderManager:
     ) -> bool:
         """Record a fill from the broker. This is the CANONICAL price source.
 
-        Handles both full and partial fills:
-          - Partial: updates filled_qty, remaining_qty, avg_fill_price
-          - Full: transitions to FILLED state, sets position to OPEN
-
-        avg_fill_price is computed as weighted average across all fills.
+        Uses atomic DB-side computation for weighted avg fill price and
+        remaining qty — no read-then-write race.
         """
         try:
             from bahamut.database import sync_engine
             from sqlalchemy import text
             with sync_engine.connect() as conn:
-                row = conn.execute(text(
-                    "SELECT order_state, filled_qty, avg_fill_price, intended_size "
-                    "FROM order_intents WHERE id = :id"
-                ), {"id": intent_id}).mappings().first()
-                if not row:
-                    return False
-
-                prev_filled = float(row["filled_qty"] or 0)
-                prev_avg = float(row["avg_fill_price"] or 0)
-                intended = float(row["intended_size"] or 0)
-
-                # Compute new weighted average fill price
-                new_total_filled = prev_filled + fill_qty
-                if new_total_filled > 0:
-                    new_avg = ((prev_avg * prev_filled) + (fill_price * fill_qty)) / new_total_filled
-                else:
-                    new_avg = fill_price
-
-                new_remaining = remaining if remaining > 0 else max(0, intended - new_total_filled)
-                is_fully_filled = new_remaining < (intended * 0.001)  # within 0.1% tolerance
-
-                # Determine new state
-                if is_fully_filled:
-                    new_order_state = OrderState.FILLED
-                    new_pos_state = PositionState.OPEN
-                else:
-                    new_order_state = OrderState.PARTIALLY_FILLED
-                    new_pos_state = PositionState.OPENING
-
-                conn.execute(text("""
+                # Atomic update: all arithmetic happens in the DB
+                result = conn.execute(text("""
                     UPDATE order_intents SET
-                        order_state = :os, position_state = :ps,
-                        filled_qty = :fq, remaining_qty = :rq,
-                        avg_fill_price = :afp, commission = commission + :comm,
+                        filled_qty = filled_qty + :inc,
+                        avg_fill_price = ((avg_fill_price * filled_qty) + (:p * :inc))
+                                         / NULLIF(filled_qty + :inc, 0),
+                        commission = commission + :comm,
+                        remaining_qty = GREATEST(0, intended_size - (filled_qty + :inc)),
                         broker_order_id = COALESCE(NULLIF(:boid, ''), broker_order_id),
                         execution_platform = COALESCE(NULLIF(:plat, ''), execution_platform),
                         updated_at = NOW()
                     WHERE id = :id
+                    RETURNING filled_qty, intended_size, avg_fill_price, remaining_qty
                 """), {
-                    "os": new_order_state.value, "ps": new_pos_state.value,
-                    "fq": new_total_filled, "rq": new_remaining,
-                    "afp": round(new_avg, 8), "comm": commission,
+                    "inc": fill_qty, "p": fill_price, "comm": commission,
                     "boid": broker_order_id, "plat": platform,
                     "id": intent_id,
                 })
+                row = result.mappings().first()
+                if not row:
+                    conn.commit()
+                    return False
+
+                new_filled = float(row["filled_qty"])
+                intended = float(row["intended_size"])
+                new_avg = float(row["avg_fill_price"])
+                new_remaining = float(row["remaining_qty"])
+                is_fully_filled = new_remaining < (intended * 0.001)
+
+                # Conditionally transition state
+                if is_fully_filled:
+                    conn.execute(text(
+                        "UPDATE order_intents SET order_state = :os, position_state = :ps "
+                        "WHERE id = :id"
+                    ), {"os": OrderState.FILLED.value,
+                        "ps": PositionState.OPEN.value, "id": intent_id})
+                    new_order_state = OrderState.FILLED
+                else:
+                    conn.execute(text(
+                        "UPDATE order_intents SET order_state = :os, position_state = :ps "
+                        "WHERE id = :id"
+                    ), {"os": OrderState.PARTIALLY_FILLED.value,
+                        "ps": PositionState.OPENING.value, "id": intent_id})
+                    new_order_state = OrderState.PARTIALLY_FILLED
+
                 conn.commit()
 
-            self._log_event(intent_id, "fill", row["order_state"],
+            self._log_event(intent_id, "fill", None,
                             new_order_state.value, {
                                 "fill_price": fill_price,
                                 "fill_qty": fill_qty,
-                                "total_filled": new_total_filled,
+                                "total_filled": new_filled,
                                 "remaining": new_remaining,
                                 "avg_price": round(new_avg, 8),
                                 "commission": commission,
@@ -433,7 +432,7 @@ class OrderManager:
             logger.info("order_fill_recorded",
                         intent_id=intent_id,
                         fill_price=fill_price, fill_qty=fill_qty,
-                        total_filled=new_total_filled,
+                        total_filled=new_filled,
                         fully_filled=is_fully_filled)
             return True
         except Exception as e:
@@ -606,27 +605,29 @@ class OrderManager:
     # IDEMPOTENCY LOCK (Redis-based, for multi-worker)
     # ─────────────────────────────────────────
 
-    def acquire_execution_lock(self, asset: str, direction: str,
-                                ttl: int = 30) -> bool:
+    def acquire_execution_lock(self, signal_id: str,
+                                ttl: int = 60) -> bool:
         """Acquire a Redis lock before submitting an order.
         Prevents two workers from opening the same trade simultaneously.
-        Returns True if lock acquired."""
+        Fails CLOSED: if Redis is unreachable, returns False (block the trade)."""
         r = _get_redis()
         if not r:
-            return True  # No Redis → allow (DB uniqueness is the backup)
-        lock_key = f"bahamut:exec_lock:{asset}:{direction}"
+            logger.error("exec_lock_redis_unavailable", signal_id=signal_id)
+            return False  # Fail closed — no Redis means no safety guarantee
+        lock_key = f"bahamut:exec_lock:{signal_id}"
         try:
             acquired = r.set(lock_key, "1", nx=True, ex=ttl)
             return bool(acquired)
-        except Exception:
-            return True
+        except Exception as e:
+            logger.error("exec_lock_failed", signal_id=signal_id, error=str(e)[:100])
+            return False  # Fail closed
 
-    def release_execution_lock(self, asset: str, direction: str):
+    def release_execution_lock(self, signal_id: str):
         """Release execution lock after order processing completes."""
         r = _get_redis()
         if not r:
             return
-        lock_key = f"bahamut:exec_lock:{asset}:{direction}"
+        lock_key = f"bahamut:exec_lock:{signal_id}"
         try:
             r.delete(lock_key)
         except Exception:
