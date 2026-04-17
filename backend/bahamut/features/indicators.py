@@ -26,10 +26,17 @@ import structlog
 logger = structlog.get_logger()
 
 # Bump on any math change — downstream caches can key on this.
-INDICATOR_ENGINE_VERSION = "v2.0-canonical-2026-04-16"
+INDICATOR_ENGINE_VERSION = "v2.1-canonical-2026-04-17"
+
+# Annualization factors: periods per year for realized volatility
+_ANNUAL_FACTORS = {
+    "1m": 525600, "5m": 105120, "15m": 35040, "30m": 17520,
+    "1h": 8760, "2h": 4380, "4h": 2190, "6h": 1460,
+    "8h": 1095, "12h": 730, "1d": 252,
+}
 
 
-def compute_indicators(candles: list[dict]) -> dict:
+def compute_indicators(candles: list[dict], interval: str = "4h") -> dict:
     """
     Compute all technical indicators from OHLCV candle data.
     Returns a flat dict of indicator values based on the most recent candles.
@@ -80,8 +87,13 @@ def compute_indicators(candles: list[dict]) -> dict:
     result["ema_50"] = _ema(closes, 50)
     if len(closes) >= 200:
         result["ema_200"] = _ema(closes, 200)
+        result["_ema200_degraded"] = False
     else:
         result["ema_200"] = _ema(closes, len(closes) - 1) if len(closes) > 1 else closes[-1]
+        result["_ema200_degraded"] = True
+        logger.warning("ema200_degraded", candles=len(closes),
+                        effective_period=len(closes) - 1,
+                        msg="EMA-200 using shorter period — values may be unreliable")
 
     # ── ATR (14) ──
     result["atr_14"] = _atr(highs, lows, closes, 14)
@@ -109,7 +121,8 @@ def compute_indicators(candles: list[dict]) -> dict:
     # ── Realized Volatility (20-period) ──
     if len(closes) >= 21:
         returns = np.diff(np.log(closes[-21:]))
-        result["realized_vol_20"] = float(np.std(returns) * np.sqrt(252))
+        ann_factor = _ANNUAL_FACTORS.get(interval, 252)
+        result["realized_vol_20"] = float(np.std(returns) * np.sqrt(ann_factor))
     else:
         result["realized_vol_20"] = 0.0
 
@@ -205,7 +218,7 @@ def _bollinger(closes: np.ndarray, period: int = 20, std_dev: float = 2.0):
         return mid, mid, mid
 
     sma = float(np.mean(closes[-period:]))
-    std = float(np.std(closes[-period:]))
+    std = float(np.std(closes[-period:], ddof=1))  # sample std (N-1), standard for Bollinger
     return (
         round(sma + std_dev * std, 8),
         round(sma - std_dev * std, 8),
@@ -214,19 +227,26 @@ def _bollinger(closes: np.ndarray, period: int = 20, std_dev: float = 2.0):
 
 
 def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
-    """Average Directional Index."""
-    if len(closes) < period * 2:
+    """Average Directional Index — TRUE Wilder-smoothed ADX.
+
+    Computes +DM/-DM → Wilder smooth → +DI/-DI → DX → Wilder smooth DX → ADX.
+    Previous implementation returned a single unsmoothed DX value (not ADX).
+    """
+    n = len(closes)
+    if n < period * 2 + 1:
         return 20.0  # default weak trend
 
-    plus_dm = np.zeros(len(highs))
-    minus_dm = np.zeros(len(highs))
+    # Step 1: +DM and -DM
+    plus_dm = np.zeros(n)
+    minus_dm = np.zeros(n)
 
-    for i in range(1, len(highs)):
+    for i in range(1, n):
         up = highs[i] - highs[i - 1]
         down = lows[i - 1] - lows[i]
         plus_dm[i] = up if (up > down and up > 0) else 0
         minus_dm[i] = down if (down > up and down > 0) else 0
 
+    # Step 2: True Range
     tr = np.maximum(
         highs[1:] - lows[1:],
         np.maximum(
@@ -235,27 +255,42 @@ def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 
         )
     )
 
-    # Smoothed TR and DMs
-    atr_s = float(np.mean(tr[:period]))
-    plus_dm_s = float(np.mean(plus_dm[1:period + 1]))
-    minus_dm_s = float(np.mean(minus_dm[1:period + 1]))
+    # Step 3: Wilder-smooth TR, +DM, -DM (first value = sum of first `period`)
+    atr_s = float(np.sum(tr[:period]))
+    pdm_s = float(np.sum(plus_dm[1:period + 1]))
+    mdm_s = float(np.sum(minus_dm[1:period + 1]))
+
+    # Build DX series for ADX smoothing
+    dx_values = []
 
     for i in range(period, len(tr)):
-        atr_s = (atr_s * (period - 1) + tr[i]) / period
-        plus_dm_s = (plus_dm_s * (period - 1) + plus_dm[i + 1]) / period
-        minus_dm_s = (minus_dm_s * (period - 1) + minus_dm[i + 1]) / period
+        # Wilder smoothing: prev - (prev/period) + current
+        atr_s = atr_s - (atr_s / period) + tr[i]
+        pdm_s = pdm_s - (pdm_s / period) + plus_dm[i + 1]
+        mdm_s = mdm_s - (mdm_s / period) + minus_dm[i + 1]
 
-    if atr_s == 0:
-        return 20.0
+        if atr_s == 0:
+            dx_values.append(0.0)
+            continue
 
-    plus_di = 100 * plus_dm_s / atr_s
-    minus_di = 100 * minus_dm_s / atr_s
+        plus_di = 100 * pdm_s / atr_s
+        minus_di = 100 * mdm_s / atr_s
+        di_sum = plus_di + minus_di
 
-    if plus_di + minus_di == 0:
-        return 20.0
+        if di_sum == 0:
+            dx_values.append(0.0)
+        else:
+            dx_values.append(100 * abs(plus_di - minus_di) / di_sum)
 
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-    return round(dx, 4)
+    if len(dx_values) < period:
+        return round(dx_values[-1], 4) if dx_values else 20.0
+
+    # Step 4: Wilder-smooth the DX series to get ADX
+    adx = float(np.mean(dx_values[:period]))  # First ADX = mean of first `period` DX values
+    for i in range(period, len(dx_values)):
+        adx = (adx * (period - 1) + dx_values[i]) / period
+
+    return round(adx, 4)
 
 
 def _stochastic(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,

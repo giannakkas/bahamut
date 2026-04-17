@@ -200,7 +200,7 @@ def get_price(asset: str) -> float:
     return 0.0
 
 
-def compute_indicators(candles: list[dict]) -> dict:
+def compute_indicators(candles: list[dict], interval: str = "15m") -> dict:
     """Compute technical indicators from Binance candles.
 
     CANONICAL: delegates to bahamut.features.indicators.compute_indicators so
@@ -231,7 +231,7 @@ def compute_indicators(candles: list[dict]) -> dict:
             return {}
 
     from bahamut.features.indicators import compute_indicators as canonical
-    result = canonical(candles)
+    result = canonical(candles, interval=interval)
     if not result:
         return {}
 
@@ -242,7 +242,7 @@ def compute_indicators(candles: list[dict]) -> dict:
 
 
 # Version bump this when indicator math changes to invalidate downstream caches.
-INDICATOR_ENGINE_VERSION = "v2.0-canonical-2026-04-16"
+INDICATOR_ENGINE_VERSION = "v2.1-canonical-2026-04-17"
 
 
 def is_crypto(asset: str) -> bool:

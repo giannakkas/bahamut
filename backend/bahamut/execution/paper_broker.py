@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 class BrokerConfig:
     slippage_bps: float = 8.0    # Basis points
     spread_bps: float = 12.0
+    commission_rate: float = 0.0004  # 0.04% per side (Binance taker default)
     mode: str = "paper"          # paper / live (future)
 
 
@@ -101,12 +102,17 @@ class PaperBroker:
 
     def _close(self, pos: Position, exit_price: float, reason: str) -> ClosedTrade:
         reason_str = reason.value if hasattr(reason, 'value') else str(reason)
+        # Commission: charged on both entry and exit notional
+        entry_notional = pos.entry_price * pos.size
+        exit_notional = exit_price * pos.size
+        commission = (entry_notional + exit_notional) * self.config.commission_rate
+
         if pos.direction == "LONG":
-            pnl = (exit_price - pos.entry_price) * pos.size
-            pnl_pct = (exit_price - pos.entry_price) / pos.entry_price
+            pnl = (exit_price - pos.entry_price) * pos.size - commission
+            pnl_pct = pnl / entry_notional if entry_notional > 0 else 0
         else:
-            pnl = (pos.entry_price - exit_price) * pos.size
-            pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
+            pnl = (pos.entry_price - exit_price) * pos.size - commission
+            pnl_pct = pnl / entry_notional if entry_notional > 0 else 0
 
         return ClosedTrade(
             order_id=pos.order_id,

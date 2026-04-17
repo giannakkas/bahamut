@@ -222,13 +222,24 @@ class ExecutionEngine:
     # KILL SWITCH
     # ═══════════════════════════════════════════════════════
 
-    def activate_kill_switch(self, price: float):
-        """Close all positions and block new trades."""
+    def activate_kill_switch(self, price: float = 0.0):
+        """Close all positions and block new trades.
+        
+        If price=0 (default), fetches current price per asset.
+        If price>0, uses that price for all (legacy/fallback).
+        """
         with self._lock:
             self._kill_switch = True
             closed_count = 0
             for pos in list(self.open_positions):
-                trade = self.broker.force_close(pos, price, "KILL_SWITCH")
+                close_price = price
+                if close_price <= 0:
+                    close_price = self._get_asset_price(pos.asset)
+                if close_price <= 0:
+                    close_price = pos.current_price  # last known price
+                if close_price <= 0:
+                    close_price = pos.entry_price  # absolute fallback
+                trade = self.broker.force_close(pos, close_price, "KILL_SWITCH")
                 self.closed_trades.append(trade)
                 self.open_positions.remove(pos)
                 closed_count += 1
@@ -239,6 +250,26 @@ class ExecutionEngine:
 
             logger.warning("kill_switch_activated", closed=closed_count)
             return closed_count
+
+    @staticmethod
+    def _get_asset_price(asset: str) -> float:
+        """Fetch current price for an asset (best effort)."""
+        try:
+            from bahamut.data.binance_data import is_crypto, get_price
+            if is_crypto(asset):
+                p = get_price(asset)
+                if p > 0:
+                    return p
+        except Exception:
+            pass
+        try:
+            from bahamut.data.live_data import fetch_candles
+            candles = fetch_candles(asset, count=5)
+            if candles:
+                return candles[-1]["close"]
+        except Exception:
+            pass
+        return 0.0
 
     def resume_trading(self):
         with self._lock:

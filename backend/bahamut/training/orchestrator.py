@@ -872,7 +872,7 @@ def _make_bar(candle: dict) -> dict:
 
 # Crypto candle interval — can go as tight as 1m
 CRYPTO_INTERVAL = "15m"
-CRYPTO_CANDLE_COUNT = 200  # 200 × 15m = ~50 hours of data
+CRYPTO_CANDLE_COUNT = 300  # 300 × 15m = ~75 hours — ensures EMA-200 is fully seeded
 
 def _fetch_training_candles(asset: str, count: int = 100) -> list[dict]:
     """Fetch candles for a training asset.
@@ -901,16 +901,16 @@ def _compute_training_indicators(asset: str, candles: list[dict]):
     try:
         from bahamut.data.binance_data import is_crypto, compute_indicators as binance_indicators
         if is_crypto(asset) and candles:
-            indicators = binance_indicators(candles)
-            prev_indicators = binance_indicators(candles[:-1]) if len(candles) > 1 else None
+            indicators = binance_indicators(candles, interval=CRYPTO_INTERVAL)
+            prev_indicators = binance_indicators(candles[:-1], interval=CRYPTO_INTERVAL) if len(candles) > 1 else None
             return indicators, prev_indicators
     except Exception:
         pass
 
     # Standard Twelve Data indicators
     from bahamut.features.indicators import compute_indicators
-    indicators = compute_indicators(candles)
-    prev_indicators = compute_indicators(candles[:-1]) if len(candles) > 1 else None
+    indicators = compute_indicators(candles, interval="4h")
+    prev_indicators = compute_indicators(candles[:-1], interval="4h") if len(candles) > 1 else None
     return indicators, prev_indicators
 
 
