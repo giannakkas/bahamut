@@ -3858,3 +3858,13 @@ async def get_order_audit_trail(intent_id: str, user=Depends(get_current_user)):
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/balance")
+async def get_balance_info(user=Depends(get_current_user)):
+    """Real broker balance summary."""
+    try:
+        from bahamut.execution.balance import get_real_balance
+        return get_real_balance(force_refresh=True)
+    except Exception as e:
+        return {"error": str(e), "source": "error"}
