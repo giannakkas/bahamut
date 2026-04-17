@@ -252,12 +252,74 @@ except Exception:
 @app.get("/health")
 @app.get("/api/v1/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "service": "bahamut-api",
-        "version": "1.0.0",
-        "environment": settings.environment,
-    }
+    import time as _time
+    checks: dict[str, bool] = {}
+
+    # DB connectivity
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["db"] = True
+    except Exception:
+        checks["db"] = False
+
+    # Redis connectivity
+    try:
+        if redis_manager.redis:
+            await redis_manager.redis.ping()
+            checks["redis"] = True
+        else:
+            checks["redis"] = False
+    except Exception:
+        checks["redis"] = False
+
+    # Training loop freshness (last cycle < 2x interval = 1200s)
+    try:
+        if redis_manager.redis:
+            ts_raw = await redis_manager.redis.get("bahamut:training:last_cycle_ts")
+            if ts_raw:
+                age = _time.time() - int(ts_raw)
+                checks["training_freshness"] = age < 1200
+            else:
+                checks["training_freshness"] = False
+        else:
+            checks["training_freshness"] = False
+    except Exception:
+        checks["training_freshness"] = False
+
+    # Shutdown state
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        checks["shutdown"] = not is_shutting_down()
+    except Exception:
+        checks["shutdown"] = True
+
+    # Circuit breakers (per-platform)
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        cb_status = circuit_breaker.get_status()
+        checks["circuit_breaker"] = cb_status["state"] == "CLOSED"
+    except Exception:
+        checks["circuit_breaker"] = True
+
+    failed = [name for name, ok in checks.items() if not ok]
+    status = "healthy" if not failed else "degraded"
+    status_code = 200 if not failed else 503
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={
+            "status": status,
+            "service": "bahamut-api",
+            "version": "1.0.0",
+            "environment": settings.environment,
+            "checks": checks,
+            "failed": failed,
+        },
+        status_code=status_code,
+    )
 
 
 @app.get("/", include_in_schema=False)
