@@ -162,11 +162,11 @@ class TrainingTrade:
     risk_amount: float
     pnl: float
     pnl_pct: float          # R-multiple: pnl / risk_amount (how many R's)
-    return_pct: float = 0.0  # Actual percentage return: pnl / (entry_price * size)
     entry_time: str
     exit_time: str
     exit_reason: str     # SL / TP / TIMEOUT / MANUAL
     bars_held: int
+    return_pct: float = 0.0  # Actual percentage return: pnl / (entry_price * size)
     regime: str = ""
     execution_type: str = "standard"
     confidence_score: float = 0.0
@@ -248,13 +248,15 @@ def _load_positions_from_db() -> list[TrainingPosition]:
         from bahamut.database import sync_engine
         from sqlalchemy import text
 
-        # Phase 4 Item 12: ensure new columns exist before SELECT references them.
-        # This is idempotent — fast no-op after first call.
+        # Ensure new columns exist (idempotent, fast no-op after first call)
         _ensure_substrategy_column()
 
-        with sync_engine.connect() as conn:
-            # Try the full query with new columns first
-            try:
+        # Try full query first; if columns don't exist yet, fall back to
+        # legacy query on a FRESH connection (SQLAlchemy 2.x poisons the
+        # connection after a failed execute — rollback doesn't help).
+        rows = None
+        try:
+            with sync_engine.connect() as conn:
                 rows = conn.execute(text("""
                     SELECT position_id, asset, asset_class, strategy, direction,
                            entry_price, stop_price, tp_price, size, risk_amount,
@@ -265,110 +267,108 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                            COALESCE(data_mode, 'live') as data_mode
                     FROM training_positions WHERE status = 'OPEN'
                 """)).mappings().all()
-            except Exception as _sel_err:
-                # Column doesn't exist yet — fall back to legacy query
-                conn.rollback()
-                logger.warning("training_load_positions_fallback_select",
-                               reason=str(_sel_err)[:150])
-                rows = conn.execute(text("""
-                    SELECT position_id, asset, asset_class, strategy, direction,
-                           entry_price, stop_price, tp_price, size, risk_amount,
-                           entry_time, bars_held, max_hold_bars, current_price,
-                           execution_type, confidence_score, trigger_reason
-                    FROM training_positions WHERE status = 'OPEN'
-                """)).mappings().all()
+        except Exception as _sel_err:
+            logger.warning("training_load_positions_full_select_failed",
+                           reason=str(_sel_err)[:200])
+            rows = None
 
-            positions = []
-            skipped_invariant_violations = []
-            for row in rows:
-                pos = TrainingPosition(
-                    position_id=row["position_id"],
-                    asset=row["asset"],
-                    asset_class=row["asset_class"] or "unknown",
-                    strategy=row["strategy"],
-                    direction=row["direction"],
-                    entry_price=float(row["entry_price"]),
-                    stop_price=float(row["stop_price"]),
-                    tp_price=float(row["tp_price"]),
-                    size=float(row["size"]),
-                    risk_amount=float(row["risk_amount"]),
-                    entry_time=str(row["entry_time"] or ""),
-                    bars_held=int(row["bars_held"] or 0),
-                    max_hold_bars=int(row["max_hold_bars"] or 30),
-                    current_price=float(row["current_price"] or 0),
-                    execution_type=str(row["execution_type"] or "standard"),
-                    confidence_score=float(row["confidence_score"] or 0),
-                    trigger_reason=str(row["trigger_reason"] or "4h_close"),
-                    execution_platform=str(row.get("execution_platform") or "internal"),
-                    exchange_order_id=str(row.get("exchange_order_id") or ""),
-                    substrategy=str(row.get("substrategy") or ""),
-                    data_mode=str(row.get("data_mode") or "live"),
-                )
+        if rows is None:
+            # Fallback: legacy columns only, fresh connection
+            try:
+                with sync_engine.connect() as conn2:
+                    rows = conn2.execute(text("""
+                        SELECT position_id, asset, asset_class, strategy, direction,
+                               entry_price, stop_price, tp_price, size, risk_amount,
+                               entry_time, bars_held, max_hold_bars, current_price,
+                               execution_type, confidence_score, trigger_reason
+                        FROM training_positions WHERE status = 'OPEN'
+                    """)).mappings().all()
+            except Exception as _sel_err2:
+                logger.error("training_load_positions_legacy_select_failed",
+                             reason=str(_sel_err2)[:200])
+                return []
 
-                # ── Phase 2 Item 5: invariant enforcement on DB reload ──
-                # Previously _save_position() blocked NEW crypto/internal writes,
-                # but this load path bypassed it via direct r.hset below —
-                # rehydrating legacy bad rows every Redis miss. Close them
-                # instead of rehydrating.
-                if (pos.asset_class == "crypto"
-                        and (pos.execution_platform == "internal"
-                             or not pos.exchange_order_id)):
-                    skipped_invariant_violations.append({
-                        "position_id": pos.position_id,
-                        "asset": pos.asset,
-                        "platform": pos.execution_platform,
-                        "has_order_id": bool(pos.exchange_order_id),
-                    })
-                    # Mark as CLOSED in DB so we don't keep picking it up
-                    try:
-                        conn.execute(
+        positions = []
+        skipped_invariant_violations = []
+        for row in rows:
+            pos = TrainingPosition(
+                position_id=row["position_id"],
+                asset=row["asset"],
+                asset_class=row["asset_class"] or "unknown",
+                strategy=row["strategy"],
+                direction=row["direction"],
+                entry_price=float(row["entry_price"]),
+                stop_price=float(row["stop_price"]),
+                tp_price=float(row["tp_price"]),
+                size=float(row["size"]),
+                risk_amount=float(row["risk_amount"]),
+                entry_time=str(row["entry_time"] or ""),
+                bars_held=int(row["bars_held"] or 0),
+                max_hold_bars=int(row["max_hold_bars"] or 30),
+                current_price=float(row["current_price"] or 0),
+                execution_type=str(row["execution_type"] or "standard"),
+                confidence_score=float(row["confidence_score"] or 0),
+                trigger_reason=str(row["trigger_reason"] or "4h_close"),
+                execution_platform=str(row.get("execution_platform") or "internal"),
+                exchange_order_id=str(row.get("exchange_order_id") or ""),
+                substrategy=str(row.get("substrategy") or ""),
+                data_mode=str(row.get("data_mode") or "live"),
+            )
+
+            # Invariant enforcement on DB reload
+            if (pos.asset_class == "crypto"
+                    and (pos.execution_platform == "internal"
+                         or not pos.exchange_order_id)):
+                skipped_invariant_violations.append({
+                    "position_id": pos.position_id,
+                    "asset": pos.asset,
+                    "platform": pos.execution_platform,
+                    "has_order_id": bool(pos.exchange_order_id),
+                })
+                continue
+            positions.append(pos)
+
+        # Close violations in DB (fresh connection)
+        if skipped_invariant_violations:
+            try:
+                with sync_engine.connect() as upd_conn:
+                    for viol in skipped_invariant_violations:
+                        upd_conn.execute(
                             text("UPDATE training_positions SET status = 'CLOSED' "
                                  "WHERE position_id = :pid AND status = 'OPEN'"),
-                            {"pid": pos.position_id},
+                            {"pid": viol["position_id"]},
                         )
-                    except Exception:
-                        pass
-                    continue
-                positions.append(pos)
-
-            if skipped_invariant_violations:
+                    upd_conn.commit()
+            except Exception:
+                pass
+            logger.error("training_positions_load_invariant_violations",
+                         count=len(skipped_invariant_violations),
+                         rows=skipped_invariant_violations[:5])
+            r = _get_redis()
+            if r:
                 try:
-                    conn.commit()
+                    import json as _jinv
+                    r.set("bahamut:crypto_mirror_load_violations_last",
+                          _jinv.dumps(skipped_invariant_violations), ex=86400)
                 except Exception:
                     pass
-                logger.error("training_positions_load_invariant_violations",
-                             count=len(skipped_invariant_violations),
-                             rows=skipped_invariant_violations[:5])
-                # Record for diagnostics
-                r = _get_redis()
-                if r:
-                    try:
-                        import json as _jinv
-                        r.set("bahamut:crypto_mirror_load_violations_last",
-                              _jinv.dumps(skipped_invariant_violations), ex=86400)
-                    except Exception:
-                        pass
 
-            # Repopulate Redis cache from DB. Phase 2 Item 5: route through
-            # _save_position so it respects the hard invariant. If _save_position
-            # rejects any position, it is already filtered above by the load-time
-            # check, but routing through keeps this one invariant enforcement
-            # point authoritative.
-            if positions:
-                r = _get_redis()
-                if r:
-                    try:
-                        r.delete(REDIS_KEY_POSITIONS)
-                    except Exception:
-                        pass
-                for pos in positions:
-                    try:
-                        _save_position(pos)
-                    except Exception:
-                        pass
+        # Repopulate Redis cache from DB
+        if positions:
+            r = _get_redis()
+            if r:
+                try:
+                    r.delete(REDIS_KEY_POSITIONS)
+                except Exception:
+                    pass
+            for pos in positions:
+                try:
+                    _save_position(pos)
+                except Exception:
+                    pass
 
-            logger.info("training_positions_loaded_from_db", count=len(positions))
-            return positions
+        logger.info("training_positions_loaded_from_db", count=len(positions))
+        return positions
     except Exception as e:
         logger.error("training_load_positions_db_failed", error=str(e))
         return []
