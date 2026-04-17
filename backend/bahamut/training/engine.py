@@ -1207,10 +1207,16 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
         if exit_reason:
             # Close the position
+            # Commission: 0.04% per side (Binance taker) on both entry and exit
+            COMMISSION_RATE = 0.0004
+            entry_notional = pos.entry_price * pos.size
+            exit_notional = exit_price * pos.size
+            commission = (entry_notional + exit_notional) * COMMISSION_RATE
+
             if pos.direction == "LONG":
-                pnl = (exit_price - pos.entry_price) * pos.size
+                pnl = (exit_price - pos.entry_price) * pos.size - commission
             else:
-                pnl = (pos.entry_price - exit_price) * pos.size
+                pnl = (pos.entry_price - exit_price) * pos.size - commission
 
             pnl_pct = pnl / max(0.01, pos.risk_amount)
 
@@ -1272,11 +1278,14 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 trade.exit_lifecycle = exec_result.get("order_lifecycle", "")
                 if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
                     trade.exit_price = round(exec_result["fill_price"], 6)
-                    # Recalculate PnL with actual fill
+                    # Recalculate PnL with actual fill (including commission)
+                    _entry_not = pos.entry_price * pos.size
+                    _exit_not = trade.exit_price * pos.size
+                    _comm = (_entry_not + _exit_not) * 0.0004  # 0.04% taker per side
                     if pos.direction == "LONG":
-                        trade.pnl = round((trade.exit_price - pos.entry_price) * pos.size, 2)
+                        trade.pnl = round((trade.exit_price - pos.entry_price) * pos.size - _comm, 2)
                     else:
-                        trade.pnl = round((pos.entry_price - trade.exit_price) * pos.size, 2)
+                        trade.pnl = round((pos.entry_price - trade.exit_price) * pos.size - _comm, 2)
                     trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
                     logger.info("exchange_close_fill_applied",
                                 asset=pos.asset, platform=trade.execution_platform,

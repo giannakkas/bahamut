@@ -36,7 +36,7 @@ async def portfolio_summary(user=Depends(get_current_user)):
     initial = pm.initial_capital
     pnl_total = equity - initial
     dd_pct = round(pm.total_drawdown * 100, 2)
-    max_dd = round(max(dd_pct, getattr(pm, '_max_dd_seen', dd_pct)), 2)
+    max_dd = round(max(dd_pct, getattr(pm, '_max_dd_seen', 0) * 100), 2)
     open_risk = sum(p.risk_amount for p in engine.open_positions
                     if not p.strategy.startswith("TEST_"))
     open_risk_pct = round(open_risk / max(1, equity) * 100, 2)

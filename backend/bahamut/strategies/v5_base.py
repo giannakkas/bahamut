@@ -83,6 +83,41 @@ class V5Base(BaseStrategy):
             interval = indicators.get("_interval", "4h")
             params = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
 
+            # ── Multi-confirmation quality scoring ──
+            quality = 0.5  # base score for golden cross + bull regime
+
+            # Volume confirmation: current bar volume > 1.3× average
+            volume = indicators.get("volume", 0)
+            vol_sma = indicators.get("volume_sma_20", 0)
+            if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
+                quality += 0.1  # volume expanding on cross
+
+            # MACD confirmation: histogram positive (momentum aligns)
+            macd_hist = indicators.get("macd_histogram", 0)
+            if macd_hist > 0:
+                quality += 0.1  # MACD momentum confirms
+
+            # RSI mid-range: not overbought (avoid late entries)
+            rsi = indicators.get("rsi_14", 50)
+            if 40 < rsi < 70:
+                quality += 0.05  # healthy RSI zone
+
+            # Strong EMA alignment: EMA20 > EMA50 > EMA200
+            if ema_20 > ema_50 > ema_200:
+                quality += 0.05  # full alignment
+
+            quality = round(min(1.0, quality), 3)
+
+            confirmations = []
+            if volume > 0 and vol_sma > 0 and volume > vol_sma * 1.3:
+                confirmations.append("vol_expand")
+            if macd_hist > 0:
+                confirmations.append("macd_pos")
+
+            reason = f"EMA20x50 golden cross, bull regime ({asset})"
+            if confirmations:
+                reason += f" [{'+'.join(confirmations)}]"
+
             return Signal(
                 strategy=self.meta.name,
                 asset=asset,
@@ -90,8 +125,8 @@ class V5Base(BaseStrategy):
                 sl_pct=params["sl"],
                 tp_pct=params["tp"],
                 max_hold_bars=params["hold"],
-                quality=0.7,
-                reason=f"EMA20x50 golden cross, bull regime ({asset})",
+                quality=quality,
+                reason=reason,
                 signal_id=f"{self.meta.name}:{asset}:{candles[-1].get('datetime', '') if candles else ''}",
             )
         return None

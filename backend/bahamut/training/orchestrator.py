@@ -882,8 +882,17 @@ def _fetch_training_candles(asset: str, count: int = 100) -> list[dict]:
     try:
         from bahamut.data.binance_data import is_crypto
         if is_crypto(asset):
-            from bahamut.data.binance_data import get_candles
-            return get_candles(asset, interval=CRYPTO_INTERVAL, limit=CRYPTO_CANDLE_COUNT)
+            from bahamut.data.binance_data import get_candles, validate_candle_continuity
+            candles = get_candles(asset, interval=CRYPTO_INTERVAL, limit=CRYPTO_CANDLE_COUNT)
+            # Gap detection: log if candles have missing bars
+            if candles and len(candles) > 1:
+                gap_check = validate_candle_continuity(candles, interval=CRYPTO_INTERVAL)
+                if not gap_check["is_valid"]:
+                    logger.warning("training_candle_gaps",
+                                    asset=asset, interval=CRYPTO_INTERVAL,
+                                    gap_count=gap_check["gap_count"],
+                                    total_missing=sum(g["missing_bars"] for g in gap_check["gaps"]))
+            return candles
     except Exception as e:
         logger.debug("binance_data_failed", asset=asset, error=str(e)[:50])
 

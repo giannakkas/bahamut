@@ -128,8 +128,13 @@ class PortfolioManager:
         self.initial_capital = total_capital
         self.max_total_risk_pct = max_total_risk_pct
         self.max_drawdown_pct = max_drawdown_pct
-        self.peak_equity = total_capital
         self.kill_switch_triggered = False
+
+        # Restore peak equity and max drawdown from Redis if available
+        stored_peak = _redis_read("portfolio", "peak_equity")
+        self.peak_equity = float(stored_peak) if stored_peak and float(stored_peak) > total_capital else total_capital
+        stored_max_dd = _redis_read("portfolio", "max_drawdown_pct")
+        self._max_dd_seen = float(stored_max_dd) if stored_max_dd else 0.0
 
         # v8: regime state — per asset
         self.asset_regimes: dict[str, str] = {}
@@ -272,8 +277,16 @@ class PortfolioManager:
         self.total_capital = sum(s.current_equity for s in self.sleeves.values())
         self.peak_equity = max(self.peak_equity, self.total_capital)
 
+        # Persist peak equity to Redis (survives restarts)
+        _redis_write("portfolio", "peak_equity", round(self.peak_equity, 2))
+
         # Kill switch on drawdown
         dd = 1 - self.total_capital / self.peak_equity if self.peak_equity > 0 else 0
+
+        # Track max drawdown seen (persisted to Redis)
+        if dd > 0:
+            self._max_dd_seen = max(getattr(self, '_max_dd_seen', 0), dd)
+            _redis_write("portfolio", "max_drawdown_pct", round(self._max_dd_seen, 6))
 
         # GUARD: threshold must be > 0 to trigger. A zero threshold would fire at 0% drawdown.
         if (self.max_drawdown_pct > 0

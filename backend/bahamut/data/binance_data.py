@@ -200,6 +200,51 @@ def get_price(asset: str) -> float:
     return 0.0
 
 
+def validate_candle_continuity(candles: list[dict], interval: str = "15m") -> dict:
+    """Check that candles are contiguous (no gaps).
+
+    Returns dict with is_valid, gap_count, gaps (list of gap details).
+    Gaps can occur when an exchange has maintenance or API returns incomplete data.
+    Missing candles silently break EMA/ATR continuity.
+    """
+    result = {"is_valid": True, "gap_count": 0, "gaps": []}
+
+    if not candles or len(candles) < 2:
+        return result
+
+    expected_ms = _INTERVAL_SECONDS.get(interval, 0) * 1000
+    if expected_ms == 0:
+        return result
+
+    for i in range(1, len(candles)):
+        ot_curr = candles[i].get("open_time", 0)
+        ot_prev = candles[i - 1].get("open_time", 0)
+        if ot_curr and ot_prev:
+            diff = ot_curr - ot_prev
+            if diff != expected_ms:
+                missing_bars = (diff // expected_ms) - 1
+                result["gaps"].append({
+                    "index": i,
+                    "expected_ms": expected_ms,
+                    "actual_ms": diff,
+                    "missing_bars": int(missing_bars),
+                    "datetime": candles[i].get("datetime", ""),
+                })
+
+    result["gap_count"] = len(result["gaps"])
+    result["is_valid"] = result["gap_count"] == 0
+
+    if result["gap_count"] > 0:
+        total_missing = sum(g["missing_bars"] for g in result["gaps"])
+        logger.warning("candle_gap_detected",
+                        interval=interval,
+                        gap_count=result["gap_count"],
+                        total_missing_bars=total_missing,
+                        first_gap_at=result["gaps"][0]["datetime"] if result["gaps"] else "")
+
+    return result
+
+
 def compute_indicators(candles: list[dict], interval: str = "15m") -> dict:
     """Compute technical indicators from Binance candles.
 
