@@ -114,9 +114,11 @@ async def lifespan(app: FastAPI):
 async def _training_cycle_loop():
     """Background loop: runs training cycle every 10 minutes.
     Lives inside the API process — no Celery Beat dependency.
-    Compensates for cycle duration so next cycle fires on time."""
+    Compensates for cycle duration so next cycle fires on time.
+    Runs broker reconciliation every 6th cycle (~hourly)."""
     import asyncio, time
     INTERVAL = 600  # 10 minutes
+    _cycle_count = 0
 
     # Wait 60s after startup before first cycle (let everything initialize)
     await asyncio.sleep(60)
@@ -124,10 +126,19 @@ async def _training_cycle_loop():
 
     while True:
         cycle_start = time.time()
+        _cycle_count += 1
         try:
             await asyncio.to_thread(_run_training_cycle_safe)
         except Exception as e:
             logger.error("training_auto_cycle_error", error=str(e))
+
+        # Periodic reconciliation: every 6th cycle (~hourly)
+        if _cycle_count % 6 == 0:
+            try:
+                await asyncio.to_thread(_run_reconciliation_safe)
+            except Exception as e:
+                logger.error("periodic_reconciliation_error", error=str(e))
+
         cycle_duration = time.time() - cycle_start
         # Sleep only the remaining time (minimum 10s to prevent tight loops on errors)
         sleep_time = max(10, INTERVAL - cycle_duration)
@@ -150,6 +161,21 @@ def _run_training_cycle_safe():
             _set_running(False, 0)
         except Exception:
             pass
+
+
+def _run_reconciliation_safe():
+    """Run periodic broker reconciliation. Catches all exceptions."""
+    try:
+        from bahamut.execution.reconciliation import reconcile_all
+        logger.info("periodic_reconciliation_firing")
+        result = reconcile_all()
+        summary = result.get("summary", {})
+        logger.info("periodic_reconciliation_complete",
+                    matched=summary.get("matched", 0),
+                    mismatches=summary.get("mismatches", 0),
+                    orphans=summary.get("orphans", 0))
+    except Exception as e:
+        logger.error("periodic_reconciliation_failed", error=str(e)[:200])
 
 
 app = FastAPI(
