@@ -441,6 +441,13 @@ class V10MeanReversion:
         if is_suppressed(asset, self.name):
             return None
 
+        # Block signals on degraded EMA-200 — v10 uses dist_ema200_pct thresholds
+        if indicators.get("_ema200_degraded"):
+            import structlog
+            structlog.get_logger().debug("strategy_blocked_ema200_degraded",
+                                         strategy="v10_mean_reversion", asset=asset)
+            return None
+
         # Use regime from indicators (now honest — only CRASH if structurally confirmed)
         regime = indicators.get("_regime", "UNKNOWN")
         asset_class = indicators.get("_asset_class", "")

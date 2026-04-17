@@ -41,6 +41,13 @@ class V5Base(BaseStrategy):
         if is_suppressed(asset, self.meta.name):
             return None
 
+        # Block signals on degraded EMA-200 — v5 relies on EMA-200 trend filter
+        if indicators.get("_ema200_degraded"):
+            import structlog
+            structlog.get_logger().debug("strategy_blocked_ema200_degraded",
+                                         strategy="v5_base", asset=asset)
+            return None
+
         close = indicators.get("close", 0)
         ema_20 = indicators.get("ema_20", 0)
         ema_50 = indicators.get("ema_50", 0)
