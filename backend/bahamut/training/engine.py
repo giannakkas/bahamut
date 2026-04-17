@@ -1442,17 +1442,10 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 entry_lifecycle=pos.order_lifecycle,
             )
 
-            actually_removed = _remove_position(pos.position_id)
-            if not actually_removed:
-                # Another call already closed this position — skip to avoid duplicate trade
-                logger.info("training_position_already_closed",
-                            asset=pos.asset, position_id=pos.position_id)
-                continue
-
-            _already_closed.add(pos.position_id)
-            update_positions_for_asset._already_closed = _already_closed
-
-            # ── Execute close on exchange (Binance/Alpaca) ──
+            # ── BROKER-FIRST: execute close BEFORE removing local position ──
+            # If broker close fails, position stays open locally so
+            # reconciliation can detect and fix it. No phantom PnL persisted.
+            _close_succeeded = False
             try:
                 from bahamut.execution.router import execute_close as exec_close
                 exec_result = exec_close(
@@ -1460,17 +1453,16 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     direction=pos.direction, size=pos.size,
                     entry_price=pos.entry_price,
                 )
+                _close_lifecycle = exec_result.get("lifecycle", exec_result.get("status", ""))
                 trade.execution_platform = exec_result.get("platform", "internal")
                 trade.exchange_order_id = exec_result.get("order_id", "")
-                # Phase 5 Item 14: capture exit commission + slippage
                 trade.exit_commission = float(exec_result.get("commission", 0) or 0)
                 trade.exit_slippage_abs = float(exec_result.get("slippage_abs", 0) or 0)
                 trade.exit_lifecycle = exec_result.get("order_lifecycle", "")
+
                 if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
+                    # BROKER-TRUTH PnL — canonical
                     trade.exit_price = round(exec_result["fill_price"], 6)
-                    # BROKER-TRUTH PnL: use broker-confirmed prices for both entry and exit
-                    canonical_entry = pos.avg_fill_price if pos.avg_fill_price > 0 else pos.entry_price
-                    # Use actual broker commission if available, else estimate
                     entry_comm = float(pos.commission or 0)
                     exit_comm = float(exec_result.get("commission", 0) or 0)
                     total_comm = entry_comm + exit_comm
@@ -1485,14 +1477,85 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                                 fill_price=trade.exit_price, entry=canonical_entry,
                                 pnl=trade.pnl, commission=total_comm,
                                 source="broker_fill")
-                    # Invalidate platform cache so pages refresh
                     try:
                         from bahamut.execution.router import invalidate_platform_cache
                         invalidate_platform_cache(trade.execution_platform)
                     except Exception:
                         pass
+                    _close_succeeded = True
+                    # Wire OrderManager close
+                    try:
+                        from bahamut.execution.order_manager import OrderManager
+                        _mgr = OrderManager()
+                        _intents = _mgr.get_open_intents(pos.asset)
+                        for _it in _intents:
+                            if _it.get("direction") == pos.direction:
+                                _mgr.record_close(
+                                    _it["id"], exit_price=trade.exit_price,
+                                    exit_reason=exit_reason,
+                                    exit_commission=exit_comm,
+                                    broker_response=exec_result.get("raw", {}),
+                                )
+                                break
+                    except Exception:
+                        pass
+
+                elif trade.execution_platform == "internal":
+                    # Paper/internal mode — candle PnL is acceptable
+                    trade.execution_platform = "paper"
+                    _close_succeeded = True
+
+                elif _close_lifecycle in ("ERROR", "REJECTED") or exec_result.get("error"):
+                    logger.error("close_failed_position_remains_open",
+                                 asset=pos.asset, position_id=pos.position_id,
+                                 lifecycle=_close_lifecycle,
+                                 error=exec_result.get("error", "")[:200])
+                    try:
+                        from bahamut.execution.order_manager import OrderManager, OrderState
+                        _intents = OrderManager().get_open_intents(pos.asset)
+                        for _it in _intents:
+                            if _it.get("direction") == pos.direction:
+                                OrderManager().transition(
+                                    _it["id"], OrderState.RECONCILE_REQUIRED,
+                                    {"error": f"close_rejected: {_close_lifecycle}"})
+                                break
+                    except Exception:
+                        pass
+                    continue  # DO NOT remove, DO NOT persist
+
+                else:
+                    trade.execution_platform = "paper"
+                    _close_succeeded = True
+
             except Exception as e:
-                logger.warning("exchange_close_exception", asset=pos.asset, error=str(e)[:100])
+                logger.error("close_failed_position_remains_open",
+                             asset=pos.asset, position_id=pos.position_id,
+                             error=str(e)[:200])
+                try:
+                    from bahamut.execution.order_manager import OrderManager, OrderState
+                    _intents = OrderManager().get_open_intents(pos.asset)
+                    for _it in _intents:
+                        if _it.get("direction") == pos.direction:
+                            OrderManager().transition(
+                                _it["id"], OrderState.RECONCILE_REQUIRED,
+                                {"error": f"close_exception: {str(e)[:100]}"})
+                            break
+                except Exception:
+                    pass
+                continue  # DO NOT remove, DO NOT persist
+
+            if not _close_succeeded:
+                continue
+
+            # ── Only now: remove local position + persist trade ──
+            actually_removed = _remove_position(pos.position_id)
+            if not actually_removed:
+                logger.info("training_position_already_closed",
+                            asset=pos.asset, position_id=pos.position_id)
+                continue
+
+            _already_closed.add(pos.position_id)
+            update_positions_for_asset._already_closed = _already_closed
 
             _persist_trade(trade)
             _record_recent(trade)
@@ -1505,37 +1568,22 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             except Exception:
                 pass
 
-            # Set per-asset + per-strategy cooldown to prevent immediate re-entry
+            # Set per-asset + per-strategy cooldown
             try:
                 r = _get_redis()
                 if r:
-                    # Strategy-specific cooldown duration
                     COOLDOWN_BY_STRATEGY = {"v5_base": 14400}
                     cd_time = COOLDOWN_BY_STRATEGY.get(pos.strategy, 1800)
-
-                    # Crash-short cooldown escalation for losing trades
                     if pos.execution_type == "crash_short" and trade.pnl < 0:
-                        # Track consecutive losses for this asset's crash-shorts
                         cs_loss_key = f"bahamut:crash_short:losses:{pos.asset}"
                         cs_count = int(r.get(cs_loss_key) or 0) + 1
-                        r.setex(cs_loss_key, 86400, str(cs_count))  # 24h rolling window
+                        r.setex(cs_loss_key, 86400, str(cs_count))
                         if cs_count >= 3:
-                            # 3+ consecutive losses → 4h cooldown (temporary suppress)
                             cd_time = max(cd_time, 14400)
-                            logger.info("crash_short_cooldown_escalated",
-                                        asset=pos.asset, losses=cs_count, cooldown=cd_time,
-                                        reason="3_consecutive_losses")
                         elif cs_count >= 2:
-                            # 2 consecutive losses → 2h cooldown
                             cd_time = max(cd_time, 7200)
-                            logger.info("crash_short_cooldown_escalated",
-                                        asset=pos.asset, losses=cs_count, cooldown=cd_time,
-                                        reason="2_consecutive_losses")
                     elif pos.execution_type == "crash_short" and trade.pnl > 0:
-                        # Reset loss counter on win
-                        cs_loss_key = f"bahamut:crash_short:losses:{pos.asset}"
-                        r.delete(cs_loss_key)
-
+                        r.delete(f"bahamut:crash_short:losses:{pos.asset}")
                     r.setex(f"bahamut:training:cooldown:{pos.asset}", cd_time, "1")
                     r.setex(f"bahamut:training:cooldown:{pos.asset}:{pos.strategy}", cd_time, "1")
             except Exception:
@@ -1545,7 +1593,6 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                         asset=pos.asset, strategy=pos.strategy,
                         pnl=trade.pnl, reason=exit_reason, bars=pos.bars_held)
 
-            # Telegram notification
             try:
                 from bahamut.monitoring.telegram import send_training_trade_closed
                 send_training_trade_closed({
@@ -1558,7 +1605,6 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             except Exception:
                 pass
 
-            # WebSocket live update (with production truth fields)
             try:
                 from bahamut.ws.admin_live import publish_event
                 publish_event("position_closed", {
@@ -1566,9 +1612,9 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     "strategy": pos.strategy, "position_id": pos.position_id,
                     "pnl": trade.pnl, "result": "WIN" if trade.pnl > 0.01 else ("FLAT" if abs(trade.pnl) < 0.01 else "LOSS"),
                     "exit_reason": exit_reason,
-                    "execution_confirmed": trade.execution_platform != "internal",
+                    "execution_confirmed": trade.execution_platform not in ("internal", "paper"),
                     "execution_platform": trade.execution_platform,
-                    "pnl_source": "broker_fill" if trade.execution_platform != "internal" else "candle",
+                    "pnl_source": "broker_fill" if trade.execution_platform not in ("internal", "paper") else "candle",
                     "entry_price": trade.entry_price,
                     "exit_price": trade.exit_price,
                     "total_costs": round((trade.entry_commission or 0) + (trade.exit_commission or 0), 4),
