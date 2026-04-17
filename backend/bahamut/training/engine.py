@@ -247,17 +247,36 @@ def _load_positions_from_db() -> list[TrainingPosition]:
     try:
         from bahamut.database import sync_engine
         from sqlalchemy import text
+
+        # Phase 4 Item 12: ensure new columns exist before SELECT references them.
+        # This is idempotent — fast no-op after first call.
+        _ensure_substrategy_column()
+
         with sync_engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT position_id, asset, asset_class, strategy, direction,
-                       entry_price, stop_price, tp_price, size, risk_amount,
-                       entry_time, bars_held, max_hold_bars, current_price,
-                       execution_type, confidence_score, trigger_reason,
-                       execution_platform, exchange_order_id,
-                       COALESCE(substrategy, '') as substrategy,
-                       COALESCE(data_mode, 'live') as data_mode
-                FROM training_positions WHERE status = 'OPEN'
-            """)).mappings().all()
+            # Try the full query with new columns first
+            try:
+                rows = conn.execute(text("""
+                    SELECT position_id, asset, asset_class, strategy, direction,
+                           entry_price, stop_price, tp_price, size, risk_amount,
+                           entry_time, bars_held, max_hold_bars, current_price,
+                           execution_type, confidence_score, trigger_reason,
+                           execution_platform, exchange_order_id,
+                           COALESCE(substrategy, '') as substrategy,
+                           COALESCE(data_mode, 'live') as data_mode
+                    FROM training_positions WHERE status = 'OPEN'
+                """)).mappings().all()
+            except Exception as _sel_err:
+                # Column doesn't exist yet — fall back to legacy query
+                conn.rollback()
+                logger.warning("training_load_positions_fallback_select",
+                               reason=str(_sel_err)[:150])
+                rows = conn.execute(text("""
+                    SELECT position_id, asset, asset_class, strategy, direction,
+                           entry_price, stop_price, tp_price, size, risk_amount,
+                           entry_time, bars_held, max_hold_bars, current_price,
+                           execution_type, confidence_score, trigger_reason
+                    FROM training_positions WHERE status = 'OPEN'
+                """)).mappings().all()
 
             positions = []
             skipped_invariant_violations = []
