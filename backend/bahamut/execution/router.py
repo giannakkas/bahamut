@@ -61,7 +61,7 @@ def execute_open(asset: str, asset_class: str, direction: str,
         if is_shutting_down():
             logger.warning("execute_open_blocked_shutdown", asset=asset)
             return ExecutionResult.error(
-                asset, direction, "system_shutting_down"
+                "internal", asset, direction, size, "system_shutting_down"
             ).as_dict()
     except ImportError:
         pass
@@ -73,7 +73,7 @@ def execute_open(asset: str, asset_class: str, direction: str,
             logger.warning("execute_open_blocked_circuit_breaker",
                            asset=asset, status=circuit_breaker.get_status())
             return ExecutionResult.error(
-                asset, direction, "circuit_breaker_open"
+                "internal", asset, direction, size, "circuit_breaker_open"
             ).as_dict()
     except ImportError:
         pass
@@ -121,7 +121,7 @@ def execute_close(asset: str, asset_class: str, direction: str,
                          asset=asset, direction=direction,
                          msg="CLOSE blocked by circuit breaker — position remains open!")
             return ExecutionResult.error(
-                asset, direction, "circuit_breaker_open_on_close"
+                "internal", asset, direction, size, "circuit_breaker_open_on_close"
             ).as_dict()
     except ImportError:
         pass
