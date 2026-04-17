@@ -1080,6 +1080,8 @@ def open_training_position(
         if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
             old_entry = pos.entry_price
             pos.entry_price = round(exec_result["fill_price"], 6)
+            # Recompute size so realized risk matches intended risk
+            pos.size = round(risk_amount / max(0.01, pos.entry_price * sl_pct), 8)
             if direction == "LONG":
                 pos.stop_price = round(pos.entry_price * (1 - sl_pct), 6)
                 pos.tp_price = round(pos.entry_price * (1 + tp_pct), 6)
@@ -1090,12 +1092,41 @@ def open_training_position(
             logger.info("exchange_fill_applied",
                         asset=asset, platform=pos.execution_platform,
                         old_entry=old_entry, fill_price=pos.entry_price,
+                        size_recomputed=pos.size,
                         order_id=pos.exchange_order_id)
             try:
                 from bahamut.execution.router import invalidate_platform_cache
                 invalidate_platform_cache(pos.execution_platform)
             except Exception:
                 pass
+
+        # ── Wire OrderManager state machine ──
+        if _order_intent_id:
+            try:
+                from bahamut.execution.order_manager import OrderManager, OrderState
+                _mgr = OrderManager()
+                _lifecycle = exec_result.get("lifecycle", "")
+                if _lifecycle == "FILLED":
+                    _mgr.record_fill(
+                        intent_id=_order_intent_id,
+                        fill_price=exec_result.get("fill_price", 0) or exec_result.get("avg_fill_price", 0),
+                        fill_qty=exec_result.get("filled_qty", pos.size) or pos.size,
+                        commission=float(exec_result.get("commission", 0) or 0),
+                        broker_order_id=exec_result.get("order_id", ""),
+                        platform=exec_result.get("platform", ""),
+                        broker_response=exec_result.get("raw", {}),
+                    )
+                elif _lifecycle in ("ACCEPTED", "SUBMITTED"):
+                    _mgr.transition(_order_intent_id, OrderState.SUBMITTED,
+                                    broker_response=exec_result.get("raw", {}))
+                elif _lifecycle in ("REJECTED", "ERROR"):
+                    _mgr.transition(_order_intent_id, OrderState.REJECTED,
+                                    {"error": exec_result.get("error", "")},
+                                    broker_response=exec_result.get("raw", {}))
+            except Exception as _sm_err:
+                logger.warning("order_state_machine_wire_failed",
+                               intent_id=_order_intent_id, error=str(_sm_err)[:100])
+
         elif _status in ("error", "internal") and _expected_platform != "internal":
             # Broker was expected but execution failed or fell back to internal
             # Do NOT create a phantom internal-only position
@@ -1116,8 +1147,16 @@ def open_training_position(
             _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
             return None
     except Exception as e:
+        # Mark order as SUBMISSION_UNKNOWN before aborting — the broker
+        # may have received the order even though we got an exception.
+        if _order_intent_id and _expected_platform != "internal":
+            try:
+                from bahamut.execution.order_manager import OrderManager, OrderState
+                OrderManager().transition(_order_intent_id, OrderState.SUBMISSION_UNKNOWN,
+                                          {"error": f"exception: {str(e)[:150]}"})
+            except Exception:
+                pass
         if _expected_platform != "internal":
-            # Broker was expected but router import/call failed entirely
             logger.warning("execution_exception_position_aborted",
                            asset=asset, expected_platform=_expected_platform,
                            error=str(e)[:100])
