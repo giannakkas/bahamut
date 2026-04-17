@@ -281,9 +281,10 @@ a:hover{background:#d4af3722;border-color:#d4af37}
 
 @app.get("/debug/data-source")
 async def debug_data_source():
-    """Debug endpoint — requires auth in production."""
-    # Removed key length/existence checks for security.
-    # Use /health or /readiness for operational checks.
+    """Debug endpoint — gated behind admin auth in production."""
+    if settings.environment == "production":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
     return {
         "environment": settings.environment,
         "note": "Detailed debug info removed for security. Use /api/v1/readiness/check.",
