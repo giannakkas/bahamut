@@ -261,11 +261,21 @@ def run_training_cycle():
     # Phase 3: Execute only selected signals
     trades_opened = 0
     from bahamut.training.engine import open_training_position
-    risk_amount = TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT
+
+    # Production: use real broker balance if available, else virtual
+    try:
+        from bahamut.execution.balance import get_available_risk
+        risk_info = get_available_risk(TRAINING_RISK_PER_TRADE_PCT)
+        risk_amount = risk_info["max_risk_usd"]
+        risk_source = risk_info["source"]
+    except Exception:
+        risk_amount = TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT
+        risk_source = "virtual_fallback"
 
     logger.info("training_execution_phase",
                 selected_count=len(selected),
                 risk_per_trade=risk_amount,
+                risk_source=risk_source,
                 selected_assets=[d["asset"] for d in selected])
 
     for dec in selected:

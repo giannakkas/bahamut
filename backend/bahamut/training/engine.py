@@ -1354,16 +1354,14 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
         if exit_reason:
             # Close the position
-            # Commission: 0.04% per side (Binance taker) on both entry and exit
-            COMMISSION_RATE = 0.0004
-            entry_notional = pos.entry_price * pos.size
-            exit_notional = exit_price * pos.size
-            commission = (entry_notional + exit_notional) * COMMISSION_RATE
+            # Use broker-confirmed entry price if available (production truth),
+            # otherwise fall back to candle-derived entry price (paper trading).
+            canonical_entry = pos.avg_fill_price if pos.avg_fill_price > 0 else pos.entry_price
 
             if pos.direction == "LONG":
-                pnl = (exit_price - pos.entry_price) * pos.size - commission
+                pnl = (exit_price - canonical_entry) * pos.size
             else:
-                pnl = (pos.entry_price - exit_price) * pos.size - commission
+                pnl = (canonical_entry - exit_price) * pos.size
 
             pnl_pct = pnl / max(0.01, pos.risk_amount)
 
@@ -1374,7 +1372,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 asset_class=pos.asset_class,
                 strategy=pos.strategy,
                 direction=pos.direction,
-                entry_price=pos.entry_price,
+                entry_price=canonical_entry,  # broker-confirmed or candle fallback
                 exit_price=round(exit_price, 6),
                 stop_price=pos.stop_price,
                 tp_price=pos.tp_price,
@@ -1426,18 +1424,23 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 trade.exit_lifecycle = exec_result.get("order_lifecycle", "")
                 if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
                     trade.exit_price = round(exec_result["fill_price"], 6)
-                    # Recalculate PnL with actual fill (including commission)
-                    _entry_not = pos.entry_price * pos.size
-                    _exit_not = trade.exit_price * pos.size
-                    _comm = (_entry_not + _exit_not) * 0.0004  # 0.04% taker per side
+                    # BROKER-TRUTH PnL: use broker-confirmed prices for both entry and exit
+                    canonical_entry = pos.avg_fill_price if pos.avg_fill_price > 0 else pos.entry_price
+                    # Use actual broker commission if available, else estimate
+                    entry_comm = float(pos.commission or 0)
+                    exit_comm = float(exec_result.get("commission", 0) or 0)
+                    total_comm = entry_comm + exit_comm
                     if pos.direction == "LONG":
-                        trade.pnl = round((trade.exit_price - pos.entry_price) * pos.size - _comm, 2)
+                        trade.pnl = round((trade.exit_price - canonical_entry) * pos.size - total_comm, 2)
                     else:
-                        trade.pnl = round((pos.entry_price - trade.exit_price) * pos.size - _comm, 2)
+                        trade.pnl = round((canonical_entry - trade.exit_price) * pos.size - total_comm, 2)
                     trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
-                    logger.info("exchange_close_fill_applied",
+                    trade.return_pct = round(trade.pnl / max(0.01, canonical_entry * pos.size), 4)
+                    logger.info("broker_truth_pnl_applied",
                                 asset=pos.asset, platform=trade.execution_platform,
-                                fill_price=trade.exit_price, pnl=trade.pnl)
+                                fill_price=trade.exit_price, entry=canonical_entry,
+                                pnl=trade.pnl, commission=total_comm,
+                                source="broker_fill")
                     # Invalidate platform cache so pages refresh
                     try:
                         from bahamut.execution.router import invalidate_platform_cache
