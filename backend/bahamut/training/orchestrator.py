@@ -336,6 +336,14 @@ def run_training_cycle():
                 trades_opened=trades_opened, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
+    try:
+        from bahamut.training.engine import _get_redis
+        _r = _get_redis()
+        if _r:
+            _r.setex("bahamut:training:last_cycle_ts", 3600, str(int(time.time())))
+    except Exception:
+        pass
+
     # Push live update to admin dashboard (with production system state)
     try:
         from bahamut.ws.admin_live import publish_event
