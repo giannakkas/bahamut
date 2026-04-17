@@ -327,8 +327,23 @@ export default function TrainingOperationsPage() {
           >
             {soundEnabled ? "🔔" : "🔇"}
           </button>
-          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[11px] text-green-400 font-bold">LIVE</span>
+          <span className={`w-2 h-2 rounded-full animate-pulse ${
+            data?.system_state?.status === "healthy" ? "bg-green-400" :
+            data?.system_state?.status === "degraded" ? "bg-amber-400" :
+            data?.system_state?.status === "shutting_down" ? "bg-red-400" :
+            "bg-green-400"
+          }`} />
+          <span className={`text-[11px] font-bold ${
+            data?.system_state?.status === "healthy" ? "text-green-400" :
+            data?.system_state?.status === "degraded" ? "text-amber-400" :
+            data?.system_state?.status === "shutting_down" ? "text-red-400" :
+            "text-green-400"
+          }`}>{
+            data?.system_state?.status === "healthy" ? "LIVE" :
+            data?.system_state?.status === "degraded" ? "DEGRADED" :
+            data?.system_state?.status === "shutting_down" ? "SHUTDOWN" :
+            "LIVE"
+          }{data?.system_state?.circuit_breaker && data.system_state.circuit_breaker !== "CLOSED" ? ` · CB:${data.system_state.circuit_breaker}` : ""}</span>
         </div>
       </div>
 
@@ -1024,7 +1039,12 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                 <td className="py-2.5 pr-2 text-bah-text">{sn(p.strategy)}</td>
                 <td className="py-2.5 pr-2 text-[10px] text-bah-muted">{p.substrategy ? p.substrategy.replace("v10_", "") : "—"}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
-                <td className="py-2.5 pr-2"><ExecBadge type={p.execution_type} /></td>
+                <td className="py-2.5 pr-2">
+                  <ExecBadge type={p.execution_type} />
+                  {p.execution_platform && p.execution_platform !== "internal" && (
+                    <span className="ml-1 px-1 py-0.5 rounded text-[8px] font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/25" title={`Broker: ${p.execution_platform}`}>✓</span>
+                  )}
+                </td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(p.entry_price || 0)}</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-heading">{fmtMoney(p.current_price || 0)}</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-red-400/60">{fmtMoney(p.stop_price || p.stop_loss || 0)}</td>

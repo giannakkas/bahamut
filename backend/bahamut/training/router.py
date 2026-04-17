@@ -47,8 +47,28 @@ async def get_training_operations(user=Depends(get_current_user)):
     # Single aggregate DB query for all strategy+class breakdowns
     db_agg = _aggregate_training_trades()
 
+    # Production system state
+    system_state = {"status": "healthy", "circuit_breaker": "CLOSED", "shutting_down": False}
+    try:
+        from bahamut.execution.circuit_breaker import circuit_breaker
+        cb = circuit_breaker.get_status()
+        system_state["circuit_breaker"] = cb["state"]
+        if cb["state"] != "CLOSED":
+            system_state["status"] = "degraded"
+            system_state["cb_remaining"] = cb.get("remaining_cooldown", 0)
+    except Exception:
+        pass
+    try:
+        from bahamut.execution.shutdown import is_shutting_down
+        if is_shutting_down():
+            system_state["status"] = "shutting_down"
+            system_state["shutting_down"] = True
+    except Exception:
+        pass
+
     result = {
         "generated_at": now.isoformat(),
+        "system_state": system_state,
         "cycle_status": _build_cycle_status(r, now),
         "kpi": _build_kpi(r, db_agg),
         "cycle_health": _build_cycle_health(r),

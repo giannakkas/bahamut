@@ -1149,13 +1149,18 @@ def open_training_position(
     except Exception:
         pass
 
-    # WebSocket live update
+    # WebSocket live update (with production truth fields)
     try:
         from bahamut.ws.admin_live import publish_event
         publish_event("position_opened", {
             "mode": "training", "asset": asset, "strategy": strategy,
             "position_id": pos.position_id, "direction": direction,
             "entry": entry_price, "risk": risk_amount,
+            "execution_confirmed": pos.execution_platform != "internal",
+            "execution_platform": pos.execution_platform,
+            "broker_order_id": pos.exchange_order_id,
+            "data_mode": data_mode,
+            "substrategy": substrategy,
         })
     except Exception:
         pass
@@ -1514,7 +1519,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             except Exception:
                 pass
 
-            # WebSocket live update
+            # WebSocket live update (with production truth fields)
             try:
                 from bahamut.ws.admin_live import publish_event
                 publish_event("position_closed", {
@@ -1522,6 +1527,12 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     "strategy": pos.strategy, "position_id": pos.position_id,
                     "pnl": trade.pnl, "result": "WIN" if trade.pnl > 0.01 else ("FLAT" if abs(trade.pnl) < 0.01 else "LOSS"),
                     "exit_reason": exit_reason,
+                    "execution_confirmed": trade.execution_platform != "internal",
+                    "execution_platform": trade.execution_platform,
+                    "pnl_source": "broker_fill" if trade.execution_platform != "internal" else "candle",
+                    "entry_price": trade.entry_price,
+                    "exit_price": trade.exit_price,
+                    "total_costs": round((trade.entry_commission or 0) + (trade.exit_commission or 0), 4),
                 })
             except Exception:
                 pass

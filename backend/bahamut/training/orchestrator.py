@@ -336,14 +336,29 @@ def run_training_cycle():
                 trades_opened=trades_opened, trades_closed=trades_closed,
                 duration_ms=duration_ms)
 
-    # Push live update to admin dashboard
+    # Push live update to admin dashboard (with production system state)
     try:
         from bahamut.ws.admin_live import publish_event
+
+        # Gather system state for frontend truth display
+        system_state = "healthy"
+        try:
+            from bahamut.execution.circuit_breaker import circuit_breaker
+            cb = circuit_breaker.get_status()
+            if cb["state"] != "CLOSED":
+                system_state = "degraded"
+        except Exception:
+            cb = {"state": "unknown"}
+
         publish_event("cycle_completed", {
             "mode": "training", "processed": processed,
             "signals": signals_generated, "selected": len(selected),
             "opened": trades_opened, "closed": trades_closed,
             "duration_ms": duration_ms,
+            # Production truth fields
+            "system_state": system_state,
+            "circuit_breaker": cb.get("state", "unknown"),
+            "backend_computed_at": datetime.now(timezone.utc).isoformat(),
         })
     except Exception:
         pass
