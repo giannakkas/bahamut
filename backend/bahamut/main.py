@@ -95,87 +95,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("order_manager_init_skipped", error=str(e)[:100])
 
-    # ── Start background training cycle loop ──
-    import asyncio
-    training_task = asyncio.create_task(_training_cycle_loop())
-
     yield
 
     # Shutdown
-    training_task.cancel()
-    try:
-        await training_task
-    except asyncio.CancelledError:
-        pass
     await redis_manager.disconnect()
     logger.info("Bahamut.AI shutdown complete")
-
-
-async def _training_cycle_loop():
-    """Background loop: runs training cycle every 10 minutes.
-    Lives inside the API process — no Celery Beat dependency.
-    Compensates for cycle duration so next cycle fires on time.
-    Runs broker reconciliation every 6th cycle (~hourly)."""
-    import asyncio, time
-    INTERVAL = 600  # 10 minutes
-    _cycle_count = 0
-
-    # Wait 60s after startup before first cycle (let everything initialize)
-    await asyncio.sleep(60)
-    logger.info("training_auto_cycle_started", interval_seconds=INTERVAL)
-
-    while True:
-        cycle_start = time.time()
-        _cycle_count += 1
-        try:
-            await asyncio.to_thread(_run_training_cycle_safe)
-        except Exception as e:
-            logger.error("training_auto_cycle_error", error=str(e))
-
-        # Periodic reconciliation: every 6th cycle (~hourly)
-        if _cycle_count % 6 == 0:
-            try:
-                await asyncio.to_thread(_run_reconciliation_safe)
-            except Exception as e:
-                logger.error("periodic_reconciliation_error", error=str(e))
-
-        cycle_duration = time.time() - cycle_start
-        # Sleep only the remaining time (minimum 10s to prevent tight loops on errors)
-        sleep_time = max(10, INTERVAL - cycle_duration)
-        logger.info("training_cycle_next_sleep", duration_s=round(cycle_duration, 1), sleep_s=round(sleep_time, 1))
-        await asyncio.sleep(sleep_time)
-
-
-def _run_training_cycle_safe():
-    """Run one training cycle. Catches all exceptions."""
-    try:
-        from bahamut.training.orchestrator import run_training_cycle
-        logger.info("training_auto_cycle_firing")
-        run_training_cycle()
-        logger.info("training_auto_cycle_complete")
-    except Exception as e:
-        logger.error("training_auto_cycle_failed", error=str(e))
-        # Clear running flag on crash
-        try:
-            from bahamut.training.orchestrator import _set_running
-            _set_running(False, 0)
-        except Exception:
-            pass
-
-
-def _run_reconciliation_safe():
-    """Run periodic broker reconciliation. Catches all exceptions."""
-    try:
-        from bahamut.execution.reconciliation import reconcile_all
-        logger.info("periodic_reconciliation_firing")
-        result = reconcile_all()
-        summary = result.get("summary", {})
-        logger.info("periodic_reconciliation_complete",
-                    matched=summary.get("matched", 0),
-                    mismatches=summary.get("mismatches", 0),
-                    orphans=summary.get("orphans", 0))
-    except Exception as e:
-        logger.error("periodic_reconciliation_failed", error=str(e)[:200])
 
 
 app = FastAPI(
