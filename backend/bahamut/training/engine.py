@@ -125,6 +125,9 @@ class TrainingPosition:
     bracket_sl_order_id: str = ""
     bracket_tp_order_id: str = ""
 
+    # ── Funding rate accrual for perpetual futures (USD, positive = cost)
+    funding_accrued: float = 0.0
+
     @property
     def unrealized_pnl(self):
         if self.direction == "LONG":

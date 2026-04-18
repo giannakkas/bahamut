@@ -173,3 +173,72 @@ def check_all_positions_funding(positions: list[dict]) -> list[dict]:
         results.append(estimate)
 
     return results
+
+
+def accrue_funding_for_all_positions() -> dict:
+    """Update funding_accrued on all open crypto training positions.
+
+    Should be called every 8 hours aligned to Binance funding windows.
+    Returns summary of accruals.
+    """
+    summary = {"positions_updated": 0, "total_accrued": 0.0, "errors": []}
+    try:
+        from bahamut.training.engine import _load_positions, _get_redis
+        from bahamut.execution.binance_futures import SYMBOL_MAP
+
+        positions = _load_positions()
+        crypto_positions = [p for p in positions
+                           if getattr(p, "asset_class", "") == "crypto"
+                           and getattr(p, "execution_platform", "")
+                           in ("binance", "binance_futures")]
+
+        if not crypto_positions:
+            return summary
+
+        for pos in crypto_positions:
+            try:
+                symbol = SYMBOL_MAP.get(pos.asset, pos.asset.replace("USD", "USDT"))
+                rate = get_funding_rate(pos.asset)
+                if rate is None or rate == 0:
+                    continue
+
+                notional = abs(pos.size * pos.current_price)
+                # Positive rate: longs pay shorts
+                if pos.direction == "LONG":
+                    cost = notional * rate
+                else:
+                    cost = -notional * rate
+
+                current = getattr(pos, "funding_accrued", 0) or 0
+                new_total = round(current + cost, 6)
+
+                # Persist to Redis
+                r = _get_redis()
+                if r:
+                    pos_key = f"bahamut:training_pos:{pos.position_id}"
+                    r.hset(pos_key, "funding_accrued", str(new_total))
+
+                # Persist to DB
+                from bahamut.database import sync_engine
+                from sqlalchemy import text
+                with sync_engine.connect() as conn:
+                    conn.execute(text(
+                        "UPDATE training_positions SET funding_accrued = :fa "
+                        "WHERE position_id = :pid"
+                    ), {"fa": new_total, "pid": pos.position_id})
+                    conn.commit()
+
+                summary["positions_updated"] += 1
+                summary["total_accrued"] += cost
+                logger.info("funding_accrued",
+                            asset=pos.asset, direction=pos.direction,
+                            rate=rate, cost=round(cost, 4),
+                            total_accrued=new_total)
+            except Exception as e:
+                summary["errors"].append(f"{pos.asset}: {str(e)[:80]}")
+
+    except Exception as e:
+        summary["errors"].append(f"global: {str(e)[:100]}")
+        logger.error("funding_accrual_failed", error=str(e)[:200])
+
+    return summary

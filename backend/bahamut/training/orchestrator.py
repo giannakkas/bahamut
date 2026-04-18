@@ -450,6 +450,28 @@ def run_training_cycle():
     except Exception as e:
         logger.warning("per_strategy_dd_compute_failed", error=str(e)[:100])
 
+    # Phase 8: Funding rate accrual for perpetual futures (every ~8 hours)
+    try:
+        from bahamut.training.engine import _get_redis
+        _fr_redis = _get_redis()
+        _run_funding = False
+        if _fr_redis:
+            _last_funding = _fr_redis.get("bahamut:funding:last_accrual_ts")
+            if not _last_funding or (time.time() - float(_last_funding)) >= 28800:  # 8 hours
+                _run_funding = True
+        if _run_funding:
+            from bahamut.execution.funding_rate import accrue_funding_for_all_positions
+            _fr_result = accrue_funding_for_all_positions()
+            if _fr_redis:
+                _fr_redis.setex("bahamut:funding:last_accrual_ts", 86400,
+                                str(time.time()))
+            if _fr_result["positions_updated"] > 0:
+                logger.info("funding_accrual_complete",
+                            positions=_fr_result["positions_updated"],
+                            total_cost=round(_fr_result["total_accrued"], 4))
+    except Exception as e:
+        logger.warning("funding_accrual_cycle_failed", error=str(e)[:100])
+
     return {
         "status": "OK",
         "processed": processed,
