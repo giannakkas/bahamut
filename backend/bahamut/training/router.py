@@ -3699,19 +3699,18 @@ async def market_intelligence():
     try:
         from bahamut.intelligence.market_intelligence import build_market_intelligence_snapshot
 
-        # Fire Opus analysis in background (non-blocking — do NOT await)
+        # Refresh AI posture if cache is empty (sync — DeepSeek/Gemini, fast)
         try:
             from bahamut.intelligence.ai_market_analyst import call_opus_analysis, get_cached_analysis
             from bahamut.sentiment.gate import get_full_sentiment
             if not get_cached_analysis():
                 _sent = get_full_sentiment()
                 snap_pre = build_market_intelligence_snapshot()
-                # Fire and forget — response returns immediately
-                asyncio.ensure_future(call_opus_analysis(
+                call_opus_analysis(
                     sentiment=_sent,
                     headlines=snap_pre.get("headline_context", []),
                     events=snap_pre.get("event_context", []),
-                ))
+                )
         except Exception:
             pass
 

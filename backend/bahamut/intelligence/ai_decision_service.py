@@ -35,7 +35,7 @@ def get_ai_decision(
       'stale'          — stale Opus posture (60s-5min old; Opus call failed
                          on last try, using last good)
       'fallback_rules' — no Opus cache; derived from sentiment rules
-      'disabled'       — ANTHROPIC_API_KEY not set; pure rules
+      'disabled'       — No AI API keys set (DEEPSEEK/GEMINI); pure rules
 
     Downstream selector can elect to degrade gracefully when ai_source is
     stale or fallback_rules (e.g. soften penalties, widen thresholds).
@@ -124,8 +124,8 @@ def get_ai_decision(
 
     # Map ai_source to the legacy _source string for existing callers
     legacy_source_map = {
-        "fresh": "opus-4.6",
-        "stale": "opus-4.6-stale",
+        "fresh": "deepseek/gemini",
+        "stale": "deepseek/gemini-stale",
         "fallback_rules": "rule-based",
         "disabled": "rule-based-disabled",
     }

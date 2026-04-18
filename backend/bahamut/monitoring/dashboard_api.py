@@ -63,6 +63,16 @@ def _get_production_health() -> dict:
     except Exception:
         result["latency_p95_binance_ms"] = -1
         result["latency_p95_alpaca_ms"] = -1
+    try:
+        from bahamut.intelligence.ai_market_analyst import get_analysis_status
+        _ai_status = get_analysis_status()
+        result["ai_provider_active"] = _ai_status.get("ai_provider_active", "none")
+        result["ai_daily_cost_usd"] = _ai_status.get("ai_daily_cost_usd", 0)
+        result["ai_daily_cost_cap_usd"] = _ai_status.get("ai_daily_cost_cap_usd", 0.75)
+    except Exception:
+        result["ai_provider_active"] = "none"
+        result["ai_daily_cost_usd"] = 0
+        result["ai_daily_cost_cap_usd"] = 0.75
     return result
 
 

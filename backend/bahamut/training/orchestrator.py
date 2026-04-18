@@ -161,6 +161,30 @@ def run_training_cycle():
     except Exception as e:
         logger.debug("adaptive_news_update_failed", error=str(e)[:80])
 
+    # AI posture refresh — DeepSeek primary, Gemini fallback
+    # Fixes: previously only called from web handler (Uvicorn), never from Celery.
+    # Now called once per cycle in the worker process, cached in Redis cross-process.
+    try:
+        from bahamut.intelligence.ai_market_analyst import call_opus_analysis
+        from bahamut.sentiment.gate import get_full_sentiment
+        _ai_sent = get_full_sentiment()
+        _ai_events = []
+        try:
+            from bahamut.intelligence.news_cache import get_cached_news_data
+            _cached_global = get_cached_news_data("_global")
+            if _cached_global:
+                _ai_events = _cached_global.get("events", [])
+        except Exception:
+            pass
+        _ai_result = call_opus_analysis(
+            sentiment=_ai_sent, headlines=[], events=_ai_events)
+        if _ai_result:
+            logger.info("training_ai_posture_refreshed",
+                        posture=_ai_result.get("posture"),
+                        provider=_ai_result.get("_provider", "unknown"))
+    except Exception as e:
+        logger.debug("training_ai_posture_refresh_failed", error=str(e)[:80])
+
     # Decrement pattern suppression timers
     try:
         from bahamut.training.context_gate import decrement_suppression_cycles
