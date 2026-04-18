@@ -298,9 +298,10 @@ async def health_check():
 
     # Circuit breakers (per-platform)
     try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        cb_status = circuit_breaker.get_status()
-        checks["circuit_breaker"] = cb_status["state"] == "CLOSED"
+        from bahamut.execution.circuit_breaker import circuit_breaker_binance, circuit_breaker_alpaca
+        bin_ok = circuit_breaker_binance.get_status()["state"] == "CLOSED"
+        alp_ok = circuit_breaker_alpaca.get_status()["state"] == "CLOSED"
+        checks["circuit_breaker"] = bin_ok and alp_ok
     except Exception:
         checks["circuit_breaker"] = True
 
