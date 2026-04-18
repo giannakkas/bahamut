@@ -702,6 +702,25 @@ def open_training_position(
 
     _original_risk_amount = risk_amount  # Preserve for composite floor check
 
+    # ── Volatility-targeted sizing ──
+    # Scale risk by inverse realized vol: high-vol assets get smaller positions,
+    # low-vol assets get larger. Target = 30% annualized vol.
+    try:
+        from bahamut.features.indicators import get_realized_vol
+        rv = get_realized_vol(asset, lookback_days=30)
+        if rv > 0:
+            _VOL_TARGET = 0.30
+            vol_scalar = min(1.5, max(0.3, _VOL_TARGET / rv))
+            if abs(vol_scalar - 1.0) > 0.05:  # only apply if material
+                risk_amount = round(risk_amount * vol_scalar, 2)
+                _original_risk_amount = risk_amount  # update floor reference
+                logger.info("vol_targeted_sizing",
+                            asset=asset, realized_vol=round(rv, 3),
+                            target=_VOL_TARGET, scalar=round(vol_scalar, 2),
+                            scaled_risk=round(risk_amount, 2))
+    except Exception:
+        pass
+
     # ═══════════════════════════════════════════
     # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
     # Single choke point every trade must pass through. Strategy.evaluate(),

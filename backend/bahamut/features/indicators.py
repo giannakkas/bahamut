@@ -312,3 +312,31 @@ def _stochastic(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
     d = float(np.mean(k_values[-d_period:])) if len(k_values) >= d_period else k
 
     return round(k, 4), round(d, 4)
+
+
+def get_realized_vol(asset: str, lookback_days: int = 30) -> float:
+    """Annualized realized volatility from daily closes.
+
+    Returns 0 if insufficient data or on error.
+    Used for vol-targeted position sizing.
+    """
+    try:
+        from bahamut.data.live_data import get_candles
+        import math
+        candles = get_candles(asset, "1d", limit=lookback_days + 1)
+        if not candles or len(candles) < lookback_days:
+            return 0
+        closes = [float(c["close"]) for c in candles if float(c.get("close", 0)) > 0]
+        if len(closes) < 2:
+            return 0
+        rets = [math.log(closes[i] / closes[i - 1])
+                for i in range(1, len(closes))
+                if closes[i - 1] > 0]
+        if not rets:
+            return 0
+        mean = sum(rets) / len(rets)
+        var = sum((r - mean) ** 2 for r in rets) / len(rets)
+        daily_vol = math.sqrt(var)
+        return daily_vol * math.sqrt(365)  # annualized for crypto (365-day)
+    except Exception:
+        return 0
