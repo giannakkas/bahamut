@@ -191,6 +191,92 @@ def close_long(asset: str, quantity: float) -> dict | None:
     return place_market_order(asset, "SELL", quantity, reduce_only=True)
 
 
+def cancel_order(symbol: str, order_id: str) -> dict | None:
+    """Cancel a single order on Binance Futures by orderId."""
+    if not _configured():
+        return None
+    try:
+        params = _sign({"symbol": symbol, "orderId": order_id})
+        r = httpx.delete(f"{BASE_URL}/fapi/v1/order", params=params,
+                         headers=_headers(), timeout=5)
+        data = r.json()
+        if r.status_code == 200:
+            logger.info("binance_order_cancelled", symbol=symbol, order_id=order_id)
+            return data
+        logger.warning("binance_cancel_failed", symbol=symbol,
+                       order_id=order_id, status=r.status_code,
+                       body=str(data)[:200])
+        return {"error": str(data)}
+    except Exception as e:
+        logger.warning("binance_cancel_exception", symbol=symbol,
+                       order_id=order_id, error=str(e)[:100])
+        return {"error": str(e)}
+
+
+def place_bracket_orders(asset: str, side: str, quantity: float,
+                         sl_price: float, tp_price: float,
+                         entry_client_order_id: str) -> dict:
+    """Place SL + TP orders on Binance Futures as broker-side brackets.
+
+    After a market fill, places:
+      - STOP_MARKET at sl_price with reduceOnly (stop-loss)
+      - TAKE_PROFIT_MARKET at tp_price with reduceOnly (take-profit)
+
+    Both use closePosition=true so they close the entire position.
+    Both use MARK_PRICE to avoid wicks triggering on last price.
+
+    Returns dict with 'sl_order' and 'tp_order' containing broker responses.
+    """
+    if not _configured():
+        return {"sl_order": {"error": "not_configured"},
+                "tp_order": {"error": "not_configured"}}
+
+    close_side = "SELL" if side == "BUY" else "BUY"
+    symbol = _to_symbol(asset)
+
+    result = {"sl_order": {}, "tp_order": {}}
+
+    # Stop-loss
+    try:
+        sl_params = _sign({
+            "symbol": symbol, "side": close_side, "type": "STOP_MARKET",
+            "stopPrice": f"{sl_price:.6f}", "closePosition": "true",
+            "reduceOnly": "true", "workingType": "MARK_PRICE",
+            "newClientOrderId": f"{entry_client_order_id}_sl",
+        })
+        sl_resp = httpx.post(f"{BASE_URL}/fapi/v1/order", params=sl_params,
+                             headers=_headers(), timeout=10)
+        result["sl_order"] = sl_resp.json()
+        if sl_resp.status_code != 200:
+            logger.error("binance_bracket_sl_failed", asset=asset,
+                         status=sl_resp.status_code,
+                         body=str(result["sl_order"])[:200])
+    except Exception as e:
+        result["sl_order"] = {"error": str(e)[:200]}
+        logger.error("binance_bracket_sl_exception", asset=asset, error=str(e)[:100])
+
+    # Take-profit
+    try:
+        tp_params = _sign({
+            "symbol": symbol, "side": close_side, "type": "TAKE_PROFIT_MARKET",
+            "stopPrice": f"{tp_price:.6f}", "closePosition": "true",
+            "reduceOnly": "true", "workingType": "MARK_PRICE",
+            "newClientOrderId": f"{entry_client_order_id}_tp",
+        })
+        tp_resp = httpx.post(f"{BASE_URL}/fapi/v1/order", params=tp_params,
+                             headers=_headers(), timeout=10)
+        result["tp_order"] = tp_resp.json()
+        if tp_resp.status_code != 200:
+            logger.error("binance_bracket_tp_failed", asset=asset,
+                         status=tp_resp.status_code,
+                         body=str(result["tp_order"])[:200])
+    except Exception as e:
+        result["tp_order"] = {"error": str(e)[:200]}
+        logger.error("binance_bracket_tp_exception", asset=asset, error=str(e)[:100])
+
+    return result
+
+
 def get_positions() -> list[dict]:
     """Get all open futures positions."""
     if not _configured():

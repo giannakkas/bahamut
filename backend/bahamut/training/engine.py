@@ -121,6 +121,10 @@ class TrainingPosition:
     # propagate the mode (so we never reject something we couldn't classify).
     data_mode: str = "live"
 
+    # ── Broker-side bracket orders (SL/TP placed on exchange after fill)
+    bracket_sl_order_id: str = ""
+    bracket_tp_order_id: str = ""
+
     @property
     def unrealized_pnl(self):
         if self.direction == "LONG":
@@ -1132,6 +1136,26 @@ def open_training_position(
             except Exception:
                 pass
 
+            # ── Broker-side bracket orders (SL/TP on exchange) ──
+            if pos.execution_platform in ("binance", "binance_futures") and asset_class == "crypto":
+                try:
+                    from bahamut.execution.binance_futures import place_bracket_orders
+                    _side = "BUY" if direction == "LONG" else "SELL"
+                    _brackets = place_bracket_orders(
+                        asset=asset, side=_side, quantity=pos.size,
+                        sl_price=pos.stop_price, tp_price=pos.tp_price,
+                        entry_client_order_id=pos.exchange_order_id or str(_order_intent_id or ""),
+                    )
+                    pos.bracket_sl_order_id = str(_brackets.get("sl_order", {}).get("orderId", ""))
+                    pos.bracket_tp_order_id = str(_brackets.get("tp_order", {}).get("orderId", ""))
+                    logger.info("binance_brackets_placed",
+                                asset=asset, sl=pos.stop_price, tp=pos.tp_price,
+                                sl_id=pos.bracket_sl_order_id,
+                                tp_id=pos.bracket_tp_order_id)
+                except Exception as _br_err:
+                    logger.error("binance_bracket_placement_failed",
+                                 asset=asset, error=str(_br_err)[:200])
+
         # ── Wire OrderManager state machine ──
         if _order_intent_id:
             try:
@@ -1482,6 +1506,22 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 entry_slippage_abs=pos.slippage_abs,
                 entry_lifecycle=pos.order_lifecycle,
             )
+
+            # ── Cancel broker-side brackets before closing ──
+            if getattr(pos, "bracket_sl_order_id", "") or getattr(pos, "bracket_tp_order_id", ""):
+                try:
+                    from bahamut.execution.binance_futures import cancel_order, SYMBOL_MAP
+                    _sym = SYMBOL_MAP.get(pos.asset, pos.asset.replace("USD", "USDT"))
+                    if pos.bracket_sl_order_id:
+                        cancel_order(_sym, pos.bracket_sl_order_id)
+                    if pos.bracket_tp_order_id:
+                        cancel_order(_sym, pos.bracket_tp_order_id)
+                    logger.info("binance_brackets_cancelled",
+                                asset=pos.asset, sl_id=pos.bracket_sl_order_id,
+                                tp_id=pos.bracket_tp_order_id)
+                except Exception as _bc_err:
+                    logger.warning("binance_bracket_cancel_failed",
+                                   asset=pos.asset, error=str(_bc_err)[:100])
 
             # ── BROKER-FIRST: execute close BEFORE removing local position ──
             # If broker close fails, position stays open locally so
