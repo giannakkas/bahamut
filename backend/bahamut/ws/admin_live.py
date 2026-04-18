@@ -158,6 +158,14 @@ async def admin_live_endpoint(ws: WebSocket, token: str = Query(None)):
         await ws.close(code=4003, reason="Not authorized (admin required)")
         return
 
+    # Require admin or super_admin role — valid trader JWTs are not enough
+    user_role = user.get("role", "trader")
+    if user_role not in ("admin", "super_admin"):
+        logger.warning("ws_admin_rejected_non_admin_role",
+                       sub=user.get("sub"), role=user_role)
+        await ws.close(code=4003, reason="Admin role required")
+        return
+
     await admin_ws.connect(ws)
 
     try:
