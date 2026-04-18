@@ -251,9 +251,22 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
             logger.error("binance_bracket_sl_failed", asset=asset,
                          status=sl_resp.status_code,
                          body=str(result["sl_order"])[:200])
+            try:
+                from bahamut.monitoring.telegram import send_alert
+                send_alert(f"⚠️ BRACKET SL FAILED: {asset} {close_side} "
+                           f"sl={sl_price} — position is UNPROTECTED at broker level. "
+                           f"Relying on client-side SL only.")
+            except Exception:
+                pass
     except Exception as e:
         result["sl_order"] = {"error": str(e)[:200]}
         logger.error("binance_bracket_sl_exception", asset=asset, error=str(e)[:100])
+        try:
+            from bahamut.monitoring.telegram import send_alert
+            send_alert(f"⚠️ BRACKET SL EXCEPTION: {asset} — {str(e)[:100]}. "
+                       f"Position is UNPROTECTED at broker level.")
+        except Exception:
+            pass
 
     # Take-profit
     try:
@@ -270,9 +283,21 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
             logger.error("binance_bracket_tp_failed", asset=asset,
                          status=tp_resp.status_code,
                          body=str(result["tp_order"])[:200])
+            try:
+                from bahamut.monitoring.telegram import send_alert
+                send_alert(f"⚠️ BRACKET TP FAILED: {asset} {close_side} "
+                           f"tp={tp_price} — position has no broker-side take-profit.")
+            except Exception:
+                pass
     except Exception as e:
         result["tp_order"] = {"error": str(e)[:200]}
         logger.error("binance_bracket_tp_exception", asset=asset, error=str(e)[:100])
+        try:
+            from bahamut.monitoring.telegram import send_alert
+            send_alert(f"⚠️ BRACKET TP EXCEPTION: {asset} — {str(e)[:100]}. "
+                       f"Position has no broker-side take-profit.")
+        except Exception:
+            pass
 
     return result
 

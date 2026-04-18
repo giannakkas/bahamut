@@ -1176,6 +1176,14 @@ def open_training_position(
                                     asset=asset, sl=pos.stop_price, tp=pos.tp_price,
                                     sl_id=pos.bracket_sl_order_id,
                                     tp_id=pos.bracket_tp_order_id)
+                        if not pos.bracket_sl_order_id or not pos.bracket_tp_order_id:
+                            try:
+                                from bahamut.monitoring.telegram import send_alert
+                                send_alert(f"⚠️ PARTIAL BRACKET COVERAGE: {asset} {direction} "
+                                           f"sl_id={pos.bracket_sl_order_id or 'MISSING'} "
+                                           f"tp_id={pos.bracket_tp_order_id or 'MISSING'}")
+                            except Exception:
+                                pass
                     except Exception as _br_err:
                         logger.error("binance_bracket_placement_failed",
                                      asset=asset, error=str(_br_err)[:200])
