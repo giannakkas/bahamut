@@ -34,8 +34,21 @@ _shutdown_at = 0.0
 
 
 def is_shutting_down() -> bool:
-    """Check if the system is in shutdown mode. Use this to block new trades."""
-    return _shutting_down
+    """Check if the system is in shutdown mode. Use this to block new trades.
+    Checks process-local flag first, then Redis marker for cross-worker visibility."""
+    if _shutting_down:
+        return True
+    try:
+        import redis, os
+        r = redis.from_url(
+            os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+            socket_connect_timeout=1,
+        )
+        if r.get("bahamut:shutdown_in_progress"):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _shutdown_handler(signum, frame):
