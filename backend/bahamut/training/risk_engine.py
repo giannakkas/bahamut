@@ -251,6 +251,12 @@ def get_risk_engine_state(force_refresh: bool = False) -> dict:
         block_new_trades = True
         mode = "BLOCKED"
         recommendations.append(f"Daily loss ${abs(min(0, daily_total)):.0f} exceeds limit — new trades blocked")
+        try:
+            from bahamut.monitoring.telegram import send_alert
+            send_alert(f"🛑 DAILY LOSS BRAKE HIT: ${abs(min(0, daily_total)):.0f} "
+                       f"({daily_dd_pct:.1f}%) — all new trades blocked")
+        except Exception:
+            pass
     elif daily_dd_pct >= DAILY_LOSS_REDUCED_PCT:
         triggered.append("daily_loss_reduced")
         size_multiplier = min(size_multiplier, 0.5)
@@ -264,6 +270,12 @@ def get_risk_engine_state(force_refresh: bool = False) -> dict:
         block_new_trades = True
         mode = "BLOCKED"
         recommendations.append(f"Portfolio drawdown {eq['dd_pct']:.1f}% exceeds {MAX_PORTFOLIO_DD_PCT}% limit")
+        try:
+            from bahamut.monitoring.telegram import send_alert
+            send_alert(f"🛑 PORTFOLIO DRAWDOWN BLOCK: {eq['dd_pct']:.1f}% "
+                       f"exceeds {MAX_PORTFOLIO_DD_PCT}% — all new trades blocked")
+        except Exception:
+            pass
     elif eq["dd_pct"] >= REDUCED_DD_PCT:
         triggered.append("portfolio_dd_reduced")
         size_multiplier = min(size_multiplier, 0.5)
