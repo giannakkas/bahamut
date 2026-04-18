@@ -572,7 +572,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             # 15m candles oscillate and look like RANGE even during crashes.
             # 4H gives the true macro picture (CRASH/TREND/RANGE).
             from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
-            candles_4h = get_candles(asset, interval="4h", limit=100)
+            candles_4h = get_candles(asset, interval="4h", limit=250)
             if candles_4h and len(candles_4h) >= 60:
                 ind_4h = binance_ind(candles_4h)
                 # Pass MORE candles (was 15) so the detector can build a true
@@ -1060,7 +1060,7 @@ def _make_bar(candle: dict) -> dict:
 CRYPTO_INTERVAL = "15m"
 CRYPTO_CANDLE_COUNT = 300  # 300 × 15m = ~75 hours — ensures EMA-200 is fully seeded
 
-def _fetch_training_candles(asset: str, count: int = 100) -> list[dict]:
+def _fetch_training_candles(asset: str, count: int = 250) -> list[dict]:
     """Fetch candles for a training asset.
     Crypto → Binance public API (free, 15m candles)
     Stocks → Twelve Data (4H candles, metered)

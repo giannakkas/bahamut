@@ -1197,7 +1197,7 @@ async def _build_diagnostics():
         # Sample top 5 crypto + check sentiment override
         for asset in TRAINING_CRYPTO[:5]:
             try:
-                candles_4h = get_candles(asset, interval="4h", limit=100)
+                candles_4h = get_candles(asset, interval="4h", limit=250)
                 if candles_4h and len(candles_4h) >= 60:
                     ind_4h = binance_ind(candles_4h)
                     # Pass full candle list so detector can build true EMA slope.
@@ -1524,7 +1524,7 @@ async def _build_diagnostics():
             for ca in TRAINING_CRYPTO[:10]:
                 try:
                     from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
-                    c4h = get_candles(ca, interval="4h", limit=100)
+                    c4h = get_candles(ca, interval="4h", limit=250)
                     if c4h and len(c4h) >= 30:
                         i4h = binance_ind(c4h)
                         close_4h = i4h.get("close", 0)
@@ -2263,7 +2263,7 @@ async def _build_diagnostics():
             regime_audit = []
             for ca in TRAINING_CRYPTO[:5]:
                 try:
-                    c4h = get_candles(ca, interval="4h", limit=100)
+                    c4h = get_candles(ca, interval="4h", limit=250)
                     if c4h and len(c4h) >= 60:
                         i4h = binance_ind(c4h)
                         # Pass full candle list so detector computes true EMA50 slope.
