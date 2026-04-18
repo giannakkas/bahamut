@@ -693,6 +693,8 @@ def open_training_position(
     except Exception:
         pass
 
+    _original_risk_amount = risk_amount  # Preserve for composite floor check
+
     # ═══════════════════════════════════════════
     # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
     # Single choke point every trade must pass through. Strategy.evaluate(),
@@ -1004,6 +1006,19 @@ def open_training_position(
                         source=ai_dec.get("_source", "unknown"))
     except Exception:
         pass
+
+    # Floor guard: skip trades where composite sizing shrinks below viability
+    # Typical taker fee is 0.04% → round-trip 0.08%. A trade risking less than
+    # 10% of originally requested risk is not worth opening.
+    _MIN_RISK_FRACTION = 0.10
+    if _original_risk_amount > 0 and risk_amount / _original_risk_amount < _MIN_RISK_FRACTION:
+        logger.info("training_position_rejected_composite_floor",
+                    asset=asset, strategy=strategy,
+                    final_risk=round(risk_amount, 2),
+                    original_risk=round(_original_risk_amount, 2),
+                    ratio=round(risk_amount / _original_risk_amount, 3))
+        _increment_counter(_get_redis(), "bahamut:counters:composite_floor_rejects")
+        return None
 
     # Calculate SL/TP prices
     if direction == "LONG":
