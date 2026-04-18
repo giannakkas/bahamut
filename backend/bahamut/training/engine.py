@@ -629,6 +629,24 @@ def open_training_position(
         sig_data = f"{asset}:{strategy}:{direction}:{entry_price:.2f}:{trigger_reason}"
         signal_id = hashlib.sha256(sig_data.encode()).hexdigest()[:24]
 
+    # ═══════════════════════════════════════════
+    # PRODUCTION: Cross-worker execution lock
+    # Prevents two workers from opening the same trade simultaneously.
+    # Lock is keyed on signal_id and has 60s TTL as safety net.
+    # DB UNIQUE on signal_id in order_intents is the backup.
+    # ═══════════════════════════════════════════
+    _lock_held_signal = None
+    try:
+        from bahamut.execution.order_manager import OrderManager as _OMLock
+        if not _OMLock().acquire_execution_lock(signal_id, ttl=60):
+            logger.info("training_position_rejected_exec_lock",
+                        asset=asset, strategy=strategy, signal_id=signal_id)
+            return None
+        _lock_held_signal = signal_id
+    except Exception as _lock_err:
+        logger.debug("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
+        # Proceed — DB UNIQUE on signal_id still prevents duplicates
+
     _order_intent_id = None
     try:
         from bahamut.execution.order_manager import OrderManager
@@ -1193,6 +1211,14 @@ def open_training_position(
         invalidate_risk_cache()
     except Exception:
         pass
+
+    # Release execution lock before returning
+    if _lock_held_signal:
+        try:
+            from bahamut.execution.order_manager import OrderManager as _OMRel
+            _OMRel().release_execution_lock(_lock_held_signal)
+        except Exception:
+            pass
 
     return pos
 # ═══════════════════════════════════════════
