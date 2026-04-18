@@ -291,6 +291,15 @@ def run_training_cycle():
                                asset=sig.asset, asset_class=sig.asset_class,
                                source=risk_source,
                                reason=risk_info.get("reason", ""))
+                try:
+                    from bahamut.training.rejection_tracker import record_rejection
+                    record_rejection(
+                        asset=sig.asset, strategy=sig.strategy, direction=sig.direction,
+                        signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{int(time.time())}",
+                        reason_code="broker_unavailable",
+                        reason_detail=f"asset_class={sig.asset_class}, source={risk_source}")
+                except Exception:
+                    pass
                 continue
 
             logger.info("training_execute_attempting",

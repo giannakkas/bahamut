@@ -648,6 +648,13 @@ def open_training_position(
         if not _OMLock().acquire_execution_lock(signal_id, ttl=60):
             logger.info("training_position_rejected_exec_lock",
                         asset=asset, strategy=strategy, signal_id=signal_id)
+            try:
+                from bahamut.training.rejection_tracker import record_rejection
+                record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                 signal_id=signal_id, reason_code="exec_lock_held",
+                                 reason_detail="another worker holds signal lock")
+            except Exception:
+                pass
             return None
         _lock_held_signal = signal_id
     except Exception as _lock_err:
@@ -994,6 +1001,13 @@ def open_training_position(
                     logger.info("training_position_rejected_strategy_dd",
                                 asset=asset, strategy=strategy, dd_pct=_strat_dd)
                     _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
+                    try:
+                        from bahamut.training.rejection_tracker import record_rejection
+                        record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                         signal_id=signal_id, reason_code="strategy_dd_block",
+                                         reason_detail=f"{strategy} dd_pct={_strat_dd:.1f}%")
+                    except Exception:
+                        pass
                     return None
         except Exception:
             pass
@@ -1063,6 +1077,13 @@ def open_training_position(
                         original_risk=round(_original_risk_amount, 2),
                         ratio=round(risk_amount / _original_risk_amount, 3))
             _increment_counter(_get_redis(), "bahamut:counters:composite_floor_rejects")
+            try:
+                from bahamut.training.rejection_tracker import record_rejection
+                record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                 signal_id=signal_id, reason_code="composite_floor",
+                                 reason_detail=f"risk shrunk to {risk_amount:.2f} of {_original_risk_amount:.2f}")
+            except Exception:
+                pass
             return None
 
         # Calculate SL/TP prices
@@ -1226,6 +1247,13 @@ def open_training_position(
                                status=_status,
                                error=exec_result.get("error", "")[:100])
                 _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+                try:
+                    from bahamut.training.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="execution_error",
+                                     reason_detail=f"status={_status}, platform_actual={pos.execution_platform}")
+                except Exception:
+                    pass
                 return None
             # Final guard: if broker was expected but platform is still internal, abort
             if _expected_platform != "internal" and pos.execution_platform == "internal":
@@ -1234,6 +1262,13 @@ def open_training_position(
                                expected_platform=_expected_platform,
                                actual_platform="internal", status=_status)
                 _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
+                try:
+                    from bahamut.training.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="phantom_internal_abort",
+                                     reason_detail="broker expected but fell back to internal")
+                except Exception:
+                    pass
                 return None
         except Exception as e:
             # Mark order as SUBMISSION_UNKNOWN before aborting — the broker
@@ -1250,6 +1285,13 @@ def open_training_position(
                                asset=asset, expected_platform=_expected_platform,
                                error=str(e)[:100])
                 _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+                try:
+                    from bahamut.training.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="execution_exception",
+                                     reason_detail=str(e)[:200])
+                except Exception:
+                    pass
                 return None
             logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
 
