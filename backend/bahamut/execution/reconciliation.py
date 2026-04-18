@@ -292,7 +292,7 @@ def _reconcile_binance() -> dict:
             try:
                 from bahamut.execution.binance_futures import get_trades, SYMBOL_MAP
                 symbol = SYMBOL_MAP.get(asset, asset.replace("USD", "USDT"))
-                trades = get_trades(symbol=symbol, limit=20)
+                trades = get_trades(symbols=[symbol], limit=20)
                 if trades:
                     # Look for a closing trade (opposite side)
                     close_side = "SELL" if on_local["direction"] == "LONG" else "BUY"
