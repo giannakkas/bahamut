@@ -22,48 +22,53 @@ def check_sentiment(asset: str, direction: str, asset_class: str) -> tuple[bool,
     """Check if a trade should be blocked by sentiment.
 
     Returns (should_block, reason).
-    Crypto LONGs: Fear & Greed Index + CryptoPanic
-    Stock LONGs: CNN Fear & Greed Index
+    Crypto LONGs: blocked on fear. Crypto SHORTs: blocked on extreme greed.
+    Stock LONGs: blocked on crash. Stock SHORTs: blocked on extreme greed.
     """
-    if direction != "LONG":
+    if direction not in ("LONG", "SHORT"):
         return False, ""
 
-    # ── Crypto LONGs ──
     if asset_class == "crypto":
-        # Layer 1: Fear & Greed Index (primary, free)
         try:
             from bahamut.sentiment.fear_greed import get_fear_greed
             fng = get_fear_greed()
             value = fng.get("value", 50)
             classification = fng.get("classification", "Neutral")
-
-            if value <= 24:
-                return True, f"Crypto Fear & Greed: {value} ({classification}) — extreme fear, all crypto LONGs blocked"
-            if value <= 39:
-                return True, f"Crypto Fear & Greed: {value} ({classification}) — fear market, crypto LONGs blocked"
+            if direction == "LONG":
+                if value <= 24:
+                    return True, f"Crypto Fear & Greed: {value} ({classification}) — extreme fear, all crypto LONGs blocked"
+                if value <= 39:
+                    return True, f"Crypto Fear & Greed: {value} ({classification}) — fear market, crypto LONGs blocked"
+            else:  # SHORT
+                if value >= 80:
+                    return True, f"Crypto Fear & Greed: {value} ({classification}) — extreme greed, all crypto SHORTs blocked"
+                if value >= 76:
+                    return True, f"Crypto Fear & Greed: {value} ({classification}) — greed market, crypto SHORTs blocked"
         except Exception as e:
             logger.warning("sentiment_fng_check_failed", error=str(e)[:50])
 
-        # Layer 2: CryptoPanic (secondary, per-asset)
-        try:
-            from bahamut.sentiment.cryptopanic import should_block_long, _configured
-            if _configured():
-                blocked, reason = should_block_long(asset)
-                if blocked:
-                    return True, reason
-        except Exception as e:
-            logger.warning("sentiment_cryptopanic_check_failed", error=str(e)[:50])
+        if direction == "LONG":
+            try:
+                from bahamut.sentiment.cryptopanic import should_block_long, _configured
+                if _configured():
+                    blocked, reason = should_block_long(asset)
+                    if blocked:
+                        return True, reason
+            except Exception as e:
+                logger.warning("sentiment_cryptopanic_check_failed", error=str(e)[:50])
 
-    # ── Stock LONGs ──
     elif asset_class == "stock":
         try:
             from bahamut.sentiment.cnn_fear_greed import get_stock_fear_greed
             cnn = get_stock_fear_greed()
             value = cnn.get("value", 50)
             classification = cnn.get("classification", "Neutral")
-
-            if value <= 10:
-                return True, f"CNN Fear & Greed: {value} ({classification}) — market crash, stock LONGs blocked"
+            if direction == "LONG":
+                if value <= 10:
+                    return True, f"CNN Fear & Greed: {value} ({classification}) — market crash, stock LONGs blocked"
+            else:  # SHORT
+                if value >= 90:
+                    return True, f"CNN Fear & Greed: {value} ({classification}) — extreme greed, stock SHORTs blocked"
         except Exception as e:
             logger.warning("sentiment_cnn_check_failed", error=str(e)[:50])
 
