@@ -132,7 +132,7 @@ def persist_snapshot(snapshot: dict):
                 INSERT INTO v7_portfolio_snapshots
                     (timestamp, total_equity, total_realized_pnl, total_unrealized_pnl,
                      total_open_risk, drawdown, sleeve_data)
-                VALUES (:ts, :eq, :rpnl, :upnl, :risk, :dd, :sleeves::jsonb)
+                VALUES (:ts, :eq, :rpnl, :upnl, :risk, :dd, CAST(:sleeves AS jsonb))
             """), {
                 "ts": snapshot.get("timestamp", datetime.now(timezone.utc).isoformat()),
                 "eq": snapshot.get("total_equity", 0),
