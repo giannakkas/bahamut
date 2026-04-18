@@ -654,651 +654,653 @@ def open_training_position(
         logger.debug("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
         # Proceed — DB UNIQUE on signal_id still prevents duplicates
 
-    _order_intent_id = None
+
     try:
-        from bahamut.execution.order_manager import OrderManager
-        mgr = OrderManager()
-        intent = mgr.create_intent(
-            asset=asset, asset_class=asset_class,
-            direction=direction, strategy=strategy,
-            size=risk_amount / max(0.01, entry_price * sl_pct) if sl_pct > 0 else 0,
-            signal_id=signal_id,
-            risk_amount=risk_amount,
-            sl_pct=sl_pct, tp_pct=tp_pct,
-            substrategy=substrategy,
-            intended_price=entry_price,
-        )
-        if intent is None:
-            # Duplicate signal — already processed
-            logger.info("training_position_duplicate_blocked",
-                        asset=asset, strategy=strategy,
-                        signal_id=signal_id)
-            return None
-        _order_intent_id = intent["intent_id"]
-    except Exception as _idmp_err:
-        # OrderManager not available — continue without idempotency
-        # (safe for paper trading, should be fixed for production)
-        logger.debug("order_manager_unavailable",
-                     error=str(_idmp_err)[:100])
+        _order_intent_id = None
+        try:
+            from bahamut.execution.order_manager import OrderManager
+            mgr = OrderManager()
+            intent = mgr.create_intent(
+                asset=asset, asset_class=asset_class,
+                direction=direction, strategy=strategy,
+                size=risk_amount / max(0.01, entry_price * sl_pct) if sl_pct > 0 else 0,
+                signal_id=signal_id,
+                risk_amount=risk_amount,
+                sl_pct=sl_pct, tp_pct=tp_pct,
+                substrategy=substrategy,
+                intended_price=entry_price,
+            )
+            if intent is None:
+                # Duplicate signal — already processed
+                logger.info("training_position_duplicate_blocked",
+                            asset=asset, strategy=strategy,
+                            signal_id=signal_id)
+                return None
+            _order_intent_id = intent["intent_id"]
+        except Exception as _idmp_err:
+            # OrderManager not available — continue without idempotency
+            # (safe for paper trading, should be fixed for production)
+            logger.debug("order_manager_unavailable",
+                         error=str(_idmp_err)[:100])
 
-    # ═══════════════════════════════════════════
-    # Phase 4 Item 12: SYNTHETIC DATA HARD BLOCK
-    # Reject any position computed from synthetic_dev candles when
-    # BAHAMUT_BLOCK_SYNTHETIC=1 (production default). This prevents
-    # learning trust/expectancy on np.random outcomes.
-    # ═══════════════════════════════════════════
-    try:
-        from bahamut.data.live_data import BLOCK_SYNTHETIC
-        if BLOCK_SYNTHETIC and data_mode == "synthetic_dev":
-            logger.error("training_position_synthetic_blocked",
-                         asset=asset, strategy=strategy, direction=direction,
-                         data_mode=data_mode,
-                         reason="BAHAMUT_BLOCK_SYNTHETIC=1 prevents synthetic trades")
-            _increment_counter(_get_redis(),
-                               "bahamut:counters:synthetic_position_blocks")
-            return None
-    except Exception:
-        pass
+        # ═══════════════════════════════════════════
+        # Phase 4 Item 12: SYNTHETIC DATA HARD BLOCK
+        # Reject any position computed from synthetic_dev candles when
+        # BAHAMUT_BLOCK_SYNTHETIC=1 (production default). This prevents
+        # learning trust/expectancy on np.random outcomes.
+        # ═══════════════════════════════════════════
+        try:
+            from bahamut.data.live_data import BLOCK_SYNTHETIC
+            if BLOCK_SYNTHETIC and data_mode == "synthetic_dev":
+                logger.error("training_position_synthetic_blocked",
+                             asset=asset, strategy=strategy, direction=direction,
+                             data_mode=data_mode,
+                             reason="BAHAMUT_BLOCK_SYNTHETIC=1 prevents synthetic trades")
+                _increment_counter(_get_redis(),
+                                   "bahamut:counters:synthetic_position_blocks")
+                return None
+        except Exception:
+            pass
 
-    _original_risk_amount = risk_amount  # Preserve for composite floor check
+        _original_risk_amount = risk_amount  # Preserve for composite floor check
 
-    # ── Volatility-targeted sizing ──
-    # Scale risk by inverse realized vol: high-vol assets get smaller positions,
-    # low-vol assets get larger. Target = 30% annualized vol.
-    try:
-        from bahamut.features.indicators import get_realized_vol
-        rv = get_realized_vol(asset, lookback_days=30)
-        if rv > 0:
-            _VOL_TARGET = 0.30
-            vol_scalar = min(1.5, max(0.3, _VOL_TARGET / rv))
-            if abs(vol_scalar - 1.0) > 0.05:  # only apply if material
-                risk_amount = round(risk_amount * vol_scalar, 2)
-                _original_risk_amount = risk_amount  # update floor reference
-                logger.info("vol_targeted_sizing",
-                            asset=asset, realized_vol=round(rv, 3),
-                            target=_VOL_TARGET, scalar=round(vol_scalar, 2),
-                            scaled_risk=round(risk_amount, 2))
-    except Exception:
-        pass
+        # ── Volatility-targeted sizing ──
+        # Scale risk by inverse realized vol: high-vol assets get smaller positions,
+        # low-vol assets get larger. Target = 30% annualized vol.
+        try:
+            from bahamut.features.indicators import get_realized_vol
+            rv = get_realized_vol(asset, lookback_days=30)
+            if rv > 0:
+                _VOL_TARGET = 0.30
+                vol_scalar = min(1.5, max(0.3, _VOL_TARGET / rv))
+                if abs(vol_scalar - 1.0) > 0.05:  # only apply if material
+                    risk_amount = round(risk_amount * vol_scalar, 2)
+                    _original_risk_amount = risk_amount  # update floor reference
+                    logger.info("vol_targeted_sizing",
+                                asset=asset, realized_vol=round(rv, 3),
+                                target=_VOL_TARGET, scalar=round(vol_scalar, 2),
+                                scaled_risk=round(risk_amount, 2))
+        except Exception:
+            pass
 
-    # ═══════════════════════════════════════════
-    # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
-    # Single choke point every trade must pass through. Strategy.evaluate(),
-    # debug_exploration, and CRASH SHORT all converge here.
-    # Canonical sources: config_assets.TRAINING_SUPPRESS +
-    # Phase 3 Item 7: config_assets.SUBSTRATEGY_SUPPRESS (per substrategy).
-    # ═══════════════════════════════════════════
-    from bahamut.config_assets import TRAINING_SUPPRESS, SUBSTRATEGY_SUPPRESS
-    global_block = TRAINING_SUPPRESS.get("*", set())
-    strat_block = TRAINING_SUPPRESS.get(strategy, set())
-    if asset in global_block or asset in strat_block:
-        logger.info("training_engine_suppressed",
-                    asset=asset, strategy=strategy, direction=direction,
-                    reason="ENGINE_SUPPRESS_MAP")
-        _increment_counter(_get_redis(), "bahamut:counters:engine_suppress_blocks")
-        return None
-    # Phase 3 Item 7 — substrategy block
-    if substrategy and asset in SUBSTRATEGY_SUPPRESS.get(substrategy, set()):
-        logger.info("training_engine_substrategy_suppressed",
-                    asset=asset, strategy=strategy, substrategy=substrategy,
-                    direction=direction, reason="SUBSTRATEGY_SUPPRESS_MAP")
-        _increment_counter(_get_redis(), "bahamut:counters:substrategy_suppress_blocks")
-        return None
-
-    # ── Crash-short specific suppress ──
-    if execution_type == "crash_short":
-        from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
-        if asset in CRASH_SHORT_SUPPRESS:
+        # ═══════════════════════════════════════════
+        # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
+        # Single choke point every trade must pass through. Strategy.evaluate(),
+        # debug_exploration, and CRASH SHORT all converge here.
+        # Canonical sources: config_assets.TRAINING_SUPPRESS +
+        # Phase 3 Item 7: config_assets.SUBSTRATEGY_SUPPRESS (per substrategy).
+        # ═══════════════════════════════════════════
+        from bahamut.config_assets import TRAINING_SUPPRESS, SUBSTRATEGY_SUPPRESS
+        global_block = TRAINING_SUPPRESS.get("*", set())
+        strat_block = TRAINING_SUPPRESS.get(strategy, set())
+        if asset in global_block or asset in strat_block:
             logger.info("training_engine_suppressed",
                         asset=asset, strategy=strategy, direction=direction,
-                        reason="CRASH_SHORT_SUPPRESS_MAP")
-            _increment_counter(_get_redis(), "bahamut:counters:crash_short_suppress_blocks")
+                        reason="ENGINE_SUPPRESS_MAP")
+            _increment_counter(_get_redis(), "bahamut:counters:engine_suppress_blocks")
             return None
-        # Crash-short penalty: halve risk for borderline assets
-        if asset in CRASH_SHORT_PENALIZE:
-            risk_amount = round(risk_amount * 0.5, 2)
-            logger.info("crash_short_penalty_applied",
-                        asset=asset, original_risk=risk_amount * 2,
-                        reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
-
-    # Check position limit (with Redis lock for multi-worker safety)
-    _cap_lock_acquired = False
-    try:
-        r = _get_redis()
-        if r:
-            _cap_lock_acquired = bool(r.set(
-                "bahamut:lock:position_cap_check", "1", nx=True, ex=10
-            ))
-    except Exception:
-        pass
-
-    current_count = get_open_position_count()
-    if current_count >= TRAINING_MAX_POSITIONS:
-        logger.warning("training_position_rejected",
-                       asset=asset, reason="POSITION_LIMIT",
-                       current=current_count, max=TRAINING_MAX_POSITIONS)
-        return None
-
-    # Check no duplicate — two layers:
-    # 1. In-process set for same-cycle race condition
-    # 2. DB positions for cross-cycle dedup
-    _opened_this_cycle: set = getattr(open_training_position, "_opened_this_cycle", set())
-    dedup_key = f"{asset}:{strategy}:{direction}"
-    asset_key = f"ASSET:{asset}"
-    if dedup_key in _opened_this_cycle or asset_key in _opened_this_cycle:
-        logger.warning("training_position_rejected",
-                       asset=asset, reason="DUPLICATE_SAME_CYCLE",
-                       strategy=strategy, direction=direction)
-        return None
-
-    existing = _load_positions()
-    for p in existing:
-        if p.asset == asset:
-            logger.warning("training_position_rejected",
-                           asset=asset, reason="DUPLICATE_ASSET",
-                           strategy=strategy, direction=direction,
-                           existing_strategy=p.strategy, existing_direction=p.direction)
+        # Phase 3 Item 7 — substrategy block
+        if substrategy and asset in SUBSTRATEGY_SUPPRESS.get(substrategy, set()):
+            logger.info("training_engine_substrategy_suppressed",
+                        asset=asset, strategy=strategy, substrategy=substrategy,
+                        direction=direction, reason="SUBSTRATEGY_SUPPRESS_MAP")
+            _increment_counter(_get_redis(), "bahamut:counters:substrategy_suppress_blocks")
             return None
 
-    # Per-asset cooldown: skip if recently closed (avoid repeated entries on same asset)
-    # v5_base gets 2hr cooldown (20-bar hold on 15m = 5hr, so 2hr gap between attempts)
-    # Others get 30min (default)
-    COOLDOWN_BY_STRATEGY = {
-        "v5_base": 14400,       # 4 hours — long-hold strategy needs longer gap
-    }
-    COOLDOWN_DEFAULT = 1800    # 30 minutes
-    try:
-        r = _get_redis()
-        if r:
-            # Check both asset-level and asset+strategy-level cooldowns
-            cooldown_key = f"bahamut:training:cooldown:{asset}"
-            cooldown_key_strat = f"bahamut:training:cooldown:{asset}:{strategy}"
-            if r.exists(cooldown_key) or r.exists(cooldown_key_strat):
-                logger.info("training_position_rejected_cooldown",
+        # ── Crash-short specific suppress ──
+        if execution_type == "crash_short":
+            from bahamut.config_assets import CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE
+            if asset in CRASH_SHORT_SUPPRESS:
+                logger.info("training_engine_suppressed",
                             asset=asset, strategy=strategy, direction=direction,
-                            reason="Asset on cooldown after recent close")
+                            reason="CRASH_SHORT_SUPPRESS_MAP")
+                _increment_counter(_get_redis(), "bahamut:counters:crash_short_suppress_blocks")
                 return None
-    except Exception:
-        pass
+            # Crash-short penalty: halve risk for borderline assets
+            if asset in CRASH_SHORT_PENALIZE:
+                risk_amount = round(risk_amount * 0.5, 2)
+                logger.info("crash_short_penalty_applied",
+                            asset=asset, original_risk=risk_amount * 2,
+                            reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
 
-    # Entry price sanity check — reject obviously wrong prices
-    # (e.g. BTC price leaking into EURUSD)
-    PRICE_SANITY = {
-        "forex": (0.001, 300),         # EURUSD ~1.08, USDJPY ~150
-        "crypto": (0.0001, 200000),    # XRP ~2, BTC ~85K
-        "stock": (1, 100000),          # AAPL ~220, BRK.A ~600K
-        "commodity": (0.5, 15000),     # Gold ~3100, Oil ~70
-        "index": (100, 25000),          # SPX ~5600, IXIC ~17K, DJI ~40K
-    }
-    limits = PRICE_SANITY.get(asset_class, (0, 1000000))
-    if entry_price < limits[0] or entry_price > limits[1]:
-        logger.error("training_position_rejected_bad_price",
-                     asset=asset, asset_class=asset_class,
-                     entry_price=entry_price, limits=limits,
-                     msg="Entry price outside sane range for asset class")
-        return None
+        # Check position limit (with Redis lock for multi-worker safety)
+        _cap_lock_acquired = False
+        try:
+            r = _get_redis()
+            if r:
+                _cap_lock_acquired = bool(r.set(
+                    "bahamut:lock:position_cap_check", "1", nx=True, ex=10
+                ))
+        except Exception:
+            pass
 
-    # Per-strategy position limit (prevent one strategy from hogging all slots)
-    MAX_PER_STRATEGY = 6
-    strat_count = sum(1 for p in existing if p.strategy == strategy)
-    if strat_count >= MAX_PER_STRATEGY:
-        logger.warning("training_position_rejected",
-                       asset=asset, reason="STRATEGY_LIMIT",
-                       strategy=strategy, count=strat_count, max=MAX_PER_STRATEGY)
-        return None
-
-    # Per-strategy-per-class cap (prevent v10 from stacking 5 crypto LONGs in a down market)
-    STRATEGY_CLASS_CAPS = {
-        ("v10_mean_reversion", "crypto"): 2,
-        ("v10_mean_reversion", "stock"): 3,
-        ("v9_breakout", "crypto"): 2,
-    }
-    sc_cap = STRATEGY_CLASS_CAPS.get((strategy, asset_class))
-    if sc_cap:
-        sc_count = sum(1 for p in existing if p.strategy == strategy and p.asset_class == asset_class)
-        if sc_count >= sc_cap:
+        current_count = get_open_position_count()
+        if current_count >= TRAINING_MAX_POSITIONS:
             logger.warning("training_position_rejected",
-                           asset=asset, reason="STRATEGY_CLASS_CAP",
-                           strategy=strategy, asset_class=asset_class,
-                           count=sc_count, max=sc_cap)
+                           asset=asset, reason="POSITION_LIMIT",
+                           current=current_count, max=TRAINING_MAX_POSITIONS)
             return None
 
-    # Stock trades only during US market hours (avoid $0 flat exits)
-    if asset_class == "stock":
-        try:
-            from bahamut.data.live_data import _is_us_market_open
-            if not _is_us_market_open():
-                logger.info("training_position_rejected_market_closed",
-                            asset=asset, strategy=strategy,
-                            reason="US market closed — stock trades blocked outside hours")
+        # Check no duplicate — two layers:
+        # 1. In-process set for same-cycle race condition
+        # 2. DB positions for cross-cycle dedup
+        _opened_this_cycle: set = getattr(open_training_position, "_opened_this_cycle", set())
+        dedup_key = f"{asset}:{strategy}:{direction}"
+        asset_key = f"ASSET:{asset}"
+        if dedup_key in _opened_this_cycle or asset_key in _opened_this_cycle:
+            logger.warning("training_position_rejected",
+                           asset=asset, reason="DUPLICATE_SAME_CYCLE",
+                           strategy=strategy, direction=direction)
+            return None
+
+        existing = _load_positions()
+        for p in existing:
+            if p.asset == asset:
+                logger.warning("training_position_rejected",
+                               asset=asset, reason="DUPLICATE_ASSET",
+                               strategy=strategy, direction=direction,
+                               existing_strategy=p.strategy, existing_direction=p.direction)
                 return None
-        except Exception:
-            pass  # If check fails, allow the trade
 
-    # Sentiment gate — block LONGs in fear markets
-    # BUT: skip for crypto if regime != CRASH. The orchestrator's
-    # price-action check already confirmed the crash is over for this asset
-    # (price above EMA200 + RSI > 40), even if F&G hasn't updated yet.
-    if direction == "LONG" and asset_class in ("crypto", "stock"):
-        skip_sentiment = (asset_class == "crypto" and regime != "CRASH")
-        if not skip_sentiment:
-            try:
-                from bahamut.sentiment.gate import check_sentiment
-                blocked, reason = check_sentiment(asset, direction, asset_class)
-                if blocked:
-                    logger.info("training_position_rejected_sentiment",
-                                asset=asset, strategy=strategy, reason=reason)
-                    return None
-            except Exception:
-                pass  # If sentiment check fails, allow the trade
-
-    # CRASH SHORT safety limits
-    if direction == "SHORT" and regime == "CRASH":
-        # 1. Daily loss cap: max $1000 in CRASH SHORT losses per day
+        # Per-asset cooldown: skip if recently closed (avoid repeated entries on same asset)
+        # v5_base gets 2hr cooldown (20-bar hold on 15m = 5hr, so 2hr gap between attempts)
+        # Others get 30min (default)
+        COOLDOWN_BY_STRATEGY = {
+            "v5_base": 14400,       # 4 hours — long-hold strategy needs longer gap
+        }
+        COOLDOWN_DEFAULT = 1800    # 30 minutes
         try:
-            from bahamut.database import sync_engine
-            from sqlalchemy import text as sql_text
-            with sync_engine.connect() as conn:
-                row = conn.execute(sql_text("""
-                    SELECT COALESCE(SUM(pnl), 0) as daily_short_pnl
-                    FROM training_trades
-                    WHERE direction = 'SHORT' AND regime = 'CRASH'
-                      AND exit_time > NOW() - INTERVAL '24 hours'
-                      AND pnl < 0
-                """)).mappings().first()
-                daily_loss = abs(float(row["daily_short_pnl"])) if row else 0
-                if daily_loss >= 1000:
-                    logger.warning("training_crash_short_daily_cap",
-                                   asset=asset, daily_loss=daily_loss,
-                                   reason="CRASH SHORT daily loss cap ($1000) reached")
+            r = _get_redis()
+            if r:
+                # Check both asset-level and asset+strategy-level cooldowns
+                cooldown_key = f"bahamut:training:cooldown:{asset}"
+                cooldown_key_strat = f"bahamut:training:cooldown:{asset}:{strategy}"
+                if r.exists(cooldown_key) or r.exists(cooldown_key_strat):
+                    logger.info("training_position_rejected_cooldown",
+                                asset=asset, strategy=strategy, direction=direction,
+                                reason="Asset on cooldown after recent close")
                     return None
         except Exception:
             pass
 
-        # 2. Max 2 concurrent CRASH SHORTs
-        crash_shorts = sum(1 for p in existing if p.direction == "SHORT" and p.regime == "CRASH")
-        if crash_shorts >= 2:
-            logger.info("training_crash_short_concurrent_cap",
-                        asset=asset, count=crash_shorts,
-                        reason="Max 2 concurrent CRASH SHORTs")
+        # Entry price sanity check — reject obviously wrong prices
+        # (e.g. BTC price leaking into EURUSD)
+        PRICE_SANITY = {
+            "forex": (0.001, 300),         # EURUSD ~1.08, USDJPY ~150
+            "crypto": (0.0001, 200000),    # XRP ~2, BTC ~85K
+            "stock": (1, 100000),          # AAPL ~220, BRK.A ~600K
+            "commodity": (0.5, 15000),     # Gold ~3100, Oil ~70
+            "index": (100, 25000),          # SPX ~5600, IXIC ~17K, DJI ~40K
+        }
+        limits = PRICE_SANITY.get(asset_class, (0, 1000000))
+        if entry_price < limits[0] or entry_price > limits[1]:
+            logger.error("training_position_rejected_bad_price",
+                         asset=asset, asset_class=asset_class,
+                         entry_price=entry_price, limits=limits,
+                         msg="Entry price outside sane range for asset class")
             return None
 
-    # Strategy loss-streak circuit breaker for v5_base
-    try:
-        if strategy == "v5_base":
-            from bahamut.db.query import run_query_one
-            stats = run_query_one("""
-                SELECT COUNT(*) as trades,
-                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses
-                FROM training_trades WHERE strategy = 'v5_base'
-            """)
-            if stats:
-                total = int(stats["trades"] or 0)
-                wins = int(stats["wins"] or 0)
-                losses = int(stats["losses"] or 0)
-                wr = wins / max(1, wins + losses)
-
-                # HARD BLOCK: WR < 40% with 100+ trades → disable crypto entirely
-                # v5_base crypto: -$462. v5_base stock: +$1,036. Only stocks work.
-                if total >= 100 and wr < 0.40 and asset_class == "crypto":
-                    logger.warning("training_v5_crypto_blocked",
-                                   asset=asset, wr=round(wr, 3), trades=total,
-                                   reason="v5_base WR < 40% — crypto disabled, stocks only")
-                    return None
-
-                # SOFT: WR < 45% with 50+ trades → halve risk
-                if total >= 50 and wr < 0.45:
-                    risk_amount = round(risk_amount * 0.5, 2)
-                    logger.warning("training_v5_circuit_breaker",
-                                   asset=asset, wr=round(wr, 3), trades=total,
-                                   risk_reduced_to=risk_amount,
-                                   reason="v5_base WR < 45% — half risk")
-    except Exception:
-        pass
-
-    # ── Risk engine size multiplier ──
-    # Applied after strategy-specific circuit breakers, before size calculation.
-    try:
-        from bahamut.training.risk_engine import get_size_multiplier
-        re_mult = get_size_multiplier()
-        if re_mult <= 0:
-            logger.info("training_risk_engine_size_block",
-                        asset=asset, strategy=strategy, multiplier=re_mult,
-                        reason="Risk engine size_multiplier=0 — trade blocked")
-            _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_blocks")
+        # Per-strategy position limit (prevent one strategy from hogging all slots)
+        MAX_PER_STRATEGY = 6
+        strat_count = sum(1 for p in existing if p.strategy == strategy)
+        if strat_count >= MAX_PER_STRATEGY:
+            logger.warning("training_position_rejected",
+                           asset=asset, reason="STRATEGY_LIMIT",
+                           strategy=strategy, count=strat_count, max=MAX_PER_STRATEGY)
             return None
-        elif re_mult < 1.0:
-            original_risk = risk_amount
-            risk_amount = round(risk_amount * re_mult, 2)
-            logger.info("training_risk_engine_size_reduced",
-                        asset=asset, strategy=strategy,
-                        multiplier=re_mult, original=original_risk,
-                        reduced_to=risk_amount)
-            _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_reductions")
-    except Exception:
-        pass
 
-    # Per-strategy drawdown block (from risk_engine per-strategy DD tracker)
-    try:
-        import redis as _redis_strat, os as _os_strat
-        _rr_strat = _redis_strat.from_url(
-            _os_strat.environ.get("REDIS_URL", "redis://localhost:6379/0"),
-            socket_connect_timeout=1)
-        _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}")
-        if _strat_dd_raw:
-            _strat_dd = float(_strat_dd_raw)
-            if _strat_dd >= 15.0:
-                logger.info("training_position_rejected_strategy_dd",
-                            asset=asset, strategy=strategy, dd_pct=_strat_dd)
-                _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
+        # Per-strategy-per-class cap (prevent v10 from stacking 5 crypto LONGs in a down market)
+        STRATEGY_CLASS_CAPS = {
+            ("v10_mean_reversion", "crypto"): 2,
+            ("v10_mean_reversion", "stock"): 3,
+            ("v9_breakout", "crypto"): 2,
+        }
+        sc_cap = STRATEGY_CLASS_CAPS.get((strategy, asset_class))
+        if sc_cap:
+            sc_count = sum(1 for p in existing if p.strategy == strategy and p.asset_class == asset_class)
+            if sc_count >= sc_cap:
+                logger.warning("training_position_rejected",
+                               asset=asset, reason="STRATEGY_CLASS_CAP",
+                               strategy=strategy, asset_class=asset_class,
+                               count=sc_count, max=sc_cap)
                 return None
-    except Exception:
-        pass
 
-    # ── Adaptive news risk size multiplier ──
-    # CAUTION=0.75, RESTRICTED=0.5, FROZEN would have been blocked in selector
-    try:
-        from bahamut.intelligence.adaptive_news_risk import (
-            ADAPTIVE_NEWS_ENABLED, get_asset_news_state, MODES,
-        )
-        if ADAPTIVE_NEWS_ENABLED:
-            news_state = get_asset_news_state(asset)
-            news_mult = MODES.get(news_state.mode, {}).get("size_mult", 1.0)
-            if news_mult < 1.0 and news_mult > 0:
-                original_risk = risk_amount
-                risk_amount = round(risk_amount * news_mult, 2)
-                logger.info("training_news_size_reduced",
-                            asset=asset, strategy=strategy,
-                            news_mode=news_state.mode, multiplier=news_mult,
-                            original=original_risk, reduced_to=risk_amount)
-                _increment_counter(_get_redis(), "bahamut:counters:news_size_reductions")
-                _increment_counter(_get_redis(), "bahamut:counters:adaptive_news_size_reductions")
-    except Exception:
-        pass
-
-    # ── AI Decision Service sizing (per-candidate + global) ──
-    # Uses clamped values from ai_decision_service (Opus or rule-based fallback)
-    try:
-        from bahamut.intelligence.ai_decision_service import get_ai_decision
-        ai_dec = get_ai_decision(
-            asset=asset, asset_class=asset_class,
-            strategy=strategy, direction=direction,
-        )
-        ad = ai_dec.get("asset_decision", {})
-        ga = ai_dec.get("global_adjustments", {})
-
-        # Per-candidate size multiplier (clamped 0.25-1.0)
-        candidate_mult = ad.get("size_multiplier", 1.0)
-        # Global posture multiplier (clamped 0.25-1.0)
-        global_mult = ga.get("size_multiplier", 1.0)
-        # Combined (both already clamped by decision service)
-        combined_mult = round(candidate_mult * global_mult, 3)
-
-        if combined_mult < 1.0 and combined_mult > 0:
-            original_risk = risk_amount
-            risk_amount = round(risk_amount * combined_mult, 2)
-            logger.info("execution_ai_sizing_applied",
-                        asset=asset, strategy=strategy,
-                        posture=ai_dec.get("posture", "unknown"),
-                        candidate_mult=candidate_mult,
-                        global_mult=global_mult,
-                        combined_mult=combined_mult,
-                        original=original_risk,
-                        reduced_to=risk_amount,
-                        source=ai_dec.get("_source", "unknown"))
-    except Exception:
-        pass
-
-    # Floor guard: skip trades where composite sizing shrinks below viability
-    # Typical taker fee is 0.04% → round-trip 0.08%. A trade risking less than
-    # 10% of originally requested risk is not worth opening.
-    _MIN_RISK_FRACTION = 0.10
-    if _original_risk_amount > 0 and risk_amount / _original_risk_amount < _MIN_RISK_FRACTION:
-        logger.info("training_position_rejected_composite_floor",
-                    asset=asset, strategy=strategy,
-                    final_risk=round(risk_amount, 2),
-                    original_risk=round(_original_risk_amount, 2),
-                    ratio=round(risk_amount / _original_risk_amount, 3))
-        _increment_counter(_get_redis(), "bahamut:counters:composite_floor_rejects")
-        return None
-
-    # Calculate SL/TP prices
-    if direction == "LONG":
-        stop_price = entry_price * (1 - sl_pct)
-        tp_price = entry_price * (1 + tp_pct)
-        size = risk_amount / max(0.01, entry_price * sl_pct)
-    else:
-        stop_price = entry_price * (1 + sl_pct)
-        tp_price = entry_price * (1 - tp_pct)
-        size = risk_amount / max(0.01, entry_price * sl_pct)
-
-    pos = TrainingPosition(
-        position_id=str(uuid.uuid4())[:12],
-        asset=asset,
-        asset_class=asset_class,
-        strategy=strategy,
-        direction=direction,
-        entry_price=round(entry_price, 6),
-        stop_price=round(stop_price, 6),
-        tp_price=round(tp_price, 6),
-        size=round(size, 8),
-        risk_amount=round(risk_amount, 2),
-        entry_time=datetime.now(timezone.utc).isoformat(),
-        max_hold_bars=max_hold_bars,
-        current_price=entry_price,
-        execution_type=execution_type,
-        confidence_score=confidence_score,
-        trigger_reason=trigger_reason,
-        regime=regime,
-        substrategy=substrategy,
-        data_mode=data_mode,
-    )
-
-    # ── Execute on exchange FIRST (Binance/Alpaca) ──
-    # Position is only saved if exchange execution succeeds or is not required.
-    _expected_platform = "internal"
-    try:
-        from bahamut.execution.router import execute_open as exec_open, _get_platform
-        _expected_platform = _get_platform(asset, asset_class)
-        exec_result = exec_open(
-            asset=asset, asset_class=asset_class, direction=direction,
-            size=pos.size, risk_amount=risk_amount,
-        )
-        pos.execution_platform = exec_result.get("platform", "internal")
-        pos.exchange_order_id = exec_result.get("order_id", "")
-        _status = exec_result.get("status", "unknown")
-        # Phase 2 Item 4: capture canonical execution state on the position
-        # so broker truth is preserved for PnL reporting and diagnostics.
-        pos.client_order_id = exec_result.get("client_order_id", "") or ""
-        pos.order_lifecycle = exec_result.get("lifecycle", "") or ""
-        pos.fill_status = exec_result.get("fill_status", "") or ""
-        pos.submitted_qty = float(exec_result.get("submitted_qty", 0) or 0)
-        pos.filled_qty = float(exec_result.get("filled_qty", 0) or 0)
-        pos.remaining_qty = float(exec_result.get("remaining_qty", 0) or 0)
-        pos.avg_fill_price = float(exec_result.get("avg_fill_price",
-                                                    exec_result.get("fill_price", 0)) or 0)
-        pos.submitted_at = exec_result.get("submitted_at", "") or ""
-        pos.accepted_at = exec_result.get("accepted_at", "") or ""
-        pos.filled_at = exec_result.get("filled_at", "") or ""
-        pos.reference_price = float(exec_result.get("reference_price", 0) or 0)
-        pos.commission = float(exec_result.get("commission", 0) or 0)
-        pos.commission_asset = exec_result.get("commission_asset", "") or ""
-        pos.slippage_abs = float(exec_result.get("slippage_abs", 0) or 0)
-        pos.slippage_pct = float(exec_result.get("slippage_pct", 0) or 0)
-        logger.info("execution_route_result",
-                     asset=asset, expected_platform=_expected_platform,
-                     actual_platform=pos.execution_platform,
-                     status=_status, lifecycle=pos.order_lifecycle,
-                     fill_status=pos.fill_status,
-                     filled_qty=pos.filled_qty, submitted_qty=pos.submitted_qty,
-                     slippage_pct=round(pos.slippage_pct, 4),
-                     order_id=pos.exchange_order_id[:20] if pos.exchange_order_id else "")
-
-        if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
-            old_entry = pos.entry_price
-            pos.entry_price = round(exec_result["fill_price"], 6)
-            # Recompute size so realized risk matches intended risk
-            pos.size = round(risk_amount / max(0.01, pos.entry_price * sl_pct), 8)
-            if direction == "LONG":
-                pos.stop_price = round(pos.entry_price * (1 - sl_pct), 6)
-                pos.tp_price = round(pos.entry_price * (1 + tp_pct), 6)
-            else:
-                pos.stop_price = round(pos.entry_price * (1 + sl_pct), 6)
-                pos.tp_price = round(pos.entry_price * (1 - tp_pct), 6)
-            pos.current_price = pos.entry_price
-            logger.info("exchange_fill_applied",
-                        asset=asset, platform=pos.execution_platform,
-                        old_entry=old_entry, fill_price=pos.entry_price,
-                        size_recomputed=pos.size,
-                        order_id=pos.exchange_order_id)
+        # Stock trades only during US market hours (avoid $0 flat exits)
+        if asset_class == "stock":
             try:
-                from bahamut.execution.router import invalidate_platform_cache
-                invalidate_platform_cache(pos.execution_platform)
+                from bahamut.data.live_data import _is_us_market_open
+                if not _is_us_market_open():
+                    logger.info("training_position_rejected_market_closed",
+                                asset=asset, strategy=strategy,
+                                reason="US market closed — stock trades blocked outside hours")
+                    return None
             except Exception:
-                pass
+                pass  # If check fails, allow the trade
 
-            # ── Broker-side bracket orders (SL/TP on exchange) ──
-            if pos.execution_platform in ("binance", "binance_futures") and asset_class == "crypto":
+        # Sentiment gate — block LONGs in fear markets
+        # BUT: skip for crypto if regime != CRASH. The orchestrator's
+        # price-action check already confirmed the crash is over for this asset
+        # (price above EMA200 + RSI > 40), even if F&G hasn't updated yet.
+        if direction == "LONG" and asset_class in ("crypto", "stock"):
+            skip_sentiment = (asset_class == "crypto" and regime != "CRASH")
+            if not skip_sentiment:
                 try:
-                    from bahamut.execution.binance_futures import place_bracket_orders
-                    _side = "BUY" if direction == "LONG" else "SELL"
-                    _brackets = place_bracket_orders(
-                        asset=asset, side=_side, quantity=pos.size,
-                        sl_price=pos.stop_price, tp_price=pos.tp_price,
-                        entry_client_order_id=pos.exchange_order_id or str(_order_intent_id or ""),
-                    )
-                    pos.bracket_sl_order_id = str(_brackets.get("sl_order", {}).get("orderId", ""))
-                    pos.bracket_tp_order_id = str(_brackets.get("tp_order", {}).get("orderId", ""))
-                    logger.info("binance_brackets_placed",
-                                asset=asset, sl=pos.stop_price, tp=pos.tp_price,
-                                sl_id=pos.bracket_sl_order_id,
-                                tp_id=pos.bracket_tp_order_id)
-                except Exception as _br_err:
-                    logger.error("binance_bracket_placement_failed",
-                                 asset=asset, error=str(_br_err)[:200])
+                    from bahamut.sentiment.gate import check_sentiment
+                    blocked, reason = check_sentiment(asset, direction, asset_class)
+                    if blocked:
+                        logger.info("training_position_rejected_sentiment",
+                                    asset=asset, strategy=strategy, reason=reason)
+                        return None
+                except Exception:
+                    pass  # If sentiment check fails, allow the trade
 
-        # ── Wire OrderManager state machine ──
-        if _order_intent_id:
+        # CRASH SHORT safety limits
+        if direction == "SHORT" and regime == "CRASH":
+            # 1. Daily loss cap: max $1000 in CRASH SHORT losses per day
             try:
-                from bahamut.execution.order_manager import OrderManager, OrderState
-                _mgr = OrderManager()
-                _lifecycle = exec_result.get("lifecycle", "")
-                if _lifecycle == "FILLED":
-                    _mgr.record_fill(
-                        intent_id=_order_intent_id,
-                        fill_price=exec_result.get("fill_price", 0) or exec_result.get("avg_fill_price", 0),
-                        fill_qty=exec_result.get("filled_qty", pos.size) or pos.size,
-                        commission=float(exec_result.get("commission", 0) or 0),
-                        broker_order_id=exec_result.get("order_id", ""),
-                        platform=exec_result.get("platform", ""),
-                        broker_response=exec_result.get("raw", {}),
-                    )
-                elif _lifecycle in ("ACCEPTED", "SUBMITTED"):
-                    _mgr.transition(_order_intent_id, OrderState.SUBMITTED,
-                                    broker_response=exec_result.get("raw", {}))
-                elif _lifecycle in ("REJECTED", "ERROR"):
-                    _mgr.transition(_order_intent_id, OrderState.REJECTED,
-                                    {"error": exec_result.get("error", "")},
-                                    broker_response=exec_result.get("raw", {}))
-            except Exception as _sm_err:
-                logger.warning("order_state_machine_wire_failed",
-                               intent_id=_order_intent_id, error=str(_sm_err)[:100])
-
-        # Abort guard: broker was expected but execution failed or fell back to internal
-        if _status in ("error", "internal") and _expected_platform != "internal":
-            # Broker was expected but execution failed or fell back to internal
-            # Do NOT create a phantom internal-only position
-            logger.warning("execution_failed_position_aborted",
-                           asset=asset, strategy=strategy, direction=direction,
-                           expected_platform=_expected_platform,
-                           actual_platform=pos.execution_platform,
-                           status=_status,
-                           error=exec_result.get("error", "")[:100])
-            _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
-            return None
-        # Final guard: if broker was expected but platform is still internal, abort
-        if _expected_platform != "internal" and pos.execution_platform == "internal":
-            logger.warning("execution_mirror_mismatch_aborted",
-                           asset=asset, strategy=strategy, direction=direction,
-                           expected_platform=_expected_platform,
-                           actual_platform="internal", status=_status)
-            _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
-            return None
-    except Exception as e:
-        # Mark order as SUBMISSION_UNKNOWN before aborting — the broker
-        # may have received the order even though we got an exception.
-        if _order_intent_id and _expected_platform != "internal":
-            try:
-                from bahamut.execution.order_manager import OrderManager, OrderState
-                OrderManager().transition(_order_intent_id, OrderState.SUBMISSION_UNKNOWN,
-                                          {"error": f"exception: {str(e)[:150]}"})
+                from bahamut.database import sync_engine
+                from sqlalchemy import text as sql_text
+                with sync_engine.connect() as conn:
+                    row = conn.execute(sql_text("""
+                        SELECT COALESCE(SUM(pnl), 0) as daily_short_pnl
+                        FROM training_trades
+                        WHERE direction = 'SHORT' AND regime = 'CRASH'
+                          AND exit_time > NOW() - INTERVAL '24 hours'
+                          AND pnl < 0
+                    """)).mappings().first()
+                    daily_loss = abs(float(row["daily_short_pnl"])) if row else 0
+                    if daily_loss >= 1000:
+                        logger.warning("training_crash_short_daily_cap",
+                                       asset=asset, daily_loss=daily_loss,
+                                       reason="CRASH SHORT daily loss cap ($1000) reached")
+                        return None
             except Exception:
                 pass
-        if _expected_platform != "internal":
-            logger.warning("execution_exception_position_aborted",
-                           asset=asset, expected_platform=_expected_platform,
-                           error=str(e)[:100])
-            _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
-            return None
-        logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
 
-    # Save position only after exchange execution is resolved
-    _save_position(pos)
-    _opened_this_cycle.add(dedup_key)
-    _opened_this_cycle.add(asset_key)
-    open_training_position._opened_this_cycle = _opened_this_cycle
+            # 2. Max 2 concurrent CRASH SHORTs
+            crash_shorts = sum(1 for p in existing if p.direction == "SHORT" and p.regime == "CRASH")
+            if crash_shorts >= 2:
+                logger.info("training_crash_short_concurrent_cap",
+                            asset=asset, count=crash_shorts,
+                            reason="Max 2 concurrent CRASH SHORTs")
+                return None
 
-    logger.info("training_position_opened",
-                asset=asset, strategy=strategy, direction=direction,
-                entry=entry_price, sl=stop_price, tp=tp_price,
-                execution_type=execution_type, confidence=confidence_score)
-
-    # Telegram notification
-    try:
-        from bahamut.monitoring.telegram import send_training_trade_opened
-        send_training_trade_opened({
-            "asset": asset, "strategy": strategy, "direction": direction,
-            "entry_price": entry_price, "stop_price": stop_price,
-            "tp_price": tp_price, "risk_amount": risk_amount,
-            "regime": regime, "execution_type": execution_type,
-            "confidence_score": confidence_score,
-        })
-    except Exception:
-        pass
-
-    # WebSocket live update (with production truth fields)
-    try:
-        from bahamut.ws.admin_live import publish_event
-        publish_event("position_opened", {
-            "mode": "training", "asset": asset, "strategy": strategy,
-            "position_id": pos.position_id, "direction": direction,
-            "entry": entry_price, "risk": risk_amount,
-            "execution_confirmed": pos.execution_platform != "internal",
-            "execution_platform": pos.execution_platform,
-            "broker_order_id": pos.exchange_order_id,
-            "data_mode": data_mode,
-            "substrategy": substrategy,
-        })
-    except Exception:
-        pass
-
-    # Invalidate risk engine cache (position count changed)
-    try:
-        from bahamut.training.risk_engine import invalidate_risk_cache
-        invalidate_risk_cache()
-    except Exception:
-        pass
-
-    # Release execution lock before returning
-    if _lock_held_signal:
+        # Strategy loss-streak circuit breaker for v5_base
         try:
-            from bahamut.execution.order_manager import OrderManager as _OMRel
-            _OMRel().release_execution_lock(_lock_held_signal)
+            if strategy == "v5_base":
+                from bahamut.db.query import run_query_one
+                stats = run_query_one("""
+                    SELECT COUNT(*) as trades,
+                           SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                           SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses
+                    FROM training_trades WHERE strategy = 'v5_base'
+                """)
+                if stats:
+                    total = int(stats["trades"] or 0)
+                    wins = int(stats["wins"] or 0)
+                    losses = int(stats["losses"] or 0)
+                    wr = wins / max(1, wins + losses)
+
+                    # HARD BLOCK: WR < 40% with 100+ trades → disable crypto entirely
+                    # v5_base crypto: -$462. v5_base stock: +$1,036. Only stocks work.
+                    if total >= 100 and wr < 0.40 and asset_class == "crypto":
+                        logger.warning("training_v5_crypto_blocked",
+                                       asset=asset, wr=round(wr, 3), trades=total,
+                                       reason="v5_base WR < 40% — crypto disabled, stocks only")
+                        return None
+
+                    # SOFT: WR < 45% with 50+ trades → halve risk
+                    if total >= 50 and wr < 0.45:
+                        risk_amount = round(risk_amount * 0.5, 2)
+                        logger.warning("training_v5_circuit_breaker",
+                                       asset=asset, wr=round(wr, 3), trades=total,
+                                       risk_reduced_to=risk_amount,
+                                       reason="v5_base WR < 45% — half risk")
         except Exception:
             pass
 
-    return pos
+        # ── Risk engine size multiplier ──
+        # Applied after strategy-specific circuit breakers, before size calculation.
+        try:
+            from bahamut.training.risk_engine import get_size_multiplier
+            re_mult = get_size_multiplier()
+            if re_mult <= 0:
+                logger.info("training_risk_engine_size_block",
+                            asset=asset, strategy=strategy, multiplier=re_mult,
+                            reason="Risk engine size_multiplier=0 — trade blocked")
+                _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_blocks")
+                return None
+            elif re_mult < 1.0:
+                original_risk = risk_amount
+                risk_amount = round(risk_amount * re_mult, 2)
+                logger.info("training_risk_engine_size_reduced",
+                            asset=asset, strategy=strategy,
+                            multiplier=re_mult, original=original_risk,
+                            reduced_to=risk_amount)
+                _increment_counter(_get_redis(), "bahamut:counters:risk_engine_size_reductions")
+        except Exception:
+            pass
+
+        # Per-strategy drawdown block (from risk_engine per-strategy DD tracker)
+        try:
+            import redis as _redis_strat, os as _os_strat
+            _rr_strat = _redis_strat.from_url(
+                _os_strat.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                socket_connect_timeout=1)
+            _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}")
+            if _strat_dd_raw:
+                _strat_dd = float(_strat_dd_raw)
+                if _strat_dd >= 15.0:
+                    logger.info("training_position_rejected_strategy_dd",
+                                asset=asset, strategy=strategy, dd_pct=_strat_dd)
+                    _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
+                    return None
+        except Exception:
+            pass
+
+        # ── Adaptive news risk size multiplier ──
+        # CAUTION=0.75, RESTRICTED=0.5, FROZEN would have been blocked in selector
+        try:
+            from bahamut.intelligence.adaptive_news_risk import (
+                ADAPTIVE_NEWS_ENABLED, get_asset_news_state, MODES,
+            )
+            if ADAPTIVE_NEWS_ENABLED:
+                news_state = get_asset_news_state(asset)
+                news_mult = MODES.get(news_state.mode, {}).get("size_mult", 1.0)
+                if news_mult < 1.0 and news_mult > 0:
+                    original_risk = risk_amount
+                    risk_amount = round(risk_amount * news_mult, 2)
+                    logger.info("training_news_size_reduced",
+                                asset=asset, strategy=strategy,
+                                news_mode=news_state.mode, multiplier=news_mult,
+                                original=original_risk, reduced_to=risk_amount)
+                    _increment_counter(_get_redis(), "bahamut:counters:news_size_reductions")
+                    _increment_counter(_get_redis(), "bahamut:counters:adaptive_news_size_reductions")
+        except Exception:
+            pass
+
+        # ── AI Decision Service sizing (per-candidate + global) ──
+        # Uses clamped values from ai_decision_service (Opus or rule-based fallback)
+        try:
+            from bahamut.intelligence.ai_decision_service import get_ai_decision
+            ai_dec = get_ai_decision(
+                asset=asset, asset_class=asset_class,
+                strategy=strategy, direction=direction,
+            )
+            ad = ai_dec.get("asset_decision", {})
+            ga = ai_dec.get("global_adjustments", {})
+
+            # Per-candidate size multiplier (clamped 0.25-1.0)
+            candidate_mult = ad.get("size_multiplier", 1.0)
+            # Global posture multiplier (clamped 0.25-1.0)
+            global_mult = ga.get("size_multiplier", 1.0)
+            # Combined (both already clamped by decision service)
+            combined_mult = round(candidate_mult * global_mult, 3)
+
+            if combined_mult < 1.0 and combined_mult > 0:
+                original_risk = risk_amount
+                risk_amount = round(risk_amount * combined_mult, 2)
+                logger.info("execution_ai_sizing_applied",
+                            asset=asset, strategy=strategy,
+                            posture=ai_dec.get("posture", "unknown"),
+                            candidate_mult=candidate_mult,
+                            global_mult=global_mult,
+                            combined_mult=combined_mult,
+                            original=original_risk,
+                            reduced_to=risk_amount,
+                            source=ai_dec.get("_source", "unknown"))
+        except Exception:
+            pass
+
+        # Floor guard: skip trades where composite sizing shrinks below viability
+        # Typical taker fee is 0.04% → round-trip 0.08%. A trade risking less than
+        # 10% of originally requested risk is not worth opening.
+        _MIN_RISK_FRACTION = 0.10
+        if _original_risk_amount > 0 and risk_amount / _original_risk_amount < _MIN_RISK_FRACTION:
+            logger.info("training_position_rejected_composite_floor",
+                        asset=asset, strategy=strategy,
+                        final_risk=round(risk_amount, 2),
+                        original_risk=round(_original_risk_amount, 2),
+                        ratio=round(risk_amount / _original_risk_amount, 3))
+            _increment_counter(_get_redis(), "bahamut:counters:composite_floor_rejects")
+            return None
+
+        # Calculate SL/TP prices
+        if direction == "LONG":
+            stop_price = entry_price * (1 - sl_pct)
+            tp_price = entry_price * (1 + tp_pct)
+            size = risk_amount / max(0.01, entry_price * sl_pct)
+        else:
+            stop_price = entry_price * (1 + sl_pct)
+            tp_price = entry_price * (1 - tp_pct)
+            size = risk_amount / max(0.01, entry_price * sl_pct)
+
+        pos = TrainingPosition(
+            position_id=str(uuid.uuid4())[:12],
+            asset=asset,
+            asset_class=asset_class,
+            strategy=strategy,
+            direction=direction,
+            entry_price=round(entry_price, 6),
+            stop_price=round(stop_price, 6),
+            tp_price=round(tp_price, 6),
+            size=round(size, 8),
+            risk_amount=round(risk_amount, 2),
+            entry_time=datetime.now(timezone.utc).isoformat(),
+            max_hold_bars=max_hold_bars,
+            current_price=entry_price,
+            execution_type=execution_type,
+            confidence_score=confidence_score,
+            trigger_reason=trigger_reason,
+            regime=regime,
+            substrategy=substrategy,
+            data_mode=data_mode,
+        )
+
+        # ── Execute on exchange FIRST (Binance/Alpaca) ──
+        # Position is only saved if exchange execution succeeds or is not required.
+        _expected_platform = "internal"
+        try:
+            from bahamut.execution.router import execute_open as exec_open, _get_platform
+            _expected_platform = _get_platform(asset, asset_class)
+            exec_result = exec_open(
+                asset=asset, asset_class=asset_class, direction=direction,
+                size=pos.size, risk_amount=risk_amount,
+            )
+            pos.execution_platform = exec_result.get("platform", "internal")
+            pos.exchange_order_id = exec_result.get("order_id", "")
+            _status = exec_result.get("status", "unknown")
+            # Phase 2 Item 4: capture canonical execution state on the position
+            # so broker truth is preserved for PnL reporting and diagnostics.
+            pos.client_order_id = exec_result.get("client_order_id", "") or ""
+            pos.order_lifecycle = exec_result.get("lifecycle", "") or ""
+            pos.fill_status = exec_result.get("fill_status", "") or ""
+            pos.submitted_qty = float(exec_result.get("submitted_qty", 0) or 0)
+            pos.filled_qty = float(exec_result.get("filled_qty", 0) or 0)
+            pos.remaining_qty = float(exec_result.get("remaining_qty", 0) or 0)
+            pos.avg_fill_price = float(exec_result.get("avg_fill_price",
+                                                        exec_result.get("fill_price", 0)) or 0)
+            pos.submitted_at = exec_result.get("submitted_at", "") or ""
+            pos.accepted_at = exec_result.get("accepted_at", "") or ""
+            pos.filled_at = exec_result.get("filled_at", "") or ""
+            pos.reference_price = float(exec_result.get("reference_price", 0) or 0)
+            pos.commission = float(exec_result.get("commission", 0) or 0)
+            pos.commission_asset = exec_result.get("commission_asset", "") or ""
+            pos.slippage_abs = float(exec_result.get("slippage_abs", 0) or 0)
+            pos.slippage_pct = float(exec_result.get("slippage_pct", 0) or 0)
+            logger.info("execution_route_result",
+                         asset=asset, expected_platform=_expected_platform,
+                         actual_platform=pos.execution_platform,
+                         status=_status, lifecycle=pos.order_lifecycle,
+                         fill_status=pos.fill_status,
+                         filled_qty=pos.filled_qty, submitted_qty=pos.submitted_qty,
+                         slippage_pct=round(pos.slippage_pct, 4),
+                         order_id=pos.exchange_order_id[:20] if pos.exchange_order_id else "")
+
+            if exec_result.get("fill_price") and exec_result["fill_price"] > 0:
+                old_entry = pos.entry_price
+                pos.entry_price = round(exec_result["fill_price"], 6)
+                # Recompute size so realized risk matches intended risk
+                pos.size = round(risk_amount / max(0.01, pos.entry_price * sl_pct), 8)
+                if direction == "LONG":
+                    pos.stop_price = round(pos.entry_price * (1 - sl_pct), 6)
+                    pos.tp_price = round(pos.entry_price * (1 + tp_pct), 6)
+                else:
+                    pos.stop_price = round(pos.entry_price * (1 + sl_pct), 6)
+                    pos.tp_price = round(pos.entry_price * (1 - tp_pct), 6)
+                pos.current_price = pos.entry_price
+                logger.info("exchange_fill_applied",
+                            asset=asset, platform=pos.execution_platform,
+                            old_entry=old_entry, fill_price=pos.entry_price,
+                            size_recomputed=pos.size,
+                            order_id=pos.exchange_order_id)
+                try:
+                    from bahamut.execution.router import invalidate_platform_cache
+                    invalidate_platform_cache(pos.execution_platform)
+                except Exception:
+                    pass
+
+                # ── Broker-side bracket orders (SL/TP on exchange) ──
+                if pos.execution_platform in ("binance", "binance_futures") and asset_class == "crypto":
+                    try:
+                        from bahamut.execution.binance_futures import place_bracket_orders
+                        _side = "BUY" if direction == "LONG" else "SELL"
+                        _brackets = place_bracket_orders(
+                            asset=asset, side=_side, quantity=pos.size,
+                            sl_price=pos.stop_price, tp_price=pos.tp_price,
+                            entry_client_order_id=pos.exchange_order_id or str(_order_intent_id or ""),
+                        )
+                        pos.bracket_sl_order_id = str(_brackets.get("sl_order", {}).get("orderId", ""))
+                        pos.bracket_tp_order_id = str(_brackets.get("tp_order", {}).get("orderId", ""))
+                        logger.info("binance_brackets_placed",
+                                    asset=asset, sl=pos.stop_price, tp=pos.tp_price,
+                                    sl_id=pos.bracket_sl_order_id,
+                                    tp_id=pos.bracket_tp_order_id)
+                    except Exception as _br_err:
+                        logger.error("binance_bracket_placement_failed",
+                                     asset=asset, error=str(_br_err)[:200])
+
+            # ── Wire OrderManager state machine ──
+            if _order_intent_id:
+                try:
+                    from bahamut.execution.order_manager import OrderManager, OrderState
+                    _mgr = OrderManager()
+                    _lifecycle = exec_result.get("lifecycle", "")
+                    if _lifecycle == "FILLED":
+                        _mgr.record_fill(
+                            intent_id=_order_intent_id,
+                            fill_price=exec_result.get("fill_price", 0) or exec_result.get("avg_fill_price", 0),
+                            fill_qty=exec_result.get("filled_qty", pos.size) or pos.size,
+                            commission=float(exec_result.get("commission", 0) or 0),
+                            broker_order_id=exec_result.get("order_id", ""),
+                            platform=exec_result.get("platform", ""),
+                            broker_response=exec_result.get("raw", {}),
+                        )
+                    elif _lifecycle in ("ACCEPTED", "SUBMITTED"):
+                        _mgr.transition(_order_intent_id, OrderState.SUBMITTED,
+                                        broker_response=exec_result.get("raw", {}))
+                    elif _lifecycle in ("REJECTED", "ERROR"):
+                        _mgr.transition(_order_intent_id, OrderState.REJECTED,
+                                        {"error": exec_result.get("error", "")},
+                                        broker_response=exec_result.get("raw", {}))
+                except Exception as _sm_err:
+                    logger.warning("order_state_machine_wire_failed",
+                                   intent_id=_order_intent_id, error=str(_sm_err)[:100])
+
+            # Abort guard: broker was expected but execution failed or fell back to internal
+            if _status in ("error", "internal") and _expected_platform != "internal":
+                # Broker was expected but execution failed or fell back to internal
+                # Do NOT create a phantom internal-only position
+                logger.warning("execution_failed_position_aborted",
+                               asset=asset, strategy=strategy, direction=direction,
+                               expected_platform=_expected_platform,
+                               actual_platform=pos.execution_platform,
+                               status=_status,
+                               error=exec_result.get("error", "")[:100])
+                _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+                return None
+            # Final guard: if broker was expected but platform is still internal, abort
+            if _expected_platform != "internal" and pos.execution_platform == "internal":
+                logger.warning("execution_mirror_mismatch_aborted",
+                               asset=asset, strategy=strategy, direction=direction,
+                               expected_platform=_expected_platform,
+                               actual_platform="internal", status=_status)
+                _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
+                return None
+        except Exception as e:
+            # Mark order as SUBMISSION_UNKNOWN before aborting — the broker
+            # may have received the order even though we got an exception.
+            if _order_intent_id and _expected_platform != "internal":
+                try:
+                    from bahamut.execution.order_manager import OrderManager, OrderState
+                    OrderManager().transition(_order_intent_id, OrderState.SUBMISSION_UNKNOWN,
+                                              {"error": f"exception: {str(e)[:150]}"})
+                except Exception:
+                    pass
+            if _expected_platform != "internal":
+                logger.warning("execution_exception_position_aborted",
+                               asset=asset, expected_platform=_expected_platform,
+                               error=str(e)[:100])
+                _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
+                return None
+            logger.warning("exchange_execution_exception", asset=asset, error=str(e)[:100])
+
+        # Save position only after exchange execution is resolved
+        _save_position(pos)
+        _opened_this_cycle.add(dedup_key)
+        _opened_this_cycle.add(asset_key)
+        open_training_position._opened_this_cycle = _opened_this_cycle
+
+        logger.info("training_position_opened",
+                    asset=asset, strategy=strategy, direction=direction,
+                    entry=entry_price, sl=stop_price, tp=tp_price,
+                    execution_type=execution_type, confidence=confidence_score)
+
+        # Telegram notification
+        try:
+            from bahamut.monitoring.telegram import send_training_trade_opened
+            send_training_trade_opened({
+                "asset": asset, "strategy": strategy, "direction": direction,
+                "entry_price": entry_price, "stop_price": stop_price,
+                "tp_price": tp_price, "risk_amount": risk_amount,
+                "regime": regime, "execution_type": execution_type,
+                "confidence_score": confidence_score,
+            })
+        except Exception:
+            pass
+
+        # WebSocket live update (with production truth fields)
+        try:
+            from bahamut.ws.admin_live import publish_event
+            publish_event("position_opened", {
+                "mode": "training", "asset": asset, "strategy": strategy,
+                "position_id": pos.position_id, "direction": direction,
+                "entry": entry_price, "risk": risk_amount,
+                "execution_confirmed": pos.execution_platform != "internal",
+                "execution_platform": pos.execution_platform,
+                "broker_order_id": pos.exchange_order_id,
+                "data_mode": data_mode,
+                "substrategy": substrategy,
+            })
+        except Exception:
+            pass
+
+        # Invalidate risk engine cache (position count changed)
+        try:
+            from bahamut.training.risk_engine import invalidate_risk_cache
+            invalidate_risk_cache()
+        except Exception:
+            pass
+
+
+        return pos
+    finally:
+        if _lock_held_signal:
+            try:
+                from bahamut.execution.order_manager import OrderManager as _OMRel
+                _OMRel().release_execution_lock(_lock_held_signal)
+            except Exception:
+                pass
 # ═══════════════════════════════════════════
 
 def force_close_all_training_positions(reason: str = "KILL_SWITCH") -> dict:
