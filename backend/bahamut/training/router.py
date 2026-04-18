@@ -3808,21 +3808,35 @@ async def training_kill_switch(user=Depends(get_current_user)):
 
 @router.get("/circuit-breaker")
 async def get_circuit_breaker_status(user=Depends(get_current_user)):
-    """Circuit breaker status — shows if execution is blocked."""
+    """Circuit breaker status — per-platform."""
     try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        return circuit_breaker.get_status()
+        from bahamut.execution.circuit_breaker import (
+            circuit_breaker_binance, circuit_breaker_alpaca,
+        )
+        return {
+            "binance": circuit_breaker_binance.get_status(),
+            "alpaca": circuit_breaker_alpaca.get_status(),
+        }
     except Exception as e:
         return {"error": str(e), "state": "UNKNOWN"}
 
 
 @router.post("/circuit-breaker/reset")
-async def reset_circuit_breaker(user=Depends(get_current_user)):
-    """Force-reset circuit breaker — use when broker is confirmed back."""
+async def reset_circuit_breaker(platform: str = "binance", user=Depends(get_current_user)):
+    """Force-reset circuit breaker for a specific platform."""
     try:
-        from bahamut.execution.circuit_breaker import circuit_breaker
-        circuit_breaker.force_reset()
-        return {"status": "reset", "new_state": circuit_breaker.get_status()}
+        from bahamut.execution.circuit_breaker import (
+            circuit_breaker_binance, circuit_breaker_alpaca,
+        )
+        if platform == "binance":
+            circuit_breaker_binance.force_reset()
+            return {"status": "reset", "platform": "binance",
+                    "new_state": circuit_breaker_binance.get_status()}
+        if platform == "alpaca":
+            circuit_breaker_alpaca.force_reset()
+            return {"status": "reset", "platform": "alpaca",
+                    "new_state": circuit_breaker_alpaca.get_status()}
+        return {"error": f"unknown platform '{platform}' — use 'binance' or 'alpaca'"}
     except Exception as e:
         return {"error": str(e)}
 
