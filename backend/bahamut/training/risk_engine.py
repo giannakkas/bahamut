@@ -299,6 +299,24 @@ def get_risk_engine_state(force_refresh: bool = False) -> dict:
     for cw in cluster_warnings:
         warnings.append(f"Cluster '{cw['label']}' at {cw['count']}/{cw['max']} — {', '.join(cw['assets'])}")
 
+    # Per-strategy drawdown kill (each strategy must survive on its own)
+    per_strategy_blocked = {}
+    try:
+        import redis as _redis_mod, os as _os_mod
+        _rr = _redis_mod.from_url(_os_mod.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                                   socket_connect_timeout=1)
+        PER_STRATEGY_DD_LIMIT = 15.0
+        for strat in ("v5_base", "v9_breakout", "v10_mean_reversion"):
+            raw = _rr.get(f"bahamut:strategy_dd:{strat}")
+            if raw:
+                dd_pct = float(raw)
+                if dd_pct >= PER_STRATEGY_DD_LIMIT:
+                    per_strategy_blocked[strat] = dd_pct
+                    triggered.append(f"strategy_dd_block_{strat}")
+                    warnings.append(f"{strat} drawdown {dd_pct:.1f}% — strategy paused")
+    except Exception:
+        pass
+
     # If no issues
     if not triggered and not warnings:
         recommendations.append("All risk controls within limits")
@@ -317,6 +335,7 @@ def get_risk_engine_state(force_refresh: bool = False) -> dict:
             "current_portfolio_drawdown_pct": eq["dd_pct"],
             "current_equity": eq["equity"],
             "peak_equity": eq["peak"],
+            "per_strategy_blocked": per_strategy_blocked,
         },
         "exposure": {
             "total_notional": round(total_notional, 2),

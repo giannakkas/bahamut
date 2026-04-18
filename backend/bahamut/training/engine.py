@@ -953,6 +953,23 @@ def open_training_position(
     except Exception:
         pass
 
+    # Per-strategy drawdown block (from risk_engine per-strategy DD tracker)
+    try:
+        import redis as _redis_strat, os as _os_strat
+        _rr_strat = _redis_strat.from_url(
+            _os_strat.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+            socket_connect_timeout=1)
+        _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}")
+        if _strat_dd_raw:
+            _strat_dd = float(_strat_dd_raw)
+            if _strat_dd >= 15.0:
+                logger.info("training_position_rejected_strategy_dd",
+                            asset=asset, strategy=strategy, dd_pct=_strat_dd)
+                _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
+                return None
+    except Exception:
+        pass
+
     # ── Adaptive news risk size multiplier ──
     # CAUTION=0.75, RESTRICTED=0.5, FROZEN would have been blocked in selector
     try:

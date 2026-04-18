@@ -416,6 +416,40 @@ def run_training_cycle():
     except Exception as e:
         logger.warning("cycle_reconciliation_failed", error=str(e)[:100])
 
+    # Phase 7: Per-strategy drawdown computation (feeds risk_engine per-strategy kill)
+    try:
+        from sqlalchemy import text as _dd_text
+        from bahamut.database import sync_engine
+        with sync_engine.connect() as _dd_conn:
+            for _strat in ("v5_base", "v9_breakout", "v10_mean_reversion"):
+                _dd_row = _dd_conn.execute(_dd_text("""
+                    SELECT COALESCE(SUM(pnl), 0) AS pnl_sum,
+                           COALESCE(MAX(pnl_sum_running), 0) AS peak
+                    FROM (
+                        SELECT pnl,
+                               SUM(pnl) OVER (ORDER BY exit_time) AS pnl_sum_running
+                        FROM training_trades
+                        WHERE strategy = :s
+                          AND exit_time >= NOW() - INTERVAL '7 days'
+                        ORDER BY exit_time
+                    ) sub
+                """), {"s": _strat}).mappings().first()
+                if _dd_row and float(_dd_row["peak"]) > 0:
+                    _dd_pct = max(0, (float(_dd_row["peak"]) - float(_dd_row["pnl_sum"]))
+                                 / float(_dd_row["peak"]) * 100)
+                else:
+                    _dd_pct = 0
+                try:
+                    from bahamut.training.engine import _get_redis
+                    _dd_r = _get_redis()
+                    if _dd_r:
+                        _dd_r.setex(f"bahamut:strategy_dd:{_strat}", 86400,
+                                    str(round(_dd_pct, 2)))
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning("per_strategy_dd_compute_failed", error=str(e)[:100])
+
     return {
         "status": "OK",
         "processed": processed,
