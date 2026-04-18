@@ -40,6 +40,13 @@ logger = structlog.get_logger()
 SCHEMA_VERSION = 3
 
 # ─── All CREATE TABLE statements in dependency order ───
+#
+# NOTE: These CREATE TABLE strings are reference documentation ONLY.
+# They are NOT executed at runtime — Alembic migrations are the sole
+# source of truth for schema (see alembic/versions/*). They are kept
+# here as a readable catalog. To change the schema, create a new
+# Alembic migration — do NOT edit these strings and expect changes
+# to propagate.
 
 TABLES = [
     # ── Admin ──
