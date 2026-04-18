@@ -118,20 +118,6 @@ def run_in_transaction(fn) -> None:
         conn.close()
 
 
-def ensure_table(sql: str) -> None:
-    """Execute a CREATE TABLE IF NOT EXISTS statement.
-
-    Used during schema initialization only.
-    """
-    try:
-        with get_connection() as conn:
-            conn.execute(text(sql))
-            conn.commit()
-    except Exception as e:
-        logger.error("ensure_table_failed", sql=sql[:80], error=str(e))
-        raise
-
-
 def check_db_health() -> dict:
     """Quick DB health check with latency measurement."""
     start = time.monotonic()
