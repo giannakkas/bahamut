@@ -3902,3 +3902,14 @@ async def get_balance_info(user=Depends(get_current_user)):
         return get_real_balance(force_refresh=True)
     except Exception as e:
         return {"error": str(e), "source": "error"}
+
+
+@router.get("/admin/engine-rejections")
+async def get_engine_rejections(limit: int = 50, user=Depends(get_current_user)):
+    """Recent engine-side rejections of selector EXECUTE decisions.
+    Shows the concrete reason each candidate didn't open a position."""
+    if getattr(user, "role", "") not in ("admin", "super_admin"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="admin required")
+    from bahamut.training.rejection_tracker import get_recent_rejections
+    return {"rejections": get_recent_rejections(limit=min(200, max(1, limit)))}
