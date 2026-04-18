@@ -269,11 +269,22 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
                 f" [{bd['ai_source_category']}]"
             )
 
-        # Apply threshold penalty (clamped to -4, no double-count with news)
+        # Apply threshold penalty — max-severity rule: whichever penalty
+        # (news or AI) is more severe wins, not both.
         ai_penalty = ad.get("threshold_penalty", 0)
-        if ai_penalty < 0 and "news_threshold_penalty" not in bd:
-            bd["ai_threshold_penalty"] = ai_penalty
-            total += ai_penalty
+        if ai_penalty < 0:
+            existing_news = bd.get("news_threshold_penalty", 0)  # already negative
+            if existing_news == 0:
+                # No news penalty — apply AI directly
+                bd["ai_threshold_penalty"] = ai_penalty
+                total += ai_penalty
+            elif ai_penalty < existing_news:
+                # AI is more severe than news — swap them
+                total -= existing_news  # reverse out news penalty
+                del bd["news_threshold_penalty"]
+                bd["ai_threshold_penalty"] = ai_penalty
+                total += ai_penalty
+            # else: news was more severe, keep it as-is
 
         # Store size multiplier for engine
         bd["ai_size_mult"] = ad.get("size_multiplier", 1.0)
