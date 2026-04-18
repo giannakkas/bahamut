@@ -450,23 +450,35 @@ def run_training_cycle():
     except Exception as e:
         logger.warning("per_strategy_dd_compute_failed", error=str(e)[:100])
 
-    # Phase 8: Funding rate accrual for perpetual futures (every ~8 hours)
+    # Phase 8: Funding rate accrual, aligned to Binance windows (00/08/16 UTC)
     try:
+        from datetime import datetime, timezone
         from bahamut.training.engine import _get_redis
         _fr_redis = _get_redis()
-        _run_funding = False
+        _now_utc = datetime.now(timezone.utc)
+        _current_window = _now_utc.hour // 8  # 0, 1, or 2 (00–08, 08–16, 16–24)
+        _window_key = f"{_now_utc.year}-{_now_utc.timetuple().tm_yday}-{_current_window}"
+
+        _last_window = None
         if _fr_redis:
-            _last_funding = _fr_redis.get("bahamut:funding:last_accrual_ts")
-            if not _last_funding or (time.time() - float(_last_funding)) >= 28800:  # 8 hours
-                _run_funding = True
-        if _run_funding:
+            _lw_raw = _fr_redis.get("bahamut:funding:last_accrual_window")
+            if _lw_raw:
+                _last_window = _lw_raw.decode() if isinstance(_lw_raw, bytes) else str(_lw_raw)
+
+        # Run if we haven't accrued for the current 8h window yet,
+        # AND we're at least 5 minutes past the window boundary to avoid
+        # racing Binance's funding snapshot at the exact hour boundary.
+        _boundary_hour = _current_window * 8
+        _minutes_past_boundary = (_now_utc.hour - _boundary_hour) * 60 + _now_utc.minute
+
+        if _last_window != _window_key and _minutes_past_boundary >= 5:
             from bahamut.execution.funding_rate import accrue_funding_for_all_positions
             _fr_result = accrue_funding_for_all_positions()
             if _fr_redis:
-                _fr_redis.setex("bahamut:funding:last_accrual_ts", 86400,
-                                str(time.time()))
+                _fr_redis.setex("bahamut:funding:last_accrual_window", 90000, _window_key)
             if _fr_result["positions_updated"] > 0:
                 logger.info("funding_accrual_complete",
+                            window=_window_key,
                             positions=_fr_result["positions_updated"],
                             total_cost=round(_fr_result["total_accrued"], 4))
     except Exception as e:
