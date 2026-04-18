@@ -256,6 +256,14 @@ class V9Breakout:
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
         import os
 
+        # Block signals on degraded EMA-200 — v9 uses ema_200 for trend context
+        if indicators and indicators.get("_ema200_degraded"):
+            import structlog as _structlog
+            _structlog.get_logger().debug("strategy_blocked_ema200_degraded",
+                                          strategy="v9_breakout",
+                                          asset=indicators.get("_asset", asset))
+            return None
+
         # Try breakout (LONG) first, then breakdown (SHORT)
         sig = detect_confirmed_breakout(candles, indicators)
         if not sig.valid:
