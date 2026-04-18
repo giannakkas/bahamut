@@ -2501,6 +2501,191 @@ async def _build_diagnostics():
         ai_section["error"] = str(e)
     diag["sections"].append(ai_section)
 
+    # ══════════════════════════════════════════════════════════════
+    # NEW SECTION 1: ENGINE REJECTIONS (LAST HOUR)
+    # ══════════════════════════════════════════════════════════════
+    rej_section = {"title": "ENGINE REJECTIONS (LAST HOUR)", "summary": {}, "recent": []}
+    try:
+        from bahamut.training.rejection_tracker import get_recent_rejections
+        from collections import Counter as _Counter
+        _rejections = get_recent_rejections(limit=200)
+        _by_reason = _Counter(r.get("reason_code", "unknown") for r in _rejections)
+        rej_section["summary"] = dict(_by_reason.most_common())
+        rej_section["total"] = len(_rejections)
+        for _rj in _rejections[:20]:
+            _rj_ts = datetime.fromtimestamp(_rj.get("ts", 0), tz=timezone.utc).isoformat()
+            rej_section["recent"].append({
+                "ts": _rj_ts,
+                "asset": _rj.get("asset"),
+                "strategy": _rj.get("strategy"),
+                "direction": _rj.get("direction"),
+                "reason": _rj.get("reason_code"),
+                "detail": (_rj.get("reason_detail") or "")[:120],
+            })
+    except Exception as _e:
+        rej_section["error"] = str(_e)[:200]
+    diag["sections"].append(rej_section)
+
+    # ══════════════════════════════════════════════════════════════
+    # NEW SECTION 2: EXECUTE-BLOCKED MATCHES
+    # ══════════════════════════════════════════════════════════════
+    match_section = {"title": "EXECUTE-BLOCKED MATCHES", "rows": []}
+    try:
+        from bahamut.training.selector import get_last_decisions
+        from bahamut.training.engine import _load_positions
+        from bahamut.training.rejection_tracker import get_rejection_for_signal
+        _decisions = get_last_decisions()
+        _open_pos = {p.asset: p for p in _load_positions()}
+        for _dec in (_decisions.get("execute") or []):
+            _dec_asset = _dec.get("asset", "")
+            _dec_sig = _dec.get("signal_id", "")
+            if _dec_asset in _open_pos:
+                _status = f"OPENED position_id={_open_pos[_dec_asset].position_id}"
+            else:
+                _rej_match = get_rejection_for_signal(_dec_sig) if _dec_sig else None
+                if _rej_match:
+                    _status = (f"BLOCKED reason={_rej_match.get('reason_code')} "
+                               f"detail=\"{(_rej_match.get('reason_detail') or '')[:80]}\"")
+                else:
+                    _status = "PENDING (no matching rejection, no open position)"
+            match_section["rows"].append({
+                "asset": _dec_asset,
+                "strategy": _dec.get("strategy"),
+                "direction": _dec.get("direction"),
+                "priority": _dec.get("priority_score"),
+                "status": _status,
+            })
+    except Exception as _e:
+        match_section["error"] = str(_e)[:200]
+    diag["sections"].append(match_section)
+
+    # ══════════════════════════════════════════════════════════════
+    # NEW SECTION 3: RISK BUDGET (per asset class)
+    # ══════════════════════════════════════════════════════════════
+    budget_section = {"title": "RISK BUDGET", "asset_classes": {}}
+    try:
+        from bahamut.execution.balance import get_available_risk
+        for _ac in ("crypto", "stock"):
+            _info = get_available_risk(_ac, 0.02)
+            _base = _info.get("max_risk_usd", 0)
+            _source = _info.get("source", "unknown")
+            _ac_data = {
+                "base_risk_usd": round(_base, 2),
+                "source": _source,
+            }
+            if _base > 0:
+                _rep = "BTCUSD" if _ac == "crypto" else "AAPL"
+                try:
+                    from bahamut.intelligence.ai_decision_service import get_ai_decision
+                    _ai = get_ai_decision(asset=_rep, asset_class=_ac,
+                                          strategy="v5_base", direction="LONG")
+                    _g_mult = _ai.get("global_adjustments", {}).get("size_multiplier", 1.0)
+                    _s_mult = _ai.get("asset_decision", {}).get("size_multiplier", 1.0)
+                    _posture = _ai.get("posture", "SELECTIVE")
+                    _p_mult = {"AGGRESSIVE": 1.0, "SELECTIVE": 0.95,
+                               "DEFENSIVE": 0.75, "FROZEN": 0.25}.get(_posture, 0.95)
+                    _final = round(_base * _g_mult * _s_mult * _p_mult, 2)
+                    _floor = round(_base * 0.10, 2)
+                    _ac_data.update({
+                        "ai_global_mult": _g_mult,
+                        "ai_size_mult": _s_mult,
+                        "posture": _posture,
+                        "posture_mult": _p_mult,
+                        "final_expected": _final,
+                        "composite_floor": _floor,
+                        "above_floor": _final >= _floor,
+                    })
+                except Exception:
+                    _ac_data["ai_multipliers"] = "unavailable"
+            budget_section["asset_classes"][_ac] = _ac_data
+    except Exception as _e:
+        budget_section["error"] = str(_e)[:200]
+    diag["sections"].append(budget_section)
+
+    # ══════════════════════════════════════════════════════════════
+    # NEW SECTION 4: WHY NOT TRADING — decision matrix
+    # ══════════════════════════════════════════════════════════════
+    matrix_section = {"title": "WHY NOT TRADING", "matrix": {}}
+    try:
+        from bahamut.sentiment.gate import get_full_sentiment
+        _sent = get_full_sentiment()
+        _crypto_fg = (_sent.get("fear_greed") or {}).get("value", 50)
+        _stock_fg = (_sent.get("cnn_fear_greed") or {}).get("value", 50)
+
+        _crypto = {}
+        if _crypto_fg <= 39:
+            _crypto["LONG"] = f"BLOCKED (sentiment: F&G {_crypto_fg} ≤ 39)"
+        else:
+            _crypto["LONG"] = f"ALLOWED (F&G {_crypto_fg} > 39)"
+        if _crypto_fg >= 76:
+            _crypto["SHORT"] = f"BLOCKED (sentiment: F&G {_crypto_fg} ≥ 76)"
+        else:
+            _crypto["SHORT"] = f"ALLOWED (F&G {_crypto_fg} < 76)"
+
+        _stocks = {}
+        if _stock_fg <= 10:
+            _stocks["LONG"] = f"BLOCKED (CNN F&G {_stock_fg} ≤ 10)"
+        else:
+            _stocks["LONG"] = f"ALLOWED (CNN F&G {_stock_fg} > 10)"
+        if _stock_fg >= 90:
+            _stocks["SHORT"] = f"BLOCKED (CNN F&G {_stock_fg} ≥ 90)"
+        else:
+            _stocks["SHORT"] = f"ALLOWED (CNN F&G {_stock_fg} < 90)"
+
+        # Check broker availability
+        from bahamut.execution.balance import get_real_balance
+        _bal = get_real_balance()
+        _alp_cash = (_bal.get("alpaca") or {}).get("cash", 0)
+        if _alp_cash <= 0:
+            _stocks["CONCERN"] = f"alpaca cash={_alp_cash} — may block new trades"
+        _bin_avail = (_bal.get("binance_futures") or {}).get("available", 0)
+        if _bin_avail <= 0:
+            _crypto["CONCERN"] = f"binance available={_bin_avail} — may block new trades"
+
+        matrix_section["matrix"]["crypto"] = _crypto
+        matrix_section["matrix"]["stock"] = _stocks
+        matrix_section["sentiment"] = {
+            "crypto_fear_greed": _crypto_fg,
+            "stock_cnn_fear_greed": _stock_fg,
+        }
+    except Exception as _e:
+        matrix_section["error"] = str(_e)[:200]
+    diag["sections"].append(matrix_section)
+
+    # ══════════════════════════════════════════════════════════════
+    # NEW SECTION 5: SCHEMA DRIFT CHECK
+    # ══════════════════════════════════════════════════════════════
+    drift_section = {"title": "SCHEMA DRIFT CHECK", "checks": []}
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text as _drift_text
+        _checks = [
+            ("training_trades", "exit_time", "timestamp"),
+            ("training_trades", "entry_time", "timestamp"),
+            ("training_trades", "created_at", "timestamp"),
+            ("order_intents", "created_at", "timestamp"),
+            ("order_intents", "updated_at", "timestamp"),
+            ("training_positions", "entry_time", "timestamp"),
+            ("training_positions", "created_at", "timestamp"),
+        ]
+        with sync_engine.connect() as _dc:
+            for _tbl, _col, _expected in _checks:
+                _row = _dc.execute(_drift_text(
+                    "SELECT data_type FROM information_schema.columns "
+                    "WHERE table_name=:t AND column_name=:c"
+                ), {"t": _tbl, "c": _col}).fetchone()
+                _actual = _row[0] if _row else "MISSING"
+                _ok = _expected in _actual
+                drift_section["checks"].append({
+                    "table": _tbl, "column": _col,
+                    "expected": _expected, "actual": _actual,
+                    "ok": _ok,
+                })
+        drift_section["all_ok"] = all(c["ok"] for c in drift_section["checks"])
+    except Exception as _e:
+        drift_section["error"] = str(_e)[:200]
+    diag["sections"].append(drift_section)
+
     return diag
 
 
