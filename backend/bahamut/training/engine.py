@@ -33,51 +33,33 @@ def _get_redis():
 
 
 # ═══════════════════════════════════════════
-# Phase 3 Item 7 — Idempotent substrategy column migration
-# Runs once per process. Uses ALTER TABLE IF NOT EXISTS (Postgres 9.6+).
-# Failure is non-fatal: INSERTs fall back to the no-substrategy code path.
+# Schema assertions — Alembic is the sole source of truth.
+# Runtime DDL removed. These columns must exist via migration.
 # ═══════════════════════════════════════════
-_SUBSTRATEGY_MIGRATION_DONE = False
+_SCHEMA_VERIFIED = False
 
 
 def _ensure_substrategy_column() -> bool:
-    """Add substrategy columns to training_positions and training_trades if
-    not already present. Idempotent — safe to call on every write.
-    Returns True if columns exist (either before or after this call).
-
-    Phase 4 Item 12: also adds data_mode column (same migration pattern)."""
-    global _SUBSTRATEGY_MIGRATION_DONE
-    if _SUBSTRATEGY_MIGRATION_DONE:
+    """Verify that substrategy and data_mode columns exist.
+    Does NOT create them — that's Alembic's job.
+    Returns True if columns exist, False with ERROR log if not."""
+    global _SCHEMA_VERIFIED
+    if _SCHEMA_VERIFIED:
         return True
     try:
-        from bahamut.database import sync_engine
-        from sqlalchemy import text
-        with sync_engine.connect() as conn:
-            conn.execute(text(
-                "ALTER TABLE training_positions "
-                "ADD COLUMN IF NOT EXISTS substrategy VARCHAR(64) DEFAULT ''"
-            ))
-            conn.execute(text(
-                "ALTER TABLE training_trades "
-                "ADD COLUMN IF NOT EXISTS substrategy VARCHAR(64) DEFAULT ''"
-            ))
-            # Phase 4 Item 12
-            conn.execute(text(
-                "ALTER TABLE training_positions "
-                "ADD COLUMN IF NOT EXISTS data_mode VARCHAR(32) DEFAULT 'live'"
-            ))
-            conn.execute(text(
-                "ALTER TABLE training_trades "
-                "ADD COLUMN IF NOT EXISTS data_mode VARCHAR(32) DEFAULT 'live'"
-            ))
-            conn.commit()
-        _SUBSTRATEGY_MIGRATION_DONE = True
-        logger.info("training_substrategy_and_data_mode_columns_ready")
-        return True
+        from bahamut.db.schema.assertions import assert_column_exists
+        ok = all([
+            assert_column_exists("training_positions", "substrategy"),
+            assert_column_exists("training_positions", "data_mode"),
+            assert_column_exists("training_trades", "substrategy"),
+            assert_column_exists("training_trades", "data_mode"),
+        ])
+        if ok:
+            _SCHEMA_VERIFIED = True
+        return ok
     except Exception as e:
-        logger.warning("training_migration_failed",
-                       error=str(e)[:200])
-        return False
+        logger.warning("schema_assertion_check_failed", error=str(e)[:200])
+        return True  # Assume present to avoid blocking trades on assertion error
 
 
 # ═══════════════════════════════════════════

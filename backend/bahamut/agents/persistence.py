@@ -7,10 +7,19 @@ from sqlalchemy import text
 from bahamut.config import get_settings
 from bahamut.database import sync_engine
 
+_persistence_tables_verified = False
+
 def ensure_tables():
-    """Initialize all tables via centralized schema management."""
-    from bahamut.db.schema.tables import init_schema
-    init_schema()
+    """Verify agent pipeline tables exist. Alembic is source of truth.
+    Cached — only checks once per process."""
+    global _persistence_tables_verified
+    if _persistence_tables_verified:
+        return
+    from bahamut.db.schema.assertions import assert_table_exists
+    assert_table_exists("signal_cycles")
+    assert_table_exists("agent_outputs")
+    assert_table_exists("consensus_decisions")
+    _persistence_tables_verified = True
 
 
 logger = structlog.get_logger()

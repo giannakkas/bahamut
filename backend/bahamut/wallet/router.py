@@ -10,50 +10,27 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from bahamut.auth.router import get_current_user
-from bahamut.db.query import run_query, run_query_one, run_transaction, ensure_table
+from bahamut.db.query import run_query, run_query_one, run_transaction
 
 logger = structlog.get_logger()
 router = APIRouter()
 
-# ── Schema ──
+# ── Schema (Alembic-managed — see 002_runtime_catchup.py) ──
 
-WALLET_TABLE = """
-CREATE TABLE IF NOT EXISTS user_wallets (
-    user_id TEXT PRIMARY KEY,
-    balance REAL NOT NULL DEFAULT 0,
-    allocation REAL NOT NULL DEFAULT 0,
-    mode TEXT NOT NULL DEFAULT 'demo',
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-)
-"""
-
-TRANSACTIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS wallet_transactions (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    type TEXT NOT NULL,
-    amount REAL NOT NULL,
-    balance_after REAL NOT NULL,
-    allocation_after REAL NOT NULL,
-    mode TEXT NOT NULL DEFAULT 'demo',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-)
-"""
-
-def _ensure_tables():
-    try:
-        ensure_table(WALLET_TABLE)
-        ensure_table(TRANSACTIONS_TABLE)
-    except Exception as e:
-        logger.error("wallet_tables_failed", error=str(e))
-
-_tables_created = False
+_tables_verified = False
 
 def _lazy_ensure_tables():
-    global _tables_created
-    if not _tables_created:
-        _ensure_tables()
-        _tables_created = True
+    """Verify wallet tables exist. Does NOT create them."""
+    global _tables_verified
+    if _tables_verified:
+        return
+    try:
+        from bahamut.db.schema.assertions import assert_table_exists
+        assert_table_exists("user_wallets")
+        assert_table_exists("wallet_transactions")
+        _tables_verified = True
+    except Exception as e:
+        logger.error("wallet_tables_missing", error=str(e)[:100])
 
 
 # ── Models ──

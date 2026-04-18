@@ -236,18 +236,20 @@ def get_config_metadata() -> list[dict]:
 # DB PERSISTENCE
 # ══════════════════════════════════════════
 
-def _ensure_tables():
-    try:
-        from bahamut.database import sync_engine
-        from sqlalchemy import text
-        with sync_engine.connect() as conn:
-            pass  # Schema managed by db.schema.tables
-            pass  # Schema managed by db.schema.tables
-            conn.commit()
-    except Exception as e:
+_admin_tables_verified = False
 
-        logger.warning("admin_config_silent_error", error=str(e))
-        pass
+def _ensure_tables():
+    """Verify admin tables exist. Alembic is source of truth."""
+    global _admin_tables_verified
+    if _admin_tables_verified:
+        return
+    try:
+        from bahamut.db.schema.assertions import assert_table_exists
+        assert_table_exists("admin_config")
+        assert_table_exists("admin_audit_log")
+        _admin_tables_verified = True
+    except Exception as e:
+        logger.warning("admin_config_tables_check_failed", error=str(e)[:100])
 
 
 def _ensure_cache():

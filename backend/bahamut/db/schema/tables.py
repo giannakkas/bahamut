@@ -462,62 +462,21 @@ TABLES = [
 
 
 def init_schema() -> None:
-    """Initialize all tables and verify schema version. Called once at startup.
+    """Verify schema is ready at startup. Alembic is the sole source of truth.
 
-    - Creates all tables (idempotent via CREATE IF NOT EXISTS)
-    - Checks DB schema version vs code version
-    - Logs CRITICAL on version mismatch
-    - Records new version on successful init
+    Does NOT create tables — that's Alembic's job (alembic upgrade head).
+    Checks critical tables exist and logs ERROR if any are missing.
     """
-    from bahamut.db.query import get_connection
-    from sqlalchemy import text
+    from bahamut.db.schema.assertions import assert_schema_ready
 
-    logger.info("schema_init_start", table_count=len(TABLES), code_version=SCHEMA_VERSION)
-    errors = []
-    with get_connection() as conn:
-        for sql in TABLES:
-            try:
-                conn.execute(text(sql))
-            except Exception as e:
-                table_name = sql.split("(")[0].strip().split()[-1]
-                errors.append(f"{table_name}: {str(e)[:80]}")
-                logger.error("schema_init_table_failed", table=table_name, error=str(e))
-        conn.commit()
+    logger.info("schema_init_start", code_version=SCHEMA_VERSION)
+    result = assert_schema_ready()
 
-        # ── Schema version check ──
-        try:
-            row = conn.execute(text(
-                "SELECT MAX(version) FROM schema_version"
-            )).fetchone()
-            db_version = row[0] if row and row[0] else 0
-        except Exception:
-            db_version = 0
-
-        if db_version > SCHEMA_VERSION:
-            logger.critical("schema_version_mismatch",
-                            msg="DB schema is NEWER than code — possible rollback or deployment error",
-                            db_version=db_version, code_version=SCHEMA_VERSION)
-            try:
-                from bahamut.shared.degraded import mark_degraded
-                mark_degraded("schema.version",
-                              f"DB v{db_version} > code v{SCHEMA_VERSION}", ttl=600)
-            except Exception:
-                pass
-        elif db_version < SCHEMA_VERSION:
-            logger.info("schema_version_upgrade",
-                        db_version=db_version, code_version=SCHEMA_VERSION)
-            try:
-                conn.execute(text(
-                    "INSERT INTO schema_version (version) VALUES (:v)"
-                ), {"v": SCHEMA_VERSION})
-                conn.commit()
-            except Exception as e:
-                logger.warning("schema_version_record_failed", error=str(e))
-        else:
-            logger.info("schema_version_ok", version=SCHEMA_VERSION)
-
-    if errors:
-        logger.error("schema_init_partial_failure", errors=errors)
+    if not result["ok"]:
+        logger.critical("SCHEMA_NOT_READY",
+                        missing=result["missing"],
+                        msg="Run 'alembic upgrade head' to create tables. "
+                            "Runtime DDL has been removed.")
     else:
         logger.info("schema_init_complete", version=SCHEMA_VERSION)
 

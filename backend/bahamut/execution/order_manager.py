@@ -105,79 +105,22 @@ def _get_redis():
 
 
 def _ensure_tables():
-    """Create order_intents and order_events tables if they don't exist.
-    Idempotent — safe to call on every operation."""
+    """Verify order_intents and order_events tables exist.
+    Does NOT create them — that's Alembic's job (002_runtime_catchup).
+    Returns True if tables exist, False with ERROR log if not."""
     global _TABLES_READY
     if _TABLES_READY:
         return True
     try:
-        from bahamut.database import sync_engine
-        from sqlalchemy import text
-        with sync_engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS order_intents (
-                    id VARCHAR(36) PRIMARY KEY,
-                    signal_id VARCHAR(128) UNIQUE NOT NULL,
-                    asset VARCHAR(32) NOT NULL,
-                    asset_class VARCHAR(16) NOT NULL,
-                    direction VARCHAR(8) NOT NULL,
-                    strategy VARCHAR(64) NOT NULL,
-                    substrategy VARCHAR(64) DEFAULT '',
-                    intended_size FLOAT NOT NULL,
-                    intended_price FLOAT DEFAULT 0,
-                    sl_pct FLOAT DEFAULT 0,
-                    tp_pct FLOAT DEFAULT 0,
-                    risk_amount FLOAT DEFAULT 0,
-                    order_state VARCHAR(32) NOT NULL DEFAULT 'intent_created',
-                    position_state VARCHAR(32) NOT NULL DEFAULT 'opening',
-                    client_order_id VARCHAR(128) DEFAULT '',
-                    broker_order_id VARCHAR(128) DEFAULT '',
-                    execution_platform VARCHAR(32) DEFAULT '',
-                    filled_qty FLOAT DEFAULT 0,
-                    remaining_qty FLOAT DEFAULT 0,
-                    avg_fill_price FLOAT DEFAULT 0,
-                    commission FLOAT DEFAULT 0,
-                    slippage_abs FLOAT DEFAULT 0,
-                    realized_pnl FLOAT DEFAULT 0,
-                    exit_price FLOAT DEFAULT 0,
-                    exit_reason VARCHAR(32) DEFAULT '',
-                    error_message TEXT DEFAULT '',
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    closed_at TIMESTAMP WITH TIME ZONE,
-                    metadata JSONB DEFAULT '{}'
-                )
-            """))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS order_events (
-                    id SERIAL PRIMARY KEY,
-                    intent_id VARCHAR(36) NOT NULL REFERENCES order_intents(id),
-                    event_type VARCHAR(64) NOT NULL,
-                    from_state VARCHAR(32),
-                    to_state VARCHAR(32),
-                    details JSONB DEFAULT '{}',
-                    broker_response JSONB DEFAULT '{}',
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_order_intents_signal
-                ON order_intents(signal_id)
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_order_intents_asset_state
-                ON order_intents(asset, order_state)
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_order_events_intent
-                ON order_events(intent_id)
-            """))
-            conn.commit()
-        _TABLES_READY = True
-        logger.info("order_manager_tables_ready")
-        return True
+        from bahamut.db.schema.assertions import assert_table_exists
+        ok = (assert_table_exists("order_intents") and
+              assert_table_exists("order_events"))
+        if ok:
+            _TABLES_READY = True
+            logger.info("order_manager_tables_ready")
+        return ok
     except Exception as e:
-        logger.error("order_manager_table_creation_failed", error=str(e)[:200])
+        logger.error("order_manager_table_check_failed", error=str(e)[:200])
         return False
 
 
