@@ -56,6 +56,13 @@ def _get_production_health() -> dict:
     except Exception:
         result["training_freshness_sec"] = -1
         result["reconciliation_unauthorized_count"] = 0
+    try:
+        from bahamut.execution._latency import p95
+        result["latency_p95_binance_ms"] = p95("binance")
+        result["latency_p95_alpaca_ms"] = p95("alpaca")
+    except Exception:
+        result["latency_p95_binance_ms"] = -1
+        result["latency_p95_alpaca_ms"] = -1
     return result
 
 

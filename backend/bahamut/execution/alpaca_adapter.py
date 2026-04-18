@@ -98,8 +98,14 @@ def place_market_buy(asset: str, quantity: float = None, notional: float = None,
         return {"error": "Must provide quantity or notional"}
 
     try:
+        _t0 = time.time()
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
                        headers=_headers(), timeout=5)
+        try:
+            from bahamut.execution._latency import record as _rec_latency
+            _rec_latency("alpaca", (time.time() - _t0) * 1000)
+        except Exception:
+            pass
         data = r.json()
         if r.status_code in (200, 201):
             logger.info("alpaca_buy_submitted",
@@ -143,8 +149,14 @@ def place_market_sell(asset: str, quantity: float,
     }
 
     try:
+        _t0 = time.time()
         r = httpx.post(f"{BASE_URL}/v2/orders", json=order,
                        headers=_headers(), timeout=5)
+        try:
+            from bahamut.execution._latency import record as _rec_latency
+            _rec_latency("alpaca", (time.time() - _t0) * 1000)
+        except Exception:
+            pass
         data = r.json()
         if r.status_code in (200, 201):
             logger.info("alpaca_sell_submitted",

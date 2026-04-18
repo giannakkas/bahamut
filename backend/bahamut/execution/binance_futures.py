@@ -141,8 +141,14 @@ def place_market_order(asset: str, side: str, quantity: float,
     params = _sign(order_params)
 
     try:
+        _t0 = time.time()
         r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,
                        headers=_headers(), timeout=5)
+        try:
+            from bahamut.execution._latency import record as _rec_latency
+            _rec_latency("binance", (time.time() - _t0) * 1000)
+        except Exception:
+            pass
         data = r.json()
         if r.status_code == 200:
             fill_price = float(data.get("avgPrice", 0))
