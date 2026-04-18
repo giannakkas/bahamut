@@ -1711,10 +1711,30 @@ function AssetsTab({ data }: { data: any }) {
    ═══════════════════════════════════════════ */
 function ExecutionDecisions({ decisions }: { decisions: any }) {
   const [showAll, setShowAll] = useState(false);
+  const [rejections, setRejections] = useState<any[]>([]);
   const exec = decisions.execute || [];
   const watch = decisions.watchlist || [];
   const rej = decisions.rejected || [];
   const summary = decisions.summary || {};
+
+  // Fetch engine-side rejections to annotate EXECUTE decisions
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token || exec.length === 0) return;
+    fetch(`${apiBase()}/training/admin/engine-rejections?limit=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(d => setRejections(d.rejections || []))
+      .catch(() => {});
+  }, [exec.length]);
+
+  // Build rejection lookup: asset:strategy:direction -> reason
+  const rejMap: Record<string, any> = {};
+  for (const r of rejections) {
+    const key = `${r.asset}:${r.strategy}:${r.direction}`;
+    if (!rejMap[key] || r.ts > rejMap[key].ts) rejMap[key] = r;
+  }
 
   const decClr: Record<string, string> = {
     EXECUTE: "bg-green-500/20 text-green-400 border-green-500/40",
@@ -1753,7 +1773,17 @@ function ExecutionDecisions({ decisions }: { decisions: any }) {
       <div className="space-y-1.5 overflow-x-auto">
         {visible.map((d: any, i: number) => (
           <div key={i} className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border min-w-[600px] ${d._group === "EXECUTE" ? "bg-green-500/[0.03] border-green-500/15" : "bg-bah-surface border-bah-border"}`}>
-            <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>
+            {(() => {
+              if (d._group !== "EXECUTE") {
+                return <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${decClr[d._group]}`}>{d._group}</span>;
+              }
+              const rejKey = `${d.asset}:${d.strategy}:${d.direction}`;
+              const rejection = rejMap[rejKey];
+              if (rejection) {
+                return <span className="px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 bg-amber-500/20 text-amber-300 border-amber-500/40" title={`${rejection.reason_code}: ${rejection.reason_detail}`}>BLOCKED</span>;
+              }
+              return <span className={`px-2 py-0.5 text-[10px] font-bold rounded border shrink-0 ${decClr.EXECUTE}`}>EXECUTE</span>;
+            })()}
             <span className="text-xs text-bah-heading font-bold w-[70px] shrink-0">{d.asset}</span>
             <span className="text-[11px] text-bah-muted w-[50px] shrink-0">{sn(d.strategy)}</span>
             <span className={`text-[11px] font-bold w-[40px] shrink-0 ${d.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{d.direction}</span>
