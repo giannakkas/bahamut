@@ -1109,7 +1109,8 @@ def open_training_position(
                 logger.warning("order_state_machine_wire_failed",
                                intent_id=_order_intent_id, error=str(_sm_err)[:100])
 
-        elif _status in ("error", "internal") and _expected_platform != "internal":
+        # Abort guard: broker was expected but execution failed or fell back to internal
+        if _status in ("error", "internal") and _expected_platform != "internal":
             # Broker was expected but execution failed or fell back to internal
             # Do NOT create a phantom internal-only position
             logger.warning("execution_failed_position_aborted",
