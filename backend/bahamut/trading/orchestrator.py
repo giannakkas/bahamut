@@ -449,6 +449,17 @@ def run_trading_cycle():
     except Exception as e:
         logger.warning("cycle_reconciliation_failed", error=str(e)[:100])
 
+    # Phase 6b: Bracket coverage check (SL + TP alive on broker)
+    try:
+        from bahamut.execution.reconciliation import check_bracket_coverage
+        bracket_report = check_bracket_coverage()
+        if bracket_report["missing_coverage_count"] > 0:
+            logger.warning("bracket_coverage_gaps",
+                           count=bracket_report["missing_coverage_count"],
+                           details=bracket_report["missing_coverage"][:5])
+    except Exception as e:
+        logger.debug("bracket_coverage_check_failed", error=str(e)[:100])
+
     # Phase 7: Per-strategy drawdown computation (feeds risk_engine per-strategy kill)
     try:
         from sqlalchemy import text as _dd_text

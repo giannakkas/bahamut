@@ -448,3 +448,139 @@ def get_last_reconciliation() -> dict | None:
     except Exception:
         pass
     return None
+
+
+def check_bracket_coverage(platform: str = "binance_futures") -> dict:
+    """Verify every open crypto position on the broker has live SL + TP brackets.
+
+    Returns dict with positions missing coverage, plus counts.
+    Auto-repairs single missing brackets if the other is still live.
+    """
+    from bahamut.trading.engine import _load_positions
+    missing_coverage = []
+    total_checked = 0
+
+    positions = [p for p in _load_positions()
+                 if getattr(p, "execution_platform", "") in ("binance", "binance_futures")
+                 and getattr(p, "asset_class", "") == "crypto"]
+
+    for pos in positions:
+        total_checked += 1
+
+        if not getattr(pos, "bracket_sl_order_id", "") or not getattr(pos, "bracket_tp_order_id", ""):
+            missing_coverage.append({
+                "position_id": pos.position_id,
+                "asset": pos.asset,
+                "issue": "bracket_ids_missing_in_position_state",
+            })
+            continue
+
+        try:
+            from bahamut.execution.binance_futures import SYMBOL_MAP, BASE_URL, _sign, _headers
+            import httpx
+            _sym = SYMBOL_MAP.get(pos.asset, pos.asset.replace("USD", "USDT"))
+
+            params = _sign({"symbol": _sym})
+            r = httpx.get(f"{BASE_URL}/fapi/v1/openOrders",
+                          params=params, headers=_headers(), timeout=5)
+            if r.status_code != 200:
+                continue
+
+            open_order_ids = {str(o.get("orderId", "")) for o in r.json()}
+            sl_live = pos.bracket_sl_order_id in open_order_ids
+            tp_live = pos.bracket_tp_order_id in open_order_ids
+
+            if not sl_live or not tp_live:
+                missing_coverage.append({
+                    "position_id": pos.position_id,
+                    "asset": pos.asset,
+                    "sl_live": sl_live, "tp_live": tp_live,
+                    "issue": f"missing_bracket_sl={not sl_live}_tp={not tp_live}",
+                })
+
+                # Auto-repair if one bracket is still alive (position clearly still open)
+                if sl_live or tp_live:
+                    _auto_repair_brackets(pos, sl_live, tp_live)
+
+                # Telegram alert
+                try:
+                    from bahamut.monitoring.telegram import send_alert
+                    send_alert(
+                        f"⚠️ BRACKET COVERAGE MISSING\n"
+                        f"Asset: {pos.asset}\n"
+                        f"Direction: {pos.direction}\n"
+                        f"SL live: {sl_live} (id={pos.bracket_sl_order_id})\n"
+                        f"TP live: {tp_live} (id={pos.bracket_tp_order_id})\n"
+                        f"\nIf BOTH missing → position probably closed on exchange."
+                    )
+                except Exception:
+                    pass
+
+                # If BOTH missing, position likely closed by broker
+                if not sl_live and not tp_live:
+                    logger.warning("bracket_both_missing_suspect_broker_close",
+                                   position_id=pos.position_id, asset=pos.asset)
+
+        except Exception as e:
+            logger.warning("bracket_coverage_check_error",
+                           position_id=pos.position_id, error=str(e)[:100])
+
+    return {
+        "total_checked": total_checked,
+        "missing_coverage_count": len(missing_coverage),
+        "missing_coverage": missing_coverage,
+    }
+
+
+def _auto_repair_brackets(pos, sl_live: bool, tp_live: bool):
+    """Replace missing SL or TP bracket on a position where the other is still live."""
+    try:
+        from bahamut.execution.binance_futures import (
+            SYMBOL_MAP, BASE_URL, _sign, _headers, _configured
+        )
+        import httpx
+
+        if not _configured():
+            return
+
+        _sym = SYMBOL_MAP.get(pos.asset, pos.asset.replace("USD", "USDT"))
+        close_side = "SELL" if pos.direction == "LONG" else "BUY"
+
+        if not sl_live:
+            params = _sign({
+                "symbol": _sym, "side": close_side, "type": "STOP_MARKET",
+                "stopPrice": f"{pos.stop_price:.6f}", "closePosition": "true",
+                "reduceOnly": "true", "workingType": "MARK_PRICE",
+                "newClientOrderId": f"repair_sl_{pos.position_id[:8]}",
+            })
+            r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,
+                           headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                new_id = str(r.json().get("orderId", ""))
+                pos.bracket_sl_order_id = new_id
+                logger.info("bracket_sl_repaired", asset=pos.asset, new_id=new_id)
+
+        if not tp_live:
+            params = _sign({
+                "symbol": _sym, "side": close_side, "type": "TAKE_PROFIT_MARKET",
+                "stopPrice": f"{pos.tp_price:.6f}", "closePosition": "true",
+                "reduceOnly": "true", "workingType": "MARK_PRICE",
+                "newClientOrderId": f"repair_tp_{pos.position_id[:8]}",
+            })
+            r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,
+                           headers=_headers(), timeout=10)
+            if r.status_code == 200:
+                new_id = str(r.json().get("orderId", ""))
+                pos.bracket_tp_order_id = new_id
+                logger.info("bracket_tp_repaired", asset=pos.asset, new_id=new_id)
+
+        # Persist updated bracket IDs back to Redis
+        try:
+            from bahamut.trading.engine import _save_position
+            _save_position(pos)
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.error("bracket_auto_repair_failed",
+                     position_id=pos.position_id, error=str(e)[:100])
