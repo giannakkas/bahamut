@@ -17,6 +17,7 @@ celery_app = Celery(
     include=[
         "bahamut.trading.orchestrator",
         "bahamut.monitoring.safe_report",
+        "bahamut.monitoring.account_reconciler",
     ],
 )
 
@@ -39,6 +40,10 @@ celery_app.conf.update(
         "daily-safe-report": {
             "task": "bahamut.monitoring.safe_report.send_daily_report",
             "schedule": crontab(hour=8, minute=0),  # 8am UTC
+        },
+        "hourly-account-reconcile": {
+            "task": "bahamut.monitoring.account_reconciler.run_hourly_reconcile",
+            "schedule": crontab(minute=15),  # Every hour at :15
         },
     },
 )
