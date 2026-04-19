@@ -75,6 +75,40 @@ def get_account() -> dict | None:
     return None
 
 
+def _wait_for_fill_binance(symbol: str, order_id: str, max_wait: int = 5) -> dict | None:
+    """Poll GET /fapi/v1/order for fill. Returns updated order dict or None on timeout."""
+    if not order_id:
+        return None
+    for _ in range(max_wait):
+        time.sleep(1)
+        try:
+            params = _sign({"symbol": symbol, "orderId": order_id})
+            r = httpx.get(f"{BASE_URL}/fapi/v1/order", params=params,
+                          headers=_headers(), timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("status") in ("FILLED", "PARTIALLY_FILLED"):
+                    return {
+                        "status": data.get("status"),
+                        "fill_price": float(data.get("avgPrice", 0) or 0),
+                        "fill_qty": float(data.get("executedQty", 0) or 0),
+                        "raw": data,
+                    }
+                if data.get("status") in ("REJECTED", "CANCELED", "EXPIRED"):
+                    return {
+                        "status": data.get("status"),
+                        "fill_price": 0,
+                        "fill_qty": 0,
+                        "raw": data,
+                    }
+        except Exception as e:
+            logger.debug("binance_poll_fill_error",
+                         order_id=order_id, error=str(e)[:100])
+    logger.warning("binance_poll_fill_timeout",
+                   symbol=symbol, order_id=order_id)
+    return None
+
+
 def place_market_order(asset: str, side: str, quantity: float,
                       client_order_id: str = "",
                       reduce_only: bool = False) -> dict | None:
@@ -151,16 +185,29 @@ def place_market_order(asset: str, side: str, quantity: float,
             pass
         data = r.json()
         if r.status_code == 200:
-            fill_price = float(data.get("avgPrice", 0))
-            fill_qty = float(data.get("executedQty", quantity))
-            logger.info("binance_futures_order_filled",
+            status = data.get("status", "")
+            fill_price = float(data.get("avgPrice", 0) or 0)
+            fill_qty = float(data.get("executedQty", 0) or 0)
+            order_id = str(data.get("orderId", ""))
+
+            # If order isn't filled synchronously, poll for fill
+            if status in ("NEW", "ACCEPTED", "PARTIALLY_FILLED") and order_id:
+                polled = _wait_for_fill_binance(symbol, order_id, max_wait=5)
+                if polled:
+                    fill_price = polled["fill_price"]
+                    fill_qty = polled["fill_qty"]
+                    status = polled["status"]
+                    data = polled["raw"]
+
+            logger.info("binance_futures_order_response",
                         asset=asset, symbol=symbol, side=side,
-                        fill_price=fill_price, order_id=data.get("orderId"))
+                        fill_price=fill_price, fill_qty=fill_qty,
+                        status=status, order_id=order_id)
             return {
-                "order_id": str(data.get("orderId", "")),
+                "order_id": order_id,
                 "fill_price": fill_price,
                 "fill_qty": fill_qty,
-                "status": data.get("status", "UNKNOWN"),
+                "status": status,
                 "raw": data,
             }
         logger.error("binance_futures_order_error", asset=asset, side=side,
