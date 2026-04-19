@@ -28,6 +28,13 @@ MAX_COMBINED_CRYPTO_OPEN_RISK_PCT = 0.05
 MAX_POSITIONS_PER_ASSET = 1
 MAX_TOTAL_OPEN_POSITIONS = 4
 
+# ═══════════════════════════════════════════
+# CANARY ASSET — continuous liveness proof
+# Trades ALL the time at reduced size. If no canary trade in 24h, alert.
+# ═══════════════════════════════════════════
+CANARY_ASSET = "BTCUSD"
+CANARY_SIZE_MULTIPLIER = 0.10  # 10% of normal position size
+
 
 # ═══════════════════════════════════════════
 # TRAINING UNIVERSE (paper trading only)

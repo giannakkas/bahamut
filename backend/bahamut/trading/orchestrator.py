@@ -528,6 +528,46 @@ def run_trading_cycle():
     except Exception as e:
         logger.warning("funding_accrual_cycle_failed", error=str(e)[:100])
 
+    # Canary liveness check: alert if no trade in 24h
+    try:
+        from bahamut.config_assets import CANARY_ASSET
+        from bahamut.trading.engine import _get_redis
+        _canary_r = _get_redis()
+        if _canary_r:
+            _canary_last = _canary_r.get(f"bahamut:canary:last_trade_ts")
+            _canary_stale = True
+            if _canary_last:
+                _canary_age = time.time() - float(_canary_last)
+                _canary_stale = _canary_age > 86400  # 24 hours
+            if _canary_stale:
+                # Check DB for recent canary trade
+                try:
+                    from bahamut.database import sync_engine
+                    from sqlalchemy import text as _ct
+                    with sync_engine.connect() as _cc:
+                        _cr = _cc.execute(_ct(
+                            "SELECT COUNT(*) FROM training_trades "
+                            "WHERE asset = :a AND exit_time > NOW() - INTERVAL '24 hours'"
+                        ), {"a": CANARY_ASSET}).fetchone()
+                        if _cr and int(_cr[0]) > 0:
+                            _canary_r.setex("bahamut:canary:last_trade_ts", 86400,
+                                            str(time.time()))
+                            _canary_stale = False
+                except Exception:
+                    pass
+            if _canary_stale:
+                logger.warning("canary_liveness_alert",
+                               asset=CANARY_ASSET, hours_since_last=24)
+                try:
+                    from bahamut.monitoring.telegram import send_alert
+                    send_alert(f"🐤 CANARY LIVENESS ALERT\n"
+                               f"{CANARY_ASSET} has not traded in 24+ hours.\n"
+                               f"The trading engine may be stalled.")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.debug("canary_check_failed", error=str(e)[:80])
+
     return {
         "status": "OK",
         "processed": processed,

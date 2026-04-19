@@ -727,6 +727,17 @@ def open_training_position(
         except Exception:
             pass
 
+        # ── Canary asset size reduction ──
+        try:
+            from bahamut.config_assets import CANARY_ASSET, CANARY_SIZE_MULTIPLIER
+            if asset == CANARY_ASSET and CANARY_SIZE_MULTIPLIER < 1.0:
+                risk_amount = round(risk_amount * CANARY_SIZE_MULTIPLIER, 2)
+                logger.debug("canary_size_applied",
+                             asset=asset, multiplier=CANARY_SIZE_MULTIPLIER,
+                             scaled_risk=risk_amount)
+        except Exception:
+            pass
+
         _original_risk_amount = risk_amount  # Preserve for composite floor check
 
         # ── Volatility-targeted sizing ──
@@ -1782,6 +1793,18 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 from bahamut.trading.risk_budget import release_pending, record_realized_loss
                 release_pending(pos.risk_amount)
                 record_realized_loss(trade.pnl)
+            except Exception:
+                pass
+
+            # Record canary trade timestamp for liveness monitoring
+            try:
+                from bahamut.config_assets import CANARY_ASSET
+                if pos.asset == CANARY_ASSET:
+                    import time as _ct
+                    r = _get_redis()
+                    if r:
+                        r.setex("bahamut:canary:last_trade_ts", 86400,
+                                str(_ct.time()))
             except Exception:
                 pass
 
