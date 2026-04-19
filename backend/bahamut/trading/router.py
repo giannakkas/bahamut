@@ -4097,3 +4097,16 @@ async def get_engine_rejections(limit: int = 50, user=Depends(get_current_user))
         raise HTTPException(status_code=403, detail="admin required")
     from bahamut.trading.rejection_tracker import get_recent_rejections
     return {"rejections": get_recent_rejections(limit=min(200, max(1, limit)))}
+
+
+@router.get("/admin/broker-latency")
+async def broker_latency(user=Depends(get_current_user)):
+    """Broker REST API latency percentiles (p50/p95/p99) per platform."""
+    if getattr(user, "role", "") not in ("admin", "super_admin"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="admin required")
+    from bahamut.execution._latency import percentiles
+    return {
+        "binance": percentiles("binance"),
+        "alpaca": percentiles("alpaca"),
+    }

@@ -54,3 +54,33 @@ def p95(broker: str) -> float:
         return float(vals[min(idx, len(vals) - 1)])
     except Exception:
         return -1
+
+
+def get_samples(broker: str) -> list[int]:
+    """Return raw latency samples for a broker (last 100 calls, ms)."""
+    r = _r()
+    if not r:
+        return []
+    try:
+        return [int(x) for x in r.lrange(f"{_KEY_PREFIX}{broker}", 0, -1)]
+    except Exception:
+        return []
+
+
+def percentiles(broker: str) -> dict:
+    """Return p50/p95/p99/mean for a broker. Empty dict if no data."""
+    samples = get_samples(broker)
+    if not samples:
+        return {"count": 0}
+    samples.sort()
+    n = len(samples)
+    total = sum(samples)
+    return {
+        "count": n,
+        "p50": samples[n // 2],
+        "p95": samples[min(n - 1, int(n * 0.95))],
+        "p99": samples[min(n - 1, int(n * 0.99))],
+        "mean": round(total / n, 1),
+        "min": samples[0],
+        "max": samples[-1],
+    }
