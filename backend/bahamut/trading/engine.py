@@ -1121,6 +1121,32 @@ def open_training_position(
             data_mode=data_mode,
         )
 
+        # ═══════════════════════════════════════════
+        # ATOMIC CROSS-WORKER RISK BUDGET CHECK
+        # Prevents concurrent opens exceeding daily budget across all workers.
+        # ═══════════════════════════════════════════
+        _budget_claimed = False
+        _position_saved = False
+        try:
+            from bahamut.trading.risk_budget import check_and_claim_budget
+            allowed, _budget_reason = check_and_claim_budget(risk_amount, asset_class)
+            if not allowed:
+                logger.warning("trading_position_rejected_risk_budget",
+                               asset=asset, strategy=strategy, reason=_budget_reason,
+                               risk=risk_amount)
+                _increment_counter(_get_redis(), "bahamut:counters:risk_budget_blocks")
+                try:
+                    from bahamut.trading.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="risk_budget_exceeded",
+                                     reason_detail=_budget_reason)
+                except Exception:
+                    pass
+                return None
+            _budget_claimed = True
+        except Exception as _rb_err:
+            logger.debug("risk_budget_check_nonfatal", error=str(_rb_err)[:100])
+
         # ── Execute on exchange FIRST (Binance/Alpaca) ──
         # Position is only saved if exchange execution succeeds or is not required.
         _expected_platform = "internal"
@@ -1300,6 +1326,7 @@ def open_training_position(
 
         # Save position only after exchange execution is resolved
         _save_position(pos)
+        _position_saved = True
         _opened_this_cycle.add(dedup_key)
         _opened_this_cycle.add(asset_key)
         open_training_position._opened_this_cycle = _opened_this_cycle
@@ -1352,6 +1379,13 @@ def open_training_position(
             try:
                 from bahamut.execution.order_manager import OrderManager as _OMRel
                 _OMRel().release_execution_lock(_lock_held_signal)
+            except Exception:
+                pass
+        # Release risk budget if claimed but position wasn't saved
+        if _budget_claimed and not _position_saved:
+            try:
+                from bahamut.trading.risk_budget import release_pending
+                release_pending(risk_amount)
             except Exception:
                 pass
 # ═══════════════════════════════════════════
@@ -1718,6 +1752,14 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             _persist_trade(trade)
             _record_recent(trade)
             closed_trades.append(trade)
+
+            # Release risk budget + record realized loss
+            try:
+                from bahamut.trading.risk_budget import release_pending, record_realized_loss
+                release_pending(pos.risk_amount)
+                record_realized_loss(trade.pnl)
+            except Exception:
+                pass
 
             # Invalidate risk engine cache (position count changed)
             try:
