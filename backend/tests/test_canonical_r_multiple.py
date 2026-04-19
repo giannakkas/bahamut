@@ -30,7 +30,7 @@ def test_r_negative():
 
 def test_learning_engine_r_matches():
     """compute_learning_context uses pnl/risk_amount, not pnl_pct/0.03."""
-    from bahamut.training.learning_engine import compute_learning_context
+    from bahamut.trading.learning_engine import compute_learning_context
     trade = {
         "strategy": "v9_breakout", "asset": "AAPL", "asset_class": "stock",
         "direction": "LONG", "regime": "TREND", "exit_reason": "TP",
@@ -42,7 +42,7 @@ def test_learning_engine_r_matches():
 
 def test_learning_engine_r_zero_risk():
     """When risk_amount=0, r_multiple should be 0 (not crash)."""
-    from bahamut.training.learning_engine import compute_learning_context
+    from bahamut.trading.learning_engine import compute_learning_context
     trade = {
         "strategy": "v9_breakout", "asset": "AAPL", "asset_class": "stock",
         "direction": "LONG", "regime": "TREND", "exit_reason": "SL",

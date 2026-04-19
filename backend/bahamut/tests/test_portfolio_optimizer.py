@@ -4,7 +4,7 @@ Bahamut.AI — Portfolio Optimizer Tests
 Run: cd backend && PYTHONPATH=. python3 -m pytest bahamut/tests/test_portfolio_optimizer.py -v
 """
 import pytest
-from bahamut.training.portfolio_optimizer import (
+from bahamut.trading.portfolio_optimizer import (
     evaluate_candidate, _build_portfolio_snapshot,
     get_portfolio_constraints_summary, CORRELATION_CLUSTERS,
 )
@@ -143,7 +143,7 @@ class TestPortfolioSnapshot:
 class TestIsolation:
     def test_no_production_imports(self):
         import inspect
-        from bahamut.training import portfolio_optimizer
+        from bahamut.trading import portfolio_optimizer
         source = inspect.getsource(portfolio_optimizer)
         assert "ExecutionEngine" not in source
         assert "get_execution_engine" not in source

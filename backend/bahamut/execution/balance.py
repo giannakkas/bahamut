@@ -96,10 +96,10 @@ def get_real_balance(force_refresh: bool = False) -> dict:
     # No virtual fallback in live/hybrid mode — report broker_unavailable
     if combined <= 0:
         try:
-            from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL
+            from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL
             mode = os.environ.get("BAHAMUT_TRADING_MODE", "paper").lower()
             if mode == "paper":
-                combined = TRAINING_VIRTUAL_CAPITAL
+                combined = TRADING_VIRTUAL_CAPITAL
                 result["source"] = "virtual"
             else:
                 result["source"] = "broker_unavailable"

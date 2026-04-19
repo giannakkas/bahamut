@@ -315,8 +315,8 @@ def get_all_trades() -> list[dict]:
         return []
 
     try:
-        from bahamut.config_assets import TRAINING_CRYPTO
-        active_symbols = {s: SYMBOL_MAP[s] for s in TRAINING_CRYPTO if s in SYMBOL_MAP}
+        from bahamut.config_assets import TRADING_CRYPTO
+        active_symbols = {s: SYMBOL_MAP[s] for s in TRADING_CRYPTO if s in SYMBOL_MAP}
     except Exception:
         active_symbols = SYMBOL_MAP
 
@@ -358,8 +358,8 @@ def get_all_orders() -> list[dict]:
         return []
 
     try:
-        from bahamut.config_assets import TRAINING_CRYPTO
-        active_symbols = {s: SYMBOL_MAP[s] for s in TRAINING_CRYPTO if s in SYMBOL_MAP}
+        from bahamut.config_assets import TRADING_CRYPTO
+        active_symbols = {s: SYMBOL_MAP[s] for s in TRADING_CRYPTO if s in SYMBOL_MAP}
     except Exception:
         active_symbols = SYMBOL_MAP
 

@@ -99,7 +99,7 @@ def _shutdown_handler(signum, frame):
     # 3. Persist training positions to Redis (already happens on save,
     #    but force a full write to ensure nothing is lost)
     try:
-        from bahamut.training.engine import _load_positions, _save_position
+        from bahamut.trading.engine import _load_positions, _save_position
         positions = _load_positions()
         for pos in positions:
             try:

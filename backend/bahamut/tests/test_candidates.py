@@ -9,7 +9,7 @@ import pytest
 class TestEMACrossScoring:
     def test_bull_regime_converging_emas_high_score(self):
         """Close above EMA200 + EMAs converging = high score."""
-        from bahamut.training.candidates import score_ema_cross
+        from bahamut.trading.candidates import score_ema_cross
         indicators = {
             "close": 100, "ema_20": 99.8, "ema_50": 100.0, "ema_200": 95,
             "rsi_14": 50, "atr_14": 2, "volume": 1000, "volume_sma_20": 800,
@@ -23,7 +23,7 @@ class TestEMACrossScoring:
 
     def test_bear_regime_capped(self):
         """Below EMA200 = capped at 35 max."""
-        from bahamut.training.candidates import score_ema_cross
+        from bahamut.trading.candidates import score_ema_cross
         indicators = {
             "close": 90, "ema_20": 91, "ema_50": 92, "ema_200": 100,
             "rsi_14": 45, "atr_14": 2, "volume": 500, "volume_sma_20": 600,
@@ -35,7 +35,7 @@ class TestEMACrossScoring:
 
     def test_already_crossed_lower_score(self):
         """EMAs already spread = lower score than converging."""
-        from bahamut.training.candidates import score_ema_cross
+        from bahamut.trading.candidates import score_ema_cross
         ind_spread = {
             "close": 110, "ema_20": 108, "ema_50": 102, "ema_200": 95,
             "rsi_14": 55, "atr_14": 2, "volume": 500, "volume_sma_20": 500,
@@ -61,7 +61,7 @@ class TestBreakoutScoring:
 
     def test_near_breakout_level(self):
         """Price just below 20-bar high = decent score."""
-        from bahamut.training.candidates import score_breakout
+        from bahamut.trading.candidates import score_breakout
         candles = self._make_candles(35, base=100)
         # ref_high will be ~102 (base + 2)
         # Set close just below it
@@ -73,7 +73,7 @@ class TestBreakoutScoring:
 
     def test_confirmed_breakout_high_score(self):
         """Price above 20-bar high for 3 bars = high score."""
-        from bahamut.training.candidates import score_breakout
+        from bahamut.trading.candidates import score_breakout
         candles = self._make_candles(35, base=100)
         # Reference high is ~102
         ref_high = max(c["high"] for c in candles[:20])
@@ -90,7 +90,7 @@ class TestBreakoutScoring:
 
     def test_deep_below_crash(self):
         """Deep below EMA200 = capped score."""
-        from bahamut.training.candidates import score_breakout
+        from bahamut.trading.candidates import score_breakout
         candles = self._make_candles(35, base=50)
         indicators = {"close": 50, "atr_14": 2, "ema_200": 100, "rsi_14": 25}
         c = score_breakout("COIN", "stock", candles, indicators)
@@ -102,14 +102,14 @@ class TestCandidatesReadOnly:
     def test_does_not_import_execution_engine(self):
         """Candidates module must not import production engine."""
         import inspect
-        from bahamut.training import candidates
+        from bahamut.trading import candidates
         source = inspect.getsource(candidates)
         assert "ExecutionEngine" not in source
         assert "submit_signal" not in source
         assert "get_execution_engine" not in source
 
     def test_indicator_format(self):
-        from bahamut.training.candidates import _fmt_indicators
+        from bahamut.trading.candidates import _fmt_indicators
         ind = {"close": 100, "rsi_14": 55, "ema_20": 101, "ema_50": 99,
                "ema_200": 90, "atr_14": 2.5, "volume": 1200, "volume_sma_20": 1000}
         fmt = _fmt_indicators(ind)

@@ -147,7 +147,7 @@ def _reconcile_binance() -> dict:
     except Exception:
         # Fallback: use training_positions
         try:
-            from bahamut.training.engine import _load_positions
+            from bahamut.trading.engine import _load_positions
             for pos in _load_positions():
                 if pos.execution_platform == "binance_futures":
                     local_positions[pos.asset] = {
@@ -375,7 +375,7 @@ def _reconcile_alpaca() -> dict:
         # Fetch local stock positions
         local_positions = {}
         try:
-            from bahamut.training.engine import _load_positions
+            from bahamut.trading.engine import _load_positions
             for pos in _load_positions():
                 if pos.asset_class == "stock" and pos.execution_platform in ("alpaca", "alpaca_paper"):
                     local_positions[pos.asset] = {

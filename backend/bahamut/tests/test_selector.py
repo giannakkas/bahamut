@@ -5,7 +5,7 @@ Run: cd backend && PYTHONPATH=. python3 -m pytest bahamut/tests/test_selector.py
 """
 import pytest
 from unittest.mock import patch, MagicMock
-from bahamut.training.selector import PendingSignal, select_candidates, _compute_priority
+from bahamut.trading.selector import PendingSignal, select_candidates, _compute_priority
 
 
 def _sig(asset="BTCUSD", cls="crypto", strat="v5_base", score=85,
@@ -50,8 +50,8 @@ class TestCompositeScoring:
 class TestSelection:
     @pytest.fixture(autouse=True)
     def _mock_positions(self):
-        with patch("bahamut.training.engine._load_positions", return_value=[]):
-            with patch("bahamut.training.selector._load_strategy_stats", return_value={}):
+        with patch("bahamut.trading.engine._load_positions", return_value=[]):
+            with patch("bahamut.trading.selector._load_strategy_stats", return_value={}):
                 yield
 
     def test_below_threshold_rejected(self):
@@ -112,7 +112,7 @@ class TestSelection:
 class TestIsolation:
     def test_selector_does_not_import_production(self):
         import inspect
-        from bahamut.training import selector
+        from bahamut.trading import selector
         source = inspect.getsource(selector)
         assert "get_execution_engine" not in source
         assert "ExecutionEngine" not in source

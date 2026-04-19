@@ -1,7 +1,7 @@
 """
 Tests for enhanced learning engine v2 — maturity-aware trust.
 """
-from bahamut.training.learning_engine import (
+from bahamut.trading.learning_engine import (
     compute_learning_context,
     get_maturity_state,
     get_confidence_weight,
@@ -203,23 +203,23 @@ if __name__ == "__main__":
 
 def test_expectancy_positive_edge():
     """Positive R-multiples → positive expectancy."""
-    from bahamut.training.learning_engine import calculate_expectancy
+    from bahamut.trading.learning_engine import calculate_expectancy
     e = calculate_expectancy([1.5, 2.0, -1.0, 0.5, 1.0])
     assert e > 0, f"Expected positive, got {e}"
 
 def test_expectancy_negative_edge():
     """All losses → negative expectancy."""
-    from bahamut.training.learning_engine import calculate_expectancy
+    from bahamut.trading.learning_engine import calculate_expectancy
     e = calculate_expectancy([-1.0, -1.0, -0.5, -1.0, -0.8])
     assert e < 0, f"Expected negative, got {e}"
 
 def test_expectancy_empty():
-    from bahamut.training.learning_engine import calculate_expectancy
+    from bahamut.trading.learning_engine import calculate_expectancy
     assert calculate_expectancy([]) == 0.0
 
 def test_expectancy_uses_last_10():
     """Only last 10 trades count for expectancy."""
-    from bahamut.training.learning_engine import calculate_expectancy
+    from bahamut.trading.learning_engine import calculate_expectancy
     old_bad = [-1.0] * 10  # Old losses
     recent_good = [2.0] * 10  # Recent wins
     e = calculate_expectancy(old_bad + recent_good)

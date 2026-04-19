@@ -54,7 +54,7 @@ def _now_iso() -> str:
 class ExecutionResult:
     """Canonical result of an open or close execution attempt.
 
-    Every adapter (_binance_open, _alpaca_open, paper_broker, internal) must
+    Every adapter (_binance_open, _alpaca_open, internal_broker, internal) must
     return one of these. Fields not applicable to a given platform are left
     at their defaults — but they exist in the shape, so downstream code can
     rely on key presence.

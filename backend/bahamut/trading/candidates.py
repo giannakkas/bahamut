@@ -352,7 +352,7 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
     Does NOT execute any trades.
     """
     import time
-    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+    from bahamut.config_assets import TRADING_ASSETS, ASSET_CLASS_MAP
     from dataclasses import asdict
 
     start = time.time()
@@ -360,8 +360,8 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
 
     # Process in batches to be kind to data layer
     batch_size = 10
-    for i in range(0, len(TRAINING_ASSETS), batch_size):
-        batch = TRAINING_ASSETS[i:i + batch_size]
+    for i in range(0, len(TRADING_ASSETS), batch_size):
+        batch = TRADING_ASSETS[i:i + batch_size]
         for asset in batch:
             try:
                 asset_candidates = _evaluate_asset(asset, ASSET_CLASS_MAP.get(asset, "unknown"))
@@ -375,7 +375,7 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
 
     duration_ms = int((time.time() - start) * 1000)
     logger.info("candidates_scanned",
-                assets=len(TRAINING_ASSETS), candidates=len(candidates),
+                assets=len(TRADING_ASSETS), candidates=len(candidates),
                 top_returned=len(top), duration_ms=duration_ms)
 
     return [
@@ -511,14 +511,14 @@ def get_all_training_assets() -> dict:
     """Scan ALL training assets and return full universe view.
     Returns every asset with its best score, including no-signal ones."""
     import time
-    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+    from bahamut.config_assets import TRADING_ASSETS, ASSET_CLASS_MAP
 
     start = time.time()
     results = []
 
     batch_size = 10
-    for i in range(0, len(TRAINING_ASSETS), batch_size):
-        batch = TRAINING_ASSETS[i:i + batch_size]
+    for i in range(0, len(TRADING_ASSETS), batch_size):
+        batch = TRADING_ASSETS[i:i + batch_size]
         for asset in batch:
             try:
                 r = _evaluate_asset_full(asset, ASSET_CLASS_MAP.get(asset, "unknown"))

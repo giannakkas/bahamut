@@ -115,8 +115,8 @@ def _assess_conditions() -> dict:
         pnl_row = run_query_one("SELECT SUM(pnl) as total_pnl FROM training_trades")
         if pnl_row:
             total_pnl = float(pnl_row.get("total_pnl", 0) or 0)
-            from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL
-            dd_pct = total_pnl / TRAINING_VIRTUAL_CAPITAL
+            from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL
+            dd_pct = total_pnl / TRADING_VIRTUAL_CAPITAL
             if dd_pct < -0.05:
                 conditions["drawdown_trend"] = "worsening"
             elif dd_pct > 0.02:

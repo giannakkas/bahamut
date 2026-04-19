@@ -10,7 +10,7 @@ import json
 
 def _make_pos(**overrides):
     """Build a minimal TrainingPosition dict."""
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     defaults = dict(
         position_id="TEST123",
         asset="BTCUSD",
@@ -91,7 +91,7 @@ def test_load_positions_filters_invariant_violations_schema_drift():
     """If Redis has a JSON blob with fields not on the current dataclass
     (e.g. an older deploy wrote extra fields), _load_positions must still
     deserialize safely via the TypeError fallback in the load path."""
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     # Build a dict with an extra field
     d = {
         "position_id": "T1",

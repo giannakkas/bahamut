@@ -11,7 +11,7 @@ def test_signal_has_substrategy_field():
 
 
 def test_training_position_carries_substrategy():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="T1", asset="BTCUSD", asset_class="crypto",
         strategy="v10_mean_reversion", direction="SHORT",
@@ -25,7 +25,7 @@ def test_training_position_carries_substrategy():
 
 
 def test_training_trade_carries_substrategy():
-    from bahamut.training.engine import TrainingTrade
+    from bahamut.trading.engine import TrainingTrade
     t = TrainingTrade(
         trade_id="TR1", position_id="P1", asset="BTCUSD", asset_class="crypto",
         strategy="v10_mean_reversion", direction="SHORT",
@@ -40,7 +40,7 @@ def test_training_trade_carries_substrategy():
 
 
 def test_pending_signal_carries_substrategy():
-    from bahamut.training.selector import PendingSignal
+    from bahamut.trading.selector import PendingSignal
     p = PendingSignal(
         asset="BTCUSD", asset_class="crypto", strategy="v10_mean_reversion",
         direction="LONG", readiness_score=50, regime="RANGE",
@@ -146,7 +146,7 @@ def test_is_suppressed_checks_substrategy():
 
 
 def test_learning_context_captures_substrategy():
-    from bahamut.training.learning_engine import compute_learning_context
+    from bahamut.trading.learning_engine import compute_learning_context
     trade = {
         "strategy": "v10_mean_reversion", "asset": "BTCUSD",
         "asset_class": "crypto", "direction": "SHORT", "regime": "CRASH",
@@ -158,7 +158,7 @@ def test_learning_context_captures_substrategy():
 
 
 def test_build_trust_keys_adds_substrategy_keys():
-    from bahamut.training.learning_engine import LearningContext, _build_trust_keys
+    from bahamut.trading.learning_engine import LearningContext, _build_trust_keys
     ctx = LearningContext(
         strategy="v10_mean_reversion", asset="BTCUSD",
         asset_class="crypto", direction="SHORT", regime="CRASH",
@@ -177,7 +177,7 @@ def test_build_trust_keys_adds_substrategy_keys():
 
 def test_build_trust_keys_no_substrategy_legacy():
     """When substrategy is empty, only parent keys — no substrategy pollution."""
-    from bahamut.training.learning_engine import LearningContext, _build_trust_keys
+    from bahamut.trading.learning_engine import LearningContext, _build_trust_keys
     ctx = LearningContext(
         strategy="v5_base", asset="AAPL", asset_class="stock",
         direction="LONG", regime="TREND", exit_reason="TP",
@@ -192,7 +192,7 @@ def test_build_trust_keys_no_substrategy_legacy():
 
 def test_get_substrategy_trust_empty_safe():
     """With empty substrategy or no Redis, returns safe defaults."""
-    from bahamut.training.learning_engine import get_substrategy_trust
+    from bahamut.trading.learning_engine import get_substrategy_trust
     result = get_substrategy_trust("", "RANGE", "crypto")
     assert result["substrategy"] == ""
     assert result["trust"] == 0.5

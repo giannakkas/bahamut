@@ -266,7 +266,7 @@ class TestNoContamination:
 class TestFeedLearning:
     def test_feed_updates_strategy_stats(self):
         """_feed_learning writes to strategy stats Redis key."""
-        from bahamut.training.engine import _feed_learning, TrainingTrade
+        from bahamut.trading.engine import _feed_learning, TrainingTrade
         import json
 
         mock_redis = MagicMock()
@@ -280,7 +280,7 @@ class TestFeedLearning:
             exit_reason="TP", bars_held=5,
         )
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             _feed_learning(trade)
 
         # Verify Redis set was called for strategy stats
@@ -292,7 +292,7 @@ class TestFeedLearning:
 
     def test_feed_updates_trust_score(self):
         """_feed_learning updates trust score in Redis."""
-        from bahamut.training.engine import _feed_learning, TrainingTrade
+        from bahamut.trading.engine import _feed_learning, TrainingTrade
         import json
 
         stored_trust = {"trades": 9, "wins": 6, "recent_pnls": [10, -5, 20, 15, -10, 30, -5, 20, 15],
@@ -308,7 +308,7 @@ class TestFeedLearning:
             exit_reason="TP", bars_held=3,
         )
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             _feed_learning(trade)
 
         # The 10th trade should flip provisional → False

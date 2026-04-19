@@ -33,7 +33,7 @@ MAX_TOTAL_OPEN_POSITIONS = 4
 # TRAINING UNIVERSE (paper trading only)
 # ═══════════════════════════════════════════
 
-TRAINING_CRYPTO = [
+TRADING_CRYPTO = [
     # Tier 1: Large caps (high liquidity, tighter spreads)
     "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
     # Tier 2: Major alts
@@ -48,16 +48,16 @@ TRAINING_CRYPTO = [
 
 # Forex DISABLED — 4H bars move 0.1-0.2%, SL/TP at 3-8% = never hits.
 # 13 trades, 0 wins, $0 PnL. Dead weight wasting API calls.
-TRAINING_FOREX = []
+TRADING_FOREX = []
 
 # Indices DISABLED — similar volatility mismatch on 4H.
 # 22 trades, 0 wins, -$500. Only losses from wide swings.
-TRAINING_INDICES = []
+TRADING_INDICES = []
 
 # Commodities DISABLED — 7 trades, 0 wins, -$250. Same issue.
-TRAINING_COMMODITIES = []
+TRADING_COMMODITIES = []
 
-TRAINING_STOCKS = [
+TRADING_STOCKS = [
     # Core performers (proven profitable)
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
     "META", "TSLA", "AMD", "NFLX", "COIN",
@@ -67,22 +67,22 @@ TRAINING_STOCKS = [
 ]
 
 # Flatten all training assets
-TRAINING_ASSETS = (
-    TRAINING_CRYPTO + TRAINING_FOREX + TRAINING_INDICES
-    + TRAINING_COMMODITIES + TRAINING_STOCKS
+TRADING_ASSETS = (
+    TRADING_CRYPTO + TRADING_FOREX + TRADING_INDICES
+    + TRADING_COMMODITIES + TRADING_STOCKS
 )
 
 # Asset class mapping for learning engine
 ASSET_CLASS_MAP = {}
-for a in TRAINING_CRYPTO:
+for a in TRADING_CRYPTO:
     ASSET_CLASS_MAP[a] = "crypto"
-for a in TRAINING_FOREX:
+for a in TRADING_FOREX:
     ASSET_CLASS_MAP[a] = "forex"
-for a in TRAINING_INDICES:
+for a in TRADING_INDICES:
     ASSET_CLASS_MAP[a] = "index"
-for a in TRAINING_COMMODITIES:
+for a in TRADING_COMMODITIES:
     ASSET_CLASS_MAP[a] = "commodity"
-for a in TRAINING_STOCKS:
+for a in TRADING_STOCKS:
     ASSET_CLASS_MAP[a] = "stock"
 
 
@@ -94,7 +94,7 @@ def get_asset_mode(asset: str) -> str:
     """Returns 'production' or 'training'."""
     if asset in ACTIVE_TREND_ASSETS:
         return "production"
-    if asset in TRAINING_ASSETS:
+    if asset in TRADING_ASSETS:
         return "training"
     return "unknown"
 
@@ -112,9 +112,9 @@ def is_asset_active(asset: str) -> bool:
 
 
 # Training risk: much smaller virtual positions
-TRAINING_VIRTUAL_CAPITAL = 100_000  # $100K virtual portfolio
-TRAINING_RISK_PER_TRADE_PCT = 0.005  # 0.5% per trade (vs 2% production)
-TRAINING_MAX_POSITIONS = 20  # Allow many simultaneous training positions
+TRADING_VIRTUAL_CAPITAL = 100_000  # $100K virtual portfolio
+TRADING_RISK_PER_TRADE_PCT = 0.005  # 0.5% per trade (vs 2% production)
+TRADING_MAX_POSITIONS = 20  # Allow many simultaneous training positions
 
 
 # ═══════════════════════════════════════════
@@ -123,7 +123,7 @@ TRAINING_MAX_POSITIONS = 20  # Allow many simultaneous training positions
 # To suppress an asset: add it here. That's it.
 # ═══════════════════════════════════════════
 
-TRAINING_SUPPRESS = {
+TRADING_SUPPRESS = {
     # Global: blocked on ALL strategies, ALL signal paths
     "*": {"RNDRUSD", "MATICUSD", "IXIC", "EURUSD", "XAUUSD", "SPX", "COIN"},
     # v5_base: blocked on EMA trend strategy
@@ -186,9 +186,9 @@ def is_suppressed(asset: str, strategy: str, execution_type: str = "standard",
     and only the parent-strategy maps apply — behavior unchanged for
     v5/v9 and legacy v10 callers.
     """
-    if asset in TRAINING_SUPPRESS.get("*", set()):
+    if asset in TRADING_SUPPRESS.get("*", set()):
         return True
-    if asset in TRAINING_SUPPRESS.get(strategy, set()):
+    if asset in TRADING_SUPPRESS.get(strategy, set()):
         return True
     if execution_type == "crash_short" and asset in CRASH_SHORT_SUPPRESS:
         return True

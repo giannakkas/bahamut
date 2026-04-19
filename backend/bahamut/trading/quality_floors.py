@@ -100,7 +100,7 @@ def check_quality_floors(
     # crash_short signals use CRASH bucket (not raw 4H regime which may be RANGE)
     _trust_regime = "CRASH" if execution_type == "crash_short" else regime
     try:
-        from bahamut.training.learning_engine import get_pattern_trust
+        from bahamut.trading.learning_engine import get_pattern_trust
         trust = get_pattern_trust(strategy, _trust_regime, asset_class)
 
         effective_trust = trust["blended_trust"] * trust["blended_confidence"]

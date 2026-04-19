@@ -65,7 +65,7 @@ def test_health_endpoint_exists_in_router_source():
     """The /health endpoint is defined in router.py source."""
     import inspect
     # Read the source file directly to verify the endpoint exists
-    with open("bahamut/training/router.py", "r") as f:
+    with open("bahamut/trading/router.py", "r") as f:
         src = f.read()
     assert '@router.get("/health")' in src
     assert "async def system_health" in src

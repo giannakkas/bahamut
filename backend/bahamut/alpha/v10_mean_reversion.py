@@ -592,7 +592,7 @@ def score_mean_reversion(
       - Bounce confirmation:  15pts (close > prev close, volume)
     """
     # Lazy import to avoid circular dependency
-    from bahamut.training.candidates import Candidate
+    from bahamut.trading.candidates import Candidate
 
     close = indicators.get("close", 0)
     ema_20 = indicators.get("ema_20", 0)

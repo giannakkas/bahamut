@@ -13,7 +13,7 @@ Run: cd backend && PYTHONPATH=. python3 -m pytest bahamut/tests/test_hybrid_exec
 """
 import pytest
 from unittest.mock import patch, MagicMock
-from bahamut.training.engine import (
+from bahamut.trading.engine import (
     evaluate_early_execution, TrainingPosition, TrainingTrade,
     EARLY_CONFIG,
 )
@@ -33,8 +33,8 @@ class TestEarlyExecutionEvaluator:
 
     @pytest.fixture(autouse=True)
     def _mock(self):
-        with patch("bahamut.training.engine._load_positions", return_value=[]):
-            with patch("bahamut.training.engine._check_scan_consistency", return_value=True):
+        with patch("bahamut.trading.engine._load_positions", return_value=[]):
+            with patch("bahamut.trading.engine._check_scan_consistency", return_value=True):
                 yield
 
     def test_all_conditions_met(self):
@@ -140,7 +140,7 @@ class TestEarlyExecutionEvaluator:
             stop_price=66000, tp_price=72000, size=0.1, risk_amount=200,
             entry_time="2025-01-01T00:00:00", max_hold_bars=30,
         )
-        with patch("bahamut.training.engine._load_positions", return_value=[pos]):
+        with patch("bahamut.trading.engine._load_positions", return_value=[pos]):
             result = evaluate_early_execution(
                 asset="BTCUSD", readiness_score=92, regime="TREND",
                 direction="LONG", indicators=_good_indicators(),
@@ -157,7 +157,7 @@ class TestEarlyExecutionEvaluator:
             entry_time="2025-01-01T00:00:00", max_hold_bars=30,
             execution_type="early",
         )
-        with patch("bahamut.training.engine._load_positions", return_value=[early_pos] * 3):
+        with patch("bahamut.trading.engine._load_positions", return_value=[early_pos] * 3):
             result = evaluate_early_execution(
                 asset="BTCUSD", readiness_score=92, regime="TREND",
                 direction="LONG", indicators=_good_indicators(),
@@ -169,8 +169,8 @@ class TestEarlyExecutionEvaluator:
 
 class TestScanConsistency:
     def test_inconsistent_direction_blocked(self):
-        with patch("bahamut.training.engine._load_positions", return_value=[]):
-            with patch("bahamut.training.engine._check_scan_consistency", return_value=False):
+        with patch("bahamut.trading.engine._load_positions", return_value=[]):
+            with patch("bahamut.trading.engine._check_scan_consistency", return_value=False):
                 result = evaluate_early_execution(
                     asset="BTCUSD", readiness_score=92, regime="TREND",
                     direction="LONG", indicators=_good_indicators(),
@@ -221,7 +221,7 @@ class TestDataclassFields:
 
 class TestPendingSignalFields:
     def test_pending_signal_has_execution_fields(self):
-        from bahamut.training.selector import PendingSignal
+        from bahamut.trading.selector import PendingSignal
         sig = PendingSignal(
             asset="BTC", asset_class="crypto", strategy="v5",
             direction="LONG", readiness_score=92, regime="TREND",
@@ -234,7 +234,7 @@ class TestPendingSignalFields:
         assert sig.risk_multiplier == 0.5
 
     def test_pending_signal_defaults(self):
-        from bahamut.training.selector import PendingSignal
+        from bahamut.trading.selector import PendingSignal
         sig = PendingSignal(
             asset="BTC", asset_class="crypto", strategy="v5",
             direction="LONG", readiness_score=80, regime="TREND",
@@ -249,7 +249,7 @@ class TestPendingSignalFields:
 class TestIsolation:
     def test_no_production_engine_import(self):
         import inspect
-        from bahamut.training import engine
+        from bahamut.trading import engine
         source = inspect.getsource(engine)
         # Check no actual import of production ExecutionEngine
         assert "from bahamut.execution" not in source

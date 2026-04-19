@@ -173,7 +173,7 @@ def test_e2e_reconciliation_returns_structure():
 def test_e2e_health_endpoint_shape():
     """Health endpoint must cover all production subsystems."""
     # Verify the health checks include production modules
-    with open("bahamut/training/router.py", "r") as f:
+    with open("bahamut/trading/router.py", "r") as f:
         src = f.read()
 
     for check in ["circuit_breaker", "shutdown_state", "last_reconciliation",
@@ -184,7 +184,7 @@ def test_e2e_health_endpoint_shape():
 
 def test_e2e_system_state_in_operations():
     """Operations response must include system_state field."""
-    with open("bahamut/training/router.py", "r") as f:
+    with open("bahamut/trading/router.py", "r") as f:
         src = f.read()
     assert '"system_state": system_state' in src or "'system_state': system_state" in src
 

@@ -75,7 +75,7 @@ def get_learning_progress() -> dict:
     # Fallback: Redis training stats (works even without DB)
     if closed == 0:
         try:
-            from bahamut.training.engine import get_training_stats
+            from bahamut.trading.engine import get_training_stats
             stats = get_training_stats()
             closed = stats.get("total_closed_trades", 0)
             data["closed_trades"] = closed

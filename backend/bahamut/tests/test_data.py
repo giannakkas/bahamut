@@ -120,7 +120,6 @@ def test_full_cycle():
     ee._engine = None; pm_mod._manager = None
     _last_bar_timestamps.clear()
 
-    from bahamut.execution.v7_orchestrator import run_v7_cycle_sync
     from bahamut.monitoring.cycle_log import get_last_cycle
 
     result = run_v7_cycle_sync()

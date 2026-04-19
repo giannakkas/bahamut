@@ -254,7 +254,7 @@ def evaluate_for_suppression(strategy: str, regime: str, asset_class: str,
     suppress it automatically.
     """
     try:
-        from bahamut.training.learning_engine import get_pattern_trust
+        from bahamut.trading.learning_engine import get_pattern_trust
         trust = get_pattern_trust(strategy, regime, asset_class)
 
         maturity = trust.get("maturity", "provisional")

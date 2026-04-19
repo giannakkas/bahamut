@@ -27,7 +27,7 @@ import time
 # ═══════════════════════════════════════════════════════
 
 def test_inv1_crypto_internal_blocked():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="INV1", asset="BTCUSD", asset_class="crypto",
         strategy="v10_mean_reversion", direction="SHORT",
@@ -42,7 +42,7 @@ def test_inv1_crypto_internal_blocked():
 
 
 def test_inv1_crypto_broker_allowed():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="INV1", asset="BTCUSD", asset_class="crypto",
         strategy="v10_mean_reversion", direction="SHORT",
@@ -58,7 +58,7 @@ def test_inv1_crypto_broker_allowed():
 
 def test_inv1_stock_internal_ok():
     """Stocks CAN be internal (Alpaca not configured)."""
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="INV1", asset="AAPL", asset_class="stock",
         strategy="v9_breakout", direction="LONG",
@@ -116,7 +116,7 @@ def test_inv4_signal_has_substrategy():
 
 
 def test_inv4_learning_context_has_substrategy():
-    from bahamut.training.learning_engine import LearningContext
+    from bahamut.trading.learning_engine import LearningContext
     ctx = LearningContext(
         strategy="v10", asset="X", asset_class="crypto", direction="SHORT",
         regime="CRASH", exit_reason="TP", pnl=10, r_multiple=0.5,
@@ -131,7 +131,7 @@ def test_inv4_learning_context_has_substrategy():
 # ═══════════════════════════════════════════════════════
 
 def test_inv5_fmt_decision_has_gate_history():
-    from bahamut.training.selector import _fmt_decision, PendingSignal
+    from bahamut.trading.selector import _fmt_decision, PendingSignal
     sig = PendingSignal(
         asset="AAPL", asset_class="stock", strategy="v9_breakout",
         direction="LONG", readiness_score=75, regime="TREND",
@@ -214,7 +214,7 @@ def test_inv9_block_synthetic_default_on():
 
 
 def test_inv9_data_mode_on_position():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="T1", asset="BTCUSD", asset_class="crypto",
         strategy="v9", direction="LONG",
@@ -234,7 +234,7 @@ def test_inv10_r_from_real_risk():
     pnl, risk = 150.0, 100.0
     assert abs(pnl / risk - 1.5) < 1e-6
 
-    from bahamut.training.learning_engine import compute_learning_context
+    from bahamut.trading.learning_engine import compute_learning_context
     ctx = compute_learning_context({
         "strategy": "v9", "asset": "X", "asset_class": "stock",
         "direction": "LONG", "regime": "TREND", "exit_reason": "TP",
@@ -248,7 +248,7 @@ def test_inv10_r_from_real_risk():
 # ═══════════════════════════════════════════════════════
 
 def test_inv11_trade_cost_fields_exist():
-    from bahamut.training.engine import TrainingTrade
+    from bahamut.trading.engine import TrainingTrade
     t = TrainingTrade(
         trade_id="T1", position_id="P1", asset="BTCUSD", asset_class="crypto",
         strategy="v9", direction="LONG",

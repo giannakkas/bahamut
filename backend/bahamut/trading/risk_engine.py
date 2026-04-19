@@ -70,7 +70,7 @@ def _get_redis():
 def _load_open_positions() -> list[dict]:
     """Load current open training positions."""
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         positions = _load_positions()
         return [
             {
@@ -110,8 +110,8 @@ def _get_equity_and_dd() -> dict:
     """Current equity, peak, and drawdown from trade history."""
     try:
         from bahamut.db.query import run_query
-        from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL
-        capital = TRAINING_VIRTUAL_CAPITAL
+        from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL
+        capital = TRADING_VIRTUAL_CAPITAL
 
         trades = run_query("""
             SELECT pnl FROM training_trades ORDER BY exit_time ASC
@@ -145,10 +145,10 @@ def get_risk_engine_state(force_refresh: bool = False) -> dict:
     if not force_refresh and _cached_state and (time.time() - _cached_at) < _CACHE_TTL:
         return _cached_state
 
-    from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
-    from bahamut.training.portfolio_optimizer import CORRELATION_CLUSTERS, _ASSET_CLUSTERS
+    from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
+    from bahamut.trading.portfolio_optimizer import CORRELATION_CLUSTERS, _ASSET_CLUSTERS
 
-    capital = TRAINING_VIRTUAL_CAPITAL
+    capital = TRADING_VIRTUAL_CAPITAL
     positions = _load_open_positions()
     today_pnl = _get_today_pnl()
     eq = _get_equity_and_dd()
@@ -403,11 +403,11 @@ def can_open_new_trade(asset: str, strategy: str, direction: str,
                 "size_multiplier": 0}
 
     # Check cluster limit — would adding this asset breach any cluster?
-    from bahamut.training.portfolio_optimizer import _ASSET_CLUSTERS
+    from bahamut.trading.portfolio_optimizer import _ASSET_CLUSTERS
     cluster_counts = state.get("correlation", {}).get("_cluster_counts", {})
     for cid in _ASSET_CLUSTERS.get(asset, []):
         if cluster_counts.get(cid, 0) >= MAX_PER_CLUSTER:
-            from bahamut.training.portfolio_optimizer import CORRELATION_CLUSTERS
+            from bahamut.trading.portfolio_optimizer import CORRELATION_CLUSTERS
             label = CORRELATION_CLUSTERS.get(cid, {}).get("label", cid)
             return {"allowed": False,
                     "reason": f"Cluster '{label}' at {cluster_counts[cid]}/{MAX_PER_CLUSTER}",

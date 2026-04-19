@@ -397,7 +397,7 @@ async def binance_live_data():
         active_symbols.add(ep.get("symbol", ""))
     training_positions = []
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         from bahamut.execution.binance_futures import _to_symbol
         from dataclasses import asdict
         all_pos = _load_positions()

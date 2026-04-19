@@ -1,7 +1,7 @@
 """
 Tests for context gate and pattern suppression.
 """
-from bahamut.training.context_gate import (
+from bahamut.trading.context_gate import (
     validate_strategy_context,
     pre_score_gate,
     get_pattern_key,

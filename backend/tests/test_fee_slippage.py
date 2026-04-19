@@ -5,7 +5,7 @@ Phase 5 Item 14 — Fee/slippage visibility tests.
 
 def test_trade_has_cost_fields():
     """TrainingTrade carries entry/exit commission + slippage."""
-    from bahamut.training.engine import TrainingTrade
+    from bahamut.trading.engine import TrainingTrade
     t = TrainingTrade(
         trade_id="T1", position_id="P1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",
@@ -23,7 +23,7 @@ def test_trade_has_cost_fields():
 
 
 def test_trade_cost_fields_default_zero():
-    from bahamut.training.engine import TrainingTrade
+    from bahamut.trading.engine import TrainingTrade
     t = TrainingTrade(
         trade_id="T1", position_id="P1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",
@@ -52,7 +52,7 @@ def test_gross_vs_net_pnl_math():
 
 def test_position_commission_propagates_to_trade():
     """Trade's entry_commission should come from position's commission field."""
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="T1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",

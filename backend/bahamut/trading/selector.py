@@ -42,7 +42,7 @@ def _get_config() -> dict:
 
     # Apply adaptive thresholds if available
     try:
-        from bahamut.training.adaptive_thresholds import get_current_profile
+        from bahamut.trading.adaptive_thresholds import get_current_profile
         profile = get_current_profile()
         if profile.mode != "WARMING_UP":
             config["execution_threshold"] = profile.standard_threshold
@@ -137,7 +137,7 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
 
     # 5. Pattern trust (0-30 pts) — maturity-aware from learning engine
     try:
-        from bahamut.training.learning_engine import compute_trust_points
+        from bahamut.trading.learning_engine import compute_trust_points
         # crash_short signals use CRASH bucket for trust, not raw 4H regime
         _trust_regime = "CRASH" if signal.execution_type == "crash_short" else signal.regime
         tp = compute_trust_points(signal.strategy, _trust_regime, signal.asset_class, max_points=30)
@@ -317,7 +317,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 signal_assets=[s.asset for s in signals[:10]])
 
     # Load current portfolio state
-    from bahamut.training.engine import _load_positions
+    from bahamut.trading.engine import _load_positions
     positions_raw = _load_positions()
     open_positions = [
         {"asset": p.asset, "asset_class": p.asset_class,
@@ -333,7 +333,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     strategy_stats = _load_strategy_stats()
 
     # Build mutable portfolio snapshot for optimizer
-    from bahamut.training.portfolio_optimizer import (
+    from bahamut.trading.portfolio_optimizer import (
         evaluate_candidate, _build_portfolio_snapshot,
         get_portfolio_constraints_summary, _ASSET_CLUSTERS,
     )
@@ -362,7 +362,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     def _track_rejection(reason: str):
         rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
         try:
-            from bahamut.training.learning_engine import record_rejection_reason
+            from bahamut.trading.learning_engine import record_rejection_reason
             record_rejection_reason(reason)
         except Exception:
             pass
@@ -386,7 +386,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         # 0. CONTEXT GATE — hard-block invalid strategy/regime combos + suppression
         if sig.execution_type != "debug_exploration":
             try:
-                from bahamut.training.context_gate import pre_score_gate
+                from bahamut.trading.context_gate import pre_score_gate
                 gate = pre_score_gate(sig.strategy, sig.regime, sig.asset_class,
                                       sig.direction, mode="TRAINING")
                 if not gate["allowed"]:
@@ -418,7 +418,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
 
         # 0.5. MATURE-NEGATIVE EXPECTANCY HARD BLOCK
         try:
-            from bahamut.training.learning_engine import compute_trust_points
+            from bahamut.trading.learning_engine import compute_trust_points
             _exp_regime = "CRASH" if sig.execution_type == "crash_short" else sig.regime
             _tp = compute_trust_points(sig.strategy, _exp_regime, sig.asset_class, max_points=30)
             pri["components"]["_exp_bucket"] = f"{sig.strategy}:{_exp_regime}:{sig.asset_class}"
@@ -477,7 +477,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         # 0.6. QUALITY FLOORS
         if sig.execution_type != "debug_exploration":
             try:
-                from bahamut.training.quality_floors import check_quality_floors
+                from bahamut.trading.quality_floors import check_quality_floors
                 qf = check_quality_floors(
                     readiness_score=sig.readiness_score,
                     sl_pct=sig.sl_pct, tp_pct=sig.tp_pct,
@@ -511,7 +511,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
 
         # 0.8. RISK ENGINE GATE
         try:
-            from bahamut.training.risk_engine import can_open_new_trade
+            from bahamut.trading.risk_engine import can_open_new_trade
             re_check = can_open_new_trade(sig.asset, sig.strategy, sig.direction, sig.asset_class)
             if not re_check["allowed"]:
                 reasons.append(f"Risk engine: {re_check['reason']}")

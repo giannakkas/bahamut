@@ -1,7 +1,7 @@
 """
-Bahamut Training Engine — Paper-only execution for the training universe.
+Bahamut Trading Engine — Execution for the full trading universe.
 
-COMPLETELY ISOLATED from production ExecutionEngine.
+Routes to Binance Futures Demo + Alpaca Paper via exchange APIs.
 Stores state in Redis (cross-process) and DB (durable history).
 Feeds the learning engine with every closed trade.
 
@@ -17,6 +17,9 @@ from dataclasses import dataclass, asdict
 
 logger = structlog.get_logger()
 
+# NOTE: Redis key prefix remains "bahamut:training:*" for backward
+# compatibility with existing production state. Do not rename without
+# a migration plan that SCAN/copies all existing keys.
 REDIS_KEY_POSITIONS = "bahamut:training:positions"
 REDIS_KEY_STATS = "bahamut:training:stats"
 REDIS_KEY_RECENT = "bahamut:training:recent_trades"
@@ -622,7 +625,7 @@ def open_training_position(
     signal_id: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
-    from bahamut.config_assets import TRAINING_MAX_POSITIONS
+    from bahamut.config_assets import TRADING_MAX_POSITIONS
 
     # ═══════════════════════════════════════════
     # PRODUCTION: Idempotency guard via OrderManager
@@ -649,7 +652,7 @@ def open_training_position(
             logger.info("training_position_rejected_exec_lock",
                         asset=asset, strategy=strategy, signal_id=signal_id)
             try:
-                from bahamut.training.rejection_tracker import record_rejection
+                from bahamut.trading.rejection_tracker import record_rejection
                 record_rejection(asset=asset, strategy=strategy, direction=direction,
                                  signal_id=signal_id, reason_code="exec_lock_held",
                                  reason_detail="another worker holds signal lock")
@@ -734,12 +737,12 @@ def open_training_position(
         # ENGINE-LEVEL SUPPRESS MAP — catches ALL signal paths
         # Single choke point every trade must pass through. Strategy.evaluate(),
         # debug_exploration, and CRASH SHORT all converge here.
-        # Canonical sources: config_assets.TRAINING_SUPPRESS +
+        # Canonical sources: config_assets.TRADING_SUPPRESS +
         # Phase 3 Item 7: config_assets.SUBSTRATEGY_SUPPRESS (per substrategy).
         # ═══════════════════════════════════════════
-        from bahamut.config_assets import TRAINING_SUPPRESS, SUBSTRATEGY_SUPPRESS
-        global_block = TRAINING_SUPPRESS.get("*", set())
-        strat_block = TRAINING_SUPPRESS.get(strategy, set())
+        from bahamut.config_assets import TRADING_SUPPRESS, SUBSTRATEGY_SUPPRESS
+        global_block = TRADING_SUPPRESS.get("*", set())
+        strat_block = TRADING_SUPPRESS.get(strategy, set())
         if asset in global_block or asset in strat_block:
             logger.info("training_engine_suppressed",
                         asset=asset, strategy=strategy, direction=direction,
@@ -782,10 +785,10 @@ def open_training_position(
             pass
 
         current_count = get_open_position_count()
-        if current_count >= TRAINING_MAX_POSITIONS:
+        if current_count >= TRADING_MAX_POSITIONS:
             logger.warning("training_position_rejected",
                            asset=asset, reason="POSITION_LIMIT",
-                           current=current_count, max=TRAINING_MAX_POSITIONS)
+                           current=current_count, max=TRADING_MAX_POSITIONS)
             return None
 
         # Check no duplicate — two layers:
@@ -969,7 +972,7 @@ def open_training_position(
         # ── Risk engine size multiplier ──
         # Applied after strategy-specific circuit breakers, before size calculation.
         try:
-            from bahamut.training.risk_engine import get_size_multiplier
+            from bahamut.trading.risk_engine import get_size_multiplier
             re_mult = get_size_multiplier()
             if re_mult <= 0:
                 logger.info("training_risk_engine_size_block",
@@ -1002,7 +1005,7 @@ def open_training_position(
                                 asset=asset, strategy=strategy, dd_pct=_strat_dd)
                     _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
                     try:
-                        from bahamut.training.rejection_tracker import record_rejection
+                        from bahamut.trading.rejection_tracker import record_rejection
                         record_rejection(asset=asset, strategy=strategy, direction=direction,
                                          signal_id=signal_id, reason_code="strategy_dd_block",
                                          reason_detail=f"{strategy} dd_pct={_strat_dd:.1f}%")
@@ -1078,7 +1081,7 @@ def open_training_position(
                         ratio=round(risk_amount / _original_risk_amount, 3))
             _increment_counter(_get_redis(), "bahamut:counters:composite_floor_rejects")
             try:
-                from bahamut.training.rejection_tracker import record_rejection
+                from bahamut.trading.rejection_tracker import record_rejection
                 record_rejection(asset=asset, strategy=strategy, direction=direction,
                                  signal_id=signal_id, reason_code="composite_floor",
                                  reason_detail=f"risk shrunk to {risk_amount:.2f} of {_original_risk_amount:.2f}")
@@ -1248,7 +1251,7 @@ def open_training_position(
                                error=exec_result.get("error", "")[:100])
                 _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
                 try:
-                    from bahamut.training.rejection_tracker import record_rejection
+                    from bahamut.trading.rejection_tracker import record_rejection
                     record_rejection(asset=asset, strategy=strategy, direction=direction,
                                      signal_id=signal_id, reason_code="execution_error",
                                      reason_detail=f"status={_status}, platform_actual={pos.execution_platform}")
@@ -1263,7 +1266,7 @@ def open_training_position(
                                actual_platform="internal", status=_status)
                 _increment_counter(_get_redis(), "bahamut:counters:crypto_mirror_aborts")
                 try:
-                    from bahamut.training.rejection_tracker import record_rejection
+                    from bahamut.trading.rejection_tracker import record_rejection
                     record_rejection(asset=asset, strategy=strategy, direction=direction,
                                      signal_id=signal_id, reason_code="phantom_internal_abort",
                                      reason_detail="broker expected but fell back to internal")
@@ -1286,7 +1289,7 @@ def open_training_position(
                                error=str(e)[:100])
                 _increment_counter(_get_redis(), "bahamut:counters:execution_failures")
                 try:
-                    from bahamut.training.rejection_tracker import record_rejection
+                    from bahamut.trading.rejection_tracker import record_rejection
                     record_rejection(asset=asset, strategy=strategy, direction=direction,
                                      signal_id=signal_id, reason_code="execution_exception",
                                      reason_detail=str(e)[:200])
@@ -1337,7 +1340,7 @@ def open_training_position(
 
         # Invalidate risk engine cache (position count changed)
         try:
-            from bahamut.training.risk_engine import invalidate_risk_cache
+            from bahamut.trading.risk_engine import invalidate_risk_cache
             invalidate_risk_cache()
         except Exception:
             pass
@@ -1718,7 +1721,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
             # Invalidate risk engine cache (position count changed)
             try:
-                from bahamut.training.risk_engine import invalidate_risk_cache
+                from bahamut.trading.risk_engine import invalidate_risk_cache
                 invalidate_risk_cache()
             except Exception:
                 pass
@@ -1895,7 +1898,7 @@ def _feed_research_learning(ctx):
     if not r:
         return
     try:
-        from bahamut.training.learning_engine import _build_trust_keys, _load_trust_bucket, \
+        from bahamut.trading.learning_engine import _build_trust_keys, _load_trust_bucket, \
             TRUST_EMA_ALPHA, TRUST_DEFAULT
         import json as _json
 
@@ -1939,7 +1942,7 @@ def _feed_learning(trade: TrainingTrade):
 
     # ── Enhanced learning: structured context + pattern-level trust ──
     try:
-        from bahamut.training.learning_engine import compute_learning_context, update_trust_from_trade
+        from bahamut.trading.learning_engine import compute_learning_context, update_trust_from_trade
         ctx = compute_learning_context(asdict(trade))
 
         # ══════════════════════════════════════════════════════════
@@ -1968,7 +1971,7 @@ def _feed_learning(trade: TrainingTrade):
                         quick_stop=ctx.quick_stop, r_mult=ctx.r_multiple)
 
             # Only production trades can trigger auto-suppression
-            from bahamut.training.context_gate import evaluate_for_suppression
+            from bahamut.trading.context_gate import evaluate_for_suppression
             evaluate_for_suppression(trade.strategy, trade.regime, trade.asset_class)
     except Exception as e:
         logger.warning("enhanced_learning_failed", error=str(e))
@@ -2210,7 +2213,7 @@ def evaluate_early_execution(
     # Load adaptive profile if available, else defaults
     cfg = dict(EARLY_CONFIG)
     try:
-        from bahamut.training.adaptive_thresholds import get_current_profile
+        from bahamut.trading.adaptive_thresholds import get_current_profile
         profile = get_current_profile()
         if profile.mode != "WARMING_UP":
             cfg["min_score"] = profile.early_threshold

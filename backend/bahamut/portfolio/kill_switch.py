@@ -205,7 +205,7 @@ def evaluate_kill_switch(
     # This is the ONLY path that actually closes positions on emergency.
     if state.kill_switch_active:
         try:
-            from bahamut.training.engine import force_close_all_training_positions
+            from bahamut.trading.engine import force_close_all_training_positions
             close_result = force_close_all_training_positions(
                 reason=f"KILL_SWITCH: {state.triggers[0] if state.triggers else 'unknown'}"
             )

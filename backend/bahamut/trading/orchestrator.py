@@ -25,7 +25,7 @@ logger = structlog.get_logger()
 def _incr_containment_counter(name: str):
     """Increment a containment counter using the proven Redis connection from engine."""
     try:
-        from bahamut.training.engine import _get_redis
+        from bahamut.trading.engine import _get_redis
         r = _get_redis()
         if r:
             key = f"bahamut:counters:{name}"
@@ -46,26 +46,26 @@ except ImportError:
 def _celery_task(func):
     if _has_celery and celery_app:
         return celery_app.task(
-            bind=False, name=f"bahamut.training.orchestrator.{func.__name__}",
+            bind=False, name=f"bahamut.trading.orchestrator.{func.__name__}",
             max_retries=0, acks_late=True,
         )(func)
     return func
 
 
 @_celery_task
-def run_training_cycle():
+def run_trading_cycle():
     """
     Main training cycle. Runs every 10 minutes.
     Pipeline: fetch data → evaluate strategies → SELECTOR picks best → execute selected only.
     """
-    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
-    from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_RISK_PER_TRADE_PCT
-    from bahamut.training.selector import PendingSignal, select_candidates, save_last_decisions
+    from bahamut.config_assets import TRADING_ASSETS, ASSET_CLASS_MAP
+    from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL, TRADING_RISK_PER_TRADE_PCT
+    from bahamut.trading.selector import PendingSignal, select_candidates, save_last_decisions
 
-    _set_running(True, len(TRAINING_ASSETS))
+    _set_running(True, len(TRADING_ASSETS))
 
     start = time.time()
-    logger.info("training_cycle_start", assets=len(TRAINING_ASSETS))
+    logger.info("training_cycle_start", assets=len(TRADING_ASSETS))
 
     # ── Production gate: shutdown check ──
     try:
@@ -93,7 +93,7 @@ def run_training_cycle():
 
     # Cleanup: force-close any crypto positions that slipped into internal
     try:
-        from bahamut.training.engine import cleanup_crypto_internal_positions
+        from bahamut.trading.engine import cleanup_crypto_internal_positions
         cleanup_result = cleanup_crypto_internal_positions()
         if cleanup_result["total"] > 0:
             logger.warning("cycle_crypto_cleanup_ran",
@@ -106,7 +106,7 @@ def run_training_cycle():
     try:
         from bahamut.intelligence.news_impact import cache_news_data, dedupe_headlines
         from bahamut.ingestion.adapters.news import econ_calendar, news_adapter
-        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
+        from bahamut.config_assets import TRADING_CRYPTO, TRADING_STOCKS
         import asyncio
 
         async def _prefetch():
@@ -120,15 +120,15 @@ def run_training_cycle():
             all_hl = dedupe_headlines(general + crypto_hl)
 
             # Cache for ALL crypto assets (they share crypto headlines)
-            for a in TRAINING_CRYPTO:
+            for a in TRADING_CRYPTO:
                 cache_news_data(a, all_hl)
 
             # Cache general headlines for all stock assets
-            for a in TRAINING_STOCKS:
+            for a in TRADING_STOCKS:
                 cache_news_data(a, general)
 
             # Fetch asset-specific news for top 5 stocks (company news)
-            for a in TRAINING_STOCKS[:5]:
+            for a in TRADING_STOCKS[:5]:
                 try:
                     hl = await news_adapter.get_asset_news(a, count=5)
                     if hl:
@@ -152,7 +152,7 @@ def run_training_cycle():
     try:
         from bahamut.intelligence.adaptive_news_risk import update_batch_news_states, ADAPTIVE_NEWS_ENABLED
         if ADAPTIVE_NEWS_ENABLED:
-            news_summary = update_batch_news_states(TRAINING_ASSETS, ASSET_CLASS_MAP)
+            news_summary = update_batch_news_states(TRADING_ASSETS, ASSET_CLASS_MAP)
             logger.info("adaptive_news_updated",
                         frozen=news_summary.get("mode_counts", {}).get("FROZEN", 0),
                         restricted=news_summary.get("mode_counts", {}).get("RESTRICTED", 0),
@@ -187,7 +187,7 @@ def run_training_cycle():
 
     # Decrement pattern suppression timers
     try:
-        from bahamut.training.context_gate import decrement_suppression_cycles
+        from bahamut.trading.context_gate import decrement_suppression_cycles
         decrement_suppression_cycles()
     except Exception:
         pass
@@ -200,7 +200,7 @@ def run_training_cycle():
 
     # Reset per-cycle dedup tracking
     try:
-        from bahamut.training.engine import reset_cycle_dedup, cleanup_invalid_positions
+        from bahamut.trading.engine import reset_cycle_dedup, cleanup_invalid_positions
         reset_cycle_dedup()
         cleaned = cleanup_invalid_positions()
         if cleaned:
@@ -210,8 +210,8 @@ def run_training_cycle():
 
     # Phase 1: Scan all assets — collect signals, update positions, DO NOT execute yet
     batch_size = 8
-    for i in range(0, len(TRAINING_ASSETS), batch_size):
-        batch = TRAINING_ASSETS[i:i + batch_size]
+    for i in range(0, len(TRADING_ASSETS), batch_size):
+        batch = TRADING_ASSETS[i:i + batch_size]
 
         for asset in batch:
             try:
@@ -229,15 +229,15 @@ def run_training_cycle():
                 errors += 1
                 logger.debug("training_asset_error", asset=asset, error=str(e))
 
-            _set_progress(processed + errors, len(TRAINING_ASSETS))
+            _set_progress(processed + errors, len(TRADING_ASSETS))
 
-        if i + batch_size < len(TRAINING_ASSETS):
+        if i + batch_size < len(TRADING_ASSETS):
             time.sleep(3)
 
     # Phase 1.5: Check if regime changes should release suppressed patterns
     if observed_regimes:
         try:
-            from bahamut.training.context_gate import check_regime_release
+            from bahamut.trading.context_gate import check_regime_release
             check_regime_release(observed_regimes)
         except Exception:
             pass
@@ -284,7 +284,7 @@ def run_training_cycle():
 
     # Phase 3: Execute only selected signals
     trades_opened = 0
-    from bahamut.training.engine import open_training_position
+    from bahamut.trading.engine import open_training_position
 
     logger.info("training_execution_phase",
                 selected_count=len(selected),
@@ -303,11 +303,11 @@ def run_training_cycle():
             # Per-asset-class risk sizing
             try:
                 from bahamut.execution.balance import get_available_risk
-                risk_info = get_available_risk(sig.asset_class, TRAINING_RISK_PER_TRADE_PCT)
+                risk_info = get_available_risk(sig.asset_class, TRADING_RISK_PER_TRADE_PCT)
                 risk_amount = risk_info["max_risk_usd"]
                 risk_source = risk_info["source"]
             except Exception:
-                risk_amount = TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT
+                risk_amount = TRADING_VIRTUAL_CAPITAL * TRADING_RISK_PER_TRADE_PCT
                 risk_source = "virtual_fallback"
 
             if risk_amount <= 0 or risk_source == "broker_unavailable":
@@ -316,7 +316,7 @@ def run_training_cycle():
                                source=risk_source,
                                reason=risk_info.get("reason", ""))
                 try:
-                    from bahamut.training.rejection_tracker import record_rejection
+                    from bahamut.trading.rejection_tracker import record_rejection
                     record_rejection(
                         asset=sig.asset, strategy=sig.strategy, direction=sig.direction,
                         signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{int(time.time())}",
@@ -376,7 +376,7 @@ def run_training_cycle():
                 duration_ms=duration_ms)
 
     try:
-        from bahamut.training.engine import _get_redis
+        from bahamut.trading.engine import _get_redis
         _r = _get_redis()
         if _r:
             _r.setex("bahamut:training:last_cycle_ts", 3600, str(int(time.time())))
@@ -417,7 +417,7 @@ def run_training_cycle():
     # Phase 4: Cache candidates + all-assets for instant API responses
     # (candles are already in data layer cache from Phase 1, so this is fast)
     try:
-        from bahamut.training.candidates import (
+        from bahamut.trading.candidates import (
             get_training_candidates, get_all_training_assets,
             cache_candidates, cache_all_assets,
         )
@@ -429,7 +429,7 @@ def run_training_cycle():
 
     # Phase 5: Adaptive threshold update
     try:
-        from bahamut.training.adaptive_thresholds import run_adaptive_update
+        from bahamut.trading.adaptive_thresholds import run_adaptive_update
         profile = run_adaptive_update()
         logger.info("training_adaptive_updated", mode=profile.mode)
     except Exception as e:
@@ -473,7 +473,7 @@ def run_training_cycle():
                 else:
                     _dd_pct = 0
                 try:
-                    from bahamut.training.engine import _get_redis
+                    from bahamut.trading.engine import _get_redis
                     _dd_r = _get_redis()
                     if _dd_r:
                         _dd_r.setex(f"bahamut:strategy_dd:{_strat}", 86400,
@@ -486,7 +486,7 @@ def run_training_cycle():
     # Phase 8: Funding rate accrual, aligned to Binance windows (00/08/16 UTC)
     try:
         from datetime import datetime, timezone
-        from bahamut.training.engine import _get_redis
+        from bahamut.trading.engine import _get_redis
         _fr_redis = _get_redis()
         _now_utc = datetime.now(timezone.utc)
         _current_window = _now_utc.hour // 8  # 0, 1, or 2 (00–08, 08–16, 16–24)
@@ -532,9 +532,9 @@ def run_training_cycle():
 def _scan_training_asset(asset: str, asset_class: str) -> dict:
     """Scan a single asset: fetch data → evaluate strategies → collect signals.
     Does NOT execute — returns PendingSignal objects for the selector."""
-    from bahamut.training.engine import update_positions_for_asset
-    from bahamut.training.selector import PendingSignal
-    from bahamut.training.candidates import score_ema_cross, score_breakout
+    from bahamut.trading.engine import update_positions_for_asset
+    from bahamut.trading.selector import PendingSignal
+    from bahamut.trading.candidates import score_ema_cross, score_breakout
 
     result: dict = {"signals": [], "trades_closed": 0}
 
@@ -789,7 +789,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 pass
 
             # Record scan direction for consistency checking
-            from bahamut.training.engine import record_scan_direction, evaluate_early_execution
+            from bahamut.trading.engine import record_scan_direction, evaluate_early_execution
             record_scan_direction(asset, signal.direction)
 
             # Determine execution type
@@ -869,8 +869,8 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
     # ═══════════════════════════════════════════
     if strategy_signals_found == 0:
         # Canonical suppress check
-        from bahamut.config_assets import TRAINING_SUPPRESS
-        _global_suppress = TRAINING_SUPPRESS.get("*", set())
+        from bahamut.config_assets import TRADING_SUPPRESS
+        _global_suppress = TRADING_SUPPRESS.get("*", set())
         debug_enabled = True
         debug_min_score = 20
         try:
@@ -910,7 +910,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         # Skip assets that already have an open position (no duplicates)
         has_existing_position = False
         try:
-            from bahamut.training.engine import _load_positions
+            from bahamut.trading.engine import _load_positions
             existing = _load_positions()
             has_existing_position = any(p.asset == asset for p in existing)
         except Exception:
@@ -999,7 +999,7 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 # Context gate check — even debug exploration must not open in invalid regimes
                 if not context_blocked:
                     try:
-                        from bahamut.training.context_gate import validate_strategy_context
+                        from bahamut.trading.context_gate import validate_strategy_context
                         gate = validate_strategy_context(strat, regime, direction)
                         if not gate["valid"]:
                             logger.info("debug_exploration_context_blocked",

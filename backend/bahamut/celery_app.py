@@ -1,8 +1,8 @@
 """
 Bahamut Celery Configuration
 
-OPERATIONAL MODE: Only the v7/v8/v9 trading engine runs.
-Legacy tasks (scanner, agents, learning, old paper trading) are DISABLED.
+LIVE trading: routes to Binance Futures Demo + Alpaca Paper via
+exchange APIs. Handles 50 assets with full execution gauntlet.
 """
 from celery import Celery
 from celery.schedules import crontab
@@ -15,19 +15,7 @@ celery_app = Celery(
     broker=settings.redis_url,
     backend=settings.redis_url,
     include=[
-        # ── OPERATIONAL (active) ──
-        "bahamut.execution.v7_orchestrator",
-        "bahamut.training.orchestrator",
-
-        # ── LEGACY (loaded but not scheduled) ──
-        # Kept importable for manual research use, but no beat tasks.
-        # "bahamut.ingestion.tasks",
-        # "bahamut.features.tasks",
-        # "bahamut.agents.tasks",
-        # "bahamut.learning.tasks",
-        # "bahamut.reports.tasks",
-        # "bahamut.paper_trading.tasks",
-        # "bahamut.scanner.tasks",
+        "bahamut.trading.orchestrator",
     ],
 )
 
@@ -40,48 +28,12 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_routes={
         "bahamut.execution.*": {"queue": "critical"},
-        "bahamut.training.*": {"queue": "critical"},
+        "bahamut.trading.*": {"queue": "critical"},
     },
     beat_schedule={
-        # ══════════════════════════════════════════════
-        # OPERATIONAL ENGINE — the only active schedule
-        # ══════════════════════════════════════════════
-        "v7-trading-cycle": {
-            "task": "bahamut.execution.v7_orchestrator.run_v7_cycle",
-            "schedule": 120.0,  # Every 2 min — only acts on new 4H bars
-        },
-
-        # ══════════════════════════════════════════════
-        # TRAINING UNIVERSE — paper trading 50 assets
-        # Feeds the learning engine. Isolated from production.
-        # ══════════════════════════════════════════════
-        "training-cycle": {
-            "task": "bahamut.training.orchestrator.run_training_cycle",
+        "trading-cycle": {
+            "task": "bahamut.trading.orchestrator.run_trading_cycle",
             "schedule": 600.0,  # Every 10 min — batched to respect API rate limits
         },
-
-        # ══════════════════════════════════════════════
-        # LEGACY — ALL DISABLED
-        # These were the old multi-agent scanner system.
-        # Kept commented for reference only.
-        # ══════════════════════════════════════════════
-        # "ingest-ohlcv": { ... },
-        # "ingest-volatility": { ... },
-        # "ingest-news": { ... },
-        # "compute-features": { ... },
-        # "detect-regime": { ... },
-        # "monitor-breaking-news": { ... },
-        # "run-stock-cycles": { ... },
-        # "run-signal-cycles": { ... },
-        # "run-market-scan": { ... },
-        # "daily-trust-decay": { ... },
-        # "daily-threshold-adjust": { ... },
-        # "weekly-calibration": { ... },
-        # "monthly-calibration": { ... },
-        # "daily-brief": { ... },
-        # "check-paper-positions": { ... },
-        # "paper-trading-daily-report": { ... },
-        # "market-scanner": { ... },
-        # "trade-triggered-calibration": { ... },
     },
 )

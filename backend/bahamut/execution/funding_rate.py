@@ -183,7 +183,7 @@ def accrue_funding_for_all_positions() -> dict:
     """
     summary = {"positions_updated": 0, "total_accrued": 0.0, "errors": []}
     try:
-        from bahamut.training.engine import _load_positions, _get_redis
+        from bahamut.trading.engine import _load_positions, _get_redis
         from bahamut.execution.binance_futures import SYMBOL_MAP
 
         positions = _load_positions()

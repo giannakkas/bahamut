@@ -36,7 +36,7 @@ def test_block_synthetic_default_enabled():
 
 
 def test_training_position_has_data_mode_field():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="T1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",
@@ -50,7 +50,7 @@ def test_training_position_has_data_mode_field():
 
 
 def test_training_position_data_mode_can_be_synthetic():
-    from bahamut.training.engine import TrainingPosition
+    from bahamut.trading.engine import TrainingPosition
     pos = TrainingPosition(
         position_id="T1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",
@@ -64,7 +64,7 @@ def test_training_position_data_mode_can_be_synthetic():
 
 
 def test_training_trade_has_data_mode_field():
-    from bahamut.training.engine import TrainingTrade
+    from bahamut.trading.engine import TrainingTrade
     t = TrainingTrade(
         trade_id="TR1", position_id="P1", asset="BTCUSD", asset_class="crypto",
         strategy="v9_breakout", direction="LONG",
@@ -79,7 +79,7 @@ def test_training_trade_has_data_mode_field():
 
 
 def test_pending_signal_has_data_mode_field():
-    from bahamut.training.selector import PendingSignal
+    from bahamut.trading.selector import PendingSignal
     p = PendingSignal(
         asset="BTCUSD", asset_class="crypto", strategy="v9_breakout",
         direction="LONG", readiness_score=50, regime="TREND",
@@ -135,7 +135,7 @@ def test_data_mode_consensus_from_indicators():
 def test_open_training_position_signature_accepts_data_mode():
     """The function signature accepts data_mode keyword."""
     import inspect
-    from bahamut.training.engine import open_training_position
+    from bahamut.trading.engine import open_training_position
     sig = inspect.signature(open_training_position)
     assert "data_mode" in sig.parameters
     assert sig.parameters["data_mode"].default == "live"

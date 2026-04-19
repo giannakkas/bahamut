@@ -1,5 +1,5 @@
 """Tests for quality floors — hard pre-ranking gates."""
-from bahamut.training.quality_floors import check_quality_floors, get_floors
+from bahamut.trading.quality_floors import check_quality_floors, get_floors
 
 
 def test_low_readiness_blocked():

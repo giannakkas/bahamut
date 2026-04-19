@@ -36,7 +36,7 @@ async def get_training_operations(user=Depends(get_current_user)):
     now = datetime.now(timezone.utc)
 
     # Load shared data once (not per-section)
-    from bahamut.training.engine import _load_positions
+    from bahamut.trading.engine import _load_positions
     from dataclasses import asdict
     positions = _load_positions()
     pos_dicts = [
@@ -152,7 +152,7 @@ def _aggregate_training_trades() -> dict:
 
 def _build_cycle_status(r, now) -> dict:
     """Live cycle status with timing data for countdown timers."""
-    from bahamut.config_assets import TRAINING_ASSETS
+    from bahamut.config_assets import TRADING_ASSETS
     from datetime import timedelta
 
     CYCLE_INTERVAL = 600  # 10 minutes
@@ -160,7 +160,7 @@ def _build_cycle_status(r, now) -> dict:
     status = {
         "auto_enabled": True,
         "cycle_interval_seconds": CYCLE_INTERVAL,
-        "universe_size": len(TRAINING_ASSETS),
+        "universe_size": len(TRADING_ASSETS),
         "is_running": False,
         "running_progress": None,
         "last_cycle_time": None,
@@ -265,8 +265,8 @@ def _build_recent_cycles(r) -> list[dict]:
 
 def _build_kpi(r, db_agg: dict) -> dict:
     """Top KPI row data — uses pre-aggregated DB data."""
-    from bahamut.config_assets import TRAINING_ASSETS, TRAINING_VIRTUAL_CAPITAL, TRAINING_RISK_PER_TRADE_PCT
-    from bahamut.training.engine import get_open_position_count, _load_positions
+    from bahamut.config_assets import TRADING_ASSETS, TRADING_VIRTUAL_CAPITAL, TRADING_RISK_PER_TRADE_PCT
+    from bahamut.trading.engine import get_open_position_count, _load_positions
 
     totals = db_agg.get("total", {})
     net_pnl = round(totals.get("pnl", 0), 2)
@@ -274,8 +274,8 @@ def _build_kpi(r, db_agg: dict) -> dict:
     wins = totals.get("wins", 0)
     losses = totals.get("losses", 0)
     decisive = wins + losses  # Trades with actual P&L (excludes flat scratches)
-    equity = round(TRAINING_VIRTUAL_CAPITAL + net_pnl, 2)
-    risk_per_trade = round(TRAINING_VIRTUAL_CAPITAL * TRAINING_RISK_PER_TRADE_PCT, 2)
+    equity = round(TRADING_VIRTUAL_CAPITAL + net_pnl, 2)
+    risk_per_trade = round(TRADING_VIRTUAL_CAPITAL * TRADING_RISK_PER_TRADE_PCT, 2)
 
     # Unrealized PnL from open positions
     positions = _load_positions()
@@ -283,14 +283,14 @@ def _build_kpi(r, db_agg: dict) -> dict:
     total_equity = round(equity + unrealized, 2)
 
     kpi = {
-        "universe_size": len(TRAINING_ASSETS),
-        "virtual_capital": TRAINING_VIRTUAL_CAPITAL,
+        "universe_size": len(TRADING_ASSETS),
+        "virtual_capital": TRADING_VIRTUAL_CAPITAL,
         "equity": total_equity,
         "net_pnl": net_pnl,
         "unrealized_pnl": unrealized,
-        "return_pct": round((total_equity - TRAINING_VIRTUAL_CAPITAL) / TRAINING_VIRTUAL_CAPITAL * 100, 2),
+        "return_pct": round((total_equity - TRADING_VIRTUAL_CAPITAL) / TRADING_VIRTUAL_CAPITAL * 100, 2),
         "risk_per_trade": risk_per_trade,
-        "risk_per_trade_pct": round(TRAINING_RISK_PER_TRADE_PCT * 100, 2),
+        "risk_per_trade_pct": round(TRADING_RISK_PER_TRADE_PCT * 100, 2),
         "assets_scanned": 0,
         "open_positions": get_open_position_count(),
         "closed_trades": closed,
@@ -339,13 +339,13 @@ def _build_cycle_health(r) -> dict:
         raw = r.get("bahamut:training:last_cycle")
         if raw:
             lc = json.loads(raw)
-            from bahamut.config_assets import TRAINING_ASSETS
+            from bahamut.config_assets import TRADING_ASSETS
             processed = lc.get("processed", 0)
             errors = lc.get("errors", 0)
             health["status"] = "OK" if processed > 0 and errors == 0 else "DEGRADED" if processed > 0 else "FAILED"
             health["duration_ms"] = lc.get("duration_ms", 0)
             health["assets_processed"] = processed
-            health["assets_skipped"] = len(TRAINING_ASSETS) - processed - errors
+            health["assets_skipped"] = len(TRADING_ASSETS) - processed - errors
             health["errors"] = errors
             health["signals_generated"] = lc.get("signals", 0)
             health["trades_opened"] = lc.get("trades_opened", 0)
@@ -359,7 +359,7 @@ def _build_cycle_health(r) -> dict:
 
 def _build_positions(r) -> list[dict]:
     """Open positions table."""
-    from bahamut.training.engine import _load_positions
+    from bahamut.trading.engine import _load_positions
     from dataclasses import asdict
     positions = _load_positions()
     return [
@@ -397,7 +397,7 @@ def _build_closed_trades() -> list[dict]:
 
     # Redis: recent trades (catches trades that failed DB persist)
     try:
-        from bahamut.training.engine import get_recent_trades_from_redis
+        from bahamut.trading.engine import get_recent_trades_from_redis
         redis_trades = get_recent_trades_from_redis() or []
     except Exception:
         pass
@@ -459,7 +459,7 @@ def _build_class_breakdown_fast(r, db_agg: dict, positions: list) -> dict:
 
 def _build_exposure_fast(positions: list) -> dict:
     """Exposure using pre-loaded positions. Zero DB/Redis queries."""
-    from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_MAX_POSITIONS, ASSET_CLASS_MAP
+    from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL, TRADING_MAX_POSITIONS, ASSET_CLASS_MAP
 
     long_exposure = sum(p.entry_price * p.size for p in positions if p.direction == "LONG")
     short_exposure = sum(p.entry_price * p.size for p in positions if p.direction == "SHORT")
@@ -476,10 +476,10 @@ def _build_exposure_fast(positions: list) -> dict:
         "long_exposure": round(long_exposure, 2),
         "short_exposure": round(short_exposure, 2),
         "total_risk": round(total_risk, 2),
-        "risk_pct": round(total_risk / max(1, TRAINING_VIRTUAL_CAPITAL) * 100, 2),
-        "max_positions": TRAINING_MAX_POSITIONS,
+        "risk_pct": round(total_risk / max(1, TRADING_VIRTUAL_CAPITAL) * 100, 2),
+        "max_positions": TRADING_MAX_POSITIONS,
         "current_positions": len(positions),
-        "utilization_pct": round(len(positions) / max(1, TRAINING_MAX_POSITIONS) * 100, 1),
+        "utilization_pct": round(len(positions) / max(1, TRADING_MAX_POSITIONS) * 100, 1),
         "per_class": {k: round(v, 2) for k, v in class_exposure.items()},
     }
 
@@ -539,7 +539,7 @@ def _build_strategy_breakdown(r) -> dict:
                 pass
 
         # Count open positions for this strategy
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         stats["open_trades"] = len([p for p in _load_positions() if p.strategy == strat])
 
         strategies[strat] = stats
@@ -587,7 +587,7 @@ def _build_class_breakdown(r) -> dict:
                 pass
 
         # Open positions
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         from bahamut.config_assets import ASSET_CLASS_MAP
         stats["open_trades"] = len([p for p in _load_positions() if ASSET_CLASS_MAP.get(p.asset) == cls])
 
@@ -683,8 +683,8 @@ def _build_learning_feed() -> dict:
 
 def _build_exposure(r) -> dict:
     """Training exposure/risk section."""
-    from bahamut.training.engine import _load_positions
-    from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, TRAINING_MAX_POSITIONS
+    from bahamut.trading.engine import _load_positions
+    from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL, TRADING_MAX_POSITIONS
 
     positions = _load_positions()
     long_exposure = sum(p.entry_price * p.size for p in positions if p.direction == "LONG")
@@ -704,10 +704,10 @@ def _build_exposure(r) -> dict:
         "long_exposure": round(long_exposure, 2),
         "short_exposure": round(short_exposure, 2),
         "total_risk": round(total_risk, 2),
-        "risk_pct": round(total_risk / max(1, TRAINING_VIRTUAL_CAPITAL) * 100, 2),
-        "max_positions": TRAINING_MAX_POSITIONS,
+        "risk_pct": round(total_risk / max(1, TRADING_VIRTUAL_CAPITAL) * 100, 2),
+        "max_positions": TRADING_MAX_POSITIONS,
         "current_positions": len(positions),
-        "utilization_pct": round(len(positions) / max(1, TRAINING_MAX_POSITIONS) * 100, 1),
+        "utilization_pct": round(len(positions) / max(1, TRADING_MAX_POSITIONS) * 100, 1),
         "per_class": {k: round(v, 2) for k, v in class_exposure.items()},
     }
 
@@ -760,7 +760,7 @@ def _build_alerts(r) -> list[dict]:
         pass
 
     # Check: stalled training
-    from bahamut.training.engine import get_open_position_count
+    from bahamut.trading.engine import get_open_position_count
     if get_open_position_count() == 0:
         alerts.append({"level": "INFO", "message": "No open training positions"})
 
@@ -771,7 +771,7 @@ def _build_alerts(r) -> list[dict]:
 async def get_candidates(user=Depends(get_current_user)):
     """Get top 20 trade candidates. Cache-first, triggers background scan on cold cache."""
     try:
-        from bahamut.training.candidates import get_cached_candidates
+        from bahamut.trading.candidates import get_cached_candidates
         cached = get_cached_candidates()
         if cached is not None:
             return cached
@@ -786,7 +786,7 @@ async def get_candidates(user=Depends(get_current_user)):
 async def get_all_assets(user=Depends(get_current_user)):
     """Get ALL training assets. Cache-first, static list + background scan on cold cache."""
     try:
-        from bahamut.training.candidates import get_cached_all_assets
+        from bahamut.trading.candidates import get_cached_all_assets
         cached = get_cached_all_assets()
         if cached is not None:
             return cached
@@ -795,7 +795,7 @@ async def get_all_assets(user=Depends(get_current_user)):
 
     # Cache cold — return static list AND trigger background scan
     _trigger_background_asset_scan()
-    from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
+    from bahamut.config_assets import TRADING_ASSETS, ASSET_CLASS_MAP
     assets = [
         {
             "asset": a,
@@ -809,7 +809,7 @@ async def get_all_assets(user=Depends(get_current_user)):
             "reason": "Scanning in background — refresh in ~60s",
             "indicators": {},
         }
-        for a in TRAINING_ASSETS
+        for a in TRADING_ASSETS
     ]
     counts = {"total": len(assets), "ready": 0, "approaching": 0, "weak": 0, "no_signal": 0, "no_data": len(assets), "error": 0}
     return {"assets": assets, "counts": counts, "duration_ms": 0}
@@ -833,9 +833,9 @@ async def trigger_training_cycle(user=Depends(get_current_user)):
 
     # Set running flag IMMEDIATELY so UI shows animation within 5s
     try:
-        from bahamut.training.orchestrator import _set_running
-        from bahamut.config_assets import TRAINING_ASSETS
-        _set_running(True, len(TRAINING_ASSETS))
+        from bahamut.trading.orchestrator import _set_running
+        from bahamut.config_assets import TRADING_ASSETS
+        _set_running(True, len(TRADING_ASSETS))
     except Exception:
         pass
 
@@ -843,15 +843,15 @@ async def trigger_training_cycle(user=Depends(get_current_user)):
     def _do_cycle():
         global _bg_cycle_running
         try:
-            from bahamut.training.orchestrator import run_training_cycle
+            from bahamut.trading.orchestrator import run_trading_cycle
             logger.info("manual_training_cycle_start")
-            run_training_cycle()
+            run_trading_cycle()
             logger.info("manual_training_cycle_complete")
         except Exception as e:
             logger.error("manual_training_cycle_failed", error=str(e))
             # Clear running flag on error
             try:
-                from bahamut.training.orchestrator import _set_running
+                from bahamut.trading.orchestrator import _set_running
                 _set_running(False, 0)
             except Exception:
                 pass
@@ -877,7 +877,7 @@ def _trigger_background_asset_scan():
     def _do_scan():
         global _bg_scan_running
         try:
-            from bahamut.training.candidates import (
+            from bahamut.trading.candidates import (
                 get_training_candidates, get_all_training_assets,
                 cache_candidates, cache_all_assets,
             )
@@ -898,7 +898,7 @@ async def get_execution_decisions(user=Depends(get_current_user)):
     """Get last execution selection decisions from the most recent training cycle.
     Shows which signals were selected, watchlisted, or rejected with reasons."""
     try:
-        from bahamut.training.selector import get_last_decisions
+        from bahamut.trading.selector import get_last_decisions
         return get_last_decisions()
     except Exception as e:
         logger.error("execution_decisions_failed", error=str(e))
@@ -909,7 +909,7 @@ async def get_execution_decisions(user=Depends(get_current_user)):
 async def get_adaptive_state(user=Depends(get_current_user)):
     """Get current adaptive threshold state, metrics, and adjustment history."""
     try:
-        from bahamut.training.adaptive_thresholds import (
+        from bahamut.trading.adaptive_thresholds import (
             get_current_profile, get_last_metrics, get_adjustment_history,
             BOUNDS, POLICY,
         )
@@ -964,7 +964,7 @@ async def _build_diagnostics():
     # ── 1. TRUST STATE PER PATTERN ──
     trust_section = {"title": "TRUST STATE", "rows": []}
     try:
-        from bahamut.training.learning_engine import get_pattern_trust, get_trust_overview
+        from bahamut.trading.learning_engine import get_pattern_trust, get_trust_overview
         overview = get_trust_overview()
         for strat, info in overview.get("strategies", {}).items():
             trust_section["rows"].append({
@@ -1075,7 +1075,7 @@ async def _build_diagnostics():
     # ── 4. REJECTION STATS ──
     rej_section = {"title": "REJECTION REASONS", "data": {}}
     try:
-        from bahamut.training.learning_engine import get_rejection_stats
+        from bahamut.trading.learning_engine import get_rejection_stats
         rej_section["data"] = get_rejection_stats()
     except Exception as e:
         rej_section["error"] = str(e)
@@ -1084,7 +1084,7 @@ async def _build_diagnostics():
     # ── 5. PATTERN SUPPRESSIONS ──
     sup_section = {"title": "ACTIVE SUPPRESSIONS", "rows": []}
     try:
-        from bahamut.training.context_gate import get_all_suppressions
+        from bahamut.trading.context_gate import get_all_suppressions
         sup_section["rows"] = get_all_suppressions()
     except Exception as e:
         sup_section["error"] = str(e)
@@ -1093,7 +1093,7 @@ async def _build_diagnostics():
     # ── 6. OPEN POSITIONS ──
     pos_section = {"title": "OPEN POSITIONS", "rows": []}
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         from dataclasses import asdict
         positions = _load_positions()
         for p in positions:
@@ -1147,7 +1147,7 @@ async def _build_diagnostics():
     # ── 8. SELECTOR CONFIG ──
     config_section = {"title": "SELECTOR CONFIG", "data": {}}
     try:
-        from bahamut.training.selector import _get_config
+        from bahamut.trading.selector import _get_config
         config_section["data"] = _get_config()
     except Exception as e:
         config_section["error"] = str(e)
@@ -1156,7 +1156,7 @@ async def _build_diagnostics():
     # ── 9. CONTEXT GATE RULES ──
     gate_section = {"title": "CONTEXT GATE RULES", "data": {}}
     try:
-        from bahamut.training.context_gate import STRATEGY_REGIME_MAP, SOFT_PENALTY_COMBOS
+        from bahamut.trading.context_gate import STRATEGY_REGIME_MAP, SOFT_PENALTY_COMBOS
         gate_section["data"] = {
             "allowed_regimes": {k: list(v) for k, v in STRATEGY_REGIME_MAP.items()},
             "soft_penalties": {f"{k[0]}+{k[1]}": v for k, v in SOFT_PENALTY_COMBOS.items()},
@@ -1168,7 +1168,7 @@ async def _build_diagnostics():
     # ── 10. QUALITY FLOORS ──
     floors_section = {"title": "QUALITY FLOORS", "data": {}}
     try:
-        from bahamut.training.quality_floors import FLOORS
+        from bahamut.trading.quality_floors import FLOORS
         floors_section["data"] = FLOORS
     except Exception as e:
         floors_section["error"] = str(e)
@@ -1188,14 +1188,14 @@ async def _build_diagnostics():
     try:
         from bahamut.data.binance_data import is_crypto, get_candles, compute_indicators as binance_ind
         from bahamut.regime.v8_detector import detect_regime
-        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
+        from bahamut.config_assets import TRADING_CRYPTO, TRADING_STOCKS
         from bahamut.sentiment.fear_greed import get_fear_greed
 
         fng = get_fear_greed()
         fng_value = fng.get("value", 50)
 
         # Sample top 5 crypto + check sentiment override
-        for asset in TRAINING_CRYPTO[:5]:
+        for asset in TRADING_CRYPTO[:5]:
             try:
                 candles_4h = get_candles(asset, interval="4h", limit=250)
                 if candles_4h and len(candles_4h) >= 60:
@@ -1242,9 +1242,9 @@ async def _build_diagnostics():
     indicator_section = {"title": "INDICATOR SNAPSHOT", "rows": []}
     try:
         from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
-        from bahamut.config_assets import TRAINING_CRYPTO
+        from bahamut.config_assets import TRADING_CRYPTO
 
-        for asset in TRAINING_CRYPTO[:8]:
+        for asset in TRADING_CRYPTO[:8]:
             try:
                 candles_15m = get_candles(asset, interval="15m", limit=200)
                 if candles_15m and len(candles_15m) >= 30:
@@ -1366,9 +1366,9 @@ async def _build_diagnostics():
     try:
         from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
         from bahamut.alpha.v10_mean_reversion import detect_crash_short
-        from bahamut.config_assets import TRAINING_CRYPTO
+        from bahamut.config_assets import TRADING_CRYPTO
 
-        for asset in TRAINING_CRYPTO[:10]:
+        for asset in TRADING_CRYPTO[:10]:
             try:
                 candles_15m = get_candles(asset, interval="15m", limit=200)
                 if candles_15m and len(candles_15m) >= 30:
@@ -1393,13 +1393,13 @@ async def _build_diagnostics():
     # ── 17. SYSTEM HEALTH ──
     health_section = {"title": "SYSTEM HEALTH", "data": {}}
     try:
-        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS, TRAINING_ASSETS
-        from bahamut.training.orchestrator import CRYPTO_INTERVAL
+        from bahamut.config_assets import TRADING_CRYPTO, TRADING_STOCKS, TRADING_ASSETS
+        from bahamut.trading.orchestrator import CRYPTO_INTERVAL
 
         health_section["data"] = {
-            "total_assets": len(TRAINING_ASSETS),
-            "crypto_assets": len(TRAINING_CRYPTO),
-            "stock_assets": len(TRAINING_STOCKS),
+            "total_assets": len(TRADING_ASSETS),
+            "crypto_assets": len(TRADING_CRYPTO),
+            "stock_assets": len(TRADING_STOCKS),
             "crypto_interval": CRYPTO_INTERVAL,
             "stock_interval": "4h",
             "redis_connected": r is not None,
@@ -1420,7 +1420,7 @@ async def _build_diagnostics():
     # ── 18. AI ANALYSIS — automated audit for Claude ──
     ai_section = {"title": "AI ANALYSIS", "data": {}}
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         from dataclasses import asdict
         positions = _load_positions()
 
@@ -1520,8 +1520,8 @@ async def _build_diagnostics():
             short_pipeline["crash_override_active"] = fng_val <= 25
             # Count how many crypto assets have CRASH regime
             crash_count = 0
-            from bahamut.config_assets import TRAINING_CRYPTO
-            for ca in TRAINING_CRYPTO[:10]:
+            from bahamut.config_assets import TRADING_CRYPTO
+            for ca in TRADING_CRYPTO[:10]:
                 try:
                     from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
                     c4h = get_candles(ca, interval="4h", limit=250)
@@ -1545,9 +1545,9 @@ async def _build_diagnostics():
         news_snapshots = {}
         try:
             from bahamut.intelligence.news_impact import compute_news_impact_sync
-            from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
-            for a in (TRAINING_CRYPTO[:5] + TRAINING_STOCKS[:3]):
-                ac = "crypto" if a in TRAINING_CRYPTO else "stock"
+            from bahamut.config_assets import TRADING_CRYPTO, TRADING_STOCKS
+            for a in (TRADING_CRYPTO[:5] + TRADING_STOCKS[:3]):
+                ac = "crypto" if a in TRADING_CRYPTO else "stock"
                 nia = compute_news_impact_sync(a, ac)
                 if nia.impact_score > 0:
                     news_snapshots[a] = {
@@ -1830,7 +1830,7 @@ async def _build_diagnostics():
                     for s in substrat_rows
                 ]
             # Substrategy trust buckets from Redis (written by learning_engine)
-            from bahamut.training.learning_engine import get_substrategy_trust
+            from bahamut.trading.learning_engine import get_substrategy_trust
             substrat_trust = {}
             for sub_name in ("v10_range_long", "v10_range_short", "v10_crash_short"):
                 substrat_trust[sub_name] = get_substrategy_trust(sub_name, "", "crypto")
@@ -1939,9 +1939,9 @@ async def _build_diagnostics():
 
         # Active engine suppress map (show what's blocked)
         try:
-            from bahamut.config_assets import TRAINING_SUPPRESS, CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE, SUBSTRATEGY_SUPPRESS
+            from bahamut.config_assets import TRADING_SUPPRESS, CRASH_SHORT_SUPPRESS, CRASH_SHORT_PENALIZE, SUBSTRATEGY_SUPPRESS
             ai_section["data"]["engine_suppress_map"] = {
-                k: sorted(list(v)) for k, v in TRAINING_SUPPRESS.items()
+                k: sorted(list(v)) for k, v in TRADING_SUPPRESS.items()
             }
             ai_section["data"]["crash_short_suppress_active"] = sorted(list(CRASH_SHORT_SUPPRESS))
             ai_section["data"]["crash_short_penalize_active"] = sorted(list(CRASH_SHORT_PENALIZE))
@@ -1953,7 +1953,7 @@ async def _build_diagnostics():
             try:
                 from bahamut.data.live_data import BLOCK_SYNTHETIC
                 # Count open positions by data_mode
-                from bahamut.training.engine import _load_positions
+                from bahamut.trading.engine import _load_positions
                 positions = _load_positions() or []
                 mode_counts = {"live": 0, "stale_cache": 0, "synthetic_dev": 0}
                 non_live_assets = []
@@ -2155,7 +2155,7 @@ async def _build_diagnostics():
 
         # Risk engine live state
         try:
-            from bahamut.training.risk_engine import get_risk_engine_state
+            from bahamut.trading.risk_engine import get_risk_engine_state
             re_state = get_risk_engine_state()
             verification["risk_engine"] = {
                 "mode": re_state.get("risk_engine", {}).get("mode", "UNKNOWN"),
@@ -2257,11 +2257,11 @@ async def _build_diagnostics():
 
         # Current regime state audit — show structural vs effective vs sentiment
         try:
-            from bahamut.config_assets import TRAINING_CRYPTO
+            from bahamut.config_assets import TRADING_CRYPTO
             from bahamut.data.binance_data import get_candles, compute_indicators as binance_ind
             from bahamut.regime.v8_detector import detect_regime
             regime_audit = []
-            for ca in TRAINING_CRYPTO[:5]:
+            for ca in TRADING_CRYPTO[:5]:
                 try:
                     c4h = get_candles(ca, interval="4h", limit=250)
                     if c4h and len(c4h) >= 60:
@@ -2400,7 +2400,7 @@ async def _build_diagnostics():
                 verification["v10_crypto_range_block_note"] = (
                     "Block only suppresses debug_exploration candidates. "
                     "Production crypto RANGE trades still flow through selector. "
-                    "Fix via TRAINING_SUPPRESS per-asset maps (already has 7 assets) "
+                    "Fix via TRADING_SUPPRESS per-asset maps (already has 7 assets) "
                     "or convert mature_negative hard_block to regime-level block."
                 )
             except Exception as _e:
@@ -2506,7 +2506,7 @@ async def _build_diagnostics():
     # ══════════════════════════════════════════════════════════════
     rej_section = {"title": "ENGINE REJECTIONS (LAST HOUR)", "summary": {}, "recent": []}
     try:
-        from bahamut.training.rejection_tracker import get_recent_rejections
+        from bahamut.trading.rejection_tracker import get_recent_rejections
         from collections import Counter as _Counter
         _rejections = get_recent_rejections(limit=200)
         _by_reason = _Counter(r.get("reason_code", "unknown") for r in _rejections)
@@ -2531,9 +2531,9 @@ async def _build_diagnostics():
     # ══════════════════════════════════════════════════════════════
     match_section = {"title": "EXECUTE-BLOCKED MATCHES", "rows": []}
     try:
-        from bahamut.training.selector import get_last_decisions
-        from bahamut.training.engine import _load_positions
-        from bahamut.training.rejection_tracker import get_rejection_for_signal
+        from bahamut.trading.selector import get_last_decisions
+        from bahamut.trading.engine import _load_positions
+        from bahamut.trading.rejection_tracker import get_rejection_for_signal
         _decisions = get_last_decisions()
         _open_pos = {p.asset: p for p in _load_positions()}
         for _dec in (_decisions.get("execute") or []):
@@ -2799,7 +2799,7 @@ async def risk_metrics():
     """Historical risk metrics — drawdown, streaks, daily PnL, exposure history."""
     try:
         from bahamut.db.query import run_query
-        from bahamut.config_assets import TRAINING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
+        from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL, ASSET_CLASS_MAP
 
         trades = run_query("""
             SELECT asset, strategy, direction, pnl, pnl_pct, exit_reason,
@@ -2809,7 +2809,7 @@ async def risk_metrics():
         if not trades:
             return {"error": "no trades"}
 
-        capital = TRAINING_VIRTUAL_CAPITAL
+        capital = TRADING_VIRTUAL_CAPITAL
         equity_curve = [capital]
         running = capital
         peak = capital
@@ -2931,7 +2931,7 @@ async def risk_metrics():
         # ── Risk Engine state (live portfolio controls) ──
         risk_state = {}
         try:
-            from bahamut.training.risk_engine import get_risk_engine_state
+            from bahamut.trading.risk_engine import get_risk_engine_state
             risk_state = get_risk_engine_state()
         except Exception as re_err:
             risk_state = {"error": str(re_err)}
@@ -2984,7 +2984,7 @@ async def trust_dashboard():
     """Trust scores, pattern performance, and learning metrics.
     Uses the same proven Redis path as diagnostics — single source of truth."""
     try:
-        from bahamut.training.learning_engine import (
+        from bahamut.trading.learning_engine import (
             get_trust_overview, get_pattern_trust,
         )
         from bahamut.db.query import run_query
@@ -3180,7 +3180,7 @@ async def asset_leaderboard():
     """Per-asset performance sorted by PnL. Shows ALL configured assets."""
     try:
         from bahamut.db.query import run_query
-        from bahamut.config_assets import ASSET_CLASS_MAP, TRAINING_CRYPTO, TRAINING_STOCKS
+        from bahamut.config_assets import ASSET_CLASS_MAP, TRADING_CRYPTO, TRADING_STOCKS
 
         rows = run_query("""
             SELECT asset,
@@ -3223,8 +3223,8 @@ async def asset_leaderboard():
                 "best": 0, "worst": 0,
             }
 
-        crypto = sorted([_make_entry(a) for a in TRAINING_CRYPTO], key=lambda x: x["pnl"], reverse=True)
-        stock = sorted([_make_entry(a) for a in TRAINING_STOCKS], key=lambda x: x["pnl"], reverse=True)
+        crypto = sorted([_make_entry(a) for a in TRADING_CRYPTO], key=lambda x: x["pnl"], reverse=True)
+        stock = sorted([_make_entry(a) for a in TRADING_STOCKS], key=lambda x: x["pnl"], reverse=True)
 
         return {"crypto": crypto, "stock": stock}
     except Exception as e:
@@ -3319,9 +3319,9 @@ async def news_dashboard():
     # 2. News impact for top assets
     try:
         from bahamut.intelligence.news_impact import compute_news_impact_sync
-        from bahamut.config_assets import TRAINING_CRYPTO, TRAINING_STOCKS
-        for a in (TRAINING_CRYPTO[:8] + TRAINING_STOCKS[:5]):
-            ac = "crypto" if a in TRAINING_CRYPTO else "stock"
+        from bahamut.config_assets import TRADING_CRYPTO, TRADING_STOCKS
+        for a in (TRADING_CRYPTO[:8] + TRADING_STOCKS[:5]):
+            ac = "crypto" if a in TRADING_CRYPTO else "stock"
             nia = compute_news_impact_sync(a, ac)
             if nia.impact_score > 0.05:
                 entry = {
@@ -3404,9 +3404,9 @@ async def news_dashboard():
         if not result["upcoming_events"]:
             try:
                 from bahamut.config import get_settings as _gs
-                from bahamut.config_assets import TRAINING_STOCKS
+                from bahamut.config_assets import TRADING_STOCKS
                 _fk = _gs().finnhub_key
-                _stock_set = set(TRAINING_STOCKS)
+                _stock_set = set(TRADING_STOCKS)
                 if _fk:
                     async with _hx.AsyncClient(timeout=15) as _c:
                         _r = await _c.get("https://finnhub.io/api/v1/calendar/earnings",
@@ -3579,14 +3579,14 @@ async def diagram_dashboard():
 
     # 2. Trust overview
     try:
-        from bahamut.training.learning_engine import get_trust_overview
+        from bahamut.trading.learning_engine import get_trust_overview
         result["trust"] = get_trust_overview()
     except Exception:
         result["trust"] = {}
 
     # 3. Risk engine state
     try:
-        from bahamut.training.risk_engine import get_risk_engine_state
+        from bahamut.trading.risk_engine import get_risk_engine_state
         re = get_risk_engine_state()
         result["risk_engine"] = re.get("risk_engine", {})
         result["exposure"] = re.get("exposure", {})
@@ -3608,7 +3608,7 @@ async def diagram_dashboard():
 
     # 5. Open positions
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         positions = _load_positions()
         result["open_positions"] = [{
             "asset": p["asset"], "strategy": p["strategy"],
@@ -3777,7 +3777,7 @@ async def _build_health():
 
     # ── 2. Open positions count + invariant ──
     try:
-        from bahamut.training.engine import _load_positions
+        from bahamut.trading.engine import _load_positions
         positions = _load_positions()
         pos_count = len(positions)
         crypto_internal = [
@@ -3966,7 +3966,7 @@ async def training_kill_switch(user=Depends(get_current_user)):
     and sends close orders to exchange (Binance/Alpaca) if applicable.
     """
     try:
-        from bahamut.training.engine import force_close_all_training_positions
+        from bahamut.trading.engine import force_close_all_training_positions
         result = force_close_all_training_positions(reason="MANUAL_KILL_SWITCH")
 
         logger.warning("training_kill_switch_manual",
@@ -4095,5 +4095,5 @@ async def get_engine_rejections(limit: int = 50, user=Depends(get_current_user))
     if getattr(user, "role", "") not in ("admin", "super_admin"):
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="admin required")
-    from bahamut.training.rejection_tracker import get_recent_rejections
+    from bahamut.trading.rejection_tracker import get_recent_rejections
     return {"rejections": get_recent_rejections(limit=min(200, max(1, limit)))}

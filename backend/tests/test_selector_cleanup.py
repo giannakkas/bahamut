@@ -5,7 +5,7 @@ Validates the gate_history structure and class_boost labeling.
 
 
 def _make_sig(**overrides):
-    from bahamut.training.selector import PendingSignal
+    from bahamut.trading.selector import PendingSignal
     defaults = dict(
         asset="AAPL", asset_class="stock", strategy="v9_breakout",
         direction="LONG", readiness_score=75, regime="TREND",
@@ -18,7 +18,7 @@ def _make_sig(**overrides):
 
 def test_fmt_decision_includes_gate_history_fields():
     """_fmt_decision emits gate_history / decision_stage / blocking_gate."""
-    from bahamut.training.selector import _fmt_decision
+    from bahamut.trading.selector import _fmt_decision
     sig = _make_sig()
     pri = {"total": 60, "components": {"readiness": 40, "trust": 10}}
     d = _fmt_decision(sig, pri, "EXECUTE", ["ok"], gate_history=[
@@ -32,7 +32,7 @@ def test_fmt_decision_includes_gate_history_fields():
 
 
 def test_fmt_decision_rejected_identifies_blocking_gate():
-    from bahamut.training.selector import _fmt_decision
+    from bahamut.trading.selector import _fmt_decision
     sig = _make_sig()
     pri = {"total": 10, "components": {}}
     d = _fmt_decision(sig, pri, "REJECT", ["mature neg"], gate_history=[
@@ -47,7 +47,7 @@ def test_fmt_decision_rejected_identifies_blocking_gate():
 
 def test_fmt_decision_legacy_no_gate_history():
     """Calling _fmt_decision without gate_history still works."""
-    from bahamut.training.selector import _fmt_decision
+    from bahamut.trading.selector import _fmt_decision
     sig = _make_sig()
     pri = {"total": 60, "components": {}}
     d = _fmt_decision(sig, pri, "EXECUTE", ["ok"])
@@ -58,7 +58,7 @@ def test_fmt_decision_legacy_no_gate_history():
 
 def test_fmt_decision_includes_substrategy():
     """Substrategy from PendingSignal propagates to decision record."""
-    from bahamut.training.selector import _fmt_decision
+    from bahamut.trading.selector import _fmt_decision
     sig = _make_sig(strategy="v10_mean_reversion", substrategy="v10_crash_short")
     pri = {"total": 50, "components": {}}
     d = _fmt_decision(sig, pri, "EXECUTE", ["ok"])
@@ -68,7 +68,7 @@ def test_fmt_decision_includes_substrategy():
 def test_class_boost_exposed_as_override_term():
     """Priority breakdown exposes class_boost_static_override AND the legacy
     class_boost key with matching values. Core check: both present."""
-    from bahamut.training.selector import _compute_priority
+    from bahamut.trading.selector import _compute_priority
     sig = _make_sig(strategy="v9_breakout", asset_class="stock")
     priority = _compute_priority(sig, open_positions=[], strategy_stats={})
     bd = priority["components"]
@@ -84,7 +84,7 @@ def test_class_boost_exposed_as_override_term():
 def test_class_boost_not_double_counted_in_total():
     """The sum that produces priority.total must exclude the override key
     to avoid double-counting (since both keys carry the same +8 for v9:stock)."""
-    from bahamut.training.selector import _compute_priority
+    from bahamut.trading.selector import _compute_priority
     sig_with_boost = _make_sig(strategy="v9_breakout", asset_class="stock")
     sig_no_boost = _make_sig(strategy="v9_breakout", asset_class="forex")  # no prior
     p1 = _compute_priority(sig_with_boost, [], {})
@@ -100,7 +100,7 @@ def test_class_boost_not_double_counted_in_total():
 
 def test_class_boost_negative_prior_for_v10_crypto():
     """v10:crypto gets -10 as documented negative expectancy prior."""
-    from bahamut.training.selector import _compute_priority
+    from bahamut.trading.selector import _compute_priority
     sig = _make_sig(strategy="v10_mean_reversion", asset_class="crypto")
     priority = _compute_priority(sig, open_positions=[], strategy_stats={})
     assert priority["components"].get("class_boost_static_override") == -10
@@ -108,7 +108,7 @@ def test_class_boost_negative_prior_for_v10_crypto():
 
 def test_class_boost_absent_for_uncovered_combo():
     """v9_breakout:forex is not in the prior table — no override applied."""
-    from bahamut.training.selector import _compute_priority
+    from bahamut.trading.selector import _compute_priority
     sig = _make_sig(strategy="v9_breakout", asset_class="forex")
     priority = _compute_priority(sig, open_positions=[], strategy_stats={})
     assert "class_boost_static_override" not in priority["components"]

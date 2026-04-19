@@ -17,7 +17,7 @@ Run: cd backend && PYTHONPATH=. python3 -m pytest bahamut/tests/test_adaptive_th
 """
 import pytest
 from unittest.mock import patch, MagicMock
-from bahamut.training.adaptive_thresholds import (
+from bahamut.trading.adaptive_thresholds import (
     ThresholdProfile, RollingMetrics, BOUNDS, POLICY, MODE_PROFILES,
     choose_mode, compute_threshold_updates, run_adaptive_update,
     _step_toward, _step_toward_float,
@@ -129,10 +129,10 @@ class TestIncrementalAdjustment:
 
 
 class TestWarmingUp:
-    @patch("bahamut.training.adaptive_thresholds.compute_rolling_metrics")
-    @patch("bahamut.training.adaptive_thresholds.persist_profile")
-    @patch("bahamut.training.adaptive_thresholds.persist_metrics")
-    @patch("bahamut.training.adaptive_thresholds.get_current_profile")
+    @patch("bahamut.trading.adaptive_thresholds.compute_rolling_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.persist_profile")
+    @patch("bahamut.trading.adaptive_thresholds.persist_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.get_current_profile")
     def test_no_adaptation_below_min_samples(self, mock_profile, mock_pm, mock_pp, mock_metrics):
         mock_profile.return_value = ThresholdProfile.default()
         mock_metrics.return_value = _metrics(total_trades=10)
@@ -143,10 +143,10 @@ class TestWarmingUp:
 
 
 class TestCooldown:
-    @patch("bahamut.training.adaptive_thresholds.compute_rolling_metrics")
-    @patch("bahamut.training.adaptive_thresholds.persist_profile")
-    @patch("bahamut.training.adaptive_thresholds.persist_metrics")
-    @patch("bahamut.training.adaptive_thresholds.get_current_profile")
+    @patch("bahamut.trading.adaptive_thresholds.compute_rolling_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.persist_profile")
+    @patch("bahamut.trading.adaptive_thresholds.persist_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.get_current_profile")
     def test_cooldown_prevents_change(self, mock_profile, mock_pm, mock_pp, mock_metrics):
         profile = ThresholdProfile.default()
         profile.mode = "BALANCED"
@@ -177,11 +177,11 @@ class TestConservativeMode:
 
 
 class TestEmergency:
-    @patch("bahamut.training.adaptive_thresholds.compute_rolling_metrics")
-    @patch("bahamut.training.adaptive_thresholds.persist_profile")
-    @patch("bahamut.training.adaptive_thresholds.persist_metrics")
-    @patch("bahamut.training.adaptive_thresholds._append_audit")
-    @patch("bahamut.training.adaptive_thresholds.get_current_profile")
+    @patch("bahamut.trading.adaptive_thresholds.compute_rolling_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.persist_profile")
+    @patch("bahamut.trading.adaptive_thresholds.persist_metrics")
+    @patch("bahamut.trading.adaptive_thresholds._append_audit")
+    @patch("bahamut.trading.adaptive_thresholds.get_current_profile")
     def test_emergency_on_extreme_drawdown(self, mock_profile, mock_audit, mock_pm, mock_pp, mock_metrics):
         profile = ThresholdProfile.default()
         profile.mode = "AGGRESSIVE"
@@ -195,11 +195,11 @@ class TestEmergency:
 
 
 class TestAudit:
-    @patch("bahamut.training.adaptive_thresholds._append_audit")
-    @patch("bahamut.training.adaptive_thresholds.compute_rolling_metrics")
-    @patch("bahamut.training.adaptive_thresholds.persist_profile")
-    @patch("bahamut.training.adaptive_thresholds.persist_metrics")
-    @patch("bahamut.training.adaptive_thresholds.get_current_profile")
+    @patch("bahamut.trading.adaptive_thresholds._append_audit")
+    @patch("bahamut.trading.adaptive_thresholds.compute_rolling_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.persist_profile")
+    @patch("bahamut.trading.adaptive_thresholds.persist_metrics")
+    @patch("bahamut.trading.adaptive_thresholds.get_current_profile")
     def test_audit_called_on_adjustment(self, mock_profile, mock_pm, mock_pp, mock_metrics, mock_audit):
         profile = ThresholdProfile.default()
         profile.mode = "BALANCED"
@@ -213,7 +213,7 @@ class TestAudit:
 class TestIsolation:
     def test_no_production_imports(self):
         import inspect
-        from bahamut.training import adaptive_thresholds
+        from bahamut.trading import adaptive_thresholds
         source = inspect.getsource(adaptive_thresholds)
         assert "from bahamut.execution" not in source
         assert "import ExecutionEngine" not in source

@@ -451,7 +451,7 @@ async def dashboard_all(user=Depends(get_current_user)):
 
     # Win rate: always use training system data (matches Training Operations page)
     try:
-        from bahamut.training.engine import get_training_stats
+        from bahamut.trading.engine import get_training_stats
         ts = get_training_stats()
         training_wr = ts.get("win_rate", 0)  # 0.0 to 1.0
         training_closed = ts.get("total_closed_trades", 0)
@@ -660,7 +660,7 @@ async def dashboard_all(user=Depends(get_current_user)):
 
     # Training universe summary (lightweight — just counts)
     try:
-        from bahamut.training.engine import get_open_position_count
+        from bahamut.trading.engine import get_open_position_count
         import redis as _redis
         _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
         last_cycle_raw = _r.get("bahamut:training:last_cycle")
@@ -736,7 +736,7 @@ async def get_data_health_endpoint(user=Depends(get_current_user)):
 async def get_training_dashboard(user=Depends(get_current_user)):
     """Get training universe stats: positions, closed trades, strategy performance, learning progress."""
     try:
-        from bahamut.training.engine import get_training_stats
+        from bahamut.trading.engine import get_training_stats
         stats = get_training_stats()
 
         # Add last cycle info
@@ -751,10 +751,10 @@ async def get_training_dashboard(user=Depends(get_current_user)):
             pass
 
         # Add asset universe info
-        from bahamut.config_assets import TRAINING_ASSETS, ASSET_CLASS_MAP
-        stats["universe_size"] = len(TRAINING_ASSETS)
+        from bahamut.config_assets import TRADING_ASSETS, ASSET_CLASS_MAP
+        stats["universe_size"] = len(TRADING_ASSETS)
         stats["asset_classes"] = {}
-        for a in TRAINING_ASSETS:
+        for a in TRADING_ASSETS:
             ac = ASSET_CLASS_MAP.get(a, "unknown")
             stats["asset_classes"][ac] = stats["asset_classes"].get(ac, 0) + 1
 
@@ -862,7 +862,7 @@ async def get_trading_accuracy():
 def _training_accuracy() -> dict:
     """Pull win rate from training system as fallback for header widget."""
     try:
-        from bahamut.training.engine import get_training_stats
+        from bahamut.trading.engine import get_training_stats
         ts = get_training_stats()
         wr = ts.get("win_rate", 0)  # 0.0 to 1.0
         closed = ts.get("total_closed_trades", 0)
@@ -914,7 +914,7 @@ async def get_funding_rates(user=Depends(get_current_user)):
     """Funding rate costs for open crypto futures positions."""
     try:
         from bahamut.execution.funding_rate import check_all_positions_funding
-        from bahamut.training.engine import get_open_positions
+        from bahamut.trading.engine import get_open_positions
 
         positions = get_open_positions()
         pos_dicts = [

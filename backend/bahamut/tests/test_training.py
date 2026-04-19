@@ -27,22 +27,22 @@ class TestAssetConfig:
         assert len(ACTIVE_TREND_ASSETS) == 2
 
     def test_training_assets_exist(self):
-        from bahamut.config_assets import TRAINING_ASSETS
-        assert len(TRAINING_ASSETS) >= 30
+        from bahamut.config_assets import TRADING_ASSETS
+        assert len(TRADING_ASSETS) >= 30
 
     def test_training_includes_crypto(self):
-        from bahamut.config_assets import TRAINING_CRYPTO
-        assert "SOLUSD" in TRAINING_CRYPTO
-        assert "BTCUSD" in TRAINING_CRYPTO  # Overlap is intentional
+        from bahamut.config_assets import TRADING_CRYPTO
+        assert "SOLUSD" in TRADING_CRYPTO
+        assert "BTCUSD" in TRADING_CRYPTO  # Overlap is intentional
 
     def test_training_includes_forex(self):
-        from bahamut.config_assets import TRAINING_FOREX
-        assert "EURUSD" in TRAINING_FOREX
+        from bahamut.config_assets import TRADING_FOREX
+        assert "EURUSD" in TRADING_FOREX
 
     def test_training_includes_stocks(self):
-        from bahamut.config_assets import TRAINING_STOCKS
-        assert "AAPL" in TRAINING_STOCKS
-        assert "NVDA" in TRAINING_STOCKS
+        from bahamut.config_assets import TRADING_STOCKS
+        assert "AAPL" in TRADING_STOCKS
+        assert "NVDA" in TRADING_STOCKS
 
     def test_asset_mode_production(self):
         from bahamut.config_assets import get_asset_mode
@@ -76,7 +76,7 @@ class TestTrainingIsolation:
     def test_training_engine_does_not_touch_production(self):
         """Training position does NOT appear in production ExecutionEngine."""
         from bahamut.execution.engine import ExecutionEngine
-        from bahamut.training.engine import TrainingPosition
+        from bahamut.trading.engine import TrainingPosition
 
         prod_engine = ExecutionEngine()
         train_pos = TrainingPosition(
@@ -93,13 +93,13 @@ class TestTrainingIsolation:
 
     def test_training_uses_separate_redis_keys(self):
         """Training Redis keys are separate from production."""
-        from bahamut.training.engine import REDIS_KEY_POSITIONS, REDIS_KEY_RECENT
+        from bahamut.trading.engine import REDIS_KEY_POSITIONS, REDIS_KEY_RECENT
         assert "training" in REDIS_KEY_POSITIONS
         assert "training" in REDIS_KEY_RECENT
 
     def test_training_risk_is_smaller(self):
-        from bahamut.config_assets import TRAINING_RISK_PER_TRADE_PCT
-        assert TRAINING_RISK_PER_TRADE_PCT <= 0.01  # Max 1% per trade
+        from bahamut.config_assets import TRADING_RISK_PER_TRADE_PCT
+        assert TRADING_RISK_PER_TRADE_PCT <= 0.01  # Max 1% per trade
 
 
 # ═══════════════════════════════════════════
@@ -108,7 +108,7 @@ class TestTrainingIsolation:
 
 class TestTrainingLifecycle:
     def test_position_model(self):
-        from bahamut.training.engine import TrainingPosition
+        from bahamut.trading.engine import TrainingPosition
         pos = TrainingPosition(
             position_id="test1", asset="EURUSD", asset_class="forex",
             strategy="v5_base", direction="LONG", entry_price=1.0800,
@@ -119,7 +119,7 @@ class TestTrainingLifecycle:
         assert pos.unrealized_pnl == pytest.approx((1.09 - 1.08) * 15432, abs=1)
 
     def test_position_short_pnl(self):
-        from bahamut.training.engine import TrainingPosition
+        from bahamut.trading.engine import TrainingPosition
         pos = TrainingPosition(
             position_id="test2", asset="EURUSD", asset_class="forex",
             strategy="v5_base", direction="SHORT", entry_price=1.0800,
@@ -131,7 +131,7 @@ class TestTrainingLifecycle:
 
     def test_update_positions_sl_hit(self):
         """Position closes when SL is hit."""
-        from bahamut.training.engine import (
+        from bahamut.trading.engine import (
             TrainingPosition, update_positions_for_asset,
             _save_position, _load_positions, _remove_position,
         )
@@ -150,7 +150,7 @@ class TestTrainingLifecycle:
         }
         mock_redis.ping.return_value = True
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             bar = {"open": 99, "high": 99.5, "low": 96.5, "close": 97.0}
             closed = update_positions_for_asset("TESTASSET", bar)
 
@@ -160,7 +160,7 @@ class TestTrainingLifecycle:
 
     def test_update_positions_tp_hit(self):
         """Position closes when TP is hit."""
-        from bahamut.training.engine import update_positions_for_asset
+        from bahamut.trading.engine import update_positions_for_asset
 
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {
@@ -168,7 +168,7 @@ class TestTrainingLifecycle:
         }
         mock_redis.ping.return_value = True
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             bar = {"open": 104, "high": 107, "low": 103, "close": 106.5}
             closed = update_positions_for_asset("TESTASSET", bar)
 
@@ -178,7 +178,7 @@ class TestTrainingLifecycle:
 
     def test_update_positions_timeout(self):
         """Position closes on timeout."""
-        from bahamut.training.engine import update_positions_for_asset
+        from bahamut.trading.engine import update_positions_for_asset
 
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {
@@ -186,7 +186,7 @@ class TestTrainingLifecycle:
         }
         mock_redis.ping.return_value = True
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             bar = {"open": 101, "high": 102, "low": 100, "close": 101.5}
             closed = update_positions_for_asset("TESTASSET", bar)
 
@@ -201,7 +201,7 @@ class TestTrainingLifecycle:
 class TestTrainingDuplicates:
     def test_duplicate_position_rejected(self):
         """Cannot open same asset + strategy + direction twice."""
-        from bahamut.training.engine import open_training_position
+        from bahamut.trading.engine import open_training_position
 
         mock_redis = MagicMock()
         mock_redis.hlen.return_value = 0
@@ -210,7 +210,7 @@ class TestTrainingDuplicates:
         }
         mock_redis.ping.return_value = True
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             result = open_training_position(
                 asset="EURUSD", asset_class="forex", strategy="v5_base",
                 direction="LONG", entry_price=1.08, sl_pct=0.03,
@@ -221,13 +221,13 @@ class TestTrainingDuplicates:
 
     def test_max_positions_enforced(self):
         """Cannot exceed max training positions."""
-        from bahamut.training.engine import open_training_position
+        from bahamut.trading.engine import open_training_position
 
         mock_redis = MagicMock()
         mock_redis.hlen.return_value = 20  # At max
         mock_redis.ping.return_value = True
 
-        with patch("bahamut.training.engine._get_redis", return_value=mock_redis):
+        with patch("bahamut.trading.engine._get_redis", return_value=mock_redis):
             result = open_training_position(
                 asset="NEWASSET", asset_class="test", strategy="v5_base",
                 direction="LONG", entry_price=100, sl_pct=0.03,
@@ -244,11 +244,11 @@ class TestTrainingDuplicates:
 class TestSymbolCoverage:
     def test_all_training_assets_have_twelvedata_symbol(self):
         """Every training asset must map to a TwelveData symbol."""
-        from bahamut.config_assets import TRAINING_ASSETS
+        from bahamut.config_assets import TRADING_ASSETS
         from bahamut.ingestion.adapters.twelvedata import TWELVE_SYMBOL_MAP
 
         missing = []
-        for asset in TRAINING_ASSETS:
+        for asset in TRADING_ASSETS:
             if asset not in TWELVE_SYMBOL_MAP:
                 missing.append(asset)
 

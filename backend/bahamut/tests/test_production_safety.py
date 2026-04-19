@@ -249,7 +249,6 @@ def test_orchestrator_lock_redis_failure_skips():
 
         # Mock redis.from_url to raise
         with patch("redis.from_url", side_effect=ConnectionError("Redis down")):
-            from bahamut.execution.v7_orchestrator import run_v7_cycle
             # Should not raise, should skip gracefully
             try:
                 run_v7_cycle()
@@ -273,7 +272,6 @@ def test_orchestrator_lock_held_skips():
         mock_redis.lock.return_value = mock_lock
 
         with patch("redis.from_url", return_value=mock_redis):
-            from bahamut.execution.v7_orchestrator import run_v7_cycle
             run_v7_cycle()
 
             mock_skip.assert_called_once()
