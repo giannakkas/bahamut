@@ -1573,18 +1573,11 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
             exit_price = close
 
         if exit_reason:
-            # Close the position
             # Use broker-confirmed entry price if available (production truth),
             # otherwise fall back to candle-derived entry price (paper trading).
             canonical_entry = pos.avg_fill_price if pos.avg_fill_price > 0 else pos.entry_price
 
-            if pos.direction == "LONG":
-                pnl = (exit_price - canonical_entry) * pos.size
-            else:
-                pnl = (canonical_entry - exit_price) * pos.size
-
-            pnl_pct = pnl / max(0.01, pos.risk_amount)
-
+            # Create trade with ZERO pnl — populated ONLY from broker fill truth
             trade = TrainingTrade(
                 trade_id=str(uuid.uuid4())[:12],
                 position_id=pos.position_id,
@@ -1592,15 +1585,15 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 asset_class=pos.asset_class,
                 strategy=pos.strategy,
                 direction=pos.direction,
-                entry_price=canonical_entry,  # broker-confirmed or candle fallback
-                exit_price=round(exit_price, 6),
+                entry_price=canonical_entry,
+                exit_price=0.0,    # populated only from broker truth or paper fallback
                 stop_price=pos.stop_price,
                 tp_price=pos.tp_price,
                 size=pos.size,
                 risk_amount=pos.risk_amount,
-                pnl=round(pnl, 2),
-                pnl_pct=round(pnl_pct, 4),
-                return_pct=round(pnl / max(0.01, pos.entry_price * pos.size), 4),
+                pnl=0.0,           # populated only from broker truth or paper fallback
+                pnl_pct=0.0,
+                return_pct=0.0,
                 entry_time=pos.entry_time,
                 exit_time=datetime.now(timezone.utc).isoformat(),
                 exit_reason=exit_reason,
@@ -1611,8 +1604,6 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 regime=pos.regime,
                 substrategy=pos.substrategy,
                 data_mode=pos.data_mode,
-                # Phase 5 Item 14: populate entry costs from position
-                # (captured at open-time by open_training_position)
                 entry_commission=pos.commission,
                 entry_slippage_abs=pos.slippage_abs,
                 entry_lifecycle=pos.order_lifecycle,
@@ -1694,6 +1685,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
                 elif trade.execution_platform == "internal":
                     # Paper/internal mode — candle PnL is acceptable
+                    trade.exit_price = round(exit_price, 6)
+                    if pos.direction == "LONG":
+                        trade.pnl = round((exit_price - canonical_entry) * pos.size, 2)
+                    else:
+                        trade.pnl = round((canonical_entry - exit_price) * pos.size, 2)
+                    trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
+                    trade.return_pct = round(trade.pnl / max(0.01, canonical_entry * pos.size), 4)
                     trade.execution_platform = "paper"
                     _close_succeeded = True
 
@@ -1716,6 +1714,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                     continue  # DO NOT remove, DO NOT persist
 
                 else:
+                    trade.exit_price = round(exit_price, 6)
+                    if pos.direction == "LONG":
+                        trade.pnl = round((exit_price - canonical_entry) * pos.size, 2)
+                    else:
+                        trade.pnl = round((canonical_entry - exit_price) * pos.size, 2)
+                    trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
+                    trade.return_pct = round(trade.pnl / max(0.01, canonical_entry * pos.size), 4)
                     trade.execution_platform = "paper"
                     _close_succeeded = True
 
@@ -1748,6 +1753,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
             _already_closed.add(pos.position_id)
             update_positions_for_asset._already_closed = _already_closed
+
+            # Guard: refuse to persist zero-pnl trade from non-paper platform
+            if trade.pnl == 0.0 and trade.exit_price == 0.0 and trade.execution_platform != "paper":
+                logger.error("refusing_to_persist_zero_pnl_trade",
+                             asset=pos.asset, position_id=pos.position_id,
+                             platform=trade.execution_platform)
+                continue
 
             _persist_trade(trade)
             _record_recent(trade)
