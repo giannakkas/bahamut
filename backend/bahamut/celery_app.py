@@ -16,6 +16,7 @@ celery_app = Celery(
     backend=settings.redis_url,
     include=[
         "bahamut.trading.orchestrator",
+        "bahamut.monitoring.safe_report",
     ],
 )
 
@@ -34,6 +35,10 @@ celery_app.conf.update(
         "trading-cycle": {
             "task": "bahamut.trading.orchestrator.run_trading_cycle",
             "schedule": 600.0,  # Every 10 min — batched to respect API rate limits
+        },
+        "daily-safe-report": {
+            "task": "bahamut.monitoring.safe_report.send_daily_report",
+            "schedule": crontab(hour=8, minute=0),  # 8am UTC
         },
     },
 )

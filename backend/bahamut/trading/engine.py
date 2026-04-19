@@ -14,6 +14,7 @@ import uuid
 import structlog
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
+from bahamut.shared.safe import safe_execute
 
 logger = structlog.get_logger()
 
@@ -1380,11 +1381,8 @@ def open_training_position(
             pass
 
         # Invalidate risk engine cache (position count changed)
-        try:
-            from bahamut.trading.risk_engine import invalidate_risk_cache
-            invalidate_risk_cache()
-        except Exception:
-            pass
+        safe_execute(lambda: __import__("bahamut.trading.risk_engine", fromlist=["invalidate_risk_cache"]).invalidate_risk_cache(),
+                     category="cache_invalidate")
 
 
         return pos
@@ -1788,11 +1786,8 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 pass
 
             # Invalidate risk engine cache (position count changed)
-            try:
-                from bahamut.trading.risk_engine import invalidate_risk_cache
-                invalidate_risk_cache()
-            except Exception:
-                pass
+            safe_execute(lambda: __import__("bahamut.trading.risk_engine", fromlist=["invalidate_risk_cache"]).invalidate_risk_cache(),
+                         category="cache_invalidate")
 
             # Set per-asset + per-strategy cooldown
             try:
