@@ -55,6 +55,12 @@ def execute_open(asset: str, asset_class: str, direction: str,
     """
     from bahamut.execution.canonical import ExecutionResult
 
+    # Shadow mode: simulate execution without broker calls
+    from bahamut.execution.shadow import is_shadow
+    if is_shadow():
+        from bahamut.execution.shadow import simulate_open
+        return simulate_open(asset, asset_class, direction, size, risk_amount)
+
     # Production gate: shutdown check
     try:
         from bahamut.execution.shutdown import is_shutting_down
@@ -111,6 +117,12 @@ def execute_close(asset: str, asset_class: str, direction: str,
     Broker result still feeds the per-platform breaker for open-order gating.
     """
     from bahamut.execution.canonical import ExecutionResult
+
+    # Shadow mode: simulate execution without broker calls
+    from bahamut.execution.shadow import is_shadow
+    if is_shadow():
+        from bahamut.execution.shadow import simulate_close
+        return simulate_close(asset, asset_class, direction, size, entry_price)
 
     platform = _get_platform(asset, asset_class)
 
