@@ -694,6 +694,20 @@ def open_training_position(
                          error=str(_idmp_err)[:100])
 
         # ═══════════════════════════════════════════
+        # ASSET BLOCK CHECK (orphan detection, manual blocks)
+        # ═══════════════════════════════════════════
+        try:
+            r = _get_redis()
+            if r and r.exists(f"bahamut:trading:asset_block:{asset}"):
+                _block_raw = r.get(f"bahamut:trading:asset_block:{asset}")
+                _block_reason = _block_raw.decode() if isinstance(_block_raw, bytes) else str(_block_raw)
+                logger.warning("trading_position_rejected_asset_blocked",
+                               asset=asset, reason=_block_reason)
+                return None
+        except Exception:
+            pass
+
+        # ═══════════════════════════════════════════
         # Phase 4 Item 12: SYNTHETIC DATA HARD BLOCK
         # Reject any position computed from synthetic_dev candles when
         # BAHAMUT_BLOCK_SYNTHETIC=1 (production default). This prevents

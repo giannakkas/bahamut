@@ -220,60 +220,75 @@ def _reconcile_binance() -> dict:
                          asset=asset, qty=on_broker["qty"],
                          side=on_broker["side"])
 
-            # Auto-correct: check order_intents for a matching SUBMISSION_UNKNOWN
-            _resolved = False
+            # Always: Telegram alert with manual confirmation instructions
             try:
-                from bahamut.execution.order_manager import OrderManager, OrderState
-                mgr = OrderManager()
-                from bahamut.database import sync_engine
-                from sqlalchemy import text as _text
-                with sync_engine.connect() as _conn:
-                    _rows = _conn.execute(_text(
-                        "SELECT id, asset, direction FROM order_intents "
-                        "WHERE asset = :a AND direction = :d "
-                        "AND order_state IN ('submission_unknown', 'submitted', 'acknowledged') "
-                        "ORDER BY created_at DESC LIMIT 1"
-                    ), {"a": asset, "d": on_broker["side"]}).mappings().all()
-                if _rows:
-                    _intent = _rows[0]
-                    mgr.record_fill(
-                        intent_id=_intent["id"],
-                        fill_price=on_broker["entry_price"],
-                        fill_qty=on_broker["qty"],
-                        broker_order_id="reconciled",
-                        platform="binance_futures",
-                    )
-                    result["actions_taken"].append({
-                        "asset": asset,
-                        "action": "orphan_promoted_to_filled",
-                        "intent_id": _intent["id"],
-                    })
-                    _resolved = True
-                    logger.info("reconciliation_orphan_resolved",
-                                asset=asset, intent_id=_intent["id"])
-            except Exception as _e:
-                logger.warning("reconciliation_orphan_resolve_failed",
-                               asset=asset, error=str(_e)[:100])
+                from bahamut.monitoring.telegram import send_alert
+                send_alert(
+                    f"🚨 ORPHAN POSITION DETECTED\n"
+                    f"Asset: {asset}\n"
+                    f"Platform: {platform}\n"
+                    f"Broker side: {on_broker['side']}\n"
+                    f"Broker qty: {on_broker['qty']}\n"
+                    f"Broker entry: {on_broker['entry_price']}\n"
+                    f"\n"
+                    f"This likely means:\n"
+                    f"(a) Manual trade on exchange, or\n"
+                    f"(b) App-broker divergence from failed persist\n"
+                    f"\n"
+                    f"ACTION REQUIRED: Investigate in Binance/Alpaca web UI.\n"
+                    f"Asset {asset} is now BLOCKED from new trades for 1 hour."
+                )
+            except Exception:
+                pass
 
-            if not _resolved:
-                logger.error("reconciliation_unauthorized_position",
-                             asset=asset, qty=on_broker["qty"],
-                             side=on_broker["side"])
-                # Telegram alert
+            # Always: block this asset from new trades for 1 hour
+            try:
+                import redis as _redis
+                _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                                     socket_connect_timeout=2)
+                _r.setex(f"bahamut:trading:asset_block:{asset}", 3600, "orphan_detected")
+                _r.setex(f"bahamut:reconciliation:unauthorized:{asset}", 3600, "1")
+            except Exception:
+                pass
+
+            # Only auto-adopt if explicitly enabled via env var
+            AUTO_ADOPT = os.environ.get("BAHAMUT_AUTO_ADOPT_ORPHANS", "0").lower() in ("1", "true", "yes")
+            if AUTO_ADOPT:
+                logger.warning("orphan_auto_adopted_via_env_flag", asset=asset)
                 try:
-                    from bahamut.monitoring.telegram import send_alert
-                    send_alert(f"🚨 ORPHAN POSITION: {asset} {on_broker['side']} "
-                               f"qty={on_broker['qty']} on Binance — no local record!")
-                except Exception:
-                    pass
-                # Redis marker
-                try:
-                    import redis as _redis
-                    _r = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
-                                         socket_connect_timeout=2)
-                    _r.setex(f"bahamut:reconciliation:unauthorized:{asset}", 3600, "1")
-                except Exception:
-                    pass
+                    from bahamut.execution.order_manager import OrderManager, OrderState
+                    mgr = OrderManager()
+                    from bahamut.database import sync_engine
+                    from sqlalchemy import text as _text
+                    with sync_engine.connect() as _conn:
+                        _rows = _conn.execute(_text(
+                            "SELECT id, asset, direction FROM order_intents "
+                            "WHERE asset = :a AND direction = :d "
+                            "AND order_state IN ('submission_unknown', 'submitted', 'acknowledged') "
+                            "ORDER BY created_at DESC LIMIT 1"
+                        ), {"a": asset, "d": on_broker["side"]}).mappings().all()
+                    if _rows:
+                        _intent = _rows[0]
+                        mgr.record_fill(
+                            intent_id=_intent["id"],
+                            fill_price=on_broker["entry_price"],
+                            fill_qty=on_broker["qty"],
+                            broker_order_id="reconciled",
+                            platform="binance_futures",
+                        )
+                        result["actions_taken"].append({
+                            "asset": asset,
+                            "action": "orphan_promoted_to_filled",
+                            "intent_id": _intent["id"],
+                        })
+                        logger.info("reconciliation_orphan_resolved",
+                                    asset=asset, intent_id=_intent["id"])
+                except Exception as _e:
+                    logger.warning("reconciliation_orphan_resolve_failed",
+                                   asset=asset, error=str(_e)[:100])
+            else:
+                logger.info("orphan_adoption_skipped_manual_required", asset=asset)
+                # Do NOT auto-promote. Operator must manually resolve.
 
         elif on_local and not on_broker:
             # MISSING: local says open but broker has no position
