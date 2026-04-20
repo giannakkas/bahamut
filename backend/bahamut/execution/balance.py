@@ -141,13 +141,18 @@ def get_available_risk(asset_class: str = "", risk_pct: float = 0.02) -> dict:
 
     if asset_class == "crypto":
         bf = balance.get("binance_futures")
-        if bf and bf.get("available", 0) > 0:
-            return {
-                "max_risk_usd": round(bf["available"] * risk_pct, 2),
-                "risk_pct": risk_pct,
-                "combined_equity": bf["available"],
-                "source": "real_binance",
-            }
+        if bf:
+            # Use equity (wallet + unrealized) for sizing. Available can
+            # be temporarily low if positions are held.
+            sizing_base = float(bf.get("equity") or bf.get("total_wallet") or 0)
+            if sizing_base > 0:
+                return {
+                    "max_risk_usd": round(sizing_base * risk_pct, 2),
+                    "risk_pct": risk_pct,
+                    "combined_equity": sizing_base,
+                    "source": "real_binance",
+                    "sizing_field": "equity",
+                }
         return {
             "max_risk_usd": 0,
             "risk_pct": risk_pct,
@@ -158,19 +163,30 @@ def get_available_risk(asset_class: str = "", risk_pct: float = 0.02) -> dict:
 
     if asset_class == "stock":
         alp = balance.get("alpaca")
-        if alp and alp.get("cash", 0) > 0:
-            return {
-                "max_risk_usd": round(alp["cash"] * risk_pct, 2),
-                "risk_pct": risk_pct,
-                "combined_equity": alp["cash"],
-                "source": "real_alpaca",
-            }
+        if alp:
+            # Use buying_power (margin-aware). Fall back to equity if
+            # buying_power is not reported. cash alone is unreliable on
+            # margin accounts where it can be negative.
+            sizing_base = float(alp.get("buying_power") or 0)
+            if sizing_base <= 0:
+                sizing_base = float(alp.get("equity") or 0)
+            if sizing_base > 0:
+                # Use 1/4 of buying_power as risk base to avoid oversizing
+                # against margin. 2% of (buying_power/4) ≈ 0.5% of buying_power.
+                risk_base = sizing_base / 4
+                return {
+                    "max_risk_usd": round(risk_base * risk_pct, 2),
+                    "risk_pct": risk_pct,
+                    "combined_equity": round(sizing_base, 2),
+                    "source": "real_alpaca",
+                    "sizing_field": "buying_power" if alp.get("buying_power") else "equity",
+                }
         return {
             "max_risk_usd": 0,
             "risk_pct": risk_pct,
             "combined_equity": 0,
             "source": "broker_unavailable",
-            "reason": "alpaca_unavailable",
+            "reason": "alpaca_unavailable_or_no_buying_power",
         }
 
     # Fallback for other asset classes: use combined (paper mode safe)
