@@ -74,10 +74,15 @@ def _get_stale_threshold(asset: str = "") -> int:
         return 6 * 3600          # Crypto is 24/7
 
 
-def _is_us_market_open() -> bool:
-    """Check if US stock market is currently open (approx)."""
+def _is_us_market_open(offset_minutes: int = 0) -> bool:
+    """Check if US stock market is currently open (approx).
+
+    Args:
+        offset_minutes: shift the check time by this many minutes.
+                        Use -15 to check "was market open 15 min ago?"
+    """
     from datetime import datetime, timezone, timedelta
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
     # Convert to ET (UTC-5 standard, UTC-4 DST)
     # Approximate: use UTC-4 Mar-Nov, UTC-5 Nov-Mar
     month = now_utc.month

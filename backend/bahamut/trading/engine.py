@@ -852,7 +852,7 @@ def open_training_position(
                 cooldown_key = f"bahamut:training:cooldown:{asset}"
                 cooldown_key_strat = f"bahamut:training:cooldown:{asset}:{strategy}"
                 if r.exists(cooldown_key) or r.exists(cooldown_key_strat):
-                    logger.info("training_position_rejected_cooldown",
+                    logger.warning("training_position_rejected_cooldown",
                                 asset=asset, strategy=strategy, direction=direction,
                                 reason="Asset on cooldown after recent close")
                     return None
@@ -906,10 +906,17 @@ def open_training_position(
             try:
                 from bahamut.data.live_data import _is_us_market_open
                 if not _is_us_market_open():
-                    logger.info("training_position_rejected_market_closed",
-                                asset=asset, strategy=strategy,
-                                reason="US market closed — stock trades blocked outside hours")
-                    return None
+                    # Late-cycle grace: if market was open 15 min ago, the cycle
+                    # likely started before close. Allow the execution attempt.
+                    grace_window_open = _is_us_market_open(offset_minutes=-15)
+                    if not grace_window_open:
+                        logger.warning("training_position_rejected_market_closed",
+                                       asset=asset, strategy=strategy,
+                                       reason="US market closed — stock trades blocked outside hours")
+                        return None
+                    else:
+                        logger.info("market_grace_window_used", asset=asset,
+                                    note="cycle started before market close, allowing")
             except Exception:
                 pass  # If check fails, allow the trade
 
@@ -924,7 +931,7 @@ def open_training_position(
                     from bahamut.sentiment.gate import check_sentiment
                     blocked, reason = check_sentiment(asset, direction, asset_class)
                     if blocked:
-                        logger.info("training_position_rejected_sentiment",
+                        logger.warning("training_position_rejected_sentiment",
                                     asset=asset, strategy=strategy, reason=reason)
                         return None
                 except Exception:
@@ -1017,29 +1024,42 @@ def open_training_position(
         except Exception:
             pass
 
-        # Per-strategy drawdown block (from risk_engine per-strategy DD tracker)
-        try:
-            import redis as _redis_strat, os as _os_strat
-            _rr_strat = _redis_strat.from_url(
-                _os_strat.environ.get("REDIS_URL", "redis://localhost:6379/0"),
-                socket_connect_timeout=1)
-            _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}")
-            if _strat_dd_raw:
-                _strat_dd = float(_strat_dd_raw)
-                if _strat_dd >= 15.0:
-                    logger.info("training_position_rejected_strategy_dd",
-                                asset=asset, strategy=strategy, dd_pct=_strat_dd)
-                    _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
-                    try:
-                        from bahamut.trading.rejection_tracker import record_rejection
-                        record_rejection(asset=asset, strategy=strategy, direction=direction,
-                                         signal_id=signal_id, reason_code="strategy_dd_block",
-                                         reason_detail=f"{strategy} dd_pct={_strat_dd:.1f}%")
-                    except Exception:
-                        pass
-                    return None
-        except Exception:
-            pass
+        # Strategy drawdown block — applies to PRODUCTION signals only.
+        # Debug exploration is research-only with halved risk; let it learn
+        # even when production strategies are in drawdown.
+        if execution_type != "debug_exploration":
+            try:
+                _rr_strat = _get_redis()
+                _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}") if _rr_strat else None
+                if _strat_dd_raw:
+                    _strat_dd = float(_strat_dd_raw)
+                    if _strat_dd >= 15.0:
+                        logger.warning("training_position_rejected_strategy_dd",
+                                       asset=asset, strategy=strategy,
+                                       dd_pct=_strat_dd, execution_type=execution_type,
+                                       threshold=15.0)
+                        _increment_counter(_get_redis(), "bahamut:counters:strategy_dd_blocks")
+                        try:
+                            from bahamut.trading.rejection_tracker import record_rejection
+                            record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                             signal_id=signal_id, reason_code="strategy_dd_block",
+                                             reason_detail=f"{strategy} dd={_strat_dd}%")
+                        except Exception:
+                            pass
+                        return None
+            except Exception:
+                pass
+        else:
+            # Log that we're allowing the exploration trade through DD block
+            try:
+                _rr_strat = _get_redis()
+                _strat_dd_raw = _rr_strat.get(f"bahamut:strategy_dd:{strategy}") if _rr_strat else None
+                if _strat_dd_raw and float(_strat_dd_raw) >= 15.0:
+                    logger.info("debug_exploration_allowed_through_dd_block",
+                                asset=asset, strategy=strategy,
+                                dd_pct=float(_strat_dd_raw))
+            except Exception:
+                pass
 
         # ── Adaptive news risk size multiplier ──
         # CAUTION=0.75, RESTRICTED=0.5, FROZEN would have been blocked in selector
@@ -1100,7 +1120,7 @@ def open_training_position(
         # 10% of originally requested risk is not worth opening.
         _MIN_RISK_FRACTION = 0.10
         if _original_risk_amount > 0 and risk_amount / _original_risk_amount < _MIN_RISK_FRACTION:
-            logger.info("training_position_rejected_composite_floor",
+            logger.warning("training_position_rejected_composite_floor",
                         asset=asset, strategy=strategy,
                         final_risk=round(risk_amount, 2),
                         original_risk=round(_original_risk_amount, 2),
