@@ -95,6 +95,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("order_manager_init_skipped", error=str(e)[:100])
 
+    # ── Warm exchange filters so diagnostics show loaded state after deploy ──
+    try:
+        from bahamut.execution.exchange_filters import refresh_filters
+        ef = refresh_filters()
+        if ef:
+            logger.info("exchange_filters_warmed_on_startup", count=len(ef))
+    except Exception as e:
+        logger.warning("exchange_filters_startup_warm_failed", error=str(e)[:100])
+
     yield
 
     # Shutdown

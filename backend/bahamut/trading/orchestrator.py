@@ -91,6 +91,15 @@ def run_trading_cycle():
     except ImportError:
         pass
 
+    # ── Warm exchange filters so validate_order has data before first trade ──
+    try:
+        from bahamut.execution.exchange_filters import refresh_filters
+        ef = refresh_filters()
+        if ef:
+            logger.info("exchange_filters_warmed", count=len(ef))
+    except Exception as e:
+        logger.warning("exchange_filters_warm_failed", error=str(e)[:100])
+
     # Cleanup: force-close any crypto positions that slipped into internal
     try:
         from bahamut.trading.engine import cleanup_crypto_internal_positions
