@@ -941,7 +941,7 @@ def open_training_position(
                         SELECT COALESCE(SUM(pnl), 0) as daily_short_pnl
                         FROM training_trades
                         WHERE direction = 'SHORT' AND regime = 'CRASH'
-                          AND exit_time > NOW() - INTERVAL '24 hours'
+                          AND exit_time::timestamp > NOW() - INTERVAL '24 hours'
                           AND pnl < 0
                     """)).mappings().first()
                     daily_loss = abs(float(row["daily_short_pnl"])) if row else 0

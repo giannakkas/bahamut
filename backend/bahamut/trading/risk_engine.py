@@ -99,7 +99,7 @@ def _get_today_pnl() -> float:
         row = run_query_one("""
             SELECT COALESCE(SUM(pnl), 0) as today_pnl
             FROM training_trades
-            WHERE exit_time >= CURRENT_DATE
+            WHERE exit_time::timestamp >= CURRENT_DATE
         """)
         return float(row.get("today_pnl", 0) or 0) if row else 0.0
     except Exception:

@@ -1880,7 +1880,7 @@ async def _build_diagnostics():
             recent_suppressed = run_query(f"""
                 SELECT asset, COUNT(*) as c FROM training_trades
                 WHERE direction = 'SHORT' AND regime = 'CRASH'
-                  AND exit_time > NOW() - INTERVAL '24 hours'
+                  AND exit_time::timestamp > NOW() - INTERVAL '24 hours'
                   AND asset IN ('{suppressed_list}')
                 GROUP BY asset
             """) if CRASH_SHORT_SUPPRESS else []
@@ -2237,7 +2237,7 @@ async def _build_diagnostics():
                        SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
                        ROUND(SUM(pnl)::numeric, 2) as total_pnl
                 FROM training_trades
-                WHERE exit_time > NOW() - INTERVAL '24 hours'
+                WHERE exit_time::timestamp > NOW() - INTERVAL '24 hours'
                 GROUP BY execution_type
             """)
             since = {}
@@ -2385,7 +2385,7 @@ async def _build_diagnostics():
                     WHERE strategy = 'v10_mean_reversion'
                       AND asset LIKE '%%USD'
                       AND regime = 'RANGE'
-                      AND exit_time > NOW() - INTERVAL '24 hours'
+                      AND exit_time::timestamp > NOW() - INTERVAL '24 hours'
                     GROUP BY asset
                     ORDER BY SUM(pnl) ASC
                 """)

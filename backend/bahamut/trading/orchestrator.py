@@ -474,7 +474,7 @@ def run_trading_cycle():
                                SUM(pnl) OVER (ORDER BY exit_time) AS pnl_sum_running
                         FROM training_trades
                         WHERE strategy = :s
-                          AND exit_time >= NOW() - INTERVAL '7 days'
+                          AND exit_time::timestamp >= NOW() - INTERVAL '7 days'
                         ORDER BY exit_time
                     ) sub
                 """), {"s": _strat}).mappings().first()
@@ -547,7 +547,7 @@ def run_trading_cycle():
                     with sync_engine.connect() as _cc:
                         _cr = _cc.execute(_ct(
                             "SELECT COUNT(*) FROM training_trades "
-                            "WHERE asset = :a AND exit_time > NOW() - INTERVAL '24 hours'"
+                            "WHERE asset = :a AND exit_time::timestamp > NOW() - INTERVAL '24 hours'"
                         ), {"a": CANARY_ASSET}).fetchone()
                         if _cr and int(_cr[0]) > 0:
                             _canary_r.setex("bahamut:canary:last_trade_ts", 86400,

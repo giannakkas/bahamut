@@ -22,7 +22,7 @@ def _get_our_daily_pnl() -> float:
         with sync_engine.connect() as conn:
             result = conn.execute(text(
                 "SELECT COALESCE(SUM(pnl), 0) FROM training_trades "
-                "WHERE exit_time > NOW() - INTERVAL '1 day' "
+                "WHERE exit_time::timestamp > NOW() - INTERVAL '1 day' "
                 "AND execution_platform NOT IN ('paper', 'internal')"
             )).fetchone()
             return float(result[0]) if result else 0
