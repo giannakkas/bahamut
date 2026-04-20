@@ -73,25 +73,37 @@ def get_real_balance(force_refresh: bool = False) -> dict:
                 combined += total + unrealized
                 result["source"] = "real"
     except Exception as e:
-        logger.debug("balance_binance_fetch_failed", error=str(e)[:100])
+        logger.warning("balance_binance_fetch_failed", error=str(e)[:100])
 
     # Alpaca
     try:
-        from bahamut.execution.alpaca_adapter import get_account as alpaca_account
-        acc = alpaca_account()
-        if acc:
-            equity = float(acc.get("equity", 0) or 0)
-            cash = float(acc.get("cash", 0) or 0)
-            buying = float(acc.get("buying_power", 0) or 0)
-            result["alpaca"] = {
-                "equity": round(equity, 2),
-                "cash": round(cash, 2),
-                "buying_power": round(buying, 2),
-            }
-            combined += equity
-            result["source"] = "real"
+        from bahamut.execution.alpaca_adapter import get_account as alpaca_account, _configured as alpaca_configured
+        if not alpaca_configured():
+            logger.warning("balance_alpaca_not_configured",
+                           has_key=bool(os.environ.get("ALPACA_API_KEY")),
+                           has_secret=bool(os.environ.get("ALPACA_API_SECRET")))
+        else:
+            acc = alpaca_account()
+            if acc:
+                equity = float(acc.get("equity", 0) or 0)
+                cash = float(acc.get("cash", 0) or 0)
+                buying = float(acc.get("buying_power", 0) or 0)
+                result["alpaca"] = {
+                    "equity": round(equity, 2),
+                    "cash": round(cash, 2),
+                    "buying_power": round(buying, 2),
+                }
+                combined += equity
+                result["source"] = "real"
+                logger.info("balance_alpaca_fetched",
+                            equity=round(equity, 2),
+                            buying_power=round(buying, 2),
+                            cash=round(cash, 2))
+            else:
+                logger.warning("balance_alpaca_returned_none",
+                               note="get_account() returned None — check API key/secret and Alpaca status")
     except Exception as e:
-        logger.debug("balance_alpaca_fetch_failed", error=str(e)[:100])
+        logger.warning("balance_alpaca_fetch_failed", error=str(e)[:100])
 
     # No virtual fallback in live/hybrid mode — report broker_unavailable
     if combined <= 0:
@@ -163,6 +175,12 @@ def get_available_risk(asset_class: str = "", risk_pct: float = 0.02) -> dict:
 
     if asset_class == "stock":
         alp = balance.get("alpaca")
+        # Diagnostic: trace what get_real_balance returned
+        logger.warning("balance_diagnostic_stock",
+                        alpaca_present=alp is not None,
+                        alpaca_data=alp if alp else "None",
+                        balance_source=balance.get("source", "unknown"),
+                        combined_usd=balance.get("combined_usd", 0))
         if alp:
             # Use buying_power (margin-aware). Fall back to equity if
             # buying_power is not reported. cash alone is unreliable on
