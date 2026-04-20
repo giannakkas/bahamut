@@ -473,8 +473,13 @@ def run_trading_cycle():
     try:
         from sqlalchemy import text as _dd_text
         from bahamut.database import sync_engine
+        from bahamut.config_assets import TRADING_VIRTUAL_CAPITAL
+        # Strategy equity base: equal split across active strategies
+        _active_strategies = ("v5_base", "v9_breakout", "v10_mean_reversion")
+        _strategy_equity_base = TRADING_VIRTUAL_CAPITAL / len(_active_strategies)
+
         with sync_engine.connect() as _dd_conn:
-            for _strat in ("v5_base", "v9_breakout", "v10_mean_reversion"):
+            for _strat in _active_strategies:
                 _dd_row = _dd_conn.execute(_dd_text("""
                     SELECT COALESCE(SUM(pnl), 0) AS pnl_sum,
                            COALESCE(MAX(pnl_sum_running), 0) AS peak
@@ -487,11 +492,21 @@ def run_trading_cycle():
                         ORDER BY exit_time
                     ) sub
                 """), {"s": _strat}).mappings().first()
-                if _dd_row and float(_dd_row["peak"]) > 0:
-                    _dd_pct = max(0, (float(_dd_row["peak"]) - float(_dd_row["pnl_sum"]))
-                                 / float(_dd_row["peak"]) * 100)
+                if _dd_row:
+                    peak = float(_dd_row["peak"])
+                    current = float(_dd_row["pnl_sum"])
+                    # DD from peak, normalized by strategy equity base (not peak PnL).
+                    # Old formula: (peak - current) / peak * 100 → explodes when
+                    # peak is small (e.g. peak=$10, current=-$490 → 5000% DD).
+                    # New: use equity base as denominator so DD is relative to capital.
+                    if peak > current:
+                        _dd_pct = (peak - current) / _strategy_equity_base * 100
+                    else:
+                        _dd_pct = 0
                 else:
                     _dd_pct = 0
+                # Cap at 100% — can't lose more than allocated capital in theory
+                _dd_pct = min(100.0, max(0, _dd_pct))
                 try:
                     from bahamut.trading.engine import _get_redis
                     _dd_r = _get_redis()

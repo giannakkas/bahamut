@@ -668,6 +668,8 @@ def open_training_position(
 
     try:
         _order_intent_id = None
+        _budget_claimed = False
+        _position_saved = False
         try:
             from bahamut.execution.order_manager import OrderManager
             mgr = OrderManager()
@@ -1171,8 +1173,6 @@ def open_training_position(
         # ATOMIC CROSS-WORKER RISK BUDGET CHECK
         # Prevents concurrent opens exceeding daily budget across all workers.
         # ═══════════════════════════════════════════
-        _budget_claimed = False
-        _position_saved = False
         try:
             from bahamut.trading.risk_budget import check_and_claim_budget
             allowed, _budget_reason = check_and_claim_budget(risk_amount, asset_class)
