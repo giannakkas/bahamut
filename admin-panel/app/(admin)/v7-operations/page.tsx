@@ -945,7 +945,7 @@ function TrainingPanel({ token, apiBase }: { token: string | null; apiBase: () =
         </div>
         <div className="flex items-center gap-2">
           {d.last_cycle && <span className="text-[11px] text-bah-muted font-mono">Last cycle: {new Date(d.last_cycle).toLocaleTimeString("en-GB",{hour12:false})}</span>}
-          <a href="/training-operations" className="px-2.5 py-1 text-[11px] font-semibold text-bah-cyan border border-bah-cyan/30 rounded hover:bg-bah-cyan/10 transition-colors">Full Dashboard →</a>
+          <a href="/trading-operations" className="px-2.5 py-1 text-[11px] font-semibold text-bah-cyan border border-bah-cyan/30 rounded hover:bg-bah-cyan/10 transition-colors">Full Dashboard →</a>
         </div>
       </div>
 

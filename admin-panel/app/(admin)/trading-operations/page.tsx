@@ -266,13 +266,13 @@ export default function TrainingOperationsPage() {
   if (loading) return (
     <div className="p-12 text-center">
       <div className="inline-block w-8 h-8 border-2 border-bah-cyan/30 border-t-bah-cyan rounded-full animate-spin mb-4" />
-      <p className="text-bah-muted text-sm">Loading training operations...</p>
+      <p className="text-bah-muted text-sm">Loading trading operations...</p>
     </div>
   );
 
   if (!data) return (
     <div className="p-12 text-center">
-      <p className="text-lg font-bold text-bah-heading mb-2">Training Operations</p>
+      <p className="text-lg font-bold text-bah-heading mb-2">Trading Operations</p>
       <p className="text-sm text-bah-muted">Waiting for first training cycle (runs every 10 min).</p>
     </div>
   );
@@ -310,7 +310,7 @@ export default function TrainingOperationsPage() {
       {/* ═══ HEADER ═══ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 anim-slide">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-base sm:text-lg font-bold text-bah-heading tracking-tight">Training Operations</h1>
+          <h1 className="text-base sm:text-lg font-bold text-bah-heading tracking-tight">Trading Operations</h1>
           <span className="px-2.5 py-0.5 text-[11px] rounded-full font-bold border bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40 tracking-wider">PAPER TRADING</span>
           <span className="text-[12px] text-bah-muted">{cs.universe_size || k.universe_size || 0} assets</span>
           <span style={{fontSize: "8px", color: "#666"}}>v2.1</span>

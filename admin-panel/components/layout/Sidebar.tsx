@@ -11,7 +11,7 @@ import { useOverrides } from "@/lib/hooks";
 import { useAdminSocket } from "@/providers/AdminSocketProvider";
 
 const OPERATIONAL_NAV = [
-  { href: "/training-operations", label: "Training Operations", icon: "🧪" },
+  { href: "/trading-operations", label: "Trading Operations", icon: "📊" },
   { href: "/market-intelligence", label: "AI Market Intelligence", icon: "🧠" },
   { href: "/binance-trades", label: "Binance Trades", icon: "/binance-logo.png" },
   { href: "/alpaca-trades", label: "Alpaca Trades", icon: "🦙" },
@@ -36,6 +36,52 @@ export function Sidebar() {
   const { status: wsStatus } = useAdminSocket();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hideHamburger, setHideHamburger] = useState(false);
+  const [marketStatus, setMarketStatus] = useState<{ open: boolean; label: string; next: string }>({ open: false, label: "Closed", next: "" });
+
+  // US Stock Market status — updates every 30s
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      // Convert to ET (approximate: UTC-4 Mar-Nov, UTC-5 Nov-Mar)
+      const month = now.getUTCMonth() + 1;
+      const etOffset = (month >= 3 && month <= 10) ? -4 : -5;
+      const etHours = now.getUTCHours() + etOffset;
+      const etMinutes = now.getUTCMinutes();
+      const etTime = etHours + etMinutes / 60;
+      const day = now.getUTCDay(); // 0=Sun
+
+      // Adjust day if ET offset pushes us to previous day
+      const adjustedDay = etHours < 0 ? (day + 6) % 7 : day;
+      const adjustedTime = etHours < 0 ? etTime + 24 : etTime;
+
+      const isWeekday = adjustedDay >= 1 && adjustedDay <= 5;
+      const isMarketHours = adjustedTime >= 9.5 && adjustedTime < 16;
+      const isPreMarket = adjustedTime >= 4 && adjustedTime < 9.5;
+      const isAfterHours = adjustedTime >= 16 && adjustedTime < 20;
+
+      if (!isWeekday) {
+        setMarketStatus({ open: false, label: "Weekend", next: "Mon 9:30 ET" });
+      } else if (isMarketHours) {
+        const closeH = 16;
+        const minsLeft = Math.floor((closeH - adjustedTime) * 60);
+        const h = Math.floor(minsLeft / 60);
+        const m = minsLeft % 60;
+        setMarketStatus({ open: true, label: "Market Open", next: h > 0 ? `${h}h ${m}m to close` : `${m}m to close` });
+      } else if (isPreMarket) {
+        const minsToOpen = Math.floor((9.5 - adjustedTime) * 60);
+        const h = Math.floor(minsToOpen / 60);
+        const m = minsToOpen % 60;
+        setMarketStatus({ open: false, label: "Pre-Market", next: h > 0 ? `${h}h ${m}m to open` : `${m}m to open` });
+      } else if (isAfterHours) {
+        setMarketStatus({ open: false, label: "After Hours", next: "Opens 9:30 ET" });
+      } else {
+        setMarketStatus({ open: false, label: "Closed", next: "Opens 9:30 ET" });
+      }
+    };
+    check();
+    const iv = setInterval(check, 30000);
+    return () => clearInterval(iv);
+  }, []);
 
   const activeAlerts = alerts?.filter((a) => !a.dismissed).length ?? 0;
   const activeOverrides = overrides?.length ?? 0;
@@ -112,6 +158,24 @@ export function Sidebar() {
         <div className="text-[10px] tracking-[0.15em] uppercase mt-1 flex items-center gap-2">
           <span className="text-green-400 font-semibold">● OPERATIONS</span>
           <span className="text-bah-muted">BTC + ETH</span>
+        </div>
+      </div>
+
+      {/* US Stock Market Status Badge */}
+      <div className="px-4 py-2 border-b border-bah-border/40">
+        <div className={cn(
+          "flex items-center justify-between px-2.5 py-1.5 rounded-md text-[11px] font-semibold",
+          marketStatus.open
+            ? "bg-green-500/10 border border-green-500/30 text-green-400"
+            : marketStatus.label === "Pre-Market"
+              ? "bg-amber-500/10 border border-amber-500/30 text-amber-400"
+              : "bg-red-500/10 border border-red-500/30 text-red-400"
+        )}>
+          <div className="flex items-center gap-1.5">
+            <span className={cn("w-1.5 h-1.5 rounded-full", marketStatus.open ? "bg-green-400 animate-pulse" : marketStatus.label === "Pre-Market" ? "bg-amber-400" : "bg-red-400")} />
+            <span>NYSE {marketStatus.label}</span>
+          </div>
+          <span className="text-[9px] opacity-70 font-normal">{marketStatus.next}</span>
         </div>
       </div>
 
