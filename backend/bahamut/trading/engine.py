@@ -628,6 +628,10 @@ def open_training_position(
     """Open a new training position. Returns the position or None if rejected."""
     from bahamut.config_assets import TRADING_MAX_POSITIONS
 
+    logger.warning("open_training_position_ENTER",
+                    asset=asset, strategy=strategy, direction=direction,
+                    execution_type=execution_type, signal_id=signal_id[:30])
+
     # ═══════════════════════════════════════════
     # PRODUCTION: Idempotency guard via OrderManager
     # Prevents duplicate orders from retries, overlapping cycles,
@@ -650,7 +654,7 @@ def open_training_position(
     try:
         from bahamut.execution.order_manager import OrderManager as _OMLock
         if not _OMLock().acquire_execution_lock(signal_id, ttl=60):
-            logger.info("training_position_rejected_exec_lock",
+            logger.warning("training_position_rejected_exec_lock",
                         asset=asset, strategy=strategy, signal_id=signal_id)
             try:
                 from bahamut.trading.rejection_tracker import record_rejection
@@ -662,7 +666,7 @@ def open_training_position(
             return None
         _lock_held_signal = signal_id
     except Exception as _lock_err:
-        logger.debug("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
+        logger.warning("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
         # Proceed — DB UNIQUE on signal_id still prevents duplicates
 
 
@@ -670,6 +674,8 @@ def open_training_position(
         _order_intent_id = None
         _budget_claimed = False
         _position_saved = False
+        logger.warning("open_training_position_INTENT_PHASE",
+                        asset=asset, signal_id=signal_id[:30])
         try:
             from bahamut.execution.order_manager import OrderManager
             mgr = OrderManager()
@@ -685,20 +691,22 @@ def open_training_position(
             )
             if intent is None:
                 # Duplicate signal — already processed
-                logger.info("training_position_duplicate_blocked",
+                logger.warning("training_position_duplicate_blocked",
                             asset=asset, strategy=strategy,
                             signal_id=signal_id)
                 return None
             _order_intent_id = intent["intent_id"]
+            logger.warning("open_training_position_INTENT_OK",
+                            asset=asset, intent_id=_order_intent_id)
         except Exception as _idmp_err:
             # OrderManager not available — continue without idempotency
-            # (safe for paper trading, should be fixed for production)
-            logger.debug("order_manager_unavailable",
-                         error=str(_idmp_err)[:100])
+            logger.warning("order_manager_unavailable",
+                         asset=asset, error=str(_idmp_err)[:100])
 
         # ═══════════════════════════════════════════
         # ASSET BLOCK CHECK (orphan detection, manual blocks)
         # ═══════════════════════════════════════════
+        logger.warning("open_training_position_GATES_START", asset=asset)
         try:
             r = _get_redis()
             if r and r.exists(f"bahamut:trading:asset_block:{asset}"):
@@ -1173,6 +1181,8 @@ def open_training_position(
         # ATOMIC CROSS-WORKER RISK BUDGET CHECK
         # Prevents concurrent opens exceeding daily budget across all workers.
         # ═══════════════════════════════════════════
+        logger.warning("open_training_position_ALL_GATES_PASSED",
+                        asset=asset, strategy=strategy, risk_amount=round(risk_amount, 2))
         try:
             from bahamut.trading.risk_budget import check_and_claim_budget
             allowed, _budget_reason = check_and_claim_budget(risk_amount, asset_class)

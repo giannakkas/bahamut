@@ -374,8 +374,13 @@ def run_trading_cycle():
                                asset=sig.asset, strategy=sig.strategy,
                                msg="open_training_position returned None/False")
         except Exception as e:
-            logger.error("training_execute_failed", asset=dec["asset"],
-                         error=str(e), traceback=True)
+            try:
+                logger.error("training_execute_failed", asset=dec.get("asset", "?"),
+                             error=str(e)[:200], exc_info=True)
+            except Exception:
+                import traceback
+                print(f"CRITICAL: training_execute_failed asset={dec.get('asset', '?')} error={e}")
+                traceback.print_exc()
 
     duration_ms = int((time.time() - start) * 1000)
     logger.info("training_cycle_complete",
