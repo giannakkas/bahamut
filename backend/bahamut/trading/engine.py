@@ -1202,7 +1202,9 @@ def open_training_position(
         try:
             from bahamut.trading.risk_budget import check_and_claim_budget
             allowed, _budget_reason = check_and_claim_budget(risk_amount, asset_class)
+            print(f"[TRACE] BUDGET_CHECK asset={asset} allowed={allowed} reason={_budget_reason}", file=_sys.stderr, flush=True)
             if not allowed:
+                print(f"[TRACE] RETURN_NONE asset={asset} reason=risk_budget_rejected detail={_budget_reason}", file=_sys.stderr, flush=True)
                 logger.warning("trading_position_rejected_risk_budget",
                                asset=asset, strategy=strategy, reason=_budget_reason,
                                risk=risk_amount)
@@ -1217,15 +1219,19 @@ def open_training_position(
                 return None
             _budget_claimed = True
         except Exception as _rb_err:
+            print(f"[TRACE] BUDGET_CHECK_EXCEPTION asset={asset} err={_rb_err}", file=_sys.stderr, flush=True)
             logger.debug("risk_budget_check_nonfatal", error=str(_rb_err)[:100])
 
         # ── Execute on exchange FIRST (Binance/Alpaca) ──
         # Position is only saved if exchange execution succeeds or is not required.
-        print(f"[TRACE] EXCHANGE_EXEC_START asset={asset} expected_platform=?", file=_sys.stderr, flush=True)
         _expected_platform = "internal"
         try:
             from bahamut.execution.router import execute_open as exec_open, _get_platform
             _expected_platform = _get_platform(asset, asset_class)
+        except Exception as _plat_err:
+            print(f"[TRACE] PLATFORM_RESOLVE_FAILED asset={asset} err={_plat_err}", file=_sys.stderr, flush=True)
+        print(f"[TRACE] EXCHANGE_EXEC_START asset={asset} platform={_expected_platform}", file=_sys.stderr, flush=True)
+        try:
             exec_result = exec_open(
                 asset=asset, asset_class=asset_class, direction=direction,
                 size=pos.size, risk_amount=risk_amount,
@@ -1233,6 +1239,7 @@ def open_training_position(
             pos.execution_platform = exec_result.get("platform", "internal")
             pos.exchange_order_id = exec_result.get("order_id", "")
             _status = exec_result.get("status", "unknown")
+            print(f"[TRACE] EXEC_RESULT asset={asset} platform={pos.execution_platform} status={_status} lifecycle={exec_result.get('lifecycle','')} order_id={pos.exchange_order_id[:20] if pos.exchange_order_id else 'none'}", file=_sys.stderr, flush=True)
             # Phase 2 Item 4: capture canonical execution state on the position
             # so broker truth is preserved for PnL reporting and diagnostics.
             pos.client_order_id = exec_result.get("client_order_id", "") or ""
@@ -1340,6 +1347,7 @@ def open_training_position(
 
             # Abort guard: broker was expected but execution failed or fell back to internal
             if _status in ("error", "internal") and _expected_platform != "internal":
+                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_failed status={_status} expected={_expected_platform} actual={pos.execution_platform} error={exec_result.get('error','')[:80]}", file=_sys.stderr, flush=True)
                 # Broker was expected but execution failed or fell back to internal
                 # Do NOT create a phantom internal-only position
                 logger.warning("execution_failed_position_aborted",
@@ -1359,6 +1367,7 @@ def open_training_position(
                 return None
             # Final guard: if broker was expected but platform is still internal, abort
             if _expected_platform != "internal" and pos.execution_platform == "internal":
+                print(f"[TRACE] RETURN_NONE asset={asset} reason=mirror_mismatch expected={_expected_platform} actual=internal", file=_sys.stderr, flush=True)
                 logger.warning("execution_mirror_mismatch_aborted",
                                asset=asset, strategy=strategy, direction=direction,
                                expected_platform=_expected_platform,
@@ -1383,6 +1392,7 @@ def open_training_position(
                 except Exception:
                     pass
             if _expected_platform != "internal":
+                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_exception expected={_expected_platform} error={str(e)[:100]}", file=_sys.stderr, flush=True)
                 logger.warning("execution_exception_position_aborted",
                                asset=asset, expected_platform=_expected_platform,
                                error=str(e)[:100])
