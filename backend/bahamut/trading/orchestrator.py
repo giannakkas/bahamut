@@ -512,6 +512,13 @@ def run_trading_cycle():
                     _dd_pct = 0
                 # Cap at 100% — can't lose more than allocated capital in theory
                 _dd_pct = min(100.0, max(0, _dd_pct))
+                logger.warning("strategy_dd_computed",
+                               strategy=_strat,
+                               dd_pct=round(_dd_pct, 2),
+                               peak=round(peak if _dd_row else 0, 2),
+                               current=round(current if _dd_row else 0, 2),
+                               equity_base=round(_strategy_equity_base, 0),
+                               blocked=_dd_pct >= 15.0)
                 try:
                     from bahamut.trading.engine import _get_redis
                     _dd_r = _get_redis()
