@@ -342,25 +342,40 @@ def run_trading_cycle():
                         risk=round(risk_amount * sig.risk_multiplier, 2),
                         risk_source=risk_source)
 
-            pos = open_training_position(
-                asset=sig.asset,
-                asset_class=sig.asset_class,
-                strategy=sig.strategy,
-                direction=sig.direction,
-                entry_price=sig.entry_price,
-                sl_pct=sig.sl_pct,
-                tp_pct=sig.tp_pct,
-                risk_amount=risk_amount * sig.risk_multiplier,
-                regime=sig.regime,
-                max_hold_bars=sig.max_hold_bars,
-                execution_type=sig.execution_type,
-                confidence_score=sig.confidence_score,
-                trigger_reason=sig.trigger_reason,
-                substrategy=getattr(sig, "substrategy", "") or "",
-                data_mode=getattr(sig, "data_mode", "live") or "live",
-                # Production: deterministic signal_id for idempotency
-                signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{sig.trigger_reason}:{int(time.time() // 600)}",
-            )
+            # ── BOMBPROOF TRACE: wrap entire call so no path is silent ──
+            logger.warning("TRACE_BEFORE_OPEN", asset=sig.asset, strategy=sig.strategy)
+            pos = None
+            try:
+                pos = open_training_position(
+                    asset=sig.asset,
+                    asset_class=sig.asset_class,
+                    strategy=sig.strategy,
+                    direction=sig.direction,
+                    entry_price=sig.entry_price,
+                    sl_pct=sig.sl_pct,
+                    tp_pct=sig.tp_pct,
+                    risk_amount=risk_amount * sig.risk_multiplier,
+                    regime=sig.regime,
+                    max_hold_bars=sig.max_hold_bars,
+                    execution_type=sig.execution_type,
+                    confidence_score=sig.confidence_score,
+                    trigger_reason=sig.trigger_reason,
+                    substrategy=getattr(sig, "substrategy", "") or "",
+                    data_mode=getattr(sig, "data_mode", "live") or "live",
+                    # Production: deterministic signal_id for idempotency
+                    signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{sig.trigger_reason}:{int(time.time() // 600)}",
+                )
+                logger.warning("TRACE_AFTER_OPEN",
+                               asset=sig.asset, pos_is_none=pos is None,
+                               pos_type=type(pos).__name__)
+            except Exception as _call_err:
+                logger.warning("TRACE_OPEN_THREW",
+                               asset=sig.asset,
+                               error_type=type(_call_err).__name__,
+                               error=str(_call_err)[:300])
+                import traceback as _tb
+                _tb.print_exc()  # stderr fallback
+                pos = None
             if pos:
                 trades_opened += 1
                 logger.info("training_trade_OPENED",

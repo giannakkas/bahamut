@@ -626,11 +626,11 @@ def open_training_position(
     signal_id: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
-    from bahamut.config_assets import TRADING_MAX_POSITIONS
-
     logger.warning("open_training_position_ENTER",
                     asset=asset, strategy=strategy, direction=direction,
-                    execution_type=execution_type, signal_id=signal_id[:30])
+                    execution_type=execution_type, signal_id=signal_id[:30] if signal_id else "none")
+
+    from bahamut.config_assets import TRADING_MAX_POSITIONS
 
     # ═══════════════════════════════════════════
     # PRODUCTION: Idempotency guard via OrderManager
