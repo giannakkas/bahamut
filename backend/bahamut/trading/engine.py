@@ -643,7 +643,8 @@ def open_training_position(
         # Generate a deterministic signal_id from the trade params
         # so the same signal in the same cycle produces the same ID.
         import hashlib
-        sig_data = f"{asset}:{strategy}:{direction}:{entry_price:.2f}:{trigger_reason}"
+        import time as _time_mod
+        sig_data = f"{asset}:{strategy}:{direction}:{entry_price:.2f}:{trigger_reason}:{int(_time_mod.time() // 600)}"
         signal_id = hashlib.sha256(sig_data.encode()).hexdigest()[:24]
 
     # ═══════════════════════════════════════════

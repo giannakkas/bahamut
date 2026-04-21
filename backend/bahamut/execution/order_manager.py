@@ -168,15 +168,13 @@ class OrderManager:
             from sqlalchemy import text
             with sync_engine.connect() as conn:
                 # Clean stale intents before attempting insert.
-                # Intents older than 10 min are always stale (cycle is 10 min).
-                # Intents in intent_created state older than 2 min are stuck
-                # (should have progressed to submitted within seconds).
+                # ANY existing intent with the same signal_id must be removed —
+                # terminal states (filled, rejected, canceled) still block the
+                # UNIQUE constraint. A new cycle = a new trade attempt.
                 try:
-                    # 1. Delete any intent with same signal_id older than 10 min
+                    # 1. Delete ANY intent with same signal_id (regardless of state/age)
                     conn.execute(text("""
-                        DELETE FROM order_intents
-                        WHERE signal_id = :sid
-                          AND created_at < NOW() - INTERVAL '10 minutes'
+                        DELETE FROM order_intents WHERE signal_id = :sid
                     """), {"sid": signal_id})
                     # 2. Delete stuck intents in intent_created state (> 2 min old)
                     #    These never progressed to submission — dead weight
