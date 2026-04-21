@@ -22,6 +22,7 @@ logger = structlog.get_logger()
 # Use production Binance for market data (public, free)
 # Demo/testnet doesn't have reliable market data
 BINANCE_PUBLIC_URL = "https://api.binance.com"
+BINANCE_FUTURES_URL = "https://fapi.binance.com"
 
 # ─────────────────────────────────────────────────────────────
 # CLOSED-CANDLE ENFORCEMENT
@@ -112,17 +113,32 @@ def get_candles(asset: str, interval: str = "15m", limit: int = 100,
     fetch_limit = min(1000, limit + 1)
 
     try:
-        r = httpx.get(
-            f"{BINANCE_PUBLIC_URL}/api/v3/klines",
-            params={"symbol": symbol, "interval": interval, "limit": fetch_limit},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            logger.warning("binance_klines_error", asset=asset, status=r.status_code)
-            return []
+        # Try Spot API first, then Futures API as fallback.
+        # Many newer tokens (WIF, JUP, FET, TIA, SEI, W, ENA) are only on
+        # Binance Futures, not Spot. Both APIs use the same kline format.
+        raw = None
+        _kline_source = "binance_public"
+        for _base_url, _path in [
+            (BINANCE_PUBLIC_URL, "/api/v3/klines"),
+            (BINANCE_FUTURES_URL, "/fapi/v1/klines"),
+        ]:
+            r = httpx.get(
+                f"{_base_url}{_path}",
+                params={"symbol": symbol, "interval": interval, "limit": fetch_limit},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                _raw = r.json()
+                if _raw and len(_raw) > 0:
+                    raw = _raw
+                    _kline_source = "binance_futures" if "fapi" in _path else "binance_public"
+                    break
+            # Log spot failure at debug, try futures next
+            if "fapi" not in _path:
+                logger.debug("binance_spot_klines_miss", asset=asset, status=r.status_code)
 
-        raw = r.json()
         if not raw:
+            logger.warning("binance_klines_both_failed", asset=asset, symbol=symbol)
             return []
 
         now_ms = int(_time.time() * 1000)
@@ -147,7 +163,7 @@ def get_candles(asset: str, interval: str = "15m", limit: int = 100,
                 "open_time": open_time_ms,
                 "close_time": close_time_ms,
                 "is_closed": is_closed,
-                "source": "binance_public",
+                "source": _kline_source,
             })
 
         # Drop trailing forming candle(s) unless caller explicitly wants them
@@ -183,20 +199,22 @@ def get_candles(asset: str, interval: str = "15m", limit: int = 100,
 
 
 def get_price(asset: str) -> float:
-    """Get current price from Binance (free, no key)."""
+    """Get current price from Binance (free, no key). Tries Spot then Futures."""
     symbol = SYMBOL_MAP.get(asset)
     if not symbol:
         return 0.0
-    try:
-        r = httpx.get(
-            f"{BINANCE_PUBLIC_URL}/api/v3/ticker/price",
-            params={"symbol": symbol},
-            timeout=5,
-        )
-        if r.status_code == 200:
-            return float(r.json().get("price", 0))
-    except Exception:
-        pass
+    for _base, _path in [
+        (BINANCE_PUBLIC_URL, "/api/v3/ticker/price"),
+        (BINANCE_FUTURES_URL, "/fapi/v1/ticker/price"),
+    ]:
+        try:
+            r = httpx.get(f"{_base}{_path}", params={"symbol": symbol}, timeout=5)
+            if r.status_code == 200:
+                price = float(r.json().get("price", 0))
+                if price > 0:
+                    return price
+        except Exception:
+            pass
     return 0.0
 
 
