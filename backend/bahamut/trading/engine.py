@@ -716,6 +716,7 @@ def open_training_position(
         # ═══════════════════════════════════════════
         # ASSET BLOCK CHECK (orphan detection, manual blocks)
         # ═══════════════════════════════════════════
+        print(f"[TRACE] GATES_START asset={asset}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_GATES_START", asset=asset)
         try:
             r = _get_redis()
@@ -820,6 +821,7 @@ def open_training_position(
                             reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
 
         # Check position limit (with Redis lock for multi-worker safety)
+        print(f"[TRACE] GATE_position_limit asset={asset}", file=_sys.stderr, flush=True)
         _cap_lock_acquired = False
         try:
             r = _get_redis()
@@ -922,6 +924,7 @@ def open_training_position(
                 return None
 
         # Stock trades only during US market hours (avoid $0 flat exits)
+        print(f"[TRACE] GATE_market_hours asset={asset} class={asset_class}", file=_sys.stderr, flush=True)
         if asset_class == "stock":
             try:
                 from bahamut.data.live_data import _is_us_market_open
@@ -1023,6 +1026,7 @@ def open_training_position(
             pass
 
         # ── Risk engine size multiplier ──
+        print(f"[TRACE] GATE_risk_engine asset={asset} risk_amount={round(risk_amount,2)}", file=_sys.stderr, flush=True)
         # Applied after strategy-specific circuit breakers, before size calculation.
         try:
             from bahamut.trading.risk_engine import get_size_multiplier
@@ -1191,6 +1195,7 @@ def open_training_position(
         # ATOMIC CROSS-WORKER RISK BUDGET CHECK
         # Prevents concurrent opens exceeding daily budget across all workers.
         # ═══════════════════════════════════════════
+        print(f"[TRACE] ALL_GATES_PASSED asset={asset} risk_amount={round(risk_amount,2)}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_ALL_GATES_PASSED",
                         asset=asset, strategy=strategy, risk_amount=round(risk_amount, 2))
         try:
@@ -1215,6 +1220,7 @@ def open_training_position(
 
         # ── Execute on exchange FIRST (Binance/Alpaca) ──
         # Position is only saved if exchange execution succeeds or is not required.
+        print(f"[TRACE] EXCHANGE_EXEC_START asset={asset} expected_platform=?", file=_sys.stderr, flush=True)
         _expected_platform = "internal"
         try:
             from bahamut.execution.router import execute_open as exec_open, _get_platform
@@ -1393,6 +1399,7 @@ def open_training_position(
         # Save position only after exchange execution is resolved
         _save_position(pos)
         _position_saved = True
+        print(f"[TRACE] POSITION_SAVED asset={asset} position_id={pos.position_id}", file=_sys.stderr, flush=True)
         _opened_this_cycle.add(dedup_key)
         _opened_this_cycle.add(asset_key)
         open_training_position._opened_this_cycle = _opened_this_cycle

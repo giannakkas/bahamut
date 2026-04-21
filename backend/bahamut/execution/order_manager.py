@@ -167,6 +167,27 @@ class OrderManager:
             from bahamut.database import sync_engine
             from sqlalchemy import text
             with sync_engine.connect() as conn:
+                # Clean stale intents before attempting insert.
+                # Intents older than 10 min in non-terminal states block new cycles.
+                try:
+                    conn.execute(text("""
+                        DELETE FROM order_intents
+                        WHERE signal_id = :sid
+                          AND created_at < NOW() - INTERVAL '10 minutes'
+                    """), {"sid": signal_id})
+                    # Also clean very old intents in INTENT_CREATED state (stuck)
+                    conn.execute(text("""
+                        DELETE FROM order_intents
+                        WHERE order_state = 'INTENT_CREATED'
+                          AND created_at < NOW() - INTERVAL '2 minutes'
+                    """))
+                    conn.commit()
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+
                 # Try to insert — UNIQUE constraint on signal_id prevents dupes
                 try:
                     conn.execute(text("""
