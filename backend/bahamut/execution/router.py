@@ -101,8 +101,25 @@ def execute_open(asset: str, asset_class: str, direction: str,
 
     # Feed per-platform circuit breaker with result
     if _cb:
-        if result.get("status") in ("error", "internal") or result.get("error"):
-            _cb.record_failure(result.get("error", "unknown_error")[:100])
+        _is_error = False
+        if isinstance(result, dict):
+            _is_error = result.get("status") in ("error", "internal") or bool(result.get("error"))
+        else:
+            _is_error = True
+        if _is_error:
+            _err_msg = "unknown_error"
+            if isinstance(result, dict):
+                _raw_err = result.get("error", "unknown_error")
+                _err_msg = str(_raw_err) if not isinstance(_raw_err, str) else _raw_err
+            else:
+                _err_msg = f"non_dict_result:{type(result).__name__}"
+            _cb.record_failure(_err_msg[:100])
+            logger.warning("router_exec_failure",
+                           asset=asset, platform=platform,
+                           error=_err_msg[:200],
+                           result_type=type(result).__name__,
+                           status=result.get("status", "?") if isinstance(result, dict) else "?",
+                           lifecycle=result.get("lifecycle", "?") if isinstance(result, dict) else "?")
         else:
             _cb.record_success()
 
@@ -138,8 +155,10 @@ def execute_close(asset: str, asset_class: str, direction: str,
         from bahamut.execution.circuit_breaker import circuit_breaker_binance, circuit_breaker_alpaca
         _cb = circuit_breaker_binance if platform == "binance" else circuit_breaker_alpaca if platform == "alpaca" else None
         if _cb:
-            if result.get("status") in ("error",) or result.get("error"):
-                _cb.record_failure(result.get("error", "close_error")[:100])
+            _is_err = isinstance(result, dict) and (result.get("status") in ("error",) or bool(result.get("error")))
+            if _is_err:
+                _raw_err = result.get("error", "close_error")
+                _cb.record_failure(str(_raw_err)[:100])
             else:
                 _cb.record_success()
     except ImportError:
