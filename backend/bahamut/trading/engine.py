@@ -626,6 +626,8 @@ def open_training_position(
     signal_id: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
+    import sys as _sys
+    print(f"[TRACE] open_training_position ENTER asset={asset} strategy={strategy} exec_type={execution_type}", file=_sys.stderr, flush=True)
     logger.warning("open_training_position_ENTER",
                     asset=asset, strategy=strategy, direction=direction,
                     execution_type=execution_type, signal_id=signal_id[:30] if signal_id else "none")
@@ -653,9 +655,12 @@ def open_training_position(
     _lock_held_signal = None
     try:
         from bahamut.execution.order_manager import OrderManager as _OMLock
-        if not _OMLock().acquire_execution_lock(signal_id, ttl=60):
+        _lock_result = _OMLock().acquire_execution_lock(signal_id, ttl=60)
+        print(f"[TRACE] exec_lock result={_lock_result} asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
+        if not _lock_result:
             logger.warning("training_position_rejected_exec_lock",
                         asset=asset, strategy=strategy, signal_id=signal_id)
+            print(f"[TRACE] EARLY_EXIT exec_lock_held asset={asset}", file=_sys.stderr, flush=True)
             try:
                 from bahamut.trading.rejection_tracker import record_rejection
                 record_rejection(asset=asset, strategy=strategy, direction=direction,
@@ -667,6 +672,7 @@ def open_training_position(
         _lock_held_signal = signal_id
     except Exception as _lock_err:
         logger.warning("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
+        print(f"[TRACE] exec_lock EXCEPTION asset={asset} err={_lock_err}", file=_sys.stderr, flush=True)
         # Proceed — DB UNIQUE on signal_id still prevents duplicates
 
 
@@ -674,6 +680,7 @@ def open_training_position(
         _order_intent_id = None
         _budget_claimed = False
         _position_saved = False
+        print(f"[TRACE] INTENT_PHASE asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_INTENT_PHASE",
                         asset=asset, signal_id=signal_id[:30])
         try:
@@ -689,8 +696,10 @@ def open_training_position(
                 substrategy=substrategy,
                 intended_price=entry_price,
             )
+            print(f"[TRACE] create_intent returned intent={'OK' if intent else 'NONE'} asset={asset}", file=_sys.stderr, flush=True)
             if intent is None:
                 # Duplicate signal — already processed
+                print(f"[TRACE] EARLY_EXIT duplicate_blocked asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
                 logger.warning("training_position_duplicate_blocked",
                             asset=asset, strategy=strategy,
                             signal_id=signal_id)
@@ -700,6 +709,7 @@ def open_training_position(
                             asset=asset, intent_id=_order_intent_id)
         except Exception as _idmp_err:
             # OrderManager not available — continue without idempotency
+            print(f"[TRACE] order_manager EXCEPTION asset={asset} err={_idmp_err}", file=_sys.stderr, flush=True)
             logger.warning("order_manager_unavailable",
                          asset=asset, error=str(_idmp_err)[:100])
 
