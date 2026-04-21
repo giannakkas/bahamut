@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.env
+*.md
+docs/
+frontend/node_modules
+admin-panel/node_modules
+frontend-trader/node_modules
+*.egg-info
+.pytest_cache
+.mypy_cache
