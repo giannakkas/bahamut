@@ -266,10 +266,11 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
     """Place SL + TP orders on Binance Futures as broker-side brackets.
 
     After a market fill, places:
-      - STOP_MARKET at sl_price with reduceOnly (stop-loss)
-      - TAKE_PROFIT_MARKET at tp_price with reduceOnly (take-profit)
+      - STOP_MARKET at sl_price (stop-loss)
+      - TAKE_PROFIT_MARKET at tp_price (take-profit)
 
     Both use closePosition=true so they close the entire position.
+    Note: reduceOnly MUST NOT be sent with closePosition (Binance -1106).
     Both use MARK_PRICE to avoid wicks triggering on last price.
 
     Returns dict with 'sl_order' and 'tp_order' containing broker responses.
@@ -288,7 +289,7 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
         sl_params = _sign({
             "symbol": symbol, "side": close_side, "type": "STOP_MARKET",
             "stopPrice": f"{sl_price:.6f}", "closePosition": "true",
-            "reduceOnly": "true", "workingType": "MARK_PRICE",
+            "workingType": "MARK_PRICE",
             "newClientOrderId": f"{entry_client_order_id}_sl",
         })
         sl_resp = httpx.post(f"{BASE_URL}/fapi/v1/order", params=sl_params,
@@ -320,7 +321,7 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
         tp_params = _sign({
             "symbol": symbol, "side": close_side, "type": "TAKE_PROFIT_MARKET",
             "stopPrice": f"{tp_price:.6f}", "closePosition": "true",
-            "reduceOnly": "true", "workingType": "MARK_PRICE",
+            "workingType": "MARK_PRICE",
             "newClientOrderId": f"{entry_client_order_id}_tp",
         })
         tp_resp = httpx.post(f"{BASE_URL}/fapi/v1/order", params=tp_params,
