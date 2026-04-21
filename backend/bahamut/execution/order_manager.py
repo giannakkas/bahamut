@@ -168,17 +168,21 @@ class OrderManager:
             from sqlalchemy import text
             with sync_engine.connect() as conn:
                 # Clean stale intents before attempting insert.
-                # Intents older than 10 min in non-terminal states block new cycles.
+                # Intents older than 10 min are always stale (cycle is 10 min).
+                # Intents in intent_created state older than 2 min are stuck
+                # (should have progressed to submitted within seconds).
                 try:
+                    # 1. Delete any intent with same signal_id older than 10 min
                     conn.execute(text("""
                         DELETE FROM order_intents
                         WHERE signal_id = :sid
                           AND created_at < NOW() - INTERVAL '10 minutes'
                     """), {"sid": signal_id})
-                    # Also clean very old intents in INTENT_CREATED state (stuck)
+                    # 2. Delete stuck intents in intent_created state (> 2 min old)
+                    #    These never progressed to submission — dead weight
                     conn.execute(text("""
                         DELETE FROM order_intents
-                        WHERE order_state = 'INTENT_CREATED'
+                        WHERE order_state = 'intent_created'
                           AND created_at < NOW() - INTERVAL '2 minutes'
                     """))
                     conn.commit()
