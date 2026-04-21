@@ -1236,6 +1236,7 @@ def open_training_position(
                 asset=asset, asset_class=asset_class, direction=direction,
                 size=pos.size, risk_amount=risk_amount,
             )
+            print(f"[TRACE] exec_open_returned asset={asset} type={type(exec_result).__name__} is_dict={isinstance(exec_result, dict)}", file=_sys.stderr, flush=True)
             pos.execution_platform = exec_result.get("platform", "internal")
             pos.exchange_order_id = exec_result.get("order_id", "")
             _status = exec_result.get("status", "unknown")
@@ -1392,7 +1393,8 @@ def open_training_position(
                 except Exception:
                     pass
             if _expected_platform != "internal":
-                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_exception expected={_expected_platform} error={str(e)[:100]}", file=_sys.stderr, flush=True)
+                import traceback as _tb_exec
+                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_exception expected={_expected_platform} error={str(e)[:100]}\n{_tb_exec.format_exc()}", file=_sys.stderr, flush=True)
                 logger.warning("execution_exception_position_aborted",
                                asset=asset, expected_platform=_expected_platform,
                                error=str(e)[:100])
