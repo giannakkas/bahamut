@@ -1301,16 +1301,28 @@ def open_training_position(
                             sl_price=pos.stop_price, tp_price=pos.tp_price,
                             entry_client_order_id=pos.exchange_order_id or str(_order_intent_id or ""),
                         )
-                        pos.bracket_sl_order_id = str(_brackets.get("sl_order", {}).get("orderId", ""))
-                        pos.bracket_tp_order_id = str(_brackets.get("tp_order", {}).get("orderId", ""))
-                        logger.info("binance_brackets_placed",
-                                    asset=asset, sl=pos.stop_price, tp=pos.tp_price,
-                                    sl_id=pos.bracket_sl_order_id,
-                                    tp_id=pos.bracket_tp_order_id)
-                        if not pos.bracket_sl_order_id or not pos.bracket_tp_order_id:
+                        _sl_oid = _brackets.get("sl_order", {}).get("orderId")
+                        _tp_oid = _brackets.get("tp_order", {}).get("orderId")
+                        pos.bracket_sl_order_id = str(_sl_oid) if _sl_oid else ""
+                        pos.bracket_tp_order_id = str(_tp_oid) if _tp_oid else ""
+                        if pos.bracket_sl_order_id and pos.bracket_tp_order_id:
+                            logger.info("binance_brackets_placed",
+                                        asset=asset, sl=pos.stop_price, tp=pos.tp_price,
+                                        sl_id=pos.bracket_sl_order_id,
+                                        tp_id=pos.bracket_tp_order_id)
+                            print(f"[TRACE] BRACKETS_OK asset={asset} sl_id={pos.bracket_sl_order_id} tp_id={pos.bracket_tp_order_id}", file=_sys.stderr, flush=True)
+                        else:
+                            logger.error("binance_brackets_FAILED",
+                                         asset=asset, direction=direction,
+                                         sl_id=pos.bracket_sl_order_id or "MISSING",
+                                         tp_id=pos.bracket_tp_order_id or "MISSING",
+                                         sl_response=str(_brackets.get("sl_order", {}))[:200],
+                                         tp_response=str(_brackets.get("tp_order", {}))[:200],
+                                         msg="Position has NO exchange-side SL/TP — relying on client-side only")
+                            print(f"[TRACE] BRACKETS_FAILED asset={asset} sl_id={pos.bracket_sl_order_id or 'MISSING'} tp_id={pos.bracket_tp_order_id or 'MISSING'} sl_resp={str(_brackets.get('sl_order', {}))[:100]} tp_resp={str(_brackets.get('tp_order', {}))[:100]}", file=_sys.stderr, flush=True)
                             try:
                                 from bahamut.monitoring.telegram import send_alert
-                                send_alert(f"⚠️ PARTIAL BRACKET COVERAGE: {asset} {direction} "
+                                send_alert(f"⚠️ BRACKETS FAILED: {asset} {direction} "
                                            f"sl_id={pos.bracket_sl_order_id or 'MISSING'} "
                                            f"tp_id={pos.bracket_tp_order_id or 'MISSING'}")
                             except Exception:
