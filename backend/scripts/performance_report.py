@@ -129,6 +129,49 @@ def run():
             ORDER BY entry_time DESC
             LIMIT 30
         """,
+        "QUERY 8 — Strategy × Execution Type Split (ALL trades)": """
+            SELECT 
+                strategy,
+                execution_type,
+                COUNT(*) AS trades,
+                ROUND(AVG(pnl)::numeric, 2) AS avg_pnl,
+                ROUND(SUM(pnl)::numeric, 2) AS total_pnl,
+                ROUND(100.0 * SUM(CASE WHEN pnl > 0.50 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) AS wr_pct,
+                ROUND(AVG(ABS(stop_price - entry_price) / NULLIF(entry_price, 0))::numeric, 4) AS avg_sl_pct
+            FROM training_trades
+            GROUP BY strategy, execution_type
+            ORDER BY strategy, execution_type
+        """,
+        "QUERY 9 — V9 SL% Distribution by Execution Type": """
+            SELECT 
+                execution_type,
+                asset_class,
+                COUNT(*) AS trades,
+                ROUND(AVG(ABS(stop_price - entry_price) / NULLIF(entry_price, 0) * 100)::numeric, 2) AS avg_sl_pct,
+                ROUND(MIN(ABS(stop_price - entry_price) / NULLIF(entry_price, 0) * 100)::numeric, 2) AS min_sl_pct,
+                ROUND(MAX(ABS(stop_price - entry_price) / NULLIF(entry_price, 0) * 100)::numeric, 2) AS max_sl_pct,
+                ROUND(AVG(pnl)::numeric, 2) AS avg_pnl,
+                ROUND(SUM(pnl)::numeric, 2) AS total_pnl
+            FROM training_trades
+            WHERE strategy = 'v9_breakout'
+            GROUP BY execution_type, asset_class
+            ORDER BY execution_type, asset_class
+        """,
+        "QUERY 10 — Recent 7d Trades Detail (non-debug)": """
+            SELECT 
+                asset, strategy, direction, execution_type,
+                ROUND(entry_price::numeric, 4) AS entry,
+                ROUND(exit_price::numeric, 4) AS exit,
+                ROUND(ABS(stop_price - entry_price) / NULLIF(entry_price, 0) * 100, 2) AS sl_pct,
+                ROUND(pnl::numeric, 2) AS pnl,
+                exit_reason, bars_held,
+                exit_time::date AS closed
+            FROM training_trades
+            WHERE execution_type != 'debug_exploration'
+              AND exit_time::timestamp > NOW() - INTERVAL '7 days'
+            ORDER BY exit_time DESC
+            LIMIT 30
+        """,
     }
     
     print("=" * 80)
@@ -136,6 +179,8 @@ def run():
     print("=" * 80)
     
     flags = []
+    _q4_7d = 0.0
+    _q4_all = 0.0
     
     with engine.connect() as conn:
         for title, sql in queries.items():
@@ -177,9 +222,32 @@ def run():
                         trades = int(row.get("trades", 0))
                         if to_pct > 75:
                             flags.append(f"⏰ {strat}+{ac}: {to_pct}% TIMEOUT rate ({trades} trades) — SL/TP calibration suspect")
+
+                    # Flag checks for Query 8 — V9 debug_exploration SL% vs production
+                    if title.startswith("QUERY 8"):
+                        sl = float(row.get("avg_sl_pct", 0) or 0)
+                        strat = row.get("strategy", "?")
+                        et = row.get("execution_type", "?")
+                        if strat == "v9_breakout" and sl > 0.08:
+                            flags.append(f"🎯 {strat}+{et}: avg SL = {sl*100:.1f}% (>8% = too wide)")
+                    # Flag checks for Query 4 — 7d regression
+                    if title.startswith("QUERY 4"):
+                        period = row.get("period", "")
+                        avg = float(row.get("avg_pnl", 0) or 0)
+                        if period == "last_7d":
+                            _q4_7d = avg
+                        elif period == "all_time":
+                            _q4_all = avg
                 
             except Exception as e:
                 print(f"  ERROR: {e}")
+        
+        # Check 7d regression after Query 4
+        try:
+            if _q4_all != 0 and _q4_7d < _q4_all * 0.7:
+                flags.append(f"📉 7d avg PnL ${_q4_7d} vs all-time ${_q4_all} — recent regression >30%")
+        except NameError:
+            pass
     
     # Summary
     print(f"\n{'=' * 80}")
