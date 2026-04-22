@@ -12,6 +12,45 @@ const STRAT_NAMES: Record<string, string> = {
 const sn = (s: string) => STRAT_NAMES[s] || s;
 
 /* ═══════════════════════════════════════════
+   PRICE FORMATTING — adaptive decimals by magnitude
+   ═══════════════════════════════════════════ */
+function priceDecimals(v: number): number {
+  const abs = Math.abs(v);
+  if (abs >= 100) return 2;
+  if (abs >= 10) return 2;
+  if (abs >= 1) return 3;
+  if (abs >= 0.1) return 4;
+  if (abs >= 0.01) return 5;
+  return 8;
+}
+
+/** Format a price with adaptive decimals based on magnitude */
+function fmtPrice(v: number): string {
+  const abs = Math.abs(v);
+  const dp = priceDecimals(abs);
+  return `$${abs.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+}
+
+/** Format USD amounts (PnL, risk, value) — always 2 decimals */
+function fmtUsd(v: number): string {
+  return `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Full precision string for tooltip (8 decimals) */
+function fmtPriceFull(v: number): string {
+  return v.toFixed(8);
+}
+
+/** Price cell with hover tooltip showing full precision */
+function PriceCell({ value, className }: { value: number; className?: string }) {
+  return (
+    <td className={className} title={`Full precision: ${fmtPriceFull(value)}`}>
+      {fmtPrice(value)}
+    </td>
+  );
+}
+
+/* ═══════════════════════════════════════════
    COUNTDOWN HOOK — ticks every second
    ═══════════════════════════════════════════ */
 function useCountdown(targetIso: string | null) {
@@ -411,19 +450,18 @@ export default function TrainingOperationsPage() {
                 </tr></thead>
                 <tbody>{(data.positions || []).map((p: any, i: number) => {
                   const unreal = p.unrealized_pnl || 0;
-                  const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                   const fmtTime = (t: string) => { try { const d = new Date(t); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                       <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[10px] text-bah-muted">{p.asset_class}</div></td>
                       <td className="px-3 py-2.5 text-bah-text">{sn(p.strategy)}</td>
                       <td className="px-3 py-2.5"><span className={`font-bold ${p.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{p.direction}</span></td>
-                      <td className="px-3 py-2.5 font-mono text-right text-bah-text">{fmtM(p.entry_price || 0)}</td>
-                      <td className="px-3 py-2.5 font-mono text-right text-bah-heading">{fmtM(p.current_price || 0)}</td>
-                      <td className="px-3 py-2.5 font-mono text-right text-red-400/60">{fmtM(p.stop_price || p.stop_loss || 0)}</td>
-                      <td className="px-3 py-2.5 font-mono text-right text-green-400/60">{fmtM(p.tp_price || p.take_profit || 0)}</td>
-                      <td className="px-3 py-2.5 font-mono text-right text-amber-400/70">{fmtM(p.risk_amount || 0)}</td>
-                      <td className={`px-3 py-2.5 font-mono font-bold text-right ${unreal >= 0 ? "text-green-400" : "text-red-400"}`}>{`${unreal >= 0 ? "+" : "-"}$${Math.abs(unreal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                      <PriceCell value={p.entry_price || 0} className="px-3 py-2.5 font-mono text-right text-bah-text" />
+                      <PriceCell value={p.current_price || 0} className="px-3 py-2.5 font-mono text-right text-bah-heading" />
+                      <PriceCell value={p.stop_price || p.stop_loss || 0} className="px-3 py-2.5 font-mono text-right text-red-400/60" />
+                      <PriceCell value={p.tp_price || p.take_profit || 0} className="px-3 py-2.5 font-mono text-right text-green-400/60" />
+                      <td className="px-3 py-2.5 font-mono text-right text-amber-400/70">{fmtUsd(p.risk_amount || 0)}</td>
+                      <td className={`px-3 py-2.5 font-mono font-bold text-right ${unreal >= 0 ? "text-green-400" : "text-red-400"}`}>{`${unreal >= 0 ? "+" : "-"}${fmtUsd(unreal)}`}</td>
                       <td className="px-3 py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
                       <td className="px-3 py-2.5 text-bah-muted text-[11px] whitespace-nowrap">{p.entry_time ? fmtTime(p.entry_time) : "—"}</td>
                     </tr>
@@ -456,16 +494,15 @@ export default function TrainingOperationsPage() {
                   const pnl = t.pnl || 0;
                   const isFlat = Math.abs(pnl) < 0.01;
                   const isWin = pnl > 0.01;
-                  const fmtM = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                   const fmtTime = (ts: string) => { try { const d = new Date(ts); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                       <td className="px-3 py-2 text-bah-heading font-bold">{t.asset}</td>
                       <td className="px-3 py-2 text-bah-text">{sn(t.strategy)}</td>
                       <td className="px-3 py-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
-                      <td className="px-3 py-2 font-mono text-right text-bah-text">{fmtM(t.entry_price || 0)}</td>
-                      <td className="px-3 py-2 font-mono text-right text-bah-text">{fmtM(t.exit_price || 0)}</td>
-                      <td className={`px-3 py-2 font-mono font-bold text-right ${isFlat ? "text-bah-muted" : isWin ? "text-green-400" : "text-red-400"}`}>{pnl >= 0 ? "+" : "-"}{fmtM(pnl)}</td>
+                      <PriceCell value={t.entry_price || 0} className="px-3 py-2 font-mono text-right text-bah-text" />
+                      <PriceCell value={t.exit_price || 0} className="px-3 py-2 font-mono text-right text-bah-text" />
+                      <td className={`px-3 py-2 font-mono font-bold text-right ${isFlat ? "text-bah-muted" : isWin ? "text-green-400" : "text-red-400"}`}>{pnl >= 0 ? "+" : "-"}{fmtUsd(pnl)}</td>
                       <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isFlat ? "bg-white/10 text-white/50" : isWin ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>{isFlat ? "FLAT" : isWin ? "WIN" : "LOSS"}</span></td>
                       <td className="px-3 py-2 text-bah-muted text-[11px]">{t.exit_reason}</td>
                       <td className="px-3 py-2 text-bah-muted text-center">{t.bars_held}</td>
@@ -1009,7 +1046,6 @@ function OverviewTab({ strats, classes, rankings, cy, recentCycles, fmtPnl, fmtP
    POSITIONS TAB
    ═══════════════════════════════════════════ */
 function PositionsTab({ positions, fmtPnl, pnlC }: any) {
-  const fmtMoney = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtSize = (v: number) => v >= 1 ? v.toFixed(4) : v.toFixed(6);
   return (
     <Section title={`Open Positions (${positions.length})`}>
@@ -1045,13 +1081,13 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
                     <span className="ml-1 px-1 py-0.5 rounded text-[8px] font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/25" title={`Broker: ${p.execution_platform}`}>✓</span>
                   )}
                 </td>
-                <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(p.entry_price || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-bah-heading">{fmtMoney(p.current_price || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-red-400/60">{fmtMoney(p.stop_price || p.stop_loss || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-green-400/60">{fmtMoney(p.tp_price || p.take_profit || 0)}</td>
+                <PriceCell value={p.entry_price || 0} className="py-2.5 pr-2 font-mono text-right text-bah-text" />
+                <PriceCell value={p.current_price || 0} className="py-2.5 pr-2 font-mono text-right text-bah-heading" />
+                <PriceCell value={p.stop_price || p.stop_loss || 0} className="py-2.5 pr-2 font-mono text-right text-red-400/60" />
+                <PriceCell value={p.tp_price || p.take_profit || 0} className="py-2.5 pr-2 font-mono text-right text-green-400/60" />
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-muted">{fmtSize(p.size || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-amber-400/70">{fmtMoney(p.risk_amount || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(value)}</td>
+                <td className="py-2.5 pr-2 font-mono text-right text-amber-400/70">{fmtUsd(p.risk_amount || 0)}</td>
+                <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtUsd(value)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(unreal)}`}>{fmtPnl(unreal)}</td>
                 <td className="py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
                 <td className="py-2.5 text-center">{p.data_mode && p.data_mode !== "live" ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.data_mode === "synthetic_dev" ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-300"}`}>{p.data_mode}</span> : <span className="text-[10px] text-bah-muted/40">live</span>}</td>
@@ -1069,7 +1105,6 @@ function PositionsTab({ positions, fmtPnl, pnlC }: any) {
    TRADES TAB
    ═══════════════════════════════════════════ */
 function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
-  const fmtMoney = (v: number) => `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return (
     <Section title={`Closed Trades (${trades.length})`}>
       {trades.length > 0 ? (
@@ -1100,10 +1135,10 @@ function TradesTab({ trades, fmtPnl, pnlC, fmtT }: any) {
                 <td className="py-2.5 pr-2 text-bah-text">{sn(t.strategy)}</td>
                 <td className="py-2.5 pr-2 text-[10px] text-bah-muted">{t.substrategy ? t.substrategy.replace("v10_", "") : "—"}</td>
                 <td className="py-2.5 pr-2"><span className={`font-bold ${t.direction === "LONG" ? "text-green-400" : "text-red-400"}`}>{t.direction}</span></td>
-                <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.entry_price || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-bah-text">{fmtMoney(t.exit_price || 0)}</td>
-                <td className="py-2.5 pr-2 font-mono text-right text-amber-400/70">{fmtMoney(risk)}</td>
-                <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{pnl >= 0 ? "+" : "-"}{fmtMoney(pnl)}</td>
+                <PriceCell value={t.entry_price || 0} className="py-2.5 pr-2 font-mono text-right text-bah-text" />
+                <PriceCell value={t.exit_price || 0} className="py-2.5 pr-2 font-mono text-right text-bah-text" />
+                <td className="py-2.5 pr-2 font-mono text-right text-amber-400/70">{fmtUsd(risk)}</td>
+                <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{pnl >= 0 ? "+" : "-"}{fmtUsd(pnl)}</td>
                 <td className={`py-2.5 pr-2 font-mono font-bold text-right ${pnlC(pnl)}`}>{rMult >= 0 ? "+" : ""}{rMult.toFixed(1)}R</td>
                 <td className="py-2.5 pr-2 font-mono text-right text-bah-muted">{totalCosts > 0.001 ? `$${totalCosts.toFixed(2)}` : "—"}</td>
                 <td className="py-2.5 pr-2">
