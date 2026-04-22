@@ -1623,6 +1623,7 @@ def cleanup_invalid_positions() -> list[str]:
 def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
     """Update all open positions for an asset with a new bar.
     Returns list of trades that were closed this bar."""
+    import sys as _sys
     positions = _load_positions()
     asset_positions = [p for p in positions if p.asset == asset]
     closed_trades = []
@@ -1639,7 +1640,28 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
         if pos.position_id in _already_closed:
             continue
 
+        # Always update current price for display/diagnostics
         pos.current_price = close
+
+        # ── Market-hours gate for stocks ──
+        # Only increment bars_held and check SL/TP/TIMEOUT during active
+        # market hours. Crypto trades 24/7 — always active. Stocks only
+        # during NYSE regular session (9:30-16:00 ET, weekdays).
+        # Without this, stock positions accumulate bars_held during
+        # overnight/weekend hours and hit TIMEOUT prematurely.
+        _market_active = True
+        if pos.asset_class == "stock":
+            try:
+                from bahamut.data.live_data import _is_us_market_open
+                _market_active = _is_us_market_open()
+            except Exception:
+                _market_active = True  # fail-open: allow if check fails
+
+            if not _market_active:
+                # Save updated current_price but skip bar counting + exit checks
+                _save_position(pos)
+                continue
+
         pos.bars_held += 1
 
         exit_reason = None
