@@ -246,11 +246,20 @@ class V9Breakout:
     legacy behavior for A/B comparison.
     """
 
+    SL_TP_BY_INTERVAL = {
+        "15m": {"sl": 0.02, "tp": 0.05, "hold": 24},     # crypto
+        "5m":  {"sl": 0.015, "tp": 0.03, "hold": 20},
+        "4h":  {"sl": 0.035, "tp": 0.07, "hold": 20},    # stocks
+    }
+
     def __init__(self):
         self.name = "v9_breakout"
-        self.sl_pct = 0.10       # Legacy fixed — used only when adaptive disabled
-        self.tp_pct = 0.25
-        self.max_hold = 40
+        # Deprecated: V9 now uses SL_TP_BY_INTERVAL or adaptive ATR in evaluate()
+        # Do not add a fixed sl_pct value here — the debug_exploration path
+        # reads getattr(strat_obj, "sl_pct") as fallback, and a 10% value
+        # corrupted all V9 stock trade data historically.
+        self.tp_pct = 0.07
+        self.max_hold = 20
         self.risk_pct = 0.02
 
     def evaluate(self, candles, indicators, prev_indicators=None, asset="BTCUSD"):
@@ -280,11 +289,9 @@ class V9Breakout:
         adaptive = os.environ.get("BAHAMUT_V9_ADAPTIVE_SIZING", "1") != "0"
 
         if not adaptive:
-            # Legacy path — unchanged behavior
-            if interval in ("15m", "5m", "1m"):
-                sl, tp, hold = 0.02, 0.05, 40
-            else:
-                sl, tp, hold = self.sl_pct, self.tp_pct, self.max_hold
+            # Legacy path — use SL_TP_BY_INTERVAL table
+            _legacy = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
+            sl, tp, hold = _legacy["sl"], _legacy["tp"], _legacy["hold"]
         else:
             # ── Phase 3 Item 9: adaptive sizing ──
             if interval in ("15m", "5m", "1m"):
