@@ -216,10 +216,11 @@ TWELVE_SYMBOL_MAP = {
     "RENDERUSD": "RENDER/USD", "INJUSD": "INJ/USD",
     # Indices (3)
     "SPX": "SPX", "IXIC": "IXIC", "DJI": "DJI",
-    # Stocks / ETFs (15)
+    # Stocks / ETFs (20)
     "AAPL": "AAPL", "MSFT": "MSFT", "NVDA": "NVDA", "AMZN": "AMZN", "GOOGL": "GOOGL",
     "META": "META", "TSLA": "TSLA", "AMD": "AMD", "NFLX": "NFLX", "COIN": "COIN",
     "SPY": "SPY", "QQQ": "QQQ", "JPM": "JPM", "BAC": "BAC", "GS": "GS",
+    "CRM": "CRM", "ORCL": "ORCL", "UBER": "UBER", "SQ": "SQ", "SHOP": "SHOP",
 }
 
 TWELVE_INTERVAL_MAP = {
