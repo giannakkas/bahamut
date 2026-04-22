@@ -35,6 +35,32 @@ DEFAULT_CONFIG = {
     "require_regime_alignment": True,  # Require TREND or BREAKOUT regime
 }
 
+# ── Per-strategy readiness thresholds ──
+# V9 ceiling = 75 (4 components max), V5 realistic ceiling = 80,
+# V10 ceiling = 100+. A single global threshold of 80+ blocks V9 entirely
+# and most V5 signals. Per-strategy thresholds fix this.
+STRATEGY_THRESHOLDS = {
+    "v5_base": 65,              # realistic ceiling ~80, requires strong setup
+    "v9_breakout": 50,          # ceiling 75, confirmed breakout ≈ 65
+    "v10_mean_reversion": 80,   # keep current — v10 scoring has higher ceiling
+}
+
+
+def _get_strategy_thresholds() -> dict:
+    """Load per-strategy thresholds — Redis override > hardcoded defaults."""
+    result = dict(STRATEGY_THRESHOLDS)
+    try:
+        import redis
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                           socket_connect_timeout=2)
+        raw = r.get("bahamut:strategy_thresholds")
+        if raw:
+            override = json.loads(raw)
+            result.update(override)
+    except Exception:
+        pass
+    return result
+
 
 def _get_config() -> dict:
     """Load selector config — adaptive thresholds override defaults."""
@@ -534,28 +560,34 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             pass
 
         # 1. Hard threshold (debug_exploration signals bypass this)
-        effective_threshold = threshold
+        # Per-strategy thresholds: V9 ceiling=75, V5 ceiling≈80, V10=100+.
+        # A single global threshold of 80+ blocked V9 entirely.
+        strat_thresholds = _get_strategy_thresholds()
         if sig.direction == "SHORT":
             effective_threshold = 25
         elif sig.regime == "CRASH":
             effective_threshold = 35
+        else:
+            effective_threshold = strat_thresholds.get(sig.strategy, threshold)
 
         if sig.readiness_score < effective_threshold and sig.execution_type != "debug_exploration":
-            reasons.append(f"Readiness {sig.readiness_score} < threshold {effective_threshold}")
+            reasons.append(f"Readiness {sig.readiness_score} < threshold {effective_threshold} ({sig.strategy})")
             gate_history.append({
                 "stage": "eligibility", "gate": "threshold",
                 "verdict": "block",
-                "detail": f"readiness={sig.readiness_score} < {effective_threshold}",
+                "detail": f"readiness={sig.readiness_score} < {effective_threshold} (per-strategy)",
             })
             rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
             _track_rejection("threshold")
+            _track_rejection(f"threshold_{sig.strategy}")
             continue
         else:
             gate_history.append({
                 "stage": "eligibility", "gate": "threshold",
                 "verdict": "allow",
-                "detail": f"readiness={sig.readiness_score}",
+                "detail": f"readiness={sig.readiness_score} >= {effective_threshold} ({sig.strategy})",
             })
+            _track_rejection(f"threshold_pass_{sig.strategy}")
 
         # 2. Portfolio optimizer check
         opt = evaluate_candidate(
@@ -801,6 +833,34 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
     except Exception as _ce:
         logger.warning("selector_counter_persist_failed", error=str(_ce)[:200])
 
+    # ── Daily trade count safety warning ──
+    # Alert if V5 or V9 production trades exceed 10/day until validated.
+    try:
+        import redis as _redis3
+        _rc3 = _redis3.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                                socket_connect_timeout=2)
+        for _dec in execute:
+            if _dec.get("strategy") in ("v5_base", "v9_breakout"):
+                _strat = _dec["strategy"]
+                _day_key = f"bahamut:daily_trades:{_strat}"
+                _count = _rc3.incr(_day_key)
+                _rc3.expire(_day_key, 86400)
+                if _count == 1:
+                    logger.info("strategy_first_production_trade",
+                                strategy=_strat,
+                                msg=f"{_strat} opened its first production trade today")
+                if _count > 10:
+                    logger.warning("strategy_daily_trade_limit_exceeded",
+                                   strategy=_strat, count=_count,
+                                   msg=f"{_strat} has {_count} production trades today — monitor PnL closely")
+                    try:
+                        from bahamut.monitoring.telegram import send_alert
+                        send_alert(f"⚠️ {_strat} has {_count} production trades today — exceeds 10/day safety limit")
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     return {
         "execute": execute,
         "watchlist": watchlist,
@@ -816,6 +876,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             "optimizer_blocked": len(optimizer_blocked),
             "rejection_breakdown": rejection_reasons,
             "config": config,
+            "strategy_thresholds": _get_strategy_thresholds(),
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
