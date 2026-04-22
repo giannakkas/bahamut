@@ -1662,6 +1662,22 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 _save_position(pos)
                 continue
 
+        # ── Stream-closed guard ──
+        # If the Binance user-data stream already closed this position
+        # (bracket SL/TP filled exchange-side), skip the client-side
+        # close attempt to avoid the double-close race.
+        try:
+            _r = _get_redis()
+            if _r:
+                _stream_flag = _r.get(f"bahamut:stream_closed:{pos.position_id}")
+                if _stream_flag:
+                    logger.info("position_already_closed_by_stream",
+                                asset=pos.asset, position_id=pos.position_id)
+                    _remove_position(pos.position_id)
+                    continue
+        except Exception:
+            pass
+
         pos.bars_held += 1
 
         exit_reason = None

@@ -1,0 +1,14 @@
+FROM python:3.12
+
+ENV PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ .
+RUN find . -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+RUN find . -name '*.pyc' -delete 2>/dev/null || true
+
+CMD python -c "from bahamut.execution.binance_user_stream import run_forever; run_forever()"
