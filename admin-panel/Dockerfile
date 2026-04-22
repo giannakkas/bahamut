@@ -2,10 +2,11 @@ FROM node:20-slim
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# Copy from admin-panel subdirectory (build context is repo root)
+COPY admin-panel/package.json admin-panel/package-lock.json* ./
 RUN npm ci
 
-COPY . .
+COPY admin-panel/ .
 
 # Build-time env vars (baked into client JS)
 ARG NEXT_PUBLIC_API_URL=https://your-api-domain.railway.app
