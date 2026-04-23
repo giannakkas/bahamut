@@ -522,6 +522,26 @@ def get_news_gate_decision(
 
     mode_cfg = MODES[state.mode]
 
+    # ── STALE DATA GUARD ──
+    # If underlying news data is stale (>10 min old), don't freeze trades
+    # on potentially outdated information. Degrade FROZEN/RESTRICTED to CAUTION.
+    # This prevents days-old EXTREME shocks from permanently blocking all trading.
+    if is_stale and state.mode in ("FROZEN", "RESTRICTED"):
+        stale_mode = "CAUTION"
+        stale_cfg = MODES[stale_mode]
+        logger.info("adaptive_news_stale_downgrade",
+                     asset=state.asset if hasattr(state, 'asset') else "?",
+                     original_mode=state.mode,
+                     downgraded_to=stale_mode,
+                     age_seconds=round(age, 1))
+        return {
+            "allowed": True, "mode": stale_mode,
+            "size_multiplier": stale_cfg["size_mult"],
+            "threshold_penalty": stale_cfg["threshold_add"],
+            "reason": f"Stale data ({round(age)}s old) — {state.mode} downgraded to CAUTION",
+            **provenance,
+        }
+
     # FROZEN: block everything
     if mode_cfg["block"]:
         return {

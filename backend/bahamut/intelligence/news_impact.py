@@ -363,7 +363,9 @@ def scheduled_event_component(events: list[dict], asset: str, asset_class: str) 
 
         # Surprise component (if actual is available)
         surprise = event_surprise_score(ev)
-        surprise_contrib = abs(surprise["signed_surprise"]) * 0.3
+        # Apply same proximity decay to surprise — old surprises shouldn't
+        # dominate impact scores days after the event released.
+        surprise_contrib = abs(surprise["signed_surprise"]) * 0.3 * proximity
 
         ev_score = impact_w * proximity + surprise_contrib
         score += ev_score
@@ -670,11 +672,35 @@ def compute_news_impact(
     hl_result = headline_component(headlines)
 
     # Component 3: Find strongest surprise from events
+    # Track event age so we don't freeze on days-old surprises
     best_surprise = {"surprise_z": 0, "direction": "NEUTRAL", "magnitude": "NONE"}
+    best_surprise_age_hours = float("inf")
+    now_dt = datetime.now(timezone.utc)
     for ev in events:
         s = event_surprise_score(ev)
         if s["surprise_z"] > best_surprise["surprise_z"]:
             best_surprise = s
+            # Compute age of this event
+            try:
+                ev_time_str = ev.get("time") or ev.get("date", "")
+                if "T" in ev_time_str:
+                    ev_time = datetime.fromisoformat(ev_time_str.replace("Z", "+00:00"))
+                else:
+                    ev_time = datetime.strptime(ev_time_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                best_surprise_age_hours = (now_dt - ev_time).total_seconds() / 3600
+            except Exception:
+                best_surprise_age_hours = float("inf")
+
+    # Degrade surprise magnitude from old events — a 3-day-old EXTREME
+    # surprise should not freeze all 50 assets indefinitely.
+    if best_surprise_age_hours > 4:
+        if best_surprise["magnitude"] == "EXTREME":
+            best_surprise["magnitude"] = "HIGH"
+        elif best_surprise["magnitude"] == "HIGH":
+            best_surprise["magnitude"] = "MEDIUM"
+    if best_surprise_age_hours > 12:
+        if best_surprise["magnitude"] in ("HIGH", "EXTREME"):
+            best_surprise["magnitude"] = "LOW"
 
     # Aggregate impact equation
     raw_impact = (
