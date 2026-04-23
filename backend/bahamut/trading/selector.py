@@ -588,6 +588,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                 "detail": f"readiness={sig.readiness_score} >= {effective_threshold} ({sig.strategy})",
             })
             _track_rejection(f"threshold_pass_{sig.strategy}")
+            # Track standard vs debug separately
+            if sig.execution_type != "debug_exploration":
+                _track_rejection(f"threshold_pass_{sig.strategy}_standard")
+
+        # V5 post-threshold trace — log what blocks each signal
+        _is_v5_trace = sig.strategy == "v5_base" and sig.execution_type != "debug_exploration"
 
         # 2. Portfolio optimizer check
         opt = evaluate_candidate(
@@ -614,6 +620,13 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
                     _track_rejection("already_holding_asset")
                 else:
                     _track_rejection("portfolio_blocked")
+            # Per-strategy gate tracking
+            _track_rejection(f"post_threshold_{sig.strategy}_portfolio")
+            if _is_v5_trace:
+                logger.warning("v5_post_threshold_blocked",
+                               asset=sig.asset, gate="portfolio",
+                               detail="; ".join(opt["reasons"])[:100],
+                               direction=sig.direction, regime=sig.regime)
             continue
 
         effective_priority = pri["total"]
@@ -643,6 +656,12 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("adaptive_news_block")
+            _track_rejection(f"post_threshold_{sig.strategy}_news")
+            if _is_v5_trace:
+                logger.warning("v5_post_threshold_blocked",
+                               asset=sig.asset, gate="news",
+                               detail=f"{news_mode}: {news_reason}"[:100],
+                               direction=sig.direction, regime=sig.regime)
             continue
         elif comp.get("legacy_news_freeze"):
             reasons.append("Legacy news freeze — trading paused")
@@ -669,6 +688,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("ai_direction_block")
+            _track_rejection(f"post_threshold_{sig.strategy}_ai_direction")
+            if _is_v5_trace:
+                logger.warning("v5_post_threshold_blocked",
+                               asset=sig.asset, gate="ai_direction",
+                               detail=ai_reason[:100],
+                               direction=sig.direction, regime=sig.regime,
+                               posture=comp.get("ai_posture"),
+                               class_mode=comp.get("ai_class_mode"))
             continue
         else:
             gate_history.append({
@@ -686,6 +713,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("position_cap")
+            _track_rejection(f"post_threshold_{sig.strategy}_position_cap")
             continue
 
         # 5. Per-cycle cap
@@ -697,6 +725,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("cycle_cap")
+            _track_rejection(f"post_threshold_{sig.strategy}_cycle_cap")
             continue
 
         # 6. Per-class cap (per cycle)
@@ -710,6 +739,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("class_cap")
+            _track_rejection(f"post_threshold_{sig.strategy}_class_cap")
             continue
 
         # 7. Duplicate asset
@@ -721,6 +751,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("duplicate_asset")
+            _track_rejection(f"post_threshold_{sig.strategy}_duplicate")
             continue
 
         # 8. Near-duplicate (same class + strategy)
@@ -736,6 +767,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("duplicate_setup")
+            _track_rejection(f"post_threshold_{sig.strategy}_duplicate_setup")
             continue
 
         # SELECTED — update portfolio snapshot for next candidates
