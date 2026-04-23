@@ -182,7 +182,9 @@ def compute_rolling_metrics() -> RollingMetrics:
     early_wins = sum(1 for r in early_rows if float(r.get("pnl", 0) or 0) > 0)
     std_wins = sum(1 for r in std_rows if float(r.get("pnl", 0) or 0) > 0)
 
-    # Drawdown: peak-to-trough of cumulative PnL
+    # Drawdown: peak-to-trough of cumulative PnL, as % of ACCOUNT EQUITY
+    # BUG FIX: was using abs(peak) as denominator — peak cumulative PnL can be
+    # tiny ($3), making DD appear as 1666%. Must use real account equity.
     cum = 0
     peak = 0
     max_dd = 0
@@ -193,6 +195,24 @@ def compute_rolling_metrics() -> RollingMetrics:
         dd = peak - cum
         if dd > max_dd:
             max_dd = dd
+
+    # Get real equity for DD denominator (alpaca + binance)
+    _equity_base = 100_000  # fallback: TRADING_VIRTUAL_CAPITAL
+    try:
+        from bahamut.execution.balance import get_real_balance
+        _bal = get_real_balance(force_refresh=False)
+        _real_eq = _bal.get("combined_usd", 0)
+        if _real_eq > 1000:
+            _equity_base = _real_eq
+    except Exception:
+        pass
+    dd_pct = round(max_dd / _equity_base * 100, 2) if _equity_base > 0 else 0
+
+    logger.info("adaptive_dd_calculation",
+                max_dd_usd=round(max_dd, 2),
+                peak_cum_pnl=round(peak, 2),
+                equity_base=round(_equity_base, 2),
+                dd_pct=dd_pct)
 
     # Short window
     short = rows[:POLICY["short_window"]]
@@ -207,7 +227,7 @@ def compute_rolling_metrics() -> RollingMetrics:
         profit_factor=round(gross_profit / max(gross_loss, 0.01), 2),
         expectancy=round(total_pnl / max(1, total), 2),
         avg_pnl=round(total_pnl / max(1, total), 2),
-        drawdown_pct=round(max_dd / max(1, abs(peak)) * 100 if peak > 0 else 0, 2),
+        drawdown_pct=dd_pct,
         stop_out_rate=round(stop_outs / max(1, total), 4),
         early_win_rate=round(early_wins / max(1, len(early_rows)), 4),
         standard_win_rate=round(std_wins / max(1, len(std_rows)), 4),
@@ -444,6 +464,10 @@ def run_adaptive_update() -> ThresholdProfile:
 
     # 5. Emergency: if performance is very bad, force conservative
     if metrics.win_rate < 0.25 or metrics.drawdown_pct > 10.0:
+        logger.warning("adaptive_threshold_EMERGENCY",
+                       win_rate=metrics.win_rate,
+                       drawdown_pct=metrics.drawdown_pct,
+                       reason="WR<25% or DD>10% of equity")
         new_profile.mode = "CONSERVATIVE"
         new_profile.early_execution_enabled = False
         new_profile.max_early_per_cycle = 0
