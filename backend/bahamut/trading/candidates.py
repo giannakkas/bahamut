@@ -397,12 +397,37 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
     ]
 
 
+def _fetch_candles_for_scanner(asset: str, count: int = 100) -> list[dict]:
+    """Fetch candles for the candidates scanner — routes crypto through Binance
+    (with Spot→Futures fallback), stocks through TwelveData.
+
+    This fixes the bug where crypto assets only on Binance Futures (WIFUSD,
+    RNDRUSD, TIAUSD, SEIUSD, JUPUSD, WUSD, ENAUSD) generated
+    data_synthetic_blocked errors every cycle because the scanner went
+    directly to TwelveData which returns 404 for these tokens.
+    """
+    try:
+        from bahamut.data.binance_data import is_crypto, get_candles
+        if is_crypto(asset):
+            candles = get_candles(asset, interval="15m", limit=count)
+            if candles and len(candles) >= 50:
+                return candles
+    except Exception:
+        pass
+
+    # Stocks and crypto fallback → TwelveData
+    try:
+        from bahamut.data.live_data import fetch_candles
+        return fetch_candles(asset, count=count)
+    except Exception:
+        return []
+
+
 def _evaluate_asset(asset: str, asset_class: str) -> list[Candidate]:
     """Evaluate one asset against all strategies. Returns list of candidates."""
-    from bahamut.data.live_data import fetch_candles
     from bahamut.features.indicators import compute_indicators
 
-    candles = fetch_candles(asset, count=100)
+    candles = _fetch_candles_for_scanner(asset)
     if not candles or len(candles) < 50:
         return []
 
@@ -432,7 +457,6 @@ def _evaluate_asset(asset: str, asset_class: str) -> list[Candidate]:
 def _evaluate_asset_full(asset: str, asset_class: str) -> dict:
     """Evaluate one asset and return its best score across all strategies.
     Always returns a result, even if no signal (score=0)."""
-    from bahamut.data.live_data import fetch_candles
     from bahamut.features.indicators import compute_indicators
 
     base = {
@@ -453,7 +477,7 @@ def _evaluate_asset_full(asset: str, asset_class: str) -> dict:
     }
 
     try:
-        candles = fetch_candles(asset, count=100)
+        candles = _fetch_candles_for_scanner(asset)
     except Exception:
         return base
 
