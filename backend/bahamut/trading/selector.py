@@ -442,6 +442,31 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             except Exception:
                 pass
 
+        # 0.4. STATIC PATTERN HARD BLOCKS — proven losing strategy:regime:class combos
+        # These are deterministic blocks based on confirmed negative edge with
+        # mature sample sizes. Independent of rolling trust window (which can
+        # temporarily go positive after a few wins, creating leaks).
+        PATTERN_HARD_BLOCKS = {
+            "v10_mean_reversion:RANGE:crypto": "expectancy=-0.28, 168 mature samples",
+        }
+        _pattern_key = f"{sig.strategy}:{sig.regime}:{sig.asset_class}"
+        if _pattern_key in PATTERN_HARD_BLOCKS:
+            _block_reason = PATTERN_HARD_BLOCKS[_pattern_key]
+            reasons.append(f"Static pattern block: {_pattern_key} ({_block_reason})")
+            gate_history.append({
+                "stage": "hard_safety", "gate": "static_pattern_block",
+                "verdict": "block", "detail": f"{_pattern_key}: {_block_reason}",
+            })
+            rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
+            _track_rejection("static_pattern_block")
+            _track_rejection(f"static_pattern_block_{sig.strategy}")
+            logger.info("selector_static_pattern_blocked",
+                        asset=sig.asset, strategy=sig.strategy,
+                        regime=sig.regime, asset_class=sig.asset_class,
+                        pattern=_pattern_key, reason=_block_reason,
+                        execution_type=sig.execution_type)
+            continue
+
         # 0.5. MATURE-NEGATIVE EXPECTANCY HARD BLOCK
         try:
             from bahamut.trading.learning_engine import compute_trust_points

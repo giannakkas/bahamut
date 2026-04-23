@@ -1002,10 +1002,11 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 pass
 
         # ── v10 CRYPTO RANGE BLOCK: proven negative edge ──
-        if debug_enabled and asset_class == "crypto" and regime in ("RANGE", "CRASH"):
+        # Only RANGE — CRASH has positive expectancy (+0.029, 65 samples)
+        if debug_enabled and asset_class == "crypto" and regime == "RANGE":
             logger.info("debug_exploration_crypto_range_block",
                         asset=asset, regime=regime,
-                        reason="v10 crypto RANGE has -0.12 expectancy — blocked")
+                        reason="v10 crypto RANGE has -0.28 expectancy — blocked")
             debug_enabled = False
             _incr_containment_counter("v10_crypto_range_blocks")
 
