@@ -24,6 +24,35 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+# ── Mode-based size scaling ──
+# Converts AI posture modes from binary (allow/block) to a size spectrum.
+# Only FROZEN hard-blocks. All other modes allow trades at reduced size.
+_MODE_SIZE_MAP = {
+    "NORMAL":     1.0,    # full size
+    "CAUTION":    0.5,    # half size
+    "SELECTIVE":  0.7,    # 70% size
+    "RESTRICTED": 0.3,    # 30% size — heavily reduced but still allowed
+    "FROZEN":     0.0,    # blocked entirely
+}
+
+
+def _mode_size_gate(class_mode: str, asset: str, direction: str) -> tuple:
+    """Returns (size_multiplier, dirs_allowed) based on AI posture mode.
+
+    Only FROZEN hard-blocks (dirs_allowed=False). All other modes allow
+    trading at reduced position size.
+    """
+    mult = _MODE_SIZE_MAP.get(class_mode, 0.5)
+    if mult <= 0:
+        # FROZEN — hard block
+        return (1.0, False)
+
+    logger.info("ai_mode_size_scaling",
+                asset=asset, direction=direction,
+                class_mode=class_mode, size_mult=mult)
+    return (mult, True)
+
+
 def get_ai_decision(
     asset: str, asset_class: str, strategy: str, direction: str,
     priority_score: float = 0, system_allowed_directions: list | None = None,
@@ -69,40 +98,19 @@ def get_ai_decision(
             if asset_class == "crypto":
                 class_mode = opus.get("crypto_mode", "NORMAL")
                 if direction == "LONG" and not opus.get("crypto_longs_allowed", True):
-                    if class_mode == "CAUTION":
-                        # CAUTION = trade smaller, not "don't trade"
-                        global_mult *= 0.5
-                        logger.info("ai_caution_size_reduction",
-                                    asset=asset, direction="LONG",
-                                    class_mode="CAUTION", size_mult=round(global_mult, 2))
-                    else:
-                        dirs_allowed = False
+                    _mult, dirs_allowed = _mode_size_gate(class_mode, asset, direction)
+                    global_mult *= _mult
                 if direction == "SHORT" and not opus.get("crypto_shorts_allowed", True):
-                    if class_mode == "CAUTION":
-                        global_mult *= 0.5
-                        logger.info("ai_caution_size_reduction",
-                                    asset=asset, direction="SHORT",
-                                    class_mode="CAUTION", size_mult=round(global_mult, 2))
-                    else:
-                        dirs_allowed = False
+                    _mult, dirs_allowed = _mode_size_gate(class_mode, asset, direction)
+                    global_mult *= _mult
             elif asset_class == "stock":
                 class_mode = opus.get("stocks_mode", "NORMAL")
                 if direction == "LONG" and not opus.get("stock_longs_allowed", True):
-                    if class_mode == "CAUTION":
-                        global_mult *= 0.5
-                        logger.info("ai_caution_size_reduction",
-                                    asset=asset, direction="LONG",
-                                    class_mode="CAUTION", size_mult=round(global_mult, 2))
-                    else:
-                        dirs_allowed = False
+                    _mult, dirs_allowed = _mode_size_gate(class_mode, asset, direction)
+                    global_mult *= _mult
                 if direction == "SHORT" and not opus.get("stock_shorts_allowed", True):
-                    if class_mode == "CAUTION":
-                        global_mult *= 0.5
-                        logger.info("ai_caution_size_reduction",
-                                    asset=asset, direction="SHORT",
-                                    class_mode="CAUTION", size_mult=round(global_mult, 2))
-                    else:
-                        dirs_allowed = False
+                    _mult, dirs_allowed = _mode_size_gate(class_mode, asset, direction)
+                    global_mult *= _mult
             global_mult = _clamp(float(opus.get("global_size_multiplier", 1.0)), 0.25, 1.0)
     except Exception:
         ai_source = "fallback_rules"
@@ -116,13 +124,11 @@ def get_ai_decision(
             global_mult = _clamp(d.get("global_size_multiplier", 1.0), 0.25, 1.0)
             if asset_class == "crypto":
                 if not d.get("crypto_longs_allowed", True) and direction == "LONG":
-                    # Fallback rules: crypto_longs_allowed=False means Fear regime.
-                    # CAUTION = reduce size, not block.
-                    global_mult *= 0.5
-                    logger.info("ai_caution_size_reduction",
-                                asset=asset, direction="LONG",
-                                class_mode="CAUTION", size_mult=round(global_mult, 2),
-                                source="fallback_rules")
+                    _fb_mode = "CAUTION"  # fallback defaults to CAUTION
+                    _mult, _allowed = _mode_size_gate(_fb_mode, asset, direction)
+                    global_mult *= _mult
+                    if not _allowed:
+                        dirs_allowed = False
                 class_mode = "CAUTION" if not d.get("crypto_longs_allowed", True) else "NORMAL"
             reason = f"rules:{posture}"
         except Exception:
