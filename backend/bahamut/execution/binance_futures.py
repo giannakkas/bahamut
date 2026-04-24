@@ -266,11 +266,15 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
     """Place SL + TP orders on Binance Futures as broker-side brackets.
 
     After a market fill, places:
-      - STOP_MARKET at sl_price (stop-loss)
-      - TAKE_PROFIT_MARKET at tp_price (take-profit)
+      - STOP at sl_price (stop-loss limit order)
+      - TAKE_PROFIT at tp_price (take-profit limit order)
 
-    Both use closePosition=true so they close the entire position.
-    Note: reduceOnly MUST NOT be sent with closePosition (Binance -1106).
+    Uses STOP/TAKE_PROFIT (limit) instead of STOP_MARKET/TAKE_PROFIT_MARKET
+    because the Binance demo testnet returns -4120 for market-type stop orders
+    ("Please use the Algo Order API endpoints instead").
+
+    Both use reduceOnly=true with explicit quantity. Limit prices include
+    0.5% slippage tolerance to ensure immediate fill when triggered.
     Both use MARK_PRICE to avoid wicks triggering on last price.
 
     Returns dict with 'sl_order' and 'tp_order' containing broker responses.
@@ -282,13 +286,46 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
     close_side = "SELL" if side == "BUY" else "BUY"
     symbol = _to_symbol(asset)
 
+    # Round quantity to exchange precision
+    _round_price_fn = None
+    try:
+        from bahamut.execution.exchange_filters import round_qty, round_price as _rp
+        qty_rounded = round_qty(symbol, quantity)
+        sl_stop = _rp(symbol, sl_price)
+        tp_stop = _rp(symbol, tp_price)
+        _round_price_fn = _rp
+    except Exception:
+        qty_rounded = quantity
+        sl_stop = sl_price
+        tp_stop = tp_price
+
+    def _round_p(p: float) -> float:
+        if _round_price_fn:
+            return _round_price_fn(symbol, p)
+        return round(p, 8)
+
+    # Slippage-tolerant limit prices: ensure fill when stop triggers.
+    # SELL (closing LONG): limit price slightly BELOW stop → guarantees fill
+    # BUY (closing SHORT): limit price slightly ABOVE stop → guarantees fill
+    SLIPPAGE = 0.005  # 0.5%
+    if close_side == "SELL":
+        sl_limit = _round_p(sl_stop * (1 - SLIPPAGE))
+        tp_limit = _round_p(tp_stop * (1 - SLIPPAGE))
+    else:  # BUY
+        sl_limit = _round_p(sl_stop * (1 + SLIPPAGE))
+        tp_limit = _round_p(tp_stop * (1 + SLIPPAGE))
+
     result = {"sl_order": {}, "tp_order": {}}
 
     # Stop-loss
     try:
         sl_params = _sign({
-            "symbol": symbol, "side": close_side, "type": "STOP_MARKET",
-            "stopPrice": f"{sl_price:.6f}", "closePosition": "true",
+            "symbol": symbol, "side": close_side, "type": "STOP",
+            "stopPrice": f"{sl_stop:.6f}",
+            "price": f"{sl_limit:.6f}",
+            "quantity": f"{qty_rounded}",
+            "reduceOnly": "true",
+            "timeInForce": "GTC",
             "workingType": "MARK_PRICE",
             "newClientOrderId": f"{entry_client_order_id}_sl",
         })
@@ -319,8 +356,12 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
     # Take-profit
     try:
         tp_params = _sign({
-            "symbol": symbol, "side": close_side, "type": "TAKE_PROFIT_MARKET",
-            "stopPrice": f"{tp_price:.6f}", "closePosition": "true",
+            "symbol": symbol, "side": close_side, "type": "TAKE_PROFIT",
+            "stopPrice": f"{tp_stop:.6f}",
+            "price": f"{tp_limit:.6f}",
+            "quantity": f"{qty_rounded}",
+            "reduceOnly": "true",
+            "timeInForce": "GTC",
             "workingType": "MARK_PRICE",
             "newClientOrderId": f"{entry_client_order_id}_tp",
         })

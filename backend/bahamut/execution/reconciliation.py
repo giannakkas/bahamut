@@ -546,11 +546,35 @@ def _auto_repair_brackets(pos, sl_live: bool, tp_live: bool):
         _sym = SYMBOL_MAP.get(pos.asset, pos.asset.replace("USD", "USDT"))
         close_side = "SELL" if pos.direction == "LONG" else "BUY"
 
+        # Slippage-tolerant limit price for guaranteed fill
+        SLIPPAGE = 0.005
+        sl_limit = pos.stop_price * (1 - SLIPPAGE) if close_side == "SELL" else pos.stop_price * (1 + SLIPPAGE)
+        tp_limit = pos.tp_price * (1 - SLIPPAGE) if close_side == "SELL" else pos.tp_price * (1 + SLIPPAGE)
+
+        # Round quantity
+        try:
+            from bahamut.execution.exchange_filters import round_qty, round_price
+            _qty = round_qty(_sym, pos.size)
+            _sl_stop = round_price(_sym, pos.stop_price)
+            _sl_lim = round_price(_sym, sl_limit)
+            _tp_stop = round_price(_sym, pos.tp_price)
+            _tp_lim = round_price(_sym, tp_limit)
+        except Exception:
+            _qty = pos.size
+            _sl_stop = pos.stop_price
+            _sl_lim = round(sl_limit, 8)
+            _tp_stop = pos.tp_price
+            _tp_lim = round(tp_limit, 8)
+
         if not sl_live:
             params = _sign({
-                "symbol": _sym, "side": close_side, "type": "STOP_MARKET",
-                "stopPrice": f"{pos.stop_price:.6f}", "closePosition": "true",
-                "reduceOnly": "true", "workingType": "MARK_PRICE",
+                "symbol": _sym, "side": close_side, "type": "STOP",
+                "stopPrice": f"{_sl_stop:.6f}",
+                "price": f"{_sl_lim:.6f}",
+                "quantity": f"{_qty}",
+                "reduceOnly": "true",
+                "timeInForce": "GTC",
+                "workingType": "MARK_PRICE",
                 "newClientOrderId": f"repair_sl_{pos.position_id[:8]}",
             })
             r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,
@@ -562,9 +586,13 @@ def _auto_repair_brackets(pos, sl_live: bool, tp_live: bool):
 
         if not tp_live:
             params = _sign({
-                "symbol": _sym, "side": close_side, "type": "TAKE_PROFIT_MARKET",
-                "stopPrice": f"{pos.tp_price:.6f}", "closePosition": "true",
-                "reduceOnly": "true", "workingType": "MARK_PRICE",
+                "symbol": _sym, "side": close_side, "type": "TAKE_PROFIT",
+                "stopPrice": f"{_tp_stop:.6f}",
+                "price": f"{_tp_lim:.6f}",
+                "quantity": f"{_qty}",
+                "reduceOnly": "true",
+                "timeInForce": "GTC",
+                "workingType": "MARK_PRICE",
                 "newClientOrderId": f"repair_tp_{pos.position_id[:8]}",
             })
             r = httpx.post(f"{BASE_URL}/fapi/v1/order", params=params,

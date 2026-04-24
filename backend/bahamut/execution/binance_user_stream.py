@@ -114,7 +114,7 @@ async def _process_event(data: dict):
         order_id = str(o.get("i", ""))
         symbol = o.get("s", "")
         side = o.get("S", "")
-        order_type = o.get("o", "")  # MARKET, STOP_MARKET, TAKE_PROFIT_MARKET
+        order_type = o.get("o", "")  # MARKET, STOP, TAKE_PROFIT, STOP_MARKET, TAKE_PROFIT_MARKET
         order_status = o.get("X", "")  # NEW, FILLED, PARTIALLY_FILLED, etc.
         client_order_id = o.get("c", "")
         fill_price = float(o.get("L", 0))  # last fill price
@@ -140,14 +140,13 @@ async def _process_event(data: dict):
             )
 
             # ── BRACKET FILL DETECTION ──
-            # If a STOP_MARKET or TAKE_PROFIT_MARKET fills, this is an
-            # exchange-side SL/TP exit. Close the position with the ACTUAL
-            # fill price and set a Redis flag to prevent client-side double-close.
-            is_bracket = order_type in ("STOP_MARKET", "TAKE_PROFIT_MARKET")
+            # If a STOP/TAKE_PROFIT (or legacy STOP_MARKET/TAKE_PROFIT_MARKET) fills,
+            # this is an exchange-side SL/TP exit.
+            is_bracket = order_type in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT")
             is_bracket_coid = client_order_id.endswith("_sl") or client_order_id.endswith("_tp")
 
             if is_bracket and order_status == "FILLED" and (is_bracket_coid or is_bracket):
-                exit_reason = "SL" if order_type == "STOP_MARKET" else "TP"
+                exit_reason = "SL" if order_type in ("STOP_MARKET", "STOP") else "TP"
                 logger.info("stream_bracket_fill_detected",
                             order_id=order_id, symbol=symbol, side=side,
                             order_type=order_type, exit_reason=exit_reason,
