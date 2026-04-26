@@ -648,6 +648,24 @@ def open_training_position(
         signal_id = hashlib.sha256(sig_data.encode()).hexdigest()[:24]
 
     # ═══════════════════════════════════════════
+    # SIGNAL COOLDOWN: Prevent re-entry on the same signal after position close.
+    # When V5 uses a 3-bar cross window, bars T+1/T+2 re-fire the same signal_id
+    # after an SL close on bar T+1. Without this check, the same cross produces
+    # multiple trades. Redis key persists after position close (2h TTL).
+    # ═══════════════════════════════════════════
+    try:
+        _cd_r = _get_redis()
+        if _cd_r and signal_id:
+            _cd_key = f"bahamut:signal_executed:{signal_id}"
+            if _cd_r.exists(_cd_key):
+                logger.info("training_position_rejected_signal_cooldown",
+                            asset=asset, strategy=strategy, signal_id=signal_id[:30],
+                            reason="signal already executed within cooldown window")
+                return None
+    except Exception:
+        pass  # fail-open: if Redis is down, allow (DB UNIQUE still prevents true dupes)
+
+    # ═══════════════════════════════════════════
     # PRODUCTION: Cross-worker execution lock
     # Prevents two workers from opening the same trade simultaneously.
     # Lock is keyed on signal_id and has 60s TTL as safety net.
@@ -1428,6 +1446,15 @@ def open_training_position(
         _opened_this_cycle.add(dedup_key)
         _opened_this_cycle.add(asset_key)
         open_training_position._opened_this_cycle = _opened_this_cycle
+
+        # Mark signal_id as executed — prevents re-entry on same cross after SL close.
+        # TTL = 2h covers the 3-bar cross window (45min) with ample margin.
+        try:
+            _cd_r2 = _get_redis()
+            if _cd_r2 and signal_id:
+                _cd_r2.setex(f"bahamut:signal_executed:{signal_id}", 7200, "1")
+        except Exception:
+            pass
 
         logger.info("training_position_opened",
                     asset=asset, strategy=strategy, direction=direction,

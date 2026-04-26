@@ -1,13 +1,89 @@
 """
 v5_base — EMA20×50 cross strategy with regime-aware direction.
 
-LONG: Golden cross (EMA20 crosses above EMA50) in bull regime (above EMA200)
-SHORT: Death cross (EMA20 crosses below EMA50) in bear regime (below EMA200)
+LONG: Golden cross (EMA20 crosses above EMA50) within last 3 bars, bull regime (above EMA200)
+SHORT: Death cross (EMA20 crosses below EMA50) within last 3 bars, bear regime (below EMA200)
+
+Signal window: fires on the cross bar AND 2 subsequent bars. This gives a ~45-minute
+detection window (3 × 15min bars) instead of a single 15-minute bar, preventing signal
+loss from the 10-min cycle / 15-min bar phasing mismatch.
+
+Dedup: signal_id is keyed on the cross bar timestamp, so the same cross produces at most
+one trade even though evaluate() fires on bars t, t+1, t+2.
 
 Dynamic SL/TP by timeframe. Multi-confirmation quality scoring.
 """
 from typing import Optional
+import numpy as np
 from bahamut.strategies.base import BaseStrategy, StrategyMeta, Signal
+
+
+# Cross detection lookback: fire signal if cross occurred within this many bars
+_CROSS_WINDOW = 3
+
+
+def _ema_series(data: np.ndarray, period: int) -> np.ndarray:
+    """Compute full EMA series — matches bahamut.features.indicators._ema exactly.
+
+    Canonical implementation seeds with data[0] and applies multiplier
+    from data[1] onwards. This must produce identical values to _ema()
+    so that cross detection here agrees with ema_20/ema_50 in indicators.
+    """
+    if len(data) < period:
+        return np.full(len(data), np.nan)
+    result = np.empty(len(data))
+    k = 2.0 / (period + 1)
+    result[0] = float(data[0])
+    for i in range(1, len(data)):
+        result[i] = (float(data[i]) - result[i - 1]) * k + result[i - 1]
+    return result
+
+
+def _find_recent_cross(closes: np.ndarray, window: int = _CROSS_WINDOW) -> dict | None:
+    """Find the most recent EMA20×50 crossover within `window` bars.
+
+    Returns dict with cross direction, bars_ago, and cross_bar_index,
+    or None if no cross found in the window.
+
+    A LONG cross occurs when EMA20 was <= EMA50 on bar[i-1] and > EMA50 on bar[i].
+    A SHORT cross occurs when EMA20 was >= EMA50 on bar[i-1] and < EMA50 on bar[i].
+    """
+    if len(closes) < 55:  # Need 50+ bars for EMA50 to seed
+        return None
+
+    ema20 = _ema_series(closes, 20)
+    ema50 = _ema_series(closes, 50)
+
+    # Scan last `window` bars (most recent first)
+    for bars_ago in range(window):
+        idx = len(closes) - 1 - bars_ago
+        prev_idx = idx - 1
+        if prev_idx < 50 or np.isnan(ema20[idx]) or np.isnan(ema50[idx]):
+            continue
+        if np.isnan(ema20[prev_idx]) or np.isnan(ema50[prev_idx]):
+            continue
+
+        # LONG cross: prev EMA20 <= EMA50, current EMA20 > EMA50
+        if ema20[prev_idx] <= ema50[prev_idx] and ema20[idx] > ema50[idx]:
+            return {
+                "direction": "LONG",
+                "bars_ago": bars_ago,
+                "cross_bar_index": idx,
+                "ema20_at_cross": float(ema20[idx]),
+                "ema50_at_cross": float(ema50[idx]),
+            }
+
+        # SHORT cross: prev EMA20 >= EMA50, current EMA20 < EMA50
+        if ema20[prev_idx] >= ema50[prev_idx] and ema20[idx] < ema50[idx]:
+            return {
+                "direction": "SHORT",
+                "bars_ago": bars_ago,
+                "cross_bar_index": idx,
+                "ema20_at_cross": float(ema20[idx]),
+                "ema50_at_cross": float(ema50[idx]),
+            }
+
+    return None
 
 
 class V5Base(BaseStrategy):
@@ -57,8 +133,6 @@ class V5Base(BaseStrategy):
 
         if close <= 0 or ema_20 <= 0 or ema_50 <= 0 or ema_200 <= 0:
             return None
-        if prev_indicators is None:
-            return None
 
         # ATR minimum volatility filter — skip low-vol assets
         if atr > 0 and close > 0:
@@ -75,23 +149,34 @@ class V5Base(BaseStrategy):
         if ema_gap_pct < 0.001:  # 0.1% minimum gap
             return None
 
-        prev_20 = prev_indicators.get("ema_20", 0)
-        prev_50 = prev_indicators.get("ema_50", 0)
-        if prev_20 <= 0 or prev_50 <= 0:
-            return None
-
         interval = indicators.get("_interval", "4h")
         params = self.SL_TP_BY_INTERVAL.get(interval, self.SL_TP_BY_INTERVAL["4h"])
         bar_ts = candles[-1].get("datetime", "") if candles else ""
 
         # ═══════════════════════════════════════════
+        # WINDOWED CROSS DETECTION
+        # Scan last 3 bars for an EMA20×50 crossover. This gives a ~45min
+        # detection window instead of exactly 1 bar (15min), preventing
+        # signal loss from the 10min-cycle / 15min-bar phasing mismatch.
+        # ═══════════════════════════════════════════
+        closes = np.array([c.get("close", 0) for c in candles], dtype=float)
+        cross = _find_recent_cross(closes, window=_CROSS_WINDOW)
+
+        if cross is None:
+            return None
+
+        # Use the cross bar's timestamp for signal_id — ensures dedup:
+        # the same cross produces at most one trade across bars t, t+1, t+2.
+        cross_bar_ts = candles[cross["cross_bar_index"]].get("datetime", bar_ts)
+
+        # ═══════════════════════════════════════════
         # LONG: Golden cross in bull regime
         # ═══════════════════════════════════════════
-        if close > ema_200 and prev_20 <= prev_50 and ema_20 > ema_50:
+        if cross["direction"] == "LONG" and close > ema_200:
             quality = self._score_quality(indicators, direction="LONG")
             confirmations = self._get_confirmations(indicators, direction="LONG")
 
-            reason = f"EMA20x50 golden cross, bull regime ({asset})"
+            reason = f"EMA20x50 golden cross ({cross['bars_ago']}b ago), bull regime ({asset})"
             if confirmations:
                 reason += f" [{'+'.join(confirmations)}]"
 
@@ -104,17 +189,17 @@ class V5Base(BaseStrategy):
                 max_hold_bars=params["hold"],
                 quality=quality,
                 reason=reason,
-                signal_id=f"{self.meta.name}:{asset}:L:{bar_ts}",
+                signal_id=f"{self.meta.name}:{asset}:L:{cross_bar_ts}",
             )
 
         # ═══════════════════════════════════════════
         # SHORT: Death cross in bear regime
         # ═══════════════════════════════════════════
-        if close < ema_200 and prev_20 >= prev_50 and ema_20 < ema_50:
+        if cross["direction"] == "SHORT" and close < ema_200:
             quality = self._score_quality(indicators, direction="SHORT")
             confirmations = self._get_confirmations(indicators, direction="SHORT")
 
-            reason = f"EMA20x50 death cross, bear regime ({asset})"
+            reason = f"EMA20x50 death cross ({cross['bars_ago']}b ago), bear regime ({asset})"
             if confirmations:
                 reason += f" [{'+'.join(confirmations)}]"
 
@@ -127,7 +212,7 @@ class V5Base(BaseStrategy):
                 max_hold_bars=params["hold"],
                 quality=quality,
                 reason=reason,
-                signal_id=f"{self.meta.name}:{asset}:S:{bar_ts}",
+                signal_id=f"{self.meta.name}:{asset}:S:{cross_bar_ts}",
             )
 
         return None
