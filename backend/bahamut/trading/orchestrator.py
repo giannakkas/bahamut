@@ -855,6 +855,20 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                             reason="Sentiment long block active — LONG rejected")
                 continue
 
+            # ── V5 PRODUCTION GATE ──
+            # V5 is retired from production routing (no edge on 15m crypto).
+            # Strategy still runs in evaluate() and debug_exploration collects
+            # research data, but standard/early/crash_short signals are blocked.
+            # Toggle: set V5_PRODUCTION_ENABLED=1 in env to re-enable.
+            if "v5" in strat_name:
+                import os as _os_v5
+                _v5_enabled = _os_v5.environ.get("V5_PRODUCTION_ENABLED", "0") == "1"
+                if not _v5_enabled:
+                    logger.debug("v5_production_gate_blocked",
+                                 asset=asset, direction=signal.direction,
+                                 reason="V5_PRODUCTION_ENABLED=0 — signal routed to debug only")
+                    continue  # Don't increment strategy_signals_found → debug_exploration will run
+
             strategy_signals_found += 1
 
             # DEBUG: Log SHORT signals explicitly
