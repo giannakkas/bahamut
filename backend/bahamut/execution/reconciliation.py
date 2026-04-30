@@ -545,6 +545,12 @@ def check_bracket_coverage(platform: str = "binance_futures") -> dict:
 
 def _auto_repair_brackets(pos, sl_live: bool, tp_live: bool):
     """Replace missing SL or TP bracket on a position where the other is still live."""
+    # Demo testnet doesn't support stop orders — skip repair
+    _is_demo = "demo" in BASE_URL.lower() or "testnet" in BASE_URL.lower()
+    _force = os.environ.get("BINANCE_BRACKETS_ENABLED", "").lower() in ("1", "true", "yes")
+    if _is_demo and not _force:
+        logger.debug("bracket_repair_skipped_demo", asset=pos.asset)
+        return
     try:
         from bahamut.execution.binance_futures import (
             SYMBOL_MAP, BASE_URL, _sign, _headers, _configured

@@ -265,23 +265,27 @@ def place_bracket_orders(asset: str, side: str, quantity: float,
                          entry_client_order_id: str) -> dict:
     """Place SL + TP orders on Binance Futures as broker-side brackets.
 
-    After a market fill, places:
-      - STOP at sl_price (stop-loss limit order)
-      - TAKE_PROFIT at tp_price (take-profit limit order)
+    NOTE: Binance demo testnet (demo-fapi.binance.com) returns -4120 for ALL
+    stop order types (STOP_MARKET, TAKE_PROFIT_MARKET, STOP, TAKE_PROFIT).
+    On demo, brackets are skipped and client-side SL/TP handles exits.
+    On production (fapi.binance.com), brackets are placed normally.
 
-    Uses STOP/TAKE_PROFIT (limit) instead of STOP_MARKET/TAKE_PROFIT_MARKET
-    because the Binance demo testnet returns -4120 for market-type stop orders
-    ("Please use the Algo Order API endpoints instead").
-
-    Both use reduceOnly=true with explicit quantity. Limit prices include
-    0.5% slippage tolerance to ensure immediate fill when triggered.
-    Both use MARK_PRICE to avoid wicks triggering on last price.
-
-    Returns dict with 'sl_order' and 'tp_order' containing broker responses.
+    Toggle: set BINANCE_BRACKETS_ENABLED=1 to force-enable (e.g. on production).
     """
     if not _configured():
         return {"sl_order": {"error": "not_configured"},
                 "tp_order": {"error": "not_configured"}}
+
+    # Demo testnet doesn't support stop orders — skip to avoid -4120 noise.
+    # Client-side SL/TP (10-min polling) handles exits on demo.
+    _brackets_enabled = os.environ.get("BINANCE_BRACKETS_ENABLED", "").lower() in ("1", "true", "yes")
+    _is_demo = "demo" in BASE_URL.lower() or "testnet" in BASE_URL.lower()
+    if _is_demo and not _brackets_enabled:
+        logger.info("binance_brackets_skipped_demo",
+                     asset=asset, reason="Demo testnet does not support stop orders (-4120). "
+                     "Client-side SL/TP active. Set BINANCE_BRACKETS_ENABLED=1 to force.")
+        return {"sl_order": {"skipped": "demo_testnet"},
+                "tp_order": {"skipped": "demo_testnet"}}
 
     close_side = "SELL" if side == "BUY" else "BUY"
     symbol = _to_symbol(asset)

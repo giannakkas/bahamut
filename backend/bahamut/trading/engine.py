@@ -1303,9 +1303,17 @@ def open_training_position(
                         )
                         _sl_oid = _brackets.get("sl_order", {}).get("orderId")
                         _tp_oid = _brackets.get("tp_order", {}).get("orderId")
+                        _sl_skipped = _brackets.get("sl_order", {}).get("skipped")
+                        _tp_skipped = _brackets.get("tp_order", {}).get("skipped")
                         pos.bracket_sl_order_id = str(_sl_oid) if _sl_oid else ""
                         pos.bracket_tp_order_id = str(_tp_oid) if _tp_oid else ""
-                        if pos.bracket_sl_order_id and pos.bracket_tp_order_id:
+
+                        if _sl_skipped or _tp_skipped:
+                            # Demo testnet — brackets not supported, client-side SL/TP active
+                            logger.info("binance_brackets_skipped",
+                                        asset=asset, reason="demo_testnet",
+                                        msg="Client-side SL/TP active (10-min polling)")
+                        elif pos.bracket_sl_order_id and pos.bracket_tp_order_id:
                             logger.info("binance_brackets_placed",
                                         asset=asset, sl=pos.stop_price, tp=pos.tp_price,
                                         sl_id=pos.bracket_sl_order_id,
