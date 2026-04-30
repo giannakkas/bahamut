@@ -83,6 +83,17 @@ def reconcile_all() -> dict:
                      orphans=total_orphans,
                      missing=total_missing,
                      actions=total_actions)
+        # Alert operator when orphans accumulate
+        if total_orphans > 5:
+            try:
+                from bahamut.monitoring.telegram import send_alert
+                send_alert(
+                    f"🔴 RECONCILIATION: {total_orphans} orphan positions on exchange "
+                    f"not tracked by system. {total_missing} positions missing on broker. "
+                    f"Run: railway run python backend/scripts/orphan_diagnostic.py"
+                )
+            except Exception:
+                pass
     else:
         logger.info("reconciliation_clean",
                     matched=total_matched)
