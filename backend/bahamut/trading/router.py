@@ -2393,16 +2393,22 @@ async def _build_diagnostics():
                     {"asset": dict(r_)["asset"], "trades": dict(r_)["c"], "pnl": float(dict(r_)["pnl"] or 0)}
                     for r_ in (v10_range_prod or [])
                 ]
-                verification["v10_crypto_range_block_source"] = "orchestrator.py:648 — DEBUG_EXPLORATION PATH ONLY (not production)"
-                verification["v10_crypto_range_block_enforcement_ok"] = False  # It's only partial
-                verification["v10_crypto_range_block_scope"] = "debug_exploration_only"
-                verification["v10_crypto_range_block_leaked_assets"] = recent_leaks
-                verification["v10_crypto_range_block_note"] = (
-                    "Block only suppresses debug_exploration candidates. "
-                    "Production crypto RANGE trades still flow through selector. "
-                    "Fix via TRADING_SUPPRESS per-asset maps (already has 7 assets) "
-                    "or convert mature_negative hard_block to regime-level block."
-                )
+                # Static pattern block at selector gate 0.4 blocks ALL v10:RANGE:crypto
+                # signals (standard + debug + crash_short). Leaks in 24h exit window
+                # may be from trades opened BEFORE the block was deployed.
+                _has_static_block = True  # PATTERN_HARD_BLOCKS in selector.py
+                if recent_leaks:
+                    verification["v10_crypto_range_block_enforcement_ok"] = not recent_leaks
+                    verification["v10_crypto_range_block_leaked_assets"] = recent_leaks
+                    verification["v10_crypto_range_block_note"] = (
+                        "Leaks detected — may be trades opened before static pattern block deployed. "
+                        "Selector gate 0.4 (PATTERN_HARD_BLOCKS) blocks ALL new v10:RANGE:crypto signals."
+                    )
+                else:
+                    verification["v10_crypto_range_block_enforcement_ok"] = True
+                    verification["v10_crypto_range_block_note"] = "No v10:RANGE:crypto trades in 24h — block is working"
+                verification["v10_crypto_range_block_source"] = "selector.py gate 0.4 PATTERN_HARD_BLOCKS (all execution types)"
+                verification["v10_crypto_range_block_scope"] = "all_execution_types"
             except Exception as _e:
                 verification["v10_crypto_range_block_enforcement_ok"] = "error"
                 verification["v10_crypto_range_block_error"] = str(_e)[:100]

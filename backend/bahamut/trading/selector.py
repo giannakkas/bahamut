@@ -447,7 +447,7 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         # mature sample sizes. Independent of rolling trust window (which can
         # temporarily go positive after a few wins, creating leaks).
         PATTERN_HARD_BLOCKS = {
-            "v10_mean_reversion:RANGE:crypto": "expectancy=-0.28, 168 mature samples",
+            "v10_mean_reversion:RANGE:crypto": "expectancy=-0.30, 173 mature samples",
         }
         _pattern_key = f"{sig.strategy}:{sig.regime}:{sig.asset_class}"
         if _pattern_key in PATTERN_HARD_BLOCKS:
