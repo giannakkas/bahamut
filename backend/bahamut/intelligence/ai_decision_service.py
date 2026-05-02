@@ -115,6 +115,37 @@ def get_ai_decision(
     except Exception:
         ai_source = "fallback_rules"
 
+    # If stale AI, cross-check against fresh pipeline_directives.
+    # Pipeline uses fresh Fear & Greed data. If pipeline says AGGRESSIVE but
+    # stale LLM says SELECTIVE, the stale LLM shouldn't block trading.
+    if ai_source == "stale":
+        try:
+            from bahamut.intelligence.market_intelligence import get_pipeline_directives
+            _pd = get_pipeline_directives()
+            _pd_posture = _pd.get("posture", "SELECTIVE")
+            _POSTURE_RANK = {"AGGRESSIVE": 4, "NORMAL": 3, "SELECTIVE": 2, "CAUTION": 1, "RESTRICTED": 0}
+            _pd_rank = _POSTURE_RANK.get(_pd_posture, 2)
+            _stale_rank = _POSTURE_RANK.get(posture, 2)
+            if _pd_rank > _stale_rank:
+                logger.info("ai_stale_posture_upgraded",
+                            stale_posture=posture, pipeline_posture=_pd_posture,
+                            reason="Pipeline directives (fresh F&G) more permissive than stale LLM")
+                posture = _pd_posture
+                global_mult = _clamp(float(_pd.get("global_size_multiplier", 1.0)), 0.25, 1.0)
+                # Re-derive class_mode from pipeline
+                if asset_class == "crypto":
+                    class_mode = _pd.get("crypto_mode", class_mode)
+                    if direction == "LONG" and not _pd.get("crypto_longs_allowed", True):
+                        _mult, dirs_allowed = _mode_size_gate(class_mode, asset, direction)
+                        global_mult *= _mult
+                    elif direction == "LONG":
+                        dirs_allowed = True  # Pipeline allows
+                elif asset_class == "stock":
+                    class_mode = _pd.get("stocks_mode", class_mode)
+                ai_source = "stale_upgraded"
+        except Exception:
+            pass
+
     # If no Opus (fallback or disabled), derive from sentiment rules
     if ai_source in ("fallback_rules", "disabled"):
         try:

@@ -937,10 +937,20 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                 logger.info("training_crash_short_immediate",
                             asset=asset, readiness=readiness, regime=regime)
             elif not is_new_bar:
-                # Not a new bar and not early-eligible — skip
-                logger.debug("training_signal_skipped_not_new_bar",
-                             asset=asset, strategy=strat_name, readiness=readiness)
-                continue
+                # Not a new bar and not early-eligible.
+                # V5 EMA cross is a one-bar event that fires on ~33% of cycles
+                # due to 10min/15min phasing. Allow it through — order_intent
+                # signal_id dedup prevents duplicate trades from the same cross.
+                if strat_name == "v5_base":
+                    exec_type = "standard"
+                    trigger = "v5_cross_detected"
+                    logger.info("v5_non_new_bar_allowed",
+                                asset=asset, readiness=readiness,
+                                reason="V5 cross bypasses is_new_bar gate")
+                else:
+                    logger.debug("training_signal_skipped_not_new_bar",
+                                 asset=asset, strategy=strat_name, readiness=readiness)
+                    continue
 
             logger.info("training_signal_generated",
                         asset=asset, strategy=strat_name, direction=signal.direction,
