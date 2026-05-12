@@ -640,6 +640,22 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     result: dict = {"signals": [], "trades_closed": 0}
 
+    # ── CRYPTO TRADING DISABLE ──
+    # Stocks carry the portfolio (+$8,541). Crypto is net negative (-$2,853).
+    # Disable new crypto signals until edge is proven. Existing positions
+    # still managed (SL/TP/TIMEOUT checked below).
+    # Re-enable: set CRYPTO_TRADING_ENABLED=1 in Railway env vars.
+    if asset_class == "crypto":
+        import os as _os_ct
+        if _os_ct.environ.get("CRYPTO_TRADING_ENABLED", "0") != "1":
+            # Still fetch candles + update existing positions (SL/TP checks)
+            candles = _fetch_training_candles(asset)
+            if candles and len(candles) >= 50:
+                bar = candles[-1]
+                closed = update_positions_for_asset(asset, bar)
+                result["trades_closed"] = len(closed) if closed else 0
+            return result  # No new signals
+
     candles = _fetch_training_candles(asset)
     if not candles or len(candles) < 50:
         return result
