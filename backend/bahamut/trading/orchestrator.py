@@ -658,6 +658,35 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
 
     candles = _fetch_training_candles(asset)
     if not candles or len(candles) < 50:
+        # ── CRITICAL: Still update existing positions even without fresh candles.
+        # Without this, stock positions freeze (bars_held stops incrementing)
+        # during nights/weekends when TwelveData returns "stale" data.
+        # Try Redis cache first, then construct minimal bar from position state.
+        try:
+            from bahamut.data.live_data import _cache_get
+            _fallback = _cache_get(asset) or _cache_get(asset, key_suffix=":last_good")
+            if _fallback and len(_fallback) > 0:
+                closed = update_positions_for_asset(asset, _fallback[-1])
+                result["trades_closed"] = len(closed) if closed else 0
+            else:
+                # No cached candles — construct minimal bar from last known prices
+                # This ensures bars_held increments even without candle data
+                from bahamut.trading.engine import _load_positions
+                _positions = _load_positions()
+                for _p in _positions:
+                    if _p.asset == asset and _p.current_price and _p.current_price > 0:
+                        _min_bar = {
+                            "close": _p.current_price,
+                            "open": _p.current_price,
+                            "high": _p.current_price,
+                            "low": _p.current_price,
+                            "volume": 0,
+                        }
+                        closed = update_positions_for_asset(asset, _min_bar)
+                        result["trades_closed"] = len(closed) if closed else 0
+                        break
+        except Exception:
+            pass
         return result
 
     latest_time = candles[-1].get("datetime", "")
@@ -677,13 +706,15 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
             interval = CRYPTO_INTERVAL if is_crypto(asset) else "4h"
             interval_ms = _INTERVAL_SECONDS.get(interval, 900) * 1000
             staleness_ms = now_ms - last_close_time_ms
-            # Stale if > 2× interval (e.g., 30min for 15m candles)
-            if staleness_ms > interval_ms * 2:
+            # Stale threshold: 2× interval for 15m (30min), 3× for 4h (12h)
+            # Stock 4h candles can be legitimately old between bar closes
+            stale_mult = 3 if interval in ("4h", "1d") else 2
+            if staleness_ms > interval_ms * stale_mult:
                 _data_stale = True
                 logger.warning("training_data_stale_circuit_breaker",
                                asset=asset, interval=interval,
                                staleness_sec=round(staleness_ms / 1000),
-                               threshold_sec=round(interval_ms * 2 / 1000),
+                               threshold_sec=round(interval_ms * stale_mult / 1000),
                                action="positions updated but new signals blocked")
     except Exception:
         pass

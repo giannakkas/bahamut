@@ -63,7 +63,7 @@ def _get_stale_threshold(asset: str = "") -> int:
 
     if asset_class in ("stock", "index"):
         if _is_us_market_open():
-            return 6 * 3600      # 6h during market hours
+            return 10 * 3600     # 10h during market hours (> 2× 4h bar interval)
         else:
             return 66 * 3600     # 66h covers Fri 4pm → Mon 9:30am ET
     elif asset_class == "forex":
