@@ -69,8 +69,21 @@ TRADING_STOCKS = [
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
     "META", "TSLA", "AMD", "NFLX", "COIN",
     "SPY", "QQQ", "JPM", "BAC", "GS",
-    # New additions — high-volume stocks that move well on 4H
+    # Batch 1 — high-volume stocks that move well on 4H
     "CRM", "ORCL", "UBER", "SQ", "SHOP",
+    # Batch 2 — sector diversification (added 2026-05-12)
+    # Healthcare
+    "UNH", "JNJ", "LLY", "ABBV",
+    # Energy
+    "XOM", "CVX", "OXY",
+    # Consumer
+    "WMT", "COST", "NKE",
+    # Industrial / Defense
+    "CAT", "LMT", "HON",
+    # Finance (more depth — V9 breakout excels here)
+    "V", "MA", "MS",
+    # Tech expansion (semis, cloud, AI)
+    "AVGO", "ADBE", "PLTR", "SNOW",
 ]
 
 # Flatten all training assets
