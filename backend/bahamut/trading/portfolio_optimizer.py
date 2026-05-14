@@ -53,9 +53,9 @@ for cid, cdata in CORRELATION_CLUSTERS.items():
 DEFAULT_LIMITS = {
     "max_per_cluster": 2,          # Max positions from same correlation cluster
     "max_same_direction": 8,       # Max total longs OR shorts across portfolio
-    "max_per_class_total": 5,      # Max open positions per asset class (total, not per cycle)
-    "max_per_strategy_total": 6,   # Max open positions per strategy
-    "max_same_dir_same_class": 3,  # Max same-direction in same class (e.g. 3 crypto longs)
+    "max_per_class_total": 10,     # Max open positions per asset class (was 5, now 40 stocks)
+    "max_per_strategy_total": 8,   # Max open positions per strategy
+    "max_same_dir_same_class": 6,  # Max same-direction in same class (was 3, blocked all stock LONGs)
     "cluster_penalty_points": 10,  # Priority penalty per existing cluster member
     "direction_penalty_points": 5, # Priority penalty when direction is concentrated
 }
