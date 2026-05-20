@@ -108,6 +108,55 @@ def run_trading_cycle():
             logger.warning("cycle_crypto_cleanup_ran",
                            closed=cleanup_result["total"],
                            assets=[c["asset"] for c in cleanup_result["closed"]])
+    except Exception as e:
+        logger.debug("crypto_cleanup_skipped", error=str(e)[:100])
+
+    # ── ZOMBIE POSITION CLEANUP ──
+    # Force-close positions stuck too long. Two triggers:
+    # 1. bars_held >= 3× max_hold (counter is incrementing but past limit)
+    # 2. entry_time > 10 days ago (counter frozen — bars_held not incrementing)
+    try:
+        from bahamut.trading.engine import _load_positions, _remove_position
+        from datetime import datetime, timezone, timedelta
+        _all_pos = _load_positions()
+        _now = datetime.now(timezone.utc)
+        _max_age_days = 10  # No stock trade should be open > 10 days (4h × 30 bars = 5 days)
+        for _zp in _all_pos:
+            _max = getattr(_zp, "max_hold_bars", 30) or 30
+            _is_zombie = False
+            _reason = ""
+
+            # Trigger 1: bars_held way past max
+            if _zp.bars_held >= _max * 3:
+                _is_zombie = True
+                _reason = f"bars_held={_zp.bars_held} >= {_max * 3} (3x max_hold={_max})"
+
+            # Trigger 2: entry_time too old (frozen bars_held)
+            if not _is_zombie and _zp.entry_time:
+                try:
+                    _et = _zp.entry_time
+                    if isinstance(_et, str):
+                        _et = datetime.fromisoformat(_et.replace("Z", "+00:00"))
+                    if _et.tzinfo is None:
+                        _et = _et.replace(tzinfo=timezone.utc)
+                    _age = (_now - _et).days
+                    if _age >= _max_age_days:
+                        _is_zombie = True
+                        _reason = f"entry_time={_age}d ago >= {_max_age_days}d max (bars_held={_zp.bars_held}, frozen)"
+                except Exception:
+                    pass
+
+            if _is_zombie:
+                logger.warning("zombie_position_force_closed",
+                               asset=_zp.asset, strategy=_zp.strategy,
+                               bars_held=_zp.bars_held, max_hold=_max,
+                               reason=_reason)
+                try:
+                    _remove_position(_zp.position_id)
+                except Exception as _ze:
+                    logger.error("zombie_close_failed", asset=_zp.asset, error=str(_ze)[:100])
+    except Exception as e:
+        logger.debug("zombie_cleanup_skipped", error=str(e)[:100])
     except Exception as _e:
         logger.error("cycle_crypto_cleanup_failed", error=str(_e)[:200])
 
