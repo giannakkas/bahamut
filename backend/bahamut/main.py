@@ -55,6 +55,19 @@ async def lifespan(app: FastAPI):
         logger.info("super_admin_check_complete")
     except Exception as e:
         logger.debug("super_admin_promotion_skipped", error=str(e))
+    # ── ADMIN PASSWORD RESET ──
+    # Ensures chris@bahamut.ai can always login after deploys.
+    # Password: bahamut2026 (change from admin panel after login)
+    try:
+        from bahamut.db.query import run_transaction
+        _admin_hash = "$2b$12$0vHaphiUNG0PiJN4eTF.P.hGKvddmMjehrKwZtwd0Kb.dw8vvabb6"
+        result = run_transaction(
+            "UPDATE users SET password_hash = :h WHERE email = :e",
+            {"h": _admin_hash, "e": "chris@bahamut.ai"}
+        )
+        logger.info("admin_password_reset_on_startup", email="chris@bahamut.ai")
+    except Exception as e:
+        logger.debug("admin_password_reset_skipped", error=str(e))
     # Update existing portfolios to current max_open_positions default
     try:
         from bahamut.db.query import run_transaction
