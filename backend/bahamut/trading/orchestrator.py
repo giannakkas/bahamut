@@ -112,45 +112,59 @@ def run_trading_cycle():
         logger.debug("crypto_cleanup_skipped", error=str(e)[:100])
 
     # ── ZOMBIE POSITION CLEANUP ──
-    # Force-close positions stuck too long. Two triggers:
-    # 1. bars_held >= 3× max_hold (counter is incrementing but past limit)
-    # 2. entry_time > 10 days ago (counter frozen — bars_held not incrementing)
+    # Force-close positions open longer than their expected max duration.
+    # This is the ONLY reliable exit mechanism because bars_held depends on
+    # Redis persistence (which has intermittent timeouts). Wall-clock time
+    # cannot be fooled by Redis failures.
+    #
+    # Expected durations (generous buffer):
+    #   Stock 4h bars: max_hold=10 → 10 cycles × 10min = 100min market time
+    #     But with missed cycles, weekends, etc → allow 3 trading days = 5 calendar days
+    #   Stock 4h bars: max_hold=20 → 200min market time → allow 5 trading days = 8 calendar days
+    #   Stock 4h bars: max_hold=30 → 300min → allow 8 trading days = 12 calendar days
+    #   Crypto 15m bars: max_hold=20 → 200min → allow 2 calendar days
     try:
         from bahamut.trading.engine import _load_positions, _remove_position
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
         _all_pos = _load_positions()
         _now = datetime.now(timezone.utc)
-        _max_age_days = 10  # No stock trade should be open > 10 days (4h × 30 bars = 5 days)
         for _zp in _all_pos:
             _max = getattr(_zp, "max_hold_bars", 30) or 30
-            _is_zombie = False
-            _reason = ""
+            _asset_class = getattr(_zp, "asset_class", "crypto") or "crypto"
 
-            # Trigger 1: bars_held way past max
-            if _zp.bars_held >= _max * 3:
-                _is_zombie = True
-                _reason = f"bars_held={_zp.bars_held} >= {_max * 3} (3x max_hold={_max})"
+            # Calculate max calendar days based on asset class and max_hold
+            if _asset_class == "stock":
+                # 10min cycles, only during 6.5h market day
+                # max_hold cycles × 10min / 390min per day = trading days
+                # Then ×1.8 for weekends/holidays → calendar days
+                # Minimum 4 calendar days to avoid premature close
+                _max_cal_days = max(4, int(_max * 10 / 390 * 1.8) + 2)
+            else:
+                # Crypto: 24/7, 10min cycles → max_hold × 10min, +1 day buffer
+                _max_cal_days = max(2, int(_max * 10 / 1440) + 1)
 
-            # Trigger 2: entry_time too old (frozen bars_held)
-            if not _is_zombie and _zp.entry_time:
-                try:
-                    _et = _zp.entry_time
-                    if isinstance(_et, str):
-                        _et = datetime.fromisoformat(_et.replace("Z", "+00:00"))
-                    if _et.tzinfo is None:
-                        _et = _et.replace(tzinfo=timezone.utc)
-                    _age = (_now - _et).days
-                    if _age >= _max_age_days:
-                        _is_zombie = True
-                        _reason = f"entry_time={_age}d ago >= {_max_age_days}d max (bars_held={_zp.bars_held}, frozen)"
-                except Exception:
-                    pass
+            if not _zp.entry_time:
+                continue
 
-            if _is_zombie:
+            try:
+                _et = _zp.entry_time
+                if isinstance(_et, str):
+                    _et = datetime.fromisoformat(_et.replace("Z", "+00:00"))
+                if _et.tzinfo is None:
+                    _et = _et.replace(tzinfo=timezone.utc)
+                _age_hours = (_now - _et).total_seconds() / 3600
+                _age_days = _age_hours / 24
+            except Exception:
+                continue
+
+            if _age_days >= _max_cal_days:
                 logger.warning("zombie_position_force_closed",
                                asset=_zp.asset, strategy=_zp.strategy,
                                bars_held=_zp.bars_held, max_hold=_max,
-                               reason=_reason)
+                               age_days=round(_age_days, 1),
+                               max_cal_days=_max_cal_days,
+                               asset_class=_asset_class,
+                               reason=f"open {round(_age_days,1)}d >= {_max_cal_days}d limit")
                 try:
                     _remove_position(_zp.position_id)
                 except Exception as _ze:
