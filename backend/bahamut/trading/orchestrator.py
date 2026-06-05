@@ -192,8 +192,10 @@ def run_trading_cycle():
             all_hl = dedupe_headlines(general + crypto_hl)
 
             # Cache for ALL crypto assets (they share crypto headlines)
-            for a in TRADING_CRYPTO:
-                cache_news_data(a, all_hl)
+            # Skip when crypto is disabled to save processing
+            if os.environ.get("CRYPTO_TRADING_ENABLED", "0") == "1":
+                for a in TRADING_CRYPTO:
+                    cache_news_data(a, all_hl)
 
             # Cache general headlines for all stock assets
             for a in TRADING_STOCKS:
@@ -287,9 +289,16 @@ def run_trading_cycle():
 
         for asset in batch:
             try:
+                _ac = ASSET_CLASS_MAP.get(asset, "unknown")
+                # Skip crypto assets entirely when crypto trading is disabled
+                # Saves ~30 Binance API calls per cycle (every 10 min)
+                if _ac == "crypto" and os.environ.get("CRYPTO_TRADING_ENABLED", "0") != "1":
+                    processed += 1
+                    continue
+
                 result = _scan_training_asset(
                     asset,
-                    asset_class=ASSET_CLASS_MAP.get(asset, "unknown"),
+                    asset_class=_ac,
                 )
                 trades_closed += result.get("trades_closed", 0)
                 pending_signals.extend(result.get("signals", []))

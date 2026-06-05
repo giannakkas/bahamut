@@ -21,6 +21,8 @@ Scoring logic per strategy:
     Trigger: close above 20-bar high for 3 bars
     Score based on: distance to 20-bar high, bars confirmed, range expansion
 """
+import os
+import time
 import numpy as np
 import structlog
 from dataclasses import dataclass
@@ -364,7 +366,11 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
         batch = TRADING_ASSETS[i:i + batch_size]
         for asset in batch:
             try:
-                asset_candidates = _evaluate_asset(asset, ASSET_CLASS_MAP.get(asset, "unknown"))
+                _ac = ASSET_CLASS_MAP.get(asset, "unknown")
+                # Skip crypto when disabled — saves ~30 Binance API calls per scan
+                if _ac == "crypto" and os.environ.get("CRYPTO_TRADING_ENABLED", "0") != "1":
+                    continue
+                asset_candidates = _evaluate_asset(asset, _ac)
                 candidates.extend(asset_candidates)
             except Exception as e:
                 logger.debug("candidate_eval_failed", asset=asset, error=str(e))
