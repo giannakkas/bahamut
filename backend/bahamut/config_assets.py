@@ -84,6 +84,19 @@ TRADING_STOCKS = [
     "V", "MA", "MS",
     # Tech expansion (semis, cloud, AI)
     "AVGO", "ADBE", "PLTR", "SNOW",
+    # Batch 3 — broader market coverage (added 2026-06-05)
+    # Biotech / Pharma
+    "MRNA", "PFE", "GILD", "REGN",
+    # Consumer Discretionary / Retail
+    "MCD", "SBUX", "HD", "LOW",
+    # Media / Telecom
+    "DIS", "CMCSA",
+    # Semiconductors (more depth)
+    "MU", "INTC", "QCOM",
+    # Finance (more depth)
+    "C", "AXP", "BLK",
+    # Transportation + Cybersecurity
+    "FDX", "UPS", "PANW", "T",
 ]
 
 # Flatten all training assets

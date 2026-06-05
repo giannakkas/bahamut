@@ -228,6 +228,13 @@ TWELVE_SYMBOL_MAP = {
     "CAT": "CAT", "LMT": "LMT", "HON": "HON",
     "V": "V", "MA": "MA", "MS": "MS",
     "AVGO": "AVGO", "ADBE": "ADBE", "PLTR": "PLTR", "SNOW": "SNOW",
+    # Batch 3 — broader market
+    "MRNA": "MRNA", "PFE": "PFE", "GILD": "GILD", "REGN": "REGN",
+    "MCD": "MCD", "SBUX": "SBUX", "HD": "HD", "LOW": "LOW",
+    "DIS": "DIS", "CMCSA": "CMCSA",
+    "MU": "MU", "INTC": "INTC", "QCOM": "QCOM",
+    "C": "C", "AXP": "AXP", "BLK": "BLK",
+    "FDX": "FDX", "UPS": "UPS", "PANW": "PANW", "T": "T",
 }
 
 TWELVE_INTERVAL_MAP = {
