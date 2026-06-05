@@ -431,6 +431,60 @@ export default function TrainingOperationsPage() {
         ))}
       </div>
 
+      {/* ═══ DAILY P&L ═══ */}
+      {(data.closed_trades || []).length > 0 && (() => {
+        const trades = data.closed_trades || [];
+        const byDay: Record<string, { pnl: number; trades: number; wins: number }> = {};
+        trades.forEach((t: any) => {
+          const d = (t.exit_time || t.closed_at || "").slice(0, 10);
+          if (!d) return;
+          if (!byDay[d]) byDay[d] = { pnl: 0, trades: 0, wins: 0 };
+          byDay[d].pnl += (t.pnl || 0);
+          byDay[d].trades += 1;
+          if ((t.pnl || 0) > 0.5) byDay[d].wins += 1;
+        });
+        const days = Object.entries(byDay)
+          .map(([d, v]) => ({ date: d, ...v }))
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .slice(0, 14);
+        const maxAbs = Math.max(1, ...days.map(d => Math.abs(d.pnl)));
+        const totalRecent = days.reduce((s, d) => s + d.pnl, 0);
+        return (
+          <div className="bg-bah-surface border border-bah-border rounded-xl p-3 anim-slide" style={{ animationDelay: "0.09s" }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-bah-heading text-sm font-semibold">📅 Daily P&L</span>
+                <span className="text-[10px] text-bah-muted">(last {days.length} days)</span>
+              </div>
+              <span className={`text-sm font-bold font-mono ${totalRecent >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {totalRecent >= 0 ? "+" : ""}{totalRecent.toFixed(2)}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {days.map(d => {
+                const barW = Math.max(2, Math.abs(d.pnl) / maxAbs * 100);
+                const isPos = d.pnl >= 0;
+                return (
+                  <div key={d.date} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-bah-muted w-[70px] shrink-0 font-mono">{d.date.slice(5)}</span>
+                    <div className="flex-1 flex items-center h-4">
+                      <div
+                        className={`h-3 rounded-sm ${isPos ? "bg-green-500/60" : "bg-red-500/60"}`}
+                        style={{ width: `${barW}%`, minWidth: "4px" }}
+                      />
+                    </div>
+                    <span className={`w-[65px] text-right font-mono font-medium ${isPos ? "text-green-400" : "text-red-400"}`}>
+                      {isPos ? "+" : ""}{d.pnl.toFixed(0)}
+                    </span>
+                    <span className="text-bah-muted/50 w-[30px] text-right">{d.trades}t</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══ OPEN POSITIONS ═══ */}
       {(data.positions || []).length > 0 && (
         <div className="anim-slide" style={{ animationDelay: "0.08s" }}>
