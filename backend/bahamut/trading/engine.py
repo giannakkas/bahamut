@@ -1654,9 +1654,11 @@ def cleanup_invalid_positions() -> list[str]:
     return removed
 
 
-def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
+def update_positions_for_asset(asset: str, bar: dict, *,
+                               force_market_active: bool = False) -> list[TrainingTrade]:
     """Update all open positions for an asset with a new bar.
-    Returns list of trades that were closed this bar."""
+    Returns list of trades that were closed this bar.
+    force_market_active=True bypasses the NYSE market-hours gate (for manual 4H triggers)."""
     import sys as _sys
     positions = _load_positions()
     asset_positions = [p for p in positions if p.asset == asset]
@@ -1684,7 +1686,7 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
         # Without this, stock positions accumulate bars_held during
         # overnight/weekend hours and hit TIMEOUT prematurely.
         _market_active = True
-        if pos.asset_class == "stock":
+        if pos.asset_class == "stock" and not force_market_active:
             try:
                 from bahamut.data.live_data import _is_us_market_open
                 _market_active = _is_us_market_open()

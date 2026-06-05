@@ -862,6 +862,58 @@ async def trigger_training_cycle(user=Depends(get_current_user)):
     return {"status": "running", "message": "Training cycle started — watch the progress bar"}
 
 
+@router.post("/force-4h-update")
+async def force_4h_position_update(user=Depends(get_current_user)):
+    """Force-increment bars_held for all open stock positions and check exits.
+    Bypasses the NYSE market-hours gate. Use when positions are stuck after-hours."""
+    from bahamut.trading.engine import _load_positions, update_positions_for_asset
+    try:
+        positions = _load_positions()
+        if not positions:
+            return {"status": "ok", "message": "No open positions", "closed": 0}
+
+        # Clear dedup set so force update isn't blocked
+        update_positions_for_asset._already_closed = set()
+
+        closed_total = 0
+        updated_assets = []
+        for pos in positions:
+            # Fetch latest price for the asset
+            bar = {"close": pos.current_price, "high": pos.current_price,
+                   "low": pos.current_price, "open": pos.current_price, "volume": 0}
+            try:
+                from bahamut.data.live_data import fetch_candles
+                c = fetch_candles(pos.asset, count=2)
+                if c and len(c) > 0:
+                    last = c[-1]
+                    bar = {"close": float(last.get("close", 0) or 0),
+                           "high": float(last.get("high", 0) or 0),
+                           "low": float(last.get("low", 0) or 0),
+                           "open": float(last.get("open", 0) or 0),
+                           "volume": float(last.get("volume", 0) or 0)}
+            except Exception:
+                pass
+
+            closed = update_positions_for_asset(pos.asset, bar, force_market_active=True)
+            if closed:
+                closed_total += len(closed)
+            updated_assets.append({
+                "asset": pos.asset, "bars_held_before": pos.bars_held,
+                "bars_held_after": pos.bars_held + 1,
+                "closed": len(closed) if closed else 0,
+            })
+
+        return {
+            "status": "ok",
+            "message": f"Force-updated {len(updated_assets)} positions, closed {closed_total}",
+            "closed": closed_total,
+            "details": updated_assets,
+        }
+    except Exception as e:
+        logger.error("force_4h_update_failed", error=str(e))
+        return {"status": "error", "message": str(e)[:200]}
+
+
 # ── Background state flags ──
 _bg_scan_running = False
 _bg_cycle_running = False

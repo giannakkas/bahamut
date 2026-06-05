@@ -86,6 +86,7 @@ export default function TrainingOperationsPage() {
   const [failedSignals, setFailedSignals] = useState<any[]>([]);
   const [tab, setTab] = useState<"overview" | "positions" | "trades" | "failed" | "learning" | "risk" | "assets" | "health">("overview");
   const [cycleTriggered, setCycleTriggered] = useState(false);
+  const [force4HTriggered, setForce4HTriggered] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -387,12 +388,21 @@ export default function TrainingOperationsPage() {
       </div>
 
       {/* ═══ LIVE CYCLE STATUS STRIP ═══ */}
-      <CycleStatusStrip cs={cs} cycleTriggered={cycleTriggered} onRunCycle={async () => {
+      <CycleStatusStrip cs={cs} cycleTriggered={cycleTriggered} force4HTriggered={force4HTriggered} onRunCycle={async () => {
         const h: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
         try {
           const r = await fetch(`${apiBase()}/training/run-cycle`, { method: "POST", headers: h });
           if (r.ok) { setCycleTriggered(true); }
         } catch {}
+      }} onForce4H={async () => {
+        const h: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+        try {
+          setForce4HTriggered(true);
+          const r = await fetch(`${apiBase()}/training/force-4h-update`, { method: "POST", headers: h });
+          const data = await r.json();
+          if (data.closed > 0) { setTimeout(() => setForce4HTriggered(false), 3000); }
+          else { setTimeout(() => setForce4HTriggered(false), 2000); }
+        } catch { setTimeout(() => setForce4HTriggered(false), 2000); }
       }} />
 
       {/* ═══ ALERTS ═══ */}
@@ -781,7 +791,7 @@ export default function TrainingOperationsPage() {
 /* ═══════════════════════════════════════════
    CYCLE STATUS STRIP
    ═══════════════════════════════════════════ */
-function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCycle: () => void; cycleTriggered: boolean }) {
+function CycleStatusStrip({ cs, onRunCycle, onForce4H, cycleTriggered, force4HTriggered }: { cs: any; onRunCycle: () => void; onForce4H: () => void; cycleTriggered: boolean; force4HTriggered: boolean }) {
   const nextCycle = useCountdown(cs.next_cycle_time);
   const next4H = useCountdown(cs.next_4h_bar_time);
 
@@ -867,6 +877,20 @@ function CycleStatusStrip({ cs, onRunCycle, cycleTriggered }: { cs: any; onRunCy
         }`}
       >
         {cs.is_running ? "⏳ Running…" : cycleTriggered ? "⏳ Starting…" : "▶ Run Cycle"}
+      </button>
+
+      {/* ── Force 4H Update Button ── */}
+      <button
+        onClick={onForce4H}
+        disabled={cs.is_running || force4HTriggered}
+        className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-all ${
+          force4HTriggered
+            ? "bg-amber-500/10 border-amber-500/30 text-amber-300 cursor-wait"
+            : "bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20 hover:border-orange-500/50 active:scale-95"
+        }`}
+        title="Force-increment bars_held for all positions (bypasses market-hours gate)"
+      >
+        {force4HTriggered ? "⏳ Updating…" : "⚡ Force 4H"}
       </button>
 
       <div className="flex items-center gap-2 text-[11px] text-bah-muted font-mono">
