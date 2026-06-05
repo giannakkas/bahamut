@@ -1714,6 +1714,13 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
 
         pos.bars_held += 1
 
+        # CRITICAL: persist bars_held immediately after increment.
+        # Without this, if TIMEOUT fires but broker close fails,
+        # the incremented bars_held is discarded (only saved in the
+        # else/no-exit branch). Next cycle reloads stale DB value
+        # and the position is stuck forever at max_hold - 1.
+        _save_position(pos)
+
         exit_reason = None
         exit_price = close
 
