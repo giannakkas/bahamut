@@ -413,11 +413,14 @@ export default function TrainingOperationsPage() {
           const pnl = (k.net_pnl || 0) + (k.unrealized_pnl || 0);
           const ret = k.return_pct || 0;
           // Calculate recent WR from closed trades (stocks only, last 30 days)
-          // This excludes historical crypto losses that drag down the overall WR
+          // Excludes crypto trades that drag down the overall WR
           const recentTrades = (data.closed_trades || []).filter((t: any) => {
             const exit = t.exit_time || t.closed_at || "";
             const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-            return exit >= thirtyDaysAgo;
+            const ac = (t.asset_class || "").toLowerCase();
+            const asset = t.asset || "";
+            const isStock = ac === "stock" || (ac === "" && !asset.endsWith("USD"));
+            return exit >= thirtyDaysAgo && isStock;
           });
           const recentWins = recentTrades.filter((t: any) => (t.pnl || 0) > 0.5).length;
           const recentLosses = recentTrades.filter((t: any) => (t.pnl || 0) < -0.5).length;
