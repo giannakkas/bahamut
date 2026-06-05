@@ -190,12 +190,26 @@ class TrainingTrade:
 # ═══════════════════════════════════════════
 
 def _load_positions() -> list[TrainingPosition]:
-    """Load all open training positions. Redis first, DB fallback.
-    Phase 2 Item 5: filters out crypto positions that violate the
-    broker-only invariant — consistent with _save_position and
-    _load_positions_from_db. No invariant-violating crypto row can
-    surface to any caller via this function."""
-    # Try Redis (fast path)
+    """Load all open training positions. DB is source of truth.
+    Redis was causing bars_held to freeze — intermittent save failures
+    meant Redis had stale data that was always loaded first.
+    Now: DB first (always correct), then refresh Redis cache."""
+    # Always load from DB (source of truth for bars_held)
+    positions = _load_positions_from_db()
+    if positions is not None:
+        # Refresh Redis cache from DB truth
+        r = _get_redis()
+        if r:
+            try:
+                # Clear stale Redis positions and repopulate
+                r.delete(REDIS_KEY_POSITIONS)
+                for pos in positions:
+                    r.hset(REDIS_KEY_POSITIONS, pos.position_id, json.dumps(asdict(pos)))
+            except Exception:
+                pass  # Redis down is fine — DB is truth
+        return positions
+
+    # DB failed — fall back to Redis as last resort
     r = _get_redis()
     if r:
         try:
@@ -470,13 +484,15 @@ def _save_position(pos: TrainingPosition):
                          reason="Crypto must have broker execution with valid lifecycle; internal/failed not allowed")
             return  # Do NOT persist — invariant violation
 
-    # Redis (fast cache)
+    # Redis (fast cache — NOT source of truth)
     r = _get_redis()
     if r:
         try:
             r.hset(REDIS_KEY_POSITIONS, pos.position_id, json.dumps(asdict(pos)))
-        except Exception:
-            pass
+        except Exception as _redis_err:
+            logger.warning("position_redis_save_failed",
+                           asset=pos.asset, bars_held=pos.bars_held,
+                           error=str(_redis_err)[:80])
 
     # DB (canonical)
     try:
