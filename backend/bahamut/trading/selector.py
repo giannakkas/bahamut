@@ -28,9 +28,9 @@ logger = structlog.get_logger()
 
 DEFAULT_CONFIG = {
     "execution_threshold": 80,      # Minimum readiness score to be eligible
-    "max_new_per_cycle": 5,         # Max new positions opened per cycle
-    "max_per_class": 5,             # Max new positions per asset class per cycle (was 3, 40 stocks now)
-    "max_total_positions": 20,      # Hard cap on total open positions
+    "max_new_per_cycle": 8,         # Max new positions opened per cycle (was 5)
+    "max_per_class": 8,             # Max new positions per asset class per cycle (was 5)
+    "max_total_positions": 25,      # Hard cap on total open positions (headroom above 20)
     "class_diversity_min": 2,       # Try to spread across at least N classes
     "require_regime_alignment": True,  # Require TREND or BREAKOUT regime
 }
