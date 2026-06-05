@@ -513,12 +513,15 @@ def _save_position(pos: TrainingPosition):
                      entry_price, stop_price, tp_price, size, risk_amount,
                      entry_time, bars_held, max_hold_bars, current_price,
                      execution_type, confidence_score, trigger_reason, status,
-                     substrategy, data_mode)
+                     substrategy, data_mode, execution_platform, exchange_order_id)
                     VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
-                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub, :dm)
+                            :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub, :dm,
+                            :expl, :eoid)
                     ON CONFLICT (position_id) DO UPDATE SET
                         bars_held = EXCLUDED.bars_held,
                         current_price = EXCLUDED.current_price,
+                        execution_platform = EXCLUDED.execution_platform,
+                        exchange_order_id = EXCLUDED.exchange_order_id,
                         status = 'OPEN'
                 """), {
                     "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
@@ -531,6 +534,8 @@ def _save_position(pos: TrainingPosition):
                     "tr": pos.trigger_reason,
                     "sub": pos.substrategy or "",
                     "dm": pos.data_mode or "live",
+                    "expl": pos.execution_platform or "",
+                    "eoid": pos.exchange_order_id or "",
                 })
             except Exception as _insert_err:
                 # Column missing or unknown — fall back to legacy INSERT
