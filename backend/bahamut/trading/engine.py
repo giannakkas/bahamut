@@ -1708,6 +1708,17 @@ def update_positions_for_asset(asset: str, bar: dict) -> list[TrainingTrade]:
                 exit_reason = "TP"
                 exit_price = pos.tp_price
 
+        # V10 early exit: if position isn't profitable by half its max hold,
+        # close early instead of waiting for TIMEOUT with near-zero P&L.
+        # V10 TIMEOUT trades average -$1 each — this cuts losses faster.
+        if not exit_reason and pos.strategy == "v10_mean_reversion":
+            _half_life = max(3, pos.max_hold_bars // 2)
+            if pos.bars_held >= _half_life:
+                _unreal = (close - pos.entry_price) if pos.direction == "LONG" else (pos.entry_price - close)
+                if _unreal <= 0:
+                    exit_reason = "EARLY_EXIT"
+                    exit_price = close
+
         # Check timeout
         if not exit_reason and pos.bars_held >= pos.max_hold_bars:
             exit_reason = "TIMEOUT"

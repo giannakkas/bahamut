@@ -202,11 +202,11 @@ def _compute_priority(signal: PendingSignal, open_positions: list, strategy_stat
     # a prior from buckets[strategy_class].trust when samples >= 30.
     strat_class_key = f"{signal.strategy}:{signal.asset_class}"
     STRAT_CLASS_BOOSTS = {
-        "v9_breakout:stock": 8,       # 74.4% WR, +$3476 — strongest edge
-        "v10_mean_reversion:stock": 3, # 48.5% WR but +$2028 — decent
-        "v5_base:stock": 3,            # 50% WR, +$1006 — ok
-        "v10_mean_reversion:crypto": -10,  # 54.9% WR but -$816 PnL — negative expectancy
-        "v5_base:crypto": -5,          # 44.7% WR, -$230 — weak
+        "v9_breakout:stock": 15,       # 73.2% WR, +$5025 — strongest edge, boosted
+        "v10_mean_reversion:stock": -2, # 47.8% WR, drags blended WR — deprioritize
+        "v5_base:stock": 5,            # 54.8% WR, +$1396 — decent, slight boost
+        "v10_mean_reversion:crypto": -10,  # disabled but kept for re-enable
+        "v5_base:crypto": -5,          # disabled but kept for re-enable
     }
     if strat_class_key in STRAT_CLASS_BOOSTS:
         # Key name signals this is a static override term, not a learned feature
