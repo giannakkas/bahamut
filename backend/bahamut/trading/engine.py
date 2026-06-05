@@ -190,27 +190,13 @@ class TrainingTrade:
 # ═══════════════════════════════════════════
 
 def _load_positions() -> list[TrainingPosition]:
-    """Load all open training positions. DB is source of truth.
-    Redis was causing bars_held to freeze — intermittent save failures
-    meant Redis had stale data that was always loaded first.
-    Now: DB first (always correct), then refresh Redis cache."""
-    # Always load from DB (source of truth for bars_held)
-    positions = _load_positions_from_db()
-    if positions is not None:
-        # Refresh Redis cache from DB truth
-        r = _get_redis()
-        if r:
-            try:
-                # Clear stale Redis positions and repopulate
-                r.delete(REDIS_KEY_POSITIONS)
-                for pos in positions:
-                    r.hset(REDIS_KEY_POSITIONS, pos.position_id, json.dumps(asdict(pos)))
-            except Exception:
-                pass  # Redis down is fine — DB is truth
-        return positions
-
-    # DB failed — fall back to Redis as last resort
+    """Load all open training positions. Redis for full data, DB for bars_held truth.
+    Redis has execution_platform + exchange_order_id (needed for Alpaca).
+    DB has correct bars_held (Redis intermittently loses increments).
+    Strategy: load from Redis, then patch bars_held from DB if DB is higher."""
+    # Try Redis first (has full position data including platform/order_id)
     r = _get_redis()
+    positions = []
     if r:
         try:
             raw = r.hgetall(REDIS_KEY_POSITIONS)
@@ -241,6 +227,25 @@ def _load_positions() -> list[TrainingPosition]:
                 if skipped > 0:
                     logger.warning("training_load_positions_filtered_invariant_violations",
                                    skipped=skipped, source="redis")
+
+                # CRITICAL: Patch bars_held from DB (source of truth).
+                # Redis intermittently loses bars_held increments due to save timeouts.
+                # DB always has the correct value. Use max(redis, db) for each position.
+                try:
+                    db_positions = _load_positions_from_db()
+                    if db_positions:
+                        db_map = {p.position_id: p for p in db_positions}
+                        for pos in positions:
+                            db_pos = db_map.get(pos.position_id)
+                            if db_pos and db_pos.bars_held > pos.bars_held:
+                                logger.info("bars_held_patched_from_db",
+                                            asset=pos.asset,
+                                            redis_bars=pos.bars_held,
+                                            db_bars=db_pos.bars_held)
+                                pos.bars_held = db_pos.bars_held
+                except Exception:
+                    pass  # DB patch failed — continue with Redis values
+
                 return positions
         except Exception as e:
             logger.warning("training_load_positions_redis_failed", error=str(e))
