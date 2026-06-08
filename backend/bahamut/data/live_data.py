@@ -113,8 +113,8 @@ def _tag_candles(candles: list[dict], mode: str) -> list[dict]:
 
 def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
     """
-    Fetch candles for an asset. Tries: Redis cache → Alpaca (stocks) →
-    Twelve Data API → last-good cache → synthetic fallback (if not blocked).
+    Fetch candles for an asset. Tries: Redis cache → Twelve Data API →
+    Alpaca (stocks fallback) → last-good cache → synthetic fallback (if not blocked).
 
     Phase 4 Item 12: every returned candle carries a _data_mode tag of
     'live' / 'stale_cache' / 'synthetic_dev'. When BLOCK_SYNTHETIC=True
@@ -138,34 +138,7 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                 c["_data_mode"] = DATA_MODE_LIVE
         return cached
 
-    # 2. Try Alpaca Market Data (PRIMARY for stocks/ETFs — free with trading account)
-    _asset_class = ""
-    try:
-        from bahamut.config_assets import ASSET_CLASS_MAP
-        _asset_class = ASSET_CLASS_MAP.get(asset, "")
-    except Exception:
-        pass
-
-    if _asset_class == "stock":
-        try:
-            candles = _fetch_from_alpaca(asset, count)
-            if candles and len(candles) >= 50:
-                valid, reason = validate_candles(candles, asset=asset)
-                if valid:
-                    _tag_candles(candles, DATA_MODE_LIVE)
-                    _cache_set(asset, candles)
-                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
-                    logger.info("data_live", asset=asset, candles=len(candles),
-                                last=candles[-1].get("datetime", ""),
-                                close=candles[-1].get("close", 0),
-                                data_mode=DATA_MODE_LIVE, source="alpaca")
-                    return candles
-                else:
-                    logger.warning("data_validation_failed", asset=asset, reason=reason, source="alpaca")
-        except Exception as e:
-            logger.error("data_fetch_error", asset=asset, error=str(e), source="alpaca")
-
-    # 3. Try Twelve Data API (fallback for stocks, primary for crypto/forex/commodity)
+    # 2. Try Twelve Data API (primary for all assets)
     td_symbol = SUPPORTED_ASSETS.get(asset)
     if not td_symbol:
         # Training assets: fall through to the full symbol map
@@ -193,6 +166,33 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                     logger.warning("data_validation_failed", asset=asset, reason=reason)
         except Exception as e:
             logger.error("data_fetch_error", asset=asset, error=str(e))
+
+    # 3. Try Alpaca Market Data (fallback for stocks when TwelveData fails)
+    _asset_class = ""
+    try:
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        _asset_class = ASSET_CLASS_MAP.get(asset, "")
+    except Exception:
+        pass
+
+    if _asset_class == "stock":
+        try:
+            candles = _fetch_from_alpaca(asset, count)
+            if candles and len(candles) >= 50:
+                valid, reason = validate_candles(candles, asset=asset)
+                if valid:
+                    _tag_candles(candles, DATA_MODE_LIVE)
+                    _cache_set(asset, candles)
+                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
+                    logger.info("data_live", asset=asset, candles=len(candles),
+                                last=candles[-1].get("datetime", ""),
+                                close=candles[-1].get("close", 0),
+                                data_mode=DATA_MODE_LIVE, source="alpaca_fallback")
+                    return candles
+                else:
+                    logger.warning("data_validation_failed", asset=asset, reason=reason, source="alpaca")
+        except Exception as e:
+            logger.error("data_fetch_error", asset=asset, error=str(e), source="alpaca")
 
     # 4. Try last known good data from Redis
     last_good = _cache_get(asset, key_suffix=":last_good")
