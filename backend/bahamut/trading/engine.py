@@ -1149,7 +1149,10 @@ def open_training_position(
             # Global posture multiplier (clamped 0.25-1.0)
             global_mult = ga.get("size_multiplier", 1.0)
             # Combined (both already clamped by decision service)
-            combined_mult = round(candidate_mult * global_mult, 3)
+            # GUARD: cap at 0.25 minimum — double-penalty from crypto-driven
+            # FROZEN posture was squaring to 0.0625, killing all stock trades
+            # (breaches composite floor at 10%). Single worst-case 0.25 is enough.
+            combined_mult = round(max(candidate_mult * global_mult, 0.25), 3)
 
             if combined_mult < 1.0 and combined_mult > 0:
                 original_risk = risk_amount
