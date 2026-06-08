@@ -113,8 +113,8 @@ def _tag_candles(candles: list[dict], mode: str) -> list[dict]:
 
 def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
     """
-    Fetch candles for an asset. Tries: Redis cache → Twelve Data API →
-    last-good cache → synthetic fallback (if not blocked).
+    Fetch candles for an asset. Tries: Redis cache → Alpaca (stocks) →
+    Twelve Data API → last-good cache → synthetic fallback (if not blocked).
 
     Phase 4 Item 12: every returned candle carries a _data_mode tag of
     'live' / 'stale_cache' / 'synthetic_dev'. When BLOCK_SYNTHETIC=True
@@ -138,7 +138,34 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                 c["_data_mode"] = DATA_MODE_LIVE
         return cached
 
-    # 2. Try Twelve Data API
+    # 2. Try Alpaca Market Data (PRIMARY for stocks/ETFs — free with trading account)
+    _asset_class = ""
+    try:
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        _asset_class = ASSET_CLASS_MAP.get(asset, "")
+    except Exception:
+        pass
+
+    if _asset_class == "stock":
+        try:
+            candles = _fetch_from_alpaca(asset, count)
+            if candles and len(candles) >= 50:
+                valid, reason = validate_candles(candles, asset=asset)
+                if valid:
+                    _tag_candles(candles, DATA_MODE_LIVE)
+                    _cache_set(asset, candles)
+                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
+                    logger.info("data_live", asset=asset, candles=len(candles),
+                                last=candles[-1].get("datetime", ""),
+                                close=candles[-1].get("close", 0),
+                                data_mode=DATA_MODE_LIVE, source="alpaca")
+                    return candles
+                else:
+                    logger.warning("data_validation_failed", asset=asset, reason=reason, source="alpaca")
+        except Exception as e:
+            logger.error("data_fetch_error", asset=asset, error=str(e), source="alpaca")
+
+    # 3. Try Twelve Data API (fallback for stocks, primary for crypto/forex/commodity)
     td_symbol = SUPPORTED_ASSETS.get(asset)
     if not td_symbol:
         # Training assets: fall through to the full symbol map
@@ -167,14 +194,14 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
         except Exception as e:
             logger.error("data_fetch_error", asset=asset, error=str(e))
 
-    # 3. Try last known good data from Redis
+    # 4. Try last known good data from Redis
     last_good = _cache_get(asset, key_suffix=":last_good")
     if last_good:
         logger.warning("data_using_last_good", asset=asset, candles=len(last_good))
         _record_data_status(asset, "STALE", len(last_good), "using cached data")
         return _tag_candles(last_good, DATA_MODE_STALE_CACHE)
 
-    # 4. Phase 4 Item 12: synthetic block in production
+    # 5. Phase 4 Item 12: synthetic block in production
     if BLOCK_SYNTHETIC:
         logger.error("data_synthetic_blocked",
                      asset=asset,
@@ -186,7 +213,7 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
         _increment_synthetic_block_counter()
         return []
 
-    # 5. Fallback to synthetic (DEV ONLY — block flag is off)
+    # 6. Fallback to synthetic (DEV ONLY — block flag is off)
     logger.warning("data_fallback_synthetic", asset=asset,
                    warning="DEV MODE — synthetic data in use")
     _record_data_status(asset, "SYNTHETIC", 0, "DEV: live data unavailable")
@@ -202,6 +229,148 @@ def _increment_synthetic_block_counter():
         r.incr("bahamut:counters:synthetic_blocks")
     except Exception:
         pass
+
+
+def _fetch_from_alpaca(symbol: str, count: int) -> list[dict]:
+    """Fetch stock/ETF candles from Alpaca Market Data API v2.
+
+    Free with any Alpaca trading account. Uses IEX feed (free tier).
+    Returns candles in the same format as _fetch_from_twelvedata.
+
+    Endpoint: GET /v2/stocks/{symbol}/bars
+    Docs: https://docs.alpaca.markets/reference/stockbars
+    """
+    import httpx
+
+    api_key = os.environ.get("ALPACA_API_KEY", "")
+    api_secret = os.environ.get("ALPACA_API_SECRET", "")
+
+    if not api_key or not api_secret:
+        logger.debug("alpaca_data_not_configured")
+        return []
+
+    # Go back far enough for 260 4h bars.
+    # Stocks: ~2 bars/day during market hours → need ~150 trading days → ~7 months.
+    # Use 10 months for safety (covers holidays).
+    start_dt = datetime.now(timezone.utc) - timedelta(days=300)
+    start_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
+
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": api_secret,
+    }
+    params = {
+        "timeframe": "4Hour",
+        "limit": min(count, 10000),
+        "start": start_iso,
+        "feed": "iex",
+        "adjustment": "split",
+        "sort": "asc",
+    }
+
+    data_url = "https://data.alpaca.markets"
+    all_bars = []
+    page_token = None
+    max_pages = 5  # safety limit
+
+    for _ in range(max_pages):
+        if page_token:
+            params["page_token"] = page_token
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                r = client.get(f"{data_url}/v2/stocks/{symbol}/bars",
+                               headers=headers, params=params)
+            if r.status_code != 200:
+                logger.warning("alpaca_data_error", symbol=symbol,
+                               status=r.status_code, body=r.text[:200])
+                return []
+
+            resp = r.json()
+            bars = resp.get("bars") or []
+            all_bars.extend(bars)
+
+            page_token = resp.get("next_page_token")
+            if not page_token or len(all_bars) >= count:
+                break
+
+        except Exception as e:
+            logger.error("alpaca_data_exception", symbol=symbol, error=str(e))
+            return []
+
+    if not all_bars:
+        logger.warning("alpaca_data_empty", symbol=symbol)
+        return []
+
+    # Convert Alpaca format to orchestrator candle format
+    # Alpaca bar: {"t": "2026-06-02T09:30:00Z", "o": 150.0, "h": 151.0, "l": 149.0, "c": 150.5, "v": 1234567}
+    now_ts = int(time.time())
+    _INTERVAL_SEC_4H = 14400
+    candles = []
+
+    for b in all_bars:
+        dt_str = b.get("t", "")
+        # Parse ISO timestamp
+        open_time_ts = 0
+        try:
+            if dt_str:
+                parsed = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                open_time_ts = int(parsed.timestamp())
+                # Normalize datetime string to "YYYY-MM-DD HH:MM:SS" for consistency
+                dt_str = parsed.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+        close_time_ts = open_time_ts + _INTERVAL_SEC_4H if open_time_ts else 0
+        is_closed = (now_ts > close_time_ts) if close_time_ts > 0 else True
+
+        candles.append({
+            "datetime": dt_str,
+            "open": float(b.get("o", 0)),
+            "high": float(b.get("h", 0)),
+            "low": float(b.get("l", 0)),
+            "close": float(b.get("c", 0)),
+            "volume": float(b.get("v", 0)),
+            "open_time": open_time_ts * 1000 if open_time_ts else 0,
+            "close_time": close_time_ts * 1000 if close_time_ts else 0,
+            "is_closed": is_closed,
+            "source": "alpaca",
+        })
+
+    # Drop forming candles
+    dropped_forming = 0
+    while candles and not candles[-1]["is_closed"]:
+        candles.pop()
+        dropped_forming += 1
+
+    if dropped_forming > 0:
+        logger.info("alpaca_dropped_forming_candle", symbol=symbol, dropped=dropped_forming)
+
+    # Keep only the last `count` candles
+    if len(candles) > count:
+        candles = candles[-count:]
+
+    # Record to shared diagnostics state
+    try:
+        from bahamut.data.binance_data import _LAST_CANDLE_STATE
+        if candles:
+            last = candles[-1]
+            _LAST_CANDLE_STATE[f"{symbol}:4h"] = {
+                "last_open_time": last["open_time"],
+                "last_close_time": last["close_time"],
+                "last_datetime": last["datetime"],
+                "is_closed": last["is_closed"],
+                "dropped_forming": dropped_forming,
+                "used_for_signals": True,
+                "source": "alpaca",
+                "recorded_at": now_ts,
+            }
+    except Exception:
+        pass
+
+    logger.info("alpaca_data_fetched", symbol=symbol, candles=len(candles),
+                last_dt=candles[-1]["datetime"] if candles else "none")
+    return candles
 
 
 def _fetch_from_twelvedata(symbol: str, count: int) -> list[dict]:
