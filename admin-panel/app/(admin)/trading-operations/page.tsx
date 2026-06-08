@@ -91,6 +91,7 @@ export default function TrainingOperationsPage() {
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showMoreClosed, setShowMoreClosed] = useState(false);
+  const [showMoreDaily, setShowMoreDaily] = useState(false);
   const [newsDash, setNewsDash] = useState<any>(null);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -490,6 +491,8 @@ export default function TrainingOperationsPage() {
         const totalRecent = tradingDays.reduce((s, d) => s + d.pnl, 0);
         const tradingCount = tradingDays.filter(d => d.trades > 0).length;
         const dowLabel = (ds: string) => { const d = new Date(ds + "T12:00:00"); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]; };
+        const reversedDays = [...allDays].reverse();
+        const visibleDays = showMoreDaily ? reversedDays : reversedDays.slice(0, 5);
         return (
           <div className="bg-bah-surface border border-bah-border rounded-xl p-3 anim-slide" style={{ animationDelay: "0.09s" }}>
             <div className="flex items-center justify-between mb-2">
@@ -502,7 +505,7 @@ export default function TrainingOperationsPage() {
               </span>
             </div>
             <div className="space-y-0.5">
-              {allDays.map(d => {
+              {visibleDays.map(d => {
                 if (d.isWeekend) {
                   return (
                     <div key={d.date} className="flex items-center gap-2 text-[11px] opacity-40">
@@ -541,6 +544,12 @@ export default function TrainingOperationsPage() {
                 );
               })}
             </div>
+            {reversedDays.length > 5 && (
+              <button onClick={() => setShowMoreDaily(!showMoreDaily)}
+                className="mt-2 w-full text-center text-[11px] text-bah-cyan hover:text-bah-cyan/80 transition-colors py-1.5 border-t border-bah-border/30">
+                {showMoreDaily ? "▲ Show Less" : `▼ Show All 30 Days`}
+              </button>
+            )}
           </div>
         );
       })()}
