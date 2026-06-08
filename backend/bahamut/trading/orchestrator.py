@@ -367,6 +367,14 @@ def run_trading_cycle():
     trades_opened = 0
     from bahamut.trading.engine import open_training_position
 
+    # ═══ MEGA DIAGNOSTIC: trace every step of execution phase ═══
+    logger.error("EXEC_PHASE_START",
+                 selected_count=len(selected),
+                 pending_count=len(pending_signals),
+                 selected_assets=[d.get("asset", "?") for d in selected],
+                 selected_strategies=[d.get("strategy", "?") for d in selected],
+                 pending_assets=[s.asset for s in pending_signals[:5]])
+
     logger.info("training_execution_phase",
                 selected_count=len(selected),
                 selected_assets=[d["asset"] for d in selected])
@@ -377,9 +385,18 @@ def run_trading_cycle():
             sig = next((s for s in pending_signals
                         if s.asset == dec["asset"] and s.strategy == dec["strategy"]), None)
             if not sig:
+                logger.error("EXEC_SIGNAL_NOT_FOUND",
+                             dec_asset=dec.get("asset"), dec_strategy=dec.get("strategy"),
+                             dec_keys=list(dec.keys()),
+                             pending_asset_strategies=[(s.asset, s.strategy) for s in pending_signals[:10]])
                 logger.warning("training_execute_signal_not_found",
                                asset=dec["asset"], strategy=dec["strategy"])
                 continue
+
+            logger.error("EXEC_SIGNAL_MATCHED",
+                         asset=sig.asset, strategy=sig.strategy,
+                         direction=sig.direction, asset_class=sig.asset_class,
+                         exec_type=sig.execution_type)
 
             # Per-asset-class risk sizing
             try:
@@ -387,9 +404,14 @@ def run_trading_cycle():
                 risk_info = get_available_risk(sig.asset_class, TRADING_RISK_PER_TRADE_PCT)
                 risk_amount = risk_info["max_risk_usd"]
                 risk_source = risk_info["source"]
-            except Exception:
+                logger.error("EXEC_RISK_RESULT",
+                             asset=sig.asset, risk_amount=risk_amount,
+                             risk_source=risk_source,
+                             risk_info_keys=list(risk_info.keys()))
+            except Exception as _risk_err:
                 risk_amount = TRADING_VIRTUAL_CAPITAL * TRADING_RISK_PER_TRADE_PCT
                 risk_source = "virtual_fallback"
+                logger.error("EXEC_RISK_EXCEPTION", asset=sig.asset, error=str(_risk_err)[:200])
 
             if risk_amount <= 0 or risk_source == "broker_unavailable":
                 logger.warning("trade_skipped_broker_unavailable",
