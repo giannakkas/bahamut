@@ -456,7 +456,7 @@ export default function TrainingOperationsPage() {
       </div>
 
       {/* ═══ DAILY P&L ═══ */}
-      {(data.closed_trades || []).length > 0 && (() => {
+      {(() => {
         const trades = data.closed_trades || [];
         const byDay: Record<string, { pnl: number; trades: number; wins: number }> = {};
         trades.forEach((t: any) => {
@@ -467,40 +467,76 @@ export default function TrainingOperationsPage() {
           byDay[d].trades += 1;
           if ((t.pnl || 0) > 0.5) byDay[d].wins += 1;
         });
-        const days = Object.entries(byDay)
-          .map(([d, v]) => ({ date: d, ...v }))
-          .sort((a, b) => b.date.localeCompare(a.date))
-          .slice(0, 14);
-        const maxAbs = Math.max(1, ...days.map(d => Math.abs(d.pnl)));
-        const totalRecent = days.reduce((s, d) => s + d.pnl, 0);
+        // Build continuous 30-day calendar ending today
+        const today = new Date();
+        const allDays: { date: string; pnl: number; trades: number; wins: number; isWeekend: boolean }[] = [];
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          const dow = d.getDay();
+          const isWeekend = dow === 0 || dow === 6;
+          const entry = byDay[key];
+          allDays.push({
+            date: key,
+            pnl: entry ? entry.pnl : 0,
+            trades: entry ? entry.trades : 0,
+            wins: entry ? entry.wins : 0,
+            isWeekend,
+          });
+        }
+        const tradingDays = allDays.filter(d => !d.isWeekend);
+        const maxAbs = Math.max(1, ...tradingDays.map(d => Math.abs(d.pnl)));
+        const totalRecent = tradingDays.reduce((s, d) => s + d.pnl, 0);
+        const tradingCount = tradingDays.filter(d => d.trades > 0).length;
+        const dowLabel = (ds: string) => { const d = new Date(ds + "T12:00:00"); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]; };
         return (
           <div className="bg-bah-surface border border-bah-border rounded-xl p-3 anim-slide" style={{ animationDelay: "0.09s" }}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-bah-heading text-sm font-semibold">📅 Daily P&L</span>
-                <span className="text-[10px] text-bah-muted">(last {days.length} days)</span>
+                <span className="text-[10px] text-bah-muted">{tradingCount} active / 30 days</span>
               </div>
               <span className={`text-sm font-bold font-mono ${totalRecent >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {totalRecent >= 0 ? "+" : ""}{totalRecent.toFixed(2)}
               </span>
             </div>
-            <div className="space-y-1">
-              {days.map(d => {
-                const barW = Math.max(2, Math.abs(d.pnl) / maxAbs * 100);
-                const isPos = d.pnl >= 0;
-                return (
-                  <div key={d.date} className="flex items-center gap-2 text-[11px]">
-                    <span className="text-bah-muted w-[70px] shrink-0 font-mono">{d.date.slice(5)}</span>
-                    <div className="flex-1 flex items-center h-4">
-                      <div
-                        className={`h-3 rounded-sm ${isPos ? "bg-green-500/60" : "bg-red-500/60"}`}
-                        style={{ width: `${barW}%`, minWidth: "4px" }}
-                      />
+            <div className="space-y-0.5">
+              {allDays.map(d => {
+                if (d.isWeekend) {
+                  return (
+                    <div key={d.date} className="flex items-center gap-2 text-[11px] opacity-40">
+                      <span className="text-bah-muted w-[70px] shrink-0 font-mono">{d.date.slice(5)}</span>
+                      <span className="text-[10px] text-bah-muted/60 w-[24px]">{dowLabel(d.date)}</span>
+                      <div className="flex-1 flex items-center h-3.5">
+                        <div className="h-[1px] w-full bg-bah-border/40 rounded" />
+                      </div>
+                      <span className="w-[65px] text-right font-mono text-[10px] text-bah-muted/50 italic">CLOSED</span>
+                      <span className="w-[30px]" />
                     </div>
-                    <span className={`w-[65px] text-right font-mono font-medium ${isPos ? "text-green-400" : "text-red-400"}`}>
-                      {isPos ? "+" : ""}{d.pnl.toFixed(0)}
+                  );
+                }
+                const barW = d.trades > 0 ? Math.max(2, Math.abs(d.pnl) / maxAbs * 100) : 0;
+                const isPos = d.pnl >= 0;
+                const isZero = d.trades === 0;
+                return (
+                  <div key={d.date} className={`flex items-center gap-2 text-[11px] ${isZero ? "opacity-50" : ""}`}>
+                    <span className="text-bah-muted w-[70px] shrink-0 font-mono">{d.date.slice(5)}</span>
+                    <span className="text-[10px] text-bah-muted/60 w-[24px]">{dowLabel(d.date)}</span>
+                    <div className="flex-1 flex items-center h-3.5">
+                      {isZero ? (
+                        <div className="h-[1px] w-full bg-bah-border/30 rounded" />
+                      ) : (
+                        <div
+                          className={`h-3 rounded-sm ${isPos ? "bg-green-500/60" : "bg-red-500/60"}`}
+                          style={{ width: `${barW}%`, minWidth: "4px" }}
+                        />
+                      )}
+                    </div>
+                    <span className={`w-[65px] text-right font-mono font-medium ${isZero ? "text-bah-muted/40" : isPos ? "text-green-400" : "text-red-400"}`}>
+                      {isZero ? "$0" : `${isPos ? "+" : ""}${d.pnl.toFixed(0)}`}
                     </span>
-                    <span className="text-bah-muted/50 w-[30px] text-right">{d.trades}t</span>
+                    <span className="text-bah-muted/50 w-[30px] text-right">{d.trades > 0 ? `${d.trades}t` : ""}</span>
                   </div>
                 );
               })}
