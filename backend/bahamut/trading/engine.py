@@ -730,6 +730,13 @@ def open_training_position(
                 logger.warning("training_position_duplicate_blocked",
                             asset=asset, strategy=strategy,
                             signal_id=signal_id)
+                try:
+                    from bahamut.trading.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="duplicate_blocked",
+                                     reason_detail="OrderManager intent already exists")
+                except Exception:
+                    pass
                 return None
             _order_intent_id = intent["intent_id"]
             logger.warning("open_training_position_INTENT_OK",
@@ -752,6 +759,13 @@ def open_training_position(
                 _block_reason = _block_raw.decode() if isinstance(_block_raw, bytes) else str(_block_raw)
                 logger.warning("trading_position_rejected_asset_blocked",
                                asset=asset, reason=_block_reason)
+                try:
+                    from bahamut.trading.rejection_tracker import record_rejection
+                    record_rejection(asset=asset, strategy=strategy, direction=direction,
+                                     signal_id=signal_id, reason_code="asset_blocked",
+                                     reason_detail=_block_reason[:100])
+                except Exception:
+                    pass
                 return None
         except Exception:
             pass

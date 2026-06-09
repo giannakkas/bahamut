@@ -154,14 +154,34 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                 # Validate
                 valid, reason = validate_candles(candles, asset=asset)
                 if valid:
-                    _tag_candles(candles, DATA_MODE_LIVE)
-                    _cache_set(asset, candles)
-                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
-                    logger.info("data_live", asset=asset, candles=len(candles),
-                                last=candles[-1].get("datetime", ""),
-                                close=candles[-1].get("close", 0),
-                                data_mode=DATA_MODE_LIVE)
-                    return candles
+                    # Freshness guard: if newest candle is >48h old, treat as stale
+                    # and fall through to Alpaca. Prevents TwelveData returning
+                    # historical data that never updates (e.g., SQ frozen at May 29).
+                    _newest = candles[-1].get("datetime", "")
+                    _is_stale_candles = False
+                    try:
+                        from datetime import datetime, timezone, timedelta
+                        _parsed = datetime.fromisoformat(_newest.replace("Z", "+00:00")) if "T" in _newest else datetime.strptime(_newest, "%Y-%m-%d %H:%M:%S")
+                        if _parsed.tzinfo is None:
+                            _parsed = _parsed.replace(tzinfo=timezone.utc)
+                        _age_hours = (datetime.now(timezone.utc) - _parsed).total_seconds() / 3600
+                        if _age_hours > 48:
+                            _is_stale_candles = True
+                            logger.warning("data_twelvedata_stale_candles",
+                                           asset=asset, newest=_newest,
+                                           age_hours=round(_age_hours, 1),
+                                           msg="newest candle >48h old, trying Alpaca fallback")
+                    except Exception:
+                        pass
+                    if not _is_stale_candles:
+                        _tag_candles(candles, DATA_MODE_LIVE)
+                        _cache_set(asset, candles)
+                        _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
+                        logger.info("data_live", asset=asset, candles=len(candles),
+                                    last=candles[-1].get("datetime", ""),
+                                    close=candles[-1].get("close", 0),
+                                    data_mode=DATA_MODE_LIVE)
+                        return candles
                 else:
                     logger.warning("data_validation_failed", asset=asset, reason=reason)
         except Exception as e:

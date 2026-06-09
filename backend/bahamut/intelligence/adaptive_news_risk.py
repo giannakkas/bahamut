@@ -422,16 +422,27 @@ def compute_adaptive_news_state(
     source_count = int(
         assessment.headline_count + assessment.event_count
     )
-    # Freshness: assessment_computed_at is now ONLY when we actually
-    # recomputed from live data. Stale passes preserve the prior value.
+    # Freshness: assessment_computed_at is set when we actually
+    # recomputed from live data. Stale passes preserve the prior value,
+    # but we cap staleness at 30 minutes — if the system has been
+    # checking continuously with stable data, the assessment is
+    # effectively revalidated each cycle.
+    _MAX_STALE_AGE = 1800  # 30 minutes
     if data_changed:
         assessment_computed_at = now
     else:
-        assessment_computed_at = (
+        prior_ts = (
             existing_state.assessment_computed_at
             if existing_state and existing_state.assessment_computed_at > 0
-            else now
+            else 0
         )
+        if prior_ts > 0 and (now - prior_ts) > _MAX_STALE_AGE:
+            # Revalidated with same data — refresh the timestamp
+            assessment_computed_at = now
+        elif prior_ts > 0:
+            assessment_computed_at = prior_ts
+        else:
+            assessment_computed_at = now
 
     return AssetNewsState(
         asset=asset,

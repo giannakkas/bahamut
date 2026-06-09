@@ -28,7 +28,7 @@ _DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 _MAX_DAILY_USD = float(os.environ.get("MAX_DAILY_AI_USD", "0.75"))
 
 FRESH_TTL = 60
-STALE_TTL = 300
+STALE_TTL = 1800  # 30 min — if both providers fail, preserve last posture longer
 MAX_TOKENS = 400
 TIMEOUT = 3.0
 
@@ -36,6 +36,7 @@ _CACHE_KEY = "bahamut:ai_posture:cache"
 _CACHE_TS_KEY = "bahamut:ai_posture:cache_ts"
 _DAILY_COST_KEY = "bahamut:ai_posture:daily_cost"
 _PROVIDER_KEY = "bahamut:ai_posture:provider"
+_ERROR_KEY = "bahamut:ai_posture:last_error"
 
 _last_error: str = ""
 _call_count: int = 0
@@ -278,6 +279,11 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
             result["_call_number"] = _call_count
             _cache_write(result)
             _last_error = ""
+            try:
+                r = _r()
+                if r: r.delete(_ERROR_KEY)
+            except Exception:
+                pass
             _sync_compat_ts()
             logger.info("ai_posture_ok", provider="deepseek",
                         latency_ms=result.get("_latency_ms"),
@@ -293,6 +299,11 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
             result["_call_number"] = _call_count
             _cache_write(result)
             _last_error = ""
+            try:
+                r = _r()
+                if r: r.delete(_ERROR_KEY)
+            except Exception:
+                pass
             _sync_compat_ts()
             logger.info("ai_posture_ok", provider="gemini",
                         latency_ms=result.get("_latency_ms"),
@@ -307,6 +318,13 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
         _timeout_count += 1
     _last_error = err
     _fallback_uses += 1
+    # Persist error to Redis so it survives worker restarts
+    try:
+        r = _r()
+        if r and err:
+            r.setex(_ERROR_KEY, 3600, err[:200])
+    except Exception:
+        pass
     logger.warning("ai_posture_all_failed", error=err)
     return _use_stale(now, cached, cached_ts)
 
@@ -369,6 +387,15 @@ def get_analysis_status() -> dict:
                 provider = raw.decode() if isinstance(raw, bytes) else str(raw)
         except Exception:
             pass
+    # Read last error from in-memory or Redis (survives worker restarts)
+    _effective_error = _last_error
+    if not _effective_error and r:
+        try:
+            raw_err = r.get(_ERROR_KEY)
+            if raw_err:
+                _effective_error = raw_err.decode() if isinstance(raw_err, bytes) else str(raw_err)
+        except Exception:
+            pass
     return {
         "model": f"{_PRIMARY_MODEL} -> {_FALLBACK_MODEL}",
         "primary": _PRIMARY_MODEL,
@@ -381,7 +408,7 @@ def get_analysis_status() -> dict:
         "total_calls": _call_count, "cache_hits": _cache_hits,
         "stale_uses": _stale_uses, "timeout_count": _timeout_count,
         "fallback_uses": _fallback_uses,
-        "last_error": _last_error or None,
+        "last_error": _effective_error or None,
         "last_posture": cached.get("posture") if cached else None,
         "last_latency_ms": cached.get("_latency_ms") if cached else None,
         "last_provider": cached.get("_provider") if cached else None,
