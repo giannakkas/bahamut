@@ -4044,6 +4044,25 @@ async def training_kill_switch(user=Depends(get_current_user)):
         return {"status": "error", "error": str(e)}
 
 
+@router.post("/close-position/{position_id}")
+async def close_single_position(position_id: str, user=Depends(get_current_user)):
+    """Force-close a single open position by position_id."""
+    try:
+        from bahamut.trading.engine import force_close_single_position
+        result = force_close_single_position(
+            position_id=position_id,
+            reason="MANUAL_CLOSE",
+        )
+        logger.warning("manual_close_position_api",
+                        user=getattr(user, 'email', 'unknown'),
+                        position_id=position_id,
+                        result_status=result.get("status"))
+        return result
+    except Exception as e:
+        logger.error("manual_close_position_error", error=str(e))
+        return {"status": "error", "error": str(e)}
+
+
 # ═══════════════════════════════════════════════════════════════
 # PRODUCTION SAFETY ENDPOINTS
 # ═══════════════════════════════════════════════════════════════

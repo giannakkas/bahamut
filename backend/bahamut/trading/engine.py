@@ -1613,6 +1613,74 @@ def get_open_positions() -> list[TrainingPosition]:
     return _load_positions()
 
 
+def force_close_single_position(position_id: str, reason: str = "MANUAL_CLOSE") -> dict:
+    """Force-close a single open position by position_id.
+
+    Same mechanism as kill-switch but for one position only.
+    Returns summary dict with close details.
+    """
+    positions = _load_positions()
+    target = next((p for p in positions if p.position_id == position_id), None)
+    if not target:
+        return {"status": "not_found", "position_id": position_id, "error": "Position not found or already closed"}
+
+    try:
+        # Get current market price
+        close_price = 0.0
+        try:
+            from bahamut.data.binance_data import is_crypto, get_price
+            if is_crypto(target.asset):
+                close_price = get_price(target.asset)
+        except Exception:
+            pass
+        if close_price <= 0:
+            close_price = target.current_price if target.current_price > 0 else target.entry_price
+
+        # Build exit bar
+        bar = {
+            "open": close_price, "high": close_price,
+            "low": close_price, "close": close_price,
+            "datetime": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Force close triggers
+        if target.direction == "LONG":
+            target.stop_price = close_price + 1
+        else:
+            target.stop_price = close_price - 1
+        target.max_hold_bars = 0
+
+        # Close via normal path
+        trades = update_positions_for_asset(target.asset, bar)
+        if trades:
+            logger.warning("manual_close_position",
+                           asset=target.asset, position_id=position_id,
+                           reason=reason, pnl=trades[0].get("pnl", 0) if trades else 0)
+            return {
+                "status": "closed",
+                "asset": target.asset,
+                "position_id": position_id,
+                "close_price": close_price,
+                "pnl": trades[0].get("pnl", 0) if trades else 0,
+                "reason": reason,
+            }
+        else:
+            # Fallback: direct removal
+            _remove_position(position_id)
+            logger.warning("manual_close_fallback_removal",
+                           asset=target.asset, position_id=position_id)
+            return {
+                "status": "closed_fallback",
+                "asset": target.asset,
+                "position_id": position_id,
+                "close_price": close_price,
+                "reason": reason,
+            }
+    except Exception as e:
+        logger.error("manual_close_failed", asset=target.asset, error=str(e)[:200])
+        return {"status": "error", "position_id": position_id, "error": str(e)[:200]}
+
+
 def reset_cycle_dedup():
     """Reset the per-cycle dedup sets. Call once at cycle start."""
     update_positions_for_asset._already_closed = set()

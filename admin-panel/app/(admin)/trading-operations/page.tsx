@@ -92,6 +92,7 @@ export default function TrainingOperationsPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showMoreClosed, setShowMoreClosed] = useState(false);
   const [showMoreDaily, setShowMoreDaily] = useState(false);
+  const [closingPosition, setClosingPosition] = useState<string | null>(null);
   const [newsDash, setNewsDash] = useState<any>(null);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -563,17 +564,22 @@ export default function TrainingOperationsPage() {
               <span className="px-2.5 py-0.5 text-[12px] font-bold rounded-full bg-green-500/15 text-green-400 border border-green-500/30">{(data.positions || []).length}</span>
             </div>
             <div className="border-t border-bah-border overflow-x-auto">
-              <table className="w-full text-[12px] min-w-[1000px]">
+              <table className="w-full text-[12px] min-w-[1100px]">
                 <thead><tr className="border-b border-bah-border text-[10px] text-bah-muted uppercase tracking-[0.1em] text-left">
                   <th className="px-3 py-2.5">Asset</th><th className="px-3 py-2.5">Strategy</th><th className="px-3 py-2.5">Dir</th>
                   <th className="px-3 py-2.5 text-right">Entry</th><th className="px-3 py-2.5 text-right">Current</th>
                   <th className="px-3 py-2.5 text-right">SL</th><th className="px-3 py-2.5 text-right">TP</th>
                   <th className="px-3 py-2.5 text-right">Risk</th><th className="px-3 py-2.5 text-right">Unreal P&L</th>
                   <th className="px-3 py-2.5 text-center">Bars</th><th className="px-3 py-2.5">Opened</th>
+                  <th className="px-3 py-2.5 text-center">Action</th>
                 </tr></thead>
                 <tbody>{(data.positions || []).map((p: any, i: number) => {
                   const unreal = p.unrealized_pnl || 0;
                   const fmtTime = (t: string) => { try { const d = new Date(t); return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`; } catch { return "—"; } };
+                  const posId = p.position_id || "";
+                  const isClosing = closingPosition === posId;
+                  const maxHold = p.max_hold_bars || 10;
+                  const isOverdue = (p.bars_held || 0) > maxHold;
                   return (
                     <tr key={i} className="border-b border-bah-border/50 hover:bg-bah-surface/50 transition-colors">
                       <td className="px-3 py-2.5"><div className="text-bah-heading font-bold">{p.asset}</div><div className="text-[10px] text-bah-muted">{p.asset_class}</div></td>
@@ -585,8 +591,38 @@ export default function TrainingOperationsPage() {
                       <PriceCell value={p.tp_price || p.take_profit || 0} className="px-3 py-2.5 font-mono text-right text-green-400/60" />
                       <td className="px-3 py-2.5 font-mono text-right text-amber-400/70">{fmtUsd(p.risk_amount || 0)}</td>
                       <td className={`px-3 py-2.5 font-mono font-bold text-right ${unreal >= 0 ? "text-green-400" : "text-red-400"}`}>{`${unreal >= 0 ? "+" : "-"}${fmtUsd(unreal)}`}</td>
-                      <td className="px-3 py-2.5 text-bah-muted text-center">{p.bars_held || 0}</td>
+                      <td className={`px-3 py-2.5 text-center ${isOverdue ? "text-red-400 font-bold" : "text-bah-muted"}`}>{p.bars_held || 0}{isOverdue ? `/${maxHold}⚠` : ""}</td>
                       <td className="px-3 py-2.5 text-bah-muted text-[11px] whitespace-nowrap">{p.entry_time ? fmtTime(p.entry_time) : "—"}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <button
+                          disabled={isClosing || !posId}
+                          onClick={async () => {
+                            if (!confirm(`Close ${p.asset} ${p.direction} at market? Unrealized: ${unreal >= 0 ? "+" : ""}${unreal.toFixed(2)}`)) return;
+                            setClosingPosition(posId);
+                            try {
+                              const h: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+                              const r = await fetch(`${apiBase()}/training/close-position/${posId}`, { method: "POST", headers: h });
+                              const res = await r.json();
+                              if (res.status === "closed" || res.status === "closed_fallback") {
+                                setTimeout(() => { setClosingPosition(null); }, 1500);
+                              } else {
+                                alert(`Close failed: ${res.error || res.status}`);
+                                setClosingPosition(null);
+                              }
+                            } catch (err) {
+                              alert(`Close error: ${err}`);
+                              setClosingPosition(null);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                            isClosing
+                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 cursor-wait"
+                              : "bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 hover:border-red-500/50 cursor-pointer"
+                          }`}
+                        >
+                          {isClosing ? "Closing…" : "✕ Close"}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}</tbody>
