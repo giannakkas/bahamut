@@ -3365,7 +3365,15 @@ async def news_dashboard():
         "upcoming_events": [],
         "freezes": [],
         "headlines": [],
+        "macro": {},
     }
+
+    # 0. Macro risk regime (VIX / Treasury yields via FRED)
+    try:
+        from bahamut.intelligence.macro_risk import get_macro_state
+        result["macro"] = get_macro_state()
+    except Exception:
+        pass
 
     # 1. Sentiment state
     try:

@@ -443,6 +443,26 @@ def run_trading_cycle():
                     pass
                 continue
 
+            # ── MACRO RISK OVERLAY: real global regime (VIX / Treasury yields) ──
+            # Scales size down in risk-off conditions; blocks new entries only in
+            # extreme panic (VIX >= 40). Fail-safe: neutral (×1.0) if FRED down.
+            try:
+                from bahamut.intelligence.macro_risk import get_macro_state
+                _macro = get_macro_state()
+                if _macro.get("block_new"):
+                    logger.warning("trade_blocked_macro_extreme",
+                                   asset=sig.asset, vix=_macro.get("vix"),
+                                   risk_state=_macro.get("risk_state"))
+                    continue
+                _mm = float(_macro.get("size_multiplier", 1.0))
+                if _mm != 1.0:
+                    risk_amount = risk_amount * _mm
+                    logger.info("macro_size_applied", asset=sig.asset,
+                                risk_state=_macro.get("risk_state"),
+                                vix=_macro.get("vix"), mult=_mm)
+            except Exception as _me:
+                logger.debug("macro_overlay_skipped", error=str(_me)[:100])
+
             logger.info("training_execute_attempting",
                         asset=sig.asset, strategy=sig.strategy,
                         direction=sig.direction, entry_price=sig.entry_price,
