@@ -159,6 +159,8 @@ export default function MarketIntelligencePage() {
   const [showAllAssets, setShowAllAssets] = useState(false);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
+  const [news, setNews] = useState<any>(null);
+  const [showAllHeadlines, setShowAllHeadlines] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -172,6 +174,11 @@ export default function MarketIntelligencePage() {
       const j = await r.json();
       setData(j);
       setError("");
+      // Live world headlines + their trade impact (separate endpoint)
+      try {
+        const nr = await fetch(`${apiBase()}/training/news-dashboard`, { headers: h });
+        if (nr.ok) setNews(await nr.json());
+      } catch { /* non-fatal */ }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -250,8 +257,8 @@ export default function MarketIntelligencePage() {
         </div>
 
         <div className="bg-black/30 rounded-md p-3 text-xs text-gray-300 font-mono leading-relaxed">
-          {summary?.ai_narrative_source === "claude-opus-4.6" && (
-            <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-purple-500/20 text-purple-400 rounded border border-purple-500/30 mr-2 mb-1">OPUS 4.6</span>
+          {summary?.ai_narrative_source === "claude-opus-4-8" && (
+            <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold bg-purple-500/20 text-purple-400 rounded border border-purple-500/30 mr-2 mb-1">OPUS 4.8</span>
           )}
           {summary?.ai_narrative || "No narrative available."}
         </div>
@@ -279,7 +286,7 @@ export default function MarketIntelligencePage() {
         <div className="rounded-lg border border-purple-500/20 bg-purple-500/[0.03] p-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">🤖</span>
-            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider font-mono">Claude Opus 4.6 Analysis</h3>
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider font-mono">Claude Opus 4.8 Analysis</h3>
             {data.ai_analysis_status.cached && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">ACTIVE</span>
             )}
@@ -460,6 +467,75 @@ export default function MarketIntelligencePage() {
         </div>
       )}
 
+      {/* ═══ LIVE WORLD HEADLINES ═══ */}
+      {(() => {
+        const heads: any[] = news?.headlines || [];
+        const impacts: any[] = news?.news_impacts || [];
+        const freezes: any[] = news?.freezes || [];
+        // Map any scored impact to its headline for badges
+        const impactByTitle: Record<string, any> = {};
+        for (const im of impacts) {
+          const key = (im.title || im.headline || "").slice(0, 40);
+          if (key) impactByTitle[key] = im;
+        }
+        const shown = showAllHeadlines ? heads : heads.slice(0, 8);
+        return (
+          <div>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 font-mono flex items-center gap-2">
+              📰 Live World Headlines ({heads.length})
+              {freezes.length > 0 && (
+                <span className="text-red-400 border border-red-500/40 rounded px-1.5 py-0.5 text-[10px]">
+                  {freezes.length} TRADING FREEZE{freezes.length > 1 ? "S" : ""} ACTIVE
+                </span>
+              )}
+            </h3>
+            {heads.length === 0 ? (
+              <div className="rounded border border-gray-800 bg-black/20 p-4 text-xs text-gray-500 font-mono">
+                No headlines cached right now. Pulled from Reuters / CNBC / CoinDesk / Finnhub every cycle.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-gray-800 divide-y divide-gray-800/60 overflow-hidden">
+                {shown.map((h: any, i: number) => {
+                  const title = h.title || h.headline || "";
+                  const im = impactByTitle[title.slice(0, 40)];
+                  const dir = im?.directional_bias || im?.direction;
+                  const score = im?.impact_score;
+                  const affects = im && (score >= 0.3 || (dir && dir !== "NEUTRAL"));
+                  return (
+                    <div key={i} className={`px-3 py-2 flex items-start gap-3 text-xs font-mono ${affects ? "bg-amber-500/5" : ""}`}>
+                      <span className="text-gray-600 shrink-0 w-4 text-right">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-gray-200 leading-snug">{title}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{h.source || "?"}</div>
+                      </div>
+                      {affects ? (
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${
+                          dir === "LONG" || dir === "BULLISH" ? "text-green-400 border-green-500/40"
+                          : dir === "SHORT" || dir === "BEARISH" ? "text-red-400 border-red-500/40"
+                          : "text-amber-400 border-amber-500/40"}`}>
+                          {dir || "IMPACT"}{score != null ? ` ${(score * 100).toFixed(0)}%` : ""}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-gray-600 px-1.5 py-0.5">low impact</span>
+                      )}
+                    </div>
+                  );
+                })}
+                {heads.length > 8 && (
+                  <button onClick={() => setShowAllHeadlines(!showAllHeadlines)}
+                    className="w-full py-2 text-[11px] text-bah-cyan hover:bg-black/30 font-mono">
+                    {showAllHeadlines ? "▲ Show fewer" : `▼ Show all ${heads.length} headlines`}
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="text-[10px] text-gray-600 mt-1.5 font-mono">
+              Highlighted rows scored a trade impact by news_impact.py; a freeze halts new entries around a major event.
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══ ECONOMIC CALENDAR ═══ */}
       <div>
         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 font-mono">
@@ -551,7 +627,7 @@ export default function MarketIntelligencePage() {
                               {/* AI Analysis (if available) */}
                               {ev.ai_reasoning && (
                                 <div className="mt-1 px-2 py-1.5 rounded bg-purple-500/[0.05] border border-purple-500/20">
-                                  <span className="text-[9px] text-purple-400 font-bold uppercase">Opus 4.6:</span>
+                                  <span className="text-[9px] text-purple-400 font-bold uppercase">Opus 4.8:</span>
                                   <span className="text-xs text-purple-300 ml-2">{ev.ai_reasoning}</span>
                                 </div>
                               )}
@@ -588,4 +664,4 @@ export default function MarketIntelligencePage() {
     </div>
   );
 }
-// v2 — show more buttons + expandable events + opus 4.6
+// v2 — show more buttons + expandable events + opus 4.8
