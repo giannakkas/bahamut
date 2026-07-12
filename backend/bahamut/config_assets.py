@@ -123,6 +123,28 @@ for a in TRADING_STOCKS:
 # MODE & RISK PER ASSET
 # ═══════════════════════════════════════════
 
+def crypto_trading_enabled() -> bool:
+    """Single source of truth for whether crypto trading is on.
+
+    True if EITHER the CRYPTO_TRADING_ENABLED env var is "1" (Railway) OR the
+    admin-config key `trading.crypto_enabled` is set true (runtime toggle, no
+    redeploy). Env wins as an always-on override; config allows live flips.
+
+    NOTE: crypto has no proven edge in our data (LONG ~breakeven, SHORT/v10
+    net-negative). It is enabled here for LEARNING — the trust engine will
+    down-weight and auto-suppress losing crypto patterns over time. The raised
+    SHORT (55/45) and v10 (85) thresholds remain as quality guardrails.
+    """
+    import os as _os
+    if _os.environ.get("CRYPTO_TRADING_ENABLED", "0") == "1":
+        return True
+    try:
+        from bahamut.admin.config import get_config
+        return bool(get_config("trading.crypto_enabled", False))
+    except Exception:
+        return False
+
+
 def get_asset_mode(asset: str) -> str:
     """Returns 'production' or 'training'."""
     if asset in ACTIVE_TREND_ASSETS:

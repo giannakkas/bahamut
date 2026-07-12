@@ -368,7 +368,8 @@ def get_training_candidates(max_results: int = 20) -> list[dict]:
             try:
                 _ac = ASSET_CLASS_MAP.get(asset, "unknown")
                 # Skip crypto when disabled — saves ~30 Binance API calls per scan
-                if _ac == "crypto" and os.environ.get("CRYPTO_TRADING_ENABLED", "0") != "1":
+                from bahamut.config_assets import crypto_trading_enabled
+                if _ac == "crypto" and not crypto_trading_enabled():
                     continue
                 asset_candidates = _evaluate_asset(asset, _ac)
                 candidates.extend(asset_candidates)
