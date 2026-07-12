@@ -31,6 +31,10 @@ FRESH_TTL = 60
 STALE_TTL = 1800  # 30 min — if both providers fail, preserve last posture longer
 MAX_TOKENS = 400
 TIMEOUT = 3.0
+# Opus 4.8 reasons for longer than the 3s DeepSeek budget — give it room or it
+# times out every call and silently falls back. Bounded so it can't hang a cycle.
+OPUS_TIMEOUT = 45.0
+_last_opus_error: str = ""
 
 _CACHE_KEY = "bahamut:ai_posture:cache"
 _CACHE_TS_KEY = "bahamut:ai_posture:cache_ts"
@@ -224,11 +228,11 @@ def _call_opus(prompt: str) -> tuple[dict | None, float, str]:
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=TIMEOUT,
+            timeout=OPUS_TIMEOUT,
         )
         latency = round((time.time() - start) * 1000)
         if resp.status_code != 200:
-            return None, 0, f"Opus HTTP {resp.status_code} at {latency}ms"
+            return None, 0, f"Opus HTTP {resp.status_code}: {resp.text[:150]} at {latency}ms"
         data = resp.json()
         text = data["content"][0]["text"]
         usage = data.get("usage", {})
@@ -343,6 +347,8 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
                             posture=result.get("posture"),
                             cost_usd=round(cost, 6))
                 return result
+            global _last_opus_error
+            _last_opus_error = err
             logger.warning("ai_opus_failed", error=err)
 
     if has_deepseek:
@@ -494,4 +500,6 @@ def get_analysis_status() -> dict:
         "ai_daily_cost_cap_usd": _MAX_DAILY_USD,
         "ai_is_global_only": True,
         "ai_per_asset_decision_mode": "derived_not_llm",
+        "last_opus_error": _last_opus_error or None,
+        "opus_timeout_s": OPUS_TIMEOUT,
     }
