@@ -38,6 +38,13 @@ DEFAULTS = {
     # when the FRED_API_KEY env var isn't set. Free key from fred.stlouisfed.org.
     "data.fred_api_key": "",
 
+    # ── Meta-labeling model (AI accuracy layer) ──
+    # Predictions influence sizing/filtering ONLY when true AND the model's
+    # honesty gate has passed (holdout AUC >= 0.55 on 200+ trades). Until
+    # then it runs shadow-only. Do not enable before reviewing
+    # GET /training/meta-model live-shadow accuracy.
+    "meta_model.enabled": False,
+
     # ── Strategic allocation (hybrid core/research sleeves) ──
     "allocation.research_risk_fraction": 0.30,   # research sleeve size vs core
     "allocation.expectancy_sizing_enabled": True, # size core by learned expectancy

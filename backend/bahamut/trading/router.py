@@ -872,6 +872,21 @@ async def trigger_scan(user=Depends(get_current_user)):
     return {"status": "scan_triggered", "message": "Background scan started — data appears in ~60s"}
 
 
+@router.get("/meta-model")
+async def meta_model_status(user=Depends(get_current_user)):
+    """Meta-labeling model status: sample count, gate state, holdout AUC."""
+    from bahamut.trading.meta_model import get_status
+    return get_status()
+
+
+@router.post("/meta-model/retrain")
+async def meta_model_retrain(user=Depends(get_current_user)):
+    """Retrain the win-probability model. Activates ONLY if the honesty gate
+    passes (>=200 feature-rich trades AND holdout AUC >= 0.55)."""
+    from bahamut.trading.meta_model import train_from_db
+    return train_from_db()
+
+
 @router.post("/winrate-reset")
 async def reset_winrate_baseline(user=Depends(get_current_user)):
     """Start a fresh win-rate measurement era from NOW.

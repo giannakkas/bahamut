@@ -87,6 +87,7 @@ class TrainingPosition:
     max_hold_bars: int = 30
     last_bar_time: str = ""   # datetime of last candle counted — bars_held only
                               # increments when this changes (bar-time aging)
+    entry_features: str = ""  # JSON entry-time feature vector (ML meta-labeling)
     current_price: float = 0.0
     execution_type: str = "standard"      # "standard" | "early"
     confidence_score: float = 0.0
@@ -176,6 +177,7 @@ class TrainingTrade:
     exit_slippage_abs: float = 0.0
     entry_lifecycle: str = ""             # lifecycle at entry
     exit_lifecycle: str = ""              # lifecycle at exit
+    entry_features: str = ""              # JSON entry-time feature vector (ML)
 
     # ── Phase 3 Item 7: sub-strategy tag propagated from Position ──
     substrategy: str = ""
@@ -279,7 +281,8 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                            execution_platform, exchange_order_id,
                            COALESCE(substrategy, '') as substrategy,
                            COALESCE(data_mode, 'live') as data_mode,
-                           COALESCE(last_bar_time, '') as last_bar_time
+                           COALESCE(last_bar_time, '') as last_bar_time,
+                           COALESCE(entry_features, '') as entry_features
                     FROM training_positions WHERE status = 'OPEN'
                 """)).mappings().all()
         except Exception as _sel_err:
@@ -329,6 +332,7 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                 substrategy=str(row.get("substrategy") or ""),
                 data_mode=str(row.get("data_mode") or "live"),
                 last_bar_time=str(row.get("last_bar_time") or ""),
+                entry_features=str(row.get("entry_features") or ""),
             )
 
             # Invariant enforcement on DB reload
@@ -518,10 +522,10 @@ def _save_position(pos: TrainingPosition):
                      entry_time, bars_held, max_hold_bars, current_price,
                      execution_type, confidence_score, trigger_reason, status,
                      substrategy, data_mode, execution_platform, exchange_order_id,
-                     last_bar_time)
+                     last_bar_time, entry_features)
                     VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
                             :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub, :dm,
-                            :expl, :eoid, :lbt)
+                            :expl, :eoid, :lbt, :ef)
                     ON CONFLICT (position_id) DO UPDATE SET
                         bars_held = EXCLUDED.bars_held,
                         current_price = EXCLUDED.current_price,
@@ -543,6 +547,7 @@ def _save_position(pos: TrainingPosition):
                     "expl": pos.execution_platform or "",
                     "eoid": pos.exchange_order_id or "",
                     "lbt": pos.last_bar_time or "",
+                    "ef": pos.entry_features or "",
                 })
             except Exception as _insert_err:
                 # Column missing or unknown — fall back to legacy INSERT
@@ -657,6 +662,7 @@ def open_training_position(
     substrategy: str = "",
     data_mode: str = "live",
     signal_id: str = "",
+    entry_features: str = "",
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     import sys as _sys
@@ -1228,6 +1234,7 @@ def open_training_position(
             regime=regime,
             substrategy=substrategy,
             data_mode=data_mode,
+            entry_features=entry_features,
         )
 
         # ═══════════════════════════════════════════
@@ -1876,6 +1883,7 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                 execution_type=pos.execution_type,
                 confidence_score=pos.confidence_score,
                 trigger_reason=pos.trigger_reason,
+                entry_features=pos.entry_features,
                 regime=pos.regime,
                 substrategy=pos.substrategy,
                 data_mode=pos.data_mode,
@@ -2142,10 +2150,11 @@ def _persist_trade(trade: TrainingTrade):
                 (trade_id, position_id, asset, asset_class, strategy, direction,
                  entry_price, exit_price, stop_price, tp_price, size, risk_amount,
                  pnl, pnl_pct, entry_time, exit_time, exit_reason, bars_held, regime,
-                 execution_type, confidence_score, trigger_reason, substrategy, data_mode)
+                 execution_type, confidence_score, trigger_reason, substrategy, data_mode,
+                 entry_features)
                 VALUES (:tid, :pid, :a, :ac, :s, :d, :ep, :xp, :sp, :tp, :sz, :ra,
                         :pnl, :pp, :et, :xt, :xr, :bh, :reg,
-                        :exec_type, :conf, :trig, :sub, :dm)
+                        :exec_type, :conf, :trig, :sub, :dm, :ef)
             """), {
                 "tid": trade.trade_id, "pid": trade.position_id,
                 "a": trade.asset, "ac": trade.asset_class,
@@ -2162,6 +2171,7 @@ def _persist_trade(trade: TrainingTrade):
                 "trig": trade.trigger_reason,
                 "sub": trade.substrategy or "",
                 "dm": trade.data_mode or "live",
+                "ef": trade.entry_features or "",
             })
             conn.commit()
             logger.info("training_trade_persisted_to_db", trade_id=trade.trade_id,

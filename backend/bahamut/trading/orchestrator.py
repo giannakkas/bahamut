@@ -487,6 +487,44 @@ def run_trading_cycle():
             logger.warning("TRACE_BEFORE_OPEN", asset=sig.asset, strategy=sig.strategy)
             pos = None
             try:
+                # ── ML FEATURE CAPTURE: persist the entry-time context so the
+                # meta-labeling model has real training data (indicators,
+                # readiness, macro regime, allocation tier). Stored on the
+                # position, copied to the trade at close. Fail-safe: empty.
+                _ef = ""
+                try:
+                    import json as _json
+                    _ind = getattr(sig, "indicators", None) or {}
+                    _feat = {
+                        "readiness": getattr(sig, "readiness_score", 0),
+                        "confidence": sig.confidence_score,
+                        "sl_pct": sig.sl_pct, "tp_pct": sig.tp_pct,
+                        "rr": round(sig.tp_pct / sig.sl_pct, 3) if sig.sl_pct else 0,
+                        "regime": sig.regime,
+                        "exec_type": sig.execution_type,
+                        "tier": (_alloc or {}).get("tier", ""),
+                        "macro_state": (_macro or {}).get("risk_state", "") if "_macro" in dir() else "",
+                        "vix": (_macro or {}).get("vix") if "_macro" in dir() else None,
+                    }
+                    for k in ("rsi_14", "rsi", "adx", "atr_14", "ema_20", "ema_50",
+                              "ema_200", "bollinger_upper", "bollinger_lower",
+                              "realized_vol_20", "volume"):
+                        if k in _ind and isinstance(_ind[k], (int, float)):
+                            _feat[k] = round(float(_ind[k]), 6)
+                    _ef = _json.dumps(_feat)
+                    # Shadow prediction: log P(win) if an ACTIVE (gate-passed)
+                    # model exists. Never influences the trade.
+                    try:
+                        from bahamut.trading.meta_model import predict_pwin, shadow_log
+                        _feat_full = dict(_feat, strategy=sig.strategy,
+                                          asset_class=sig.asset_class,
+                                          direction=sig.direction)
+                        shadow_log(sig.asset, sig.strategy, predict_pwin(_feat_full))
+                    except Exception:
+                        pass
+                except Exception:
+                    _ef = ""
+
                 pos = open_training_position(
                     asset=sig.asset,
                     asset_class=sig.asset_class,
@@ -505,6 +543,7 @@ def run_trading_cycle():
                     data_mode=getattr(sig, "data_mode", "live") or "live",
                     # Production: deterministic signal_id for idempotency
                     signal_id=f"{sig.asset}:{sig.strategy}:{sig.direction}:{sig.trigger_reason}:{int(time.time() // 600)}",
+                    entry_features=_ef,
                 )
                 logger.warning("TRACE_AFTER_OPEN",
                                asset=sig.asset, pos_is_none=pos is None,
