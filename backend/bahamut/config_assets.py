@@ -43,13 +43,15 @@ CANARY_SIZE_MULTIPLIER = 0.10  # 10% of normal position size
 TRADING_CRYPTO = [
     # Tier 1: Large caps (high liquidity, tighter spreads)
     "BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD",
-    # Tier 2: Major alts
-    "ADAUSD", "DOGEUSD", "AVAXUSD", "LINKUSD", "MATICUSD",
+    # Tier 2: Major alts (MATICUSD removed — globally suppressed)
+    "ADAUSD", "DOGEUSD", "AVAXUSD", "LINKUSD",
     # Tier 3: High-volume mid caps (free on Binance, good volatility)
     "DOTUSD", "ATOMUSD", "UNIUSD", "LTCUSD", "NEARUSD",
     "ARBUSD", "OPUSD", "FILUSD", "APTUSD", "INJUSD",
     # Tier 4: High volatility (great for mean reversion)
-    "PEPEUSD", "WIFUSD", "RNDRUSD", "FETUSD", "TIAUSD",
+    # RNDRUSD/MATICUSD removed — globally suppressed (TRADING_SUPPRESS["*"]),
+    # so they could never trade and only burned API calls each cycle.
+    "PEPEUSD", "WIFUSD", "FETUSD", "TIAUSD",
     "SUIUSD", "SEIUSD", "JUPUSD", "WUSD", "ENAUSD",
 ]
 
@@ -66,8 +68,9 @@ TRADING_COMMODITIES = []
 
 TRADING_STOCKS = [
     # Core performers (proven profitable)
+    # COIN removed — globally suppressed (-$380 over 9 trades), could never trade.
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
-    "META", "TSLA", "AMD", "NFLX", "COIN",
+    "META", "TSLA", "AMD", "NFLX",
     "SPY", "QQQ", "JPM", "BAC", "GS",
     # Batch 1 — high-volume stocks that move well on 4H
     "CRM", "ORCL", "UBER", "SQ", "SHOP",

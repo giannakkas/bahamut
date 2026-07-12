@@ -81,151 +81,24 @@ def test_evaluate_kill_switch_high_fragility():
 # ─── Test: PortfolioManager drawdown-based kill switch ───
 
 
-class MockExecutionEngine:
-    """Minimal mock for ExecutionEngine."""
-    def __init__(self):
-        self.open_positions = []
-        self.closed_trades = []
-
-    def get_strategy_pnl(self, strategy):
-        return sum(t.pnl for t in self.closed_trades if t.strategy == strategy)
-
-    def get_strategy_unrealized(self, strategy):
-        return sum(p.unrealized_pnl for p in self.open_positions if p.strategy == strategy)
 
 
-@dataclass
-class MockPosition:
-    strategy: str = "v5_base"
-    asset: str = "BTCUSD"
-    direction: str = "LONG"
-    unrealized_pnl: float = 0.0
-    risk_amount: float = 0.0
-    entry_price: float = 68000.0
-    current_price: float = 68000.0
-    stop_price: float = 65000.0
-    tp_price: float = 72000.0
-    size: float = 0.01
-    order_id: str = "test-001"
-    bars_held: int = 0
 
 
-@dataclass
-class MockClosedTrade:
-    strategy: str = "v5_base"
-    asset: str = "BTCUSD"
-    direction: str = "LONG"
-    pnl: float = 0.0
-    exit_reason: str = "TP"
-    entry_price: float = 68000.0
-    exit_price: float = 70000.0
-    order_id: str = "test-002"
-    trade_id: str = "t-002"
-    bars_held: int = 5
 
 
-def _make_manager(threshold=0.10):
-    """Create a PortfolioManager with mocked execution engine."""
-    from bahamut.portfolio.manager import PortfolioManager
-    pm = PortfolioManager(total_capital=100_000.0, max_drawdown_pct=threshold)
-    return pm
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_zero_drawdown_no_trigger(mock_get_engine):
-    """0% drawdown → kill switch must NOT trigger."""
-    engine = MockExecutionEngine()
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.05)
-    pm.update()
-
-    assert pm.kill_switch_triggered is False, \
-        f"Kill switch fired at 0% drawdown! equity={pm.total_capital}, peak={pm.peak_equity}"
-    assert pm.total_drawdown == 0.0
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_3pct_drawdown_5pct_threshold_no_trigger(mock_get_engine):
-    """-3% drawdown with 5% threshold → NO trigger."""
-    engine = MockExecutionEngine()
-    # Simulate -3% loss on v5_base sleeve (35% allocation = $35K)
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_base", pnl=-3000.0))
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.05)
-    pm.update()
-
-    dd = pm.total_drawdown
-    assert pm.kill_switch_triggered is False, \
-        f"Kill switch fired at {dd*100:.1f}% drawdown with 5% threshold!"
-    assert dd < 0.05
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_6pct_drawdown_5pct_threshold_triggers(mock_get_engine):
-    """-6% drawdown with 5% threshold → SHOULD trigger."""
-    engine = MockExecutionEngine()
-    # Simulate -6% loss spread across sleeves
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_base", pnl=-3000.0))
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_tuned", pnl=-3000.0))
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.05)
-    pm.update()
-
-    dd = pm.total_drawdown
-    assert pm.kill_switch_triggered is True, \
-        f"Kill switch did NOT fire at {dd*100:.1f}% drawdown with 5% threshold!"
-    assert dd >= 0.05
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_threshold_zero_never_triggers(mock_get_engine):
-    """If threshold == 0, kill switch must NEVER trigger (guard)."""
-    engine = MockExecutionEngine()
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_base", pnl=-10000.0))
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.0)
-    pm.update()
-
-    assert pm.kill_switch_triggered is False, \
-        "Kill switch fired with threshold=0! This is the zero-threshold guard bug."
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_test_trade_excluded_from_drawdown(mock_get_engine):
-    """Test trades (strategy starting with TEST_) must NOT affect drawdown.
-    Sleeve accounting naturally excludes them since no sleeve is named TEST_*."""
-    engine = MockExecutionEngine()
-    # Big test trade loss — but strategy doesn't match any sleeve
-    engine.closed_trades.append(MockClosedTrade(strategy="TEST_test_trade", pnl=-20000.0))
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.05)
-    pm.update()
-
-    assert pm.kill_switch_triggered is False, \
-        "Kill switch fired from test trade PnL! Test trades must be excluded."
-    # Drawdown should be 0: test trade strategy doesn't match any sleeve,
-    # so sleeve equity is unaffected
-    assert pm.total_drawdown == 0.0, \
-        f"Drawdown = {pm.total_drawdown*100:.1f}% but should be 0% (test trade excluded)"
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_test_position_excluded_from_risk(mock_get_engine):
-    """Open test positions must NOT affect total risk in can_trade() check."""
-    engine = MockExecutionEngine()
-    # Open test position with high risk amount
-    engine.open_positions.append(MockPosition(
-        strategy="TEST_test_trade", risk_amount=50000.0))
-    mock_get_engine.return_value = engine
-
-    pm = _make_manager(threshold=0.05)
-    can, reason = pm.can_trade("v5_base", "BTCUSD")
-    assert can is True, f"can_trade blocked by test position risk! reason={reason}"
 
 
 # ─── Test: get_current_state exception handling ───
@@ -264,33 +137,6 @@ def test_get_current_state_empty_portfolio_safe():
 # ─── Test: Kill switch logging fields ───
 
 
-@patch("bahamut.portfolio.manager.get_execution_engine")
-def test_kill_switch_log_contains_required_fields(mock_get_engine):
-    """When kill switch triggers, log must contain equity, peak, drawdown, threshold, reason."""
-    engine = MockExecutionEngine()
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_base", pnl=-6000.0))
-    engine.closed_trades.append(MockClosedTrade(strategy="v5_tuned", pnl=-6000.0))
-    mock_get_engine.return_value = engine
-
-    with patch("bahamut.portfolio.manager.logger") as mock_logger:
-        pm = _make_manager(threshold=0.05)
-        pm.update()
-
-        assert pm.kill_switch_triggered is True
-        # Verify the warning log was called with required fields
-        mock_logger.warning.assert_called()
-        call_kwargs = mock_logger.warning.call_args
-        # structlog passes as kwargs
-        if call_kwargs.kwargs:
-            kw = call_kwargs.kwargs
-        else:
-            # positional args: event name, then kwargs
-            kw = call_kwargs[1] if len(call_kwargs) > 1 else {}
-
-        required_fields = {"equity", "peak_equity", "drawdown", "threshold", "reason"}
-        present_fields = set(kw.keys())
-        missing = required_fields - present_fields
-        assert not missing, f"Kill switch log missing fields: {missing}. Got: {present_fields}"
 
 
 # ─── Test: Combined stress calculation safety ───

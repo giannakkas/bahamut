@@ -653,7 +653,6 @@ def open_training_position(
 ) -> TrainingPosition | None:
     """Open a new training position. Returns the position or None if rejected."""
     import sys as _sys
-    print(f"[TRACE] open_training_position ENTER asset={asset} strategy={strategy} exec_type={execution_type}", file=_sys.stderr, flush=True)
     logger.warning("open_training_position_ENTER",
                     asset=asset, strategy=strategy, direction=direction,
                     execution_type=execution_type, signal_id=signal_id[:30] if signal_id else "none")
@@ -683,11 +682,9 @@ def open_training_position(
     try:
         from bahamut.execution.order_manager import OrderManager as _OMLock
         _lock_result = _OMLock().acquire_execution_lock(signal_id, ttl=60)
-        print(f"[TRACE] exec_lock result={_lock_result} asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
         if not _lock_result:
             logger.warning("training_position_rejected_exec_lock",
                         asset=asset, strategy=strategy, signal_id=signal_id)
-            print(f"[TRACE] EARLY_EXIT exec_lock_held asset={asset}", file=_sys.stderr, flush=True)
             try:
                 from bahamut.trading.rejection_tracker import record_rejection
                 record_rejection(asset=asset, strategy=strategy, direction=direction,
@@ -699,7 +696,6 @@ def open_training_position(
         _lock_held_signal = signal_id
     except Exception as _lock_err:
         logger.warning("exec_lock_acquire_failed_nonfatal", error=str(_lock_err)[:100])
-        print(f"[TRACE] exec_lock EXCEPTION asset={asset} err={_lock_err}", file=_sys.stderr, flush=True)
         # Proceed — DB UNIQUE on signal_id still prevents duplicates
 
 
@@ -707,7 +703,6 @@ def open_training_position(
         _order_intent_id = None
         _budget_claimed = False
         _position_saved = False
-        print(f"[TRACE] INTENT_PHASE asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_INTENT_PHASE",
                         asset=asset, signal_id=signal_id[:30])
         try:
@@ -723,10 +718,8 @@ def open_training_position(
                 substrategy=substrategy,
                 intended_price=entry_price,
             )
-            print(f"[TRACE] create_intent returned intent={'OK' if intent else 'NONE'} asset={asset}", file=_sys.stderr, flush=True)
             if intent is None:
                 # Duplicate signal — already processed
-                print(f"[TRACE] EARLY_EXIT duplicate_blocked asset={asset} signal_id={signal_id[:30]}", file=_sys.stderr, flush=True)
                 logger.warning("training_position_duplicate_blocked",
                             asset=asset, strategy=strategy,
                             signal_id=signal_id)
@@ -743,14 +736,12 @@ def open_training_position(
                             asset=asset, intent_id=_order_intent_id)
         except Exception as _idmp_err:
             # OrderManager not available — continue without idempotency
-            print(f"[TRACE] order_manager EXCEPTION asset={asset} err={_idmp_err}", file=_sys.stderr, flush=True)
             logger.warning("order_manager_unavailable",
                          asset=asset, error=str(_idmp_err)[:100])
 
         # ═══════════════════════════════════════════
         # ASSET BLOCK CHECK (orphan detection, manual blocks)
         # ═══════════════════════════════════════════
-        print(f"[TRACE] GATES_START asset={asset}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_GATES_START", asset=asset)
         try:
             r = _get_redis()
@@ -862,7 +853,6 @@ def open_training_position(
                             reduced_to=risk_amount, reason="CRASH_SHORT_PENALIZE_MAP")
 
         # Check position limit (with Redis lock for multi-worker safety)
-        print(f"[TRACE] GATE_position_limit asset={asset}", file=_sys.stderr, flush=True)
         _cap_lock_acquired = False
         try:
             r = _get_redis()
@@ -965,7 +955,6 @@ def open_training_position(
                 return None
 
         # Stock trades only during US market hours (avoid $0 flat exits)
-        print(f"[TRACE] GATE_market_hours asset={asset} class={asset_class}", file=_sys.stderr, flush=True)
         if asset_class == "stock":
             try:
                 from bahamut.data.live_data import _is_us_market_open
@@ -1067,7 +1056,6 @@ def open_training_position(
             pass
 
         # ── Risk engine size multiplier ──
-        print(f"[TRACE] GATE_risk_engine asset={asset} risk_amount={round(risk_amount,2)}", file=_sys.stderr, flush=True)
         # Applied after strategy-specific circuit breakers, before size calculation.
         try:
             from bahamut.trading.risk_engine import get_size_multiplier
@@ -1239,15 +1227,12 @@ def open_training_position(
         # ATOMIC CROSS-WORKER RISK BUDGET CHECK
         # Prevents concurrent opens exceeding daily budget across all workers.
         # ═══════════════════════════════════════════
-        print(f"[TRACE] ALL_GATES_PASSED asset={asset} risk_amount={round(risk_amount,2)}", file=_sys.stderr, flush=True)
         logger.warning("open_training_position_ALL_GATES_PASSED",
                         asset=asset, strategy=strategy, risk_amount=round(risk_amount, 2))
         try:
             from bahamut.trading.risk_budget import check_and_claim_budget
             allowed, _budget_reason = check_and_claim_budget(risk_amount, asset_class)
-            print(f"[TRACE] BUDGET_CHECK asset={asset} allowed={allowed} reason={_budget_reason}", file=_sys.stderr, flush=True)
             if not allowed:
-                print(f"[TRACE] RETURN_NONE asset={asset} reason=risk_budget_rejected detail={_budget_reason}", file=_sys.stderr, flush=True)
                 logger.warning("trading_position_rejected_risk_budget",
                                asset=asset, strategy=strategy, reason=_budget_reason,
                                risk=risk_amount)
@@ -1262,7 +1247,6 @@ def open_training_position(
                 return None
             _budget_claimed = True
         except Exception as _rb_err:
-            print(f"[TRACE] BUDGET_CHECK_EXCEPTION asset={asset} err={_rb_err}", file=_sys.stderr, flush=True)
             logger.debug("risk_budget_check_nonfatal", error=str(_rb_err)[:100])
 
         # ── Execute on exchange FIRST (Binance/Alpaca) ──
@@ -1271,19 +1255,16 @@ def open_training_position(
         try:
             from bahamut.execution.router import execute_open as exec_open, _get_platform
             _expected_platform = _get_platform(asset, asset_class)
-        except Exception as _plat_err:
-            print(f"[TRACE] PLATFORM_RESOLVE_FAILED asset={asset} err={_plat_err}", file=_sys.stderr, flush=True)
-        print(f"[TRACE] EXCHANGE_EXEC_START asset={asset} platform={_expected_platform}", file=_sys.stderr, flush=True)
+        except Exception:
+            pass
         try:
             exec_result = exec_open(
                 asset=asset, asset_class=asset_class, direction=direction,
                 size=pos.size, risk_amount=risk_amount,
             )
-            print(f"[TRACE] exec_open_returned asset={asset} type={type(exec_result).__name__} is_dict={isinstance(exec_result, dict)}", file=_sys.stderr, flush=True)
             pos.execution_platform = exec_result.get("platform", "internal")
             pos.exchange_order_id = exec_result.get("order_id", "")
             _status = exec_result.get("status", "unknown")
-            print(f"[TRACE] EXEC_RESULT asset={asset} platform={pos.execution_platform} status={_status} lifecycle={exec_result.get('lifecycle','')} order_id={pos.exchange_order_id[:20] if pos.exchange_order_id else 'none'}", file=_sys.stderr, flush=True)
             # Phase 2 Item 4: capture canonical execution state on the position
             # so broker truth is preserved for PnL reporting and diagnostics.
             pos.client_order_id = exec_result.get("client_order_id", "") or ""
@@ -1361,7 +1342,6 @@ def open_training_position(
                                         asset=asset, sl=pos.stop_price, tp=pos.tp_price,
                                         sl_id=pos.bracket_sl_order_id,
                                         tp_id=pos.bracket_tp_order_id)
-                            print(f"[TRACE] BRACKETS_OK asset={asset} sl_id={pos.bracket_sl_order_id} tp_id={pos.bracket_tp_order_id}", file=_sys.stderr, flush=True)
                         else:
                             logger.error("binance_brackets_FAILED",
                                          asset=asset, direction=direction,
@@ -1370,7 +1350,6 @@ def open_training_position(
                                          sl_response=str(_brackets.get("sl_order", {}))[:200],
                                          tp_response=str(_brackets.get("tp_order", {}))[:200],
                                          msg="Position has NO exchange-side SL/TP — relying on client-side only")
-                            print(f"[TRACE] BRACKETS_FAILED asset={asset} sl_id={pos.bracket_sl_order_id or 'MISSING'} tp_id={pos.bracket_tp_order_id or 'MISSING'} sl_resp={str(_brackets.get('sl_order', {}))[:100]} tp_resp={str(_brackets.get('tp_order', {}))[:100]}", file=_sys.stderr, flush=True)
                             try:
                                 from bahamut.monitoring.telegram import send_alert
                                 send_alert(f"⚠️ BRACKETS FAILED: {asset} {direction} "
@@ -1411,7 +1390,6 @@ def open_training_position(
 
             # Abort guard: broker was expected but execution failed or fell back to internal
             if _status in ("error", "internal") and _expected_platform != "internal":
-                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_failed status={_status} expected={_expected_platform} actual={pos.execution_platform} error={exec_result.get('error','')[:80]}", file=_sys.stderr, flush=True)
                 # Broker was expected but execution failed or fell back to internal
                 # Do NOT create a phantom internal-only position
                 logger.warning("execution_failed_position_aborted",
@@ -1431,7 +1409,6 @@ def open_training_position(
                 return None
             # Final guard: if broker was expected but platform is still internal, abort
             if _expected_platform != "internal" and pos.execution_platform == "internal":
-                print(f"[TRACE] RETURN_NONE asset={asset} reason=mirror_mismatch expected={_expected_platform} actual=internal", file=_sys.stderr, flush=True)
                 logger.warning("execution_mirror_mismatch_aborted",
                                asset=asset, strategy=strategy, direction=direction,
                                expected_platform=_expected_platform,
@@ -1457,7 +1434,6 @@ def open_training_position(
                     pass
             if _expected_platform != "internal":
                 import traceback as _tb_exec
-                print(f"[TRACE] RETURN_NONE asset={asset} reason=exec_exception expected={_expected_platform} error={str(e)[:100]}\n{_tb_exec.format_exc()}", file=_sys.stderr, flush=True)
                 logger.warning("execution_exception_position_aborted",
                                asset=asset, expected_platform=_expected_platform,
                                error=str(e)[:100])
@@ -1475,7 +1451,6 @@ def open_training_position(
         # Save position only after exchange execution is resolved
         _save_position(pos)
         _position_saved = True
-        print(f"[TRACE] POSITION_SAVED asset={asset} position_id={pos.position_id}", file=_sys.stderr, flush=True)
         _opened_this_cycle.add(dedup_key)
         _opened_this_cycle.add(asset_key)
         open_training_position._opened_this_cycle = _opened_this_cycle

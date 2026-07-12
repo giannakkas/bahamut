@@ -31,8 +31,6 @@ DEFAULT_CONFIG = {
     "max_new_per_cycle": 8,         # Max new positions opened per cycle (was 5)
     "max_per_class": 8,             # Max new positions per asset class per cycle (was 5)
     "max_total_positions": 25,      # Hard cap on total open positions (headroom above 20)
-    "class_diversity_min": 2,       # Try to spread across at least N classes
-    "require_regime_alignment": True,  # Require TREND or BREAKOUT regime
 }
 
 # ── Per-strategy readiness thresholds ──

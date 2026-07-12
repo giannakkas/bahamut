@@ -183,8 +183,6 @@ def run_trading_cycle():
                         pass
     except Exception as e:
         logger.debug("zombie_cleanup_skipped", error=str(e)[:100])
-    except Exception as _e:
-        logger.error("cycle_crypto_cleanup_failed", error=str(_e)[:200])
 
     # Pre-fetch and cache news/events for this cycle (sync-safe)
     try:

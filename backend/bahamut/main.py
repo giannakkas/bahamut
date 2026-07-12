@@ -240,12 +240,8 @@ app.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 app.include_router(trust_router, prefix="/api/v1/trust", tags=["trust"])
 app.include_router(metrics_router, tags=["metrics"])
 
-# Monitoring dashboard + notification settings
-try:
-    from bahamut.monitoring.dashboard_api import router as monitoring_router
-    app.include_router(monitoring_router, prefix="/api/v1/monitoring", tags=["monitoring"])
-except Exception:
-    pass
+# Notification settings (the legacy v7 monitoring dashboard_api was removed —
+# it had been failing to import silently since execution/engine.py was deleted)
 try:
     from bahamut.monitoring.settings_api import router as settings_router
     app.include_router(settings_router, prefix="/api/v1/monitoring", tags=["monitoring"])
