@@ -11,7 +11,7 @@ import json
 import os
 import structlog
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from bahamut.auth.router import get_current_user
 
@@ -282,6 +282,49 @@ def _build_kpi(r, db_agg: dict) -> dict:
     unrealized = round(sum(p.unrealized_pnl for p in positions), 2)
     total_equity = round(equity + unrealized, 2)
 
+    # ── Win-rate ERA: measure the CURRENT configuration against a clean
+    # baseline. When bahamut:training:winrate_era_start is set (via
+    # POST /training/winrate-reset), the headline win_rate counts only trades
+    # closed after that marker, starting from a neutral 0.50 until new trades
+    # arrive. Lifetime stats are preserved alongside — history is never wiped.
+    era_start = None
+    era = None
+    if r:
+        try:
+            _raw_era = r.get("bahamut:training:winrate_era_start")
+            if _raw_era:
+                era_start = _raw_era.decode() if isinstance(_raw_era, bytes) else str(_raw_era)
+        except Exception:
+            pass
+    if era_start:
+        try:
+            from bahamut.db.query import run_query
+            _rows = run_query("""
+                SELECT COUNT(*) as cnt,
+                       SUM(CASE WHEN pnl > 0.01 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl < -0.01 THEN 1 ELSE 0 END) as losses,
+                       COALESCE(SUM(pnl), 0) as pnl
+                FROM training_trades WHERE exit_time >= :era
+            """, {"era": era_start})
+            if _rows:
+                _er = _rows[0]
+                era = {
+                    "cnt": int(_er.get("cnt", 0) or 0),
+                    "wins": int(_er.get("wins", 0) or 0),
+                    "losses": int(_er.get("losses", 0) or 0),
+                    "pnl": round(float(_er.get("pnl", 0) or 0), 2),
+                }
+        except Exception:
+            era = None
+
+    if era is not None:
+        _era_decisive = era["wins"] + era["losses"]
+        headline_wr = round(era["wins"] / _era_decisive, 4) if _era_decisive else 0.50
+        headline_wins, headline_losses = era["wins"], era["losses"]
+    else:
+        headline_wr = round(wins / max(1, decisive), 4)
+        headline_wins, headline_losses = wins, losses
+
     kpi = {
         "universe_size": len(TRADING_ASSETS),
         "virtual_capital": TRADING_VIRTUAL_CAPITAL,
@@ -294,14 +337,21 @@ def _build_kpi(r, db_agg: dict) -> dict:
         "assets_scanned": 0,
         "open_positions": get_open_position_count(),
         "closed_trades": closed,
-        "win_rate": round(wins / max(1, decisive), 4),  # Excludes flat trades from denominator
-        "wins": wins,
-        "losses": losses,
+        "win_rate": headline_wr,  # era-based when a baseline reset is active
+        "wins": headline_wins,
+        "losses": headline_losses,
         "flat_trades": closed - decisive,
         "avg_duration_bars": round(totals.get("avg_bars", 0), 1),
         "last_cycle": None,
         "cycle_status": "unknown",
         "learning_samples": closed,
+        # Lifetime stats always preserved alongside the era view
+        "win_rate_lifetime": round(wins / max(1, decisive), 4),
+        "wins_lifetime": wins,
+        "losses_lifetime": losses,
+        "era_start": era_start,
+        "era_trades": era["cnt"] if era else None,
+        "era_pnl": era["pnl"] if era else None,
     }
 
     if r:
@@ -820,6 +870,26 @@ async def trigger_scan(user=Depends(get_current_user)):
     """Manually trigger asset scan. Populates candidates + assets cache in background."""
     _trigger_background_asset_scan()
     return {"status": "scan_triggered", "message": "Background scan started — data appears in ~60s"}
+
+
+@router.post("/winrate-reset")
+async def reset_winrate_baseline(user=Depends(get_current_user)):
+    """Start a fresh win-rate measurement era from NOW.
+
+    Non-destructive: trade history and learning are untouched. The headline
+    KPI win_rate counts only trades closed after this marker (neutral 0.50
+    until new trades close); lifetime stats remain in win_rate_lifetime.
+    """
+    from datetime import datetime, timezone
+    era_start = datetime.now(timezone.utc).isoformat()
+    r = _get_redis()
+    if not r:
+        raise HTTPException(status_code=503, detail="Redis unavailable — era marker not set")
+    r.set("bahamut:training:winrate_era_start", era_start)
+    logger.info("winrate_era_reset", era_start=era_start,
+                by=getattr(user, "email", "unknown"))
+    return {"status": "reset", "era_start": era_start,
+            "note": "Headline win_rate now measures trades closed after this moment (0.50 until the first close). Lifetime stats preserved in win_rate_lifetime."}
 
 
 @router.post("/run-cycle")
