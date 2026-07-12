@@ -333,7 +333,7 @@ def build_market_intelligence_snapshot() -> dict:
         # Override narrative with AI-generated one
         if ai_analysis.get("narrative"):
             summary["ai_narrative"] = ai_analysis["narrative"]
-            summary["ai_narrative_source"] = "claude-opus-4.6"
+            summary["ai_narrative_source"] = "claude-opus-4-8"
         # Override posture if AI has a stronger opinion
         if ai_analysis.get("overall_posture"):
             summary["ai_posture"] = ai_analysis["overall_posture"]

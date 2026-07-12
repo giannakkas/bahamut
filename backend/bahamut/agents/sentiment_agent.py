@@ -50,7 +50,19 @@ class SentimentAgent(BaseAgent):
         gemini_key = settings.gemini_api_key or os.environ.get('GEMINI_API_KEY', '')
         has_claude = bool(settings.anthropic_api_key)
 
-        # ── PRIMARY: Gemini only (free) ──
+        # ── PRIMARY: Claude Opus 4.8 (capped) ──
+        # Falls through to Gemini only if there's no key, the daily cost cap is
+        # hit, or the call fails — so "Opus everywhere" can't run away on cost.
+        if has_claude:
+            try:
+                claude_out = await self._claude_analysis(request, indicators, news_headlines)
+                if claude_out:
+                    claude_out.meta["news_impact_deterministic"] = news_impact_data
+                    return claude_out
+            except Exception as e:
+                logger.warning("sentiment_claude_primary_failed", error=str(e))
+
+        # ── FALLBACK: Gemini (free) ──
         gemini_out = None
         if gemini_key:
             try:
@@ -59,34 +71,8 @@ class SentimentAgent(BaseAgent):
                 logger.error("gemini_failed", error=str(e))
 
         if gemini_out:
-            # Only escalate to Claude if: low confidence OR high-impact news detected
-            det_impact = news_impact_data.get("impact_score", 0)
-            needs_second_opinion = (
-                gemini_out.confidence < 0.45 or
-                det_impact >= 0.5 or  # Deterministic: significant news event
-                gemini_out.meta.get("news_impact") in ("strong_bullish", "strong_bearish") or
-                len(news_headlines) > 5  # Lots of news = important event
-            )
-
-            # Inject deterministic news data into output meta
             gemini_out.meta["news_impact_deterministic"] = news_impact_data
-
-            if needs_second_opinion and has_claude:
-                try:
-                    claude_out = await self._claude_analysis(request, indicators, news_headlines)
-                    if claude_out:
-                        return self._merge_opinions(gemini_out, claude_out, request)
-                except Exception as e:
-                    logger.warning("claude_second_opinion_failed", error=str(e))
-
             return gemini_out
-
-        # ── FALLBACK: Claude only if Gemini totally failed ──
-        if has_claude:
-            try:
-                return await self._claude_analysis(request, indicators, news_headlines)
-            except Exception as e:
-                logger.error("claude_fallback_failed", error=str(e))
 
         return self._regime_based_sentiment(request)
 
@@ -143,13 +129,10 @@ class SentimentAgent(BaseAgent):
         ema_50 = indicators.get("ema_50", close)
         ema_200 = indicators.get("ema_200", close)
 
-        news_block = ""
-        if headlines:
-            news_block = "\n\nREAL-TIME NEWS:\n"
-            for i, h in enumerate(headlines[:8], 1):
-                news_block += f"{i}. [{h.get('source', '?')}] {h['title']}\n"
-        else:
-            news_block = "\n\nNo news available. Analyze based on technicals and regime only."
+        # Sanitize + delimit headlines — they are untrusted external text.
+        from bahamut.intelligence.llm import sanitize_news, wrap_news_block
+        _titles = [f"[{h.get('source', '?')}] {h.get('title', '')}" for h in (headlines or [])]
+        news_block = "\n\nREAL-TIME NEWS:\n" + wrap_news_block(sanitize_news(_titles))
 
         return f"""You are an institutional trading analyst. Analyze sentiment for {request.asset}.
 
@@ -183,21 +166,16 @@ Respond ONLY with JSON:
         return self._build_output(request, result, headlines, "gemini-2.5-flash")
 
     async def _claude_analysis(self, request, indicators, headlines):
+        # Capped Opus 4.8 client (cost cap + news-injection hardening).
+        from bahamut.intelligence.llm import call_claude, LLM_MODEL
         prompt = self._build_prompt(request, indicators, headlines)
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": settings.anthropic_api_key,
-                         "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 500,
-                      "messages": [{"role": "user", "content": prompt}]},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        text = data["content"][0]["text"].strip()
+        text = await call_claude(prompt, max_tokens=500)
+        if not text:
+            return None
+        text = text.strip()
         start, end = text.find("{"), text.rfind("}") + 1
         result = json.loads(text[start:end]) if start >= 0 else json.loads(text)
-        return self._build_output(request, result, headlines, "claude-haiku-4.5")
+        return self._build_output(request, result, headlines, LLM_MODEL)
 
     def _build_output(self, request, result, headlines, model_name):
         bias = result.get("bias", "NEUTRAL")

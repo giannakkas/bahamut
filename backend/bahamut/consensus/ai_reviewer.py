@@ -340,6 +340,15 @@ async def _call_claude(prompt: str, api_key: str, timeout: float = 5.0) -> Optio
         logger.debug("claude_reviewer_circuit_open")
         return None
 
+    # Shared daily cost cap — same ceiling as macro/sentiment agents.
+    try:
+        from bahamut.intelligence.llm import budget_exhausted
+        if budget_exhausted():
+            logger.warning("claude_reviewer_budget_exhausted")
+            return None
+    except Exception:
+        pass
+
     start = time.time()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -351,7 +360,7 @@ async def _call_claude(prompt: str, api_key: str, timeout: float = 5.0) -> Optio
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "claude-opus-4-8",
                     "max_tokens": 200,
                     "messages": [{"role": "user", "content": prompt}],
                 },
@@ -363,9 +372,18 @@ async def _call_claude(prompt: str, api_key: str, timeout: float = 5.0) -> Optio
             resp.raise_for_status()
             data = resp.json()
 
+        # Record spend against the shared daily cap
+        try:
+            from bahamut.intelligence.llm import _record_cost, _PRICE_IN_PER_M, _PRICE_OUT_PER_M
+            _u = data.get("usage", {})
+            _record_cost(_u.get("input_tokens", 0) / 1e6 * _PRICE_IN_PER_M
+                         + _u.get("output_tokens", 0) / 1e6 * _PRICE_OUT_PER_M)
+        except Exception:
+            pass
+
         text = data["content"][0]["text"]
         result = _parse_json_response(text)
-        result["_provider"] = "claude"
+        result["_provider"] = "claude-opus-4-8"
         result["_latency_ms"] = _ms(start)
 
         _claude_breaker.record_success()

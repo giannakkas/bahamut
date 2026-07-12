@@ -872,6 +872,13 @@ async def trigger_scan(user=Depends(get_current_user)):
     return {"status": "scan_triggered", "message": "Background scan started — data appears in ~60s"}
 
 
+@router.get("/llm-status")
+async def llm_status(user=Depends(get_current_user)):
+    """AI model + today's Claude spend against the daily cost cap."""
+    from bahamut.intelligence.llm import get_llm_status
+    return get_llm_status()
+
+
 @router.get("/meta-model")
 async def meta_model_status(user=Depends(get_current_user)):
     """Meta-labeling model status: sample count, gate state, holdout AUC."""

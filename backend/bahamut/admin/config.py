@@ -38,6 +38,12 @@ DEFAULTS = {
     # when the FRED_API_KEY env var isn't set. Free key from fred.stlouisfed.org.
     "data.fred_api_key": "",
 
+    # ── LLM (Claude Opus 4.8) ──
+    # Hard daily USD cost ceiling shared across all AI agents. When today's
+    # spend hits this, agents fall back to Gemini/deterministic paths. This is
+    # what makes "Opus everywhere" safe — set to your tolerance.
+    "llm.daily_cost_cap_usd": 25.0,
+
     # ── Meta-labeling model (AI accuracy layer) ──
     # Predictions influence sizing/filtering ONLY when true AND the model's
     # honesty gate has passed (holdout AUC >= 0.55 on 200+ trades). Until
