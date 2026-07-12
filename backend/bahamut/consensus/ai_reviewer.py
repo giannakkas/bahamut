@@ -271,7 +271,12 @@ Respond ONLY with JSON (no markdown, no backticks):
 def _parse_json_response(text: str) -> dict:
     text = text.strip()
     if "```" in text:
-        text = text.split("```")[1].lstrip("json\n")
+        # lstrip("json\n") stripped ANY leading j/s/o/n chars from the body —
+        # use an explicit prefix removal instead.
+        part = text.split("```")[1]
+        if part.startswith("json"):
+            part = part[4:]
+        text = part.strip()
     start = text.find("{")
     end = text.rfind("}") + 1
     if start >= 0 and end > start:

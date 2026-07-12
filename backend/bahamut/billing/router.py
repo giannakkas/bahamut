@@ -79,9 +79,49 @@ async def create_checkout(req: CreateCheckoutRequest, user: User = Depends(get_c
         raise HTTPException(status_code=500, detail="Checkout failed")
 
 
+def _verify_stripe_signature(payload: bytes, sig_header: str, secret: str,
+                             tolerance: int = 300) -> bool:
+    """Verify a Stripe-Signature header (t=...,v1=...) per Stripe's spec:
+    HMAC-SHA256 of "{t}.{payload}" with the webhook secret, constant-time
+    compare against every v1 signature, and a timestamp tolerance check."""
+    import hmac
+    import hashlib
+    import time as _t
+    try:
+        parts = dict(p.split("=", 1) for p in sig_header.split(",") if "=" in p)
+        ts = int(parts.get("t", "0"))
+        if abs(_t.time() - ts) > tolerance:
+            return False
+        signed = f"{ts}.".encode() + payload
+        expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+        v1_sigs = [v for k, v in
+                   (p.split("=", 1) for p in sig_header.split(",") if "=" in p)
+                   if k == "v1"]
+        return any(hmac.compare_digest(expected, s) for s in v1_sigs)
+    except Exception:
+        return False
+
+
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
-    body = await request.json()
+    # Verify the event actually came from Stripe. Previously unauthenticated:
+    # anyone could POST a forged checkout.session.completed.
+    payload = await request.body()
+    secret = settings.stripe_webhook_secret
+    if secret:
+        sig = request.headers.get("stripe-signature", "")
+        if not sig or not _verify_stripe_signature(payload, sig, secret):
+            logger.warning("stripe_webhook_bad_signature")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        logger.warning("stripe_webhook_unverified",
+                       reason="STRIPE_WEBHOOK_SECRET not configured")
+
+    import json as _json
+    try:
+        body = _json.loads(payload)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload")
     event_type = body.get("type", "")
     if event_type == "checkout.session.completed":
         session = body["data"]["object"]

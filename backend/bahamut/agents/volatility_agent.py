@@ -60,14 +60,14 @@ class VolatilityAgent(BaseAgent):
         if atr_pct > 0.01:
             risk_notes.append(f"Wide ATR ({atr_pct:.3%} of price) - volatile conditions")
 
-        # Vol agent also provides directional bias based on BB position
-        indicators = features.get("indicators", {})
-        close_price = indicators.get("close", 0)
-        bb_upper = indicators.get("bb_upper", 0)
-        bb_lower = indicators.get("bb_lower", 0)
-        bb_mid = indicators.get("bb_middle", 0)
-        
-        if close_price and bb_upper and bb_lower:
+        # Vol agent also provides directional bias based on BB position.
+        # (This block was dead: it re-read nonexistent bb_upper/bb_lower/
+        # bb_middle keys — indicators only carry bollinger_upper/lower — so
+        # the guard below was always False. Reuse the values read above.)
+        close_price = close
+        bb_mid = (bb_upper + bb_lower) / 2 if (bb_upper and bb_lower) else 0
+
+        if close_price and bb_upper and bb_lower and bb_upper != bb_lower:
             if close_price > bb_mid:
                 score += 5
             elif close_price < bb_mid:

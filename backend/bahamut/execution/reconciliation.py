@@ -231,13 +231,15 @@ def _reconcile_binance() -> dict:
                          asset=asset, qty=on_broker["qty"],
                          side=on_broker["side"])
 
-            # Always: Telegram alert with manual confirmation instructions
+            # Always: Telegram alert with manual confirmation instructions.
+            # (Was silently dead: imported nonexistent send_alert AND referenced
+            # an undefined `platform` — both swallowed by the except below.)
             try:
-                from bahamut.monitoring.telegram import send_alert
-                send_alert(
+                from bahamut.monitoring.telegram import send_telegram_alert
+                send_telegram_alert(
                     f"🚨 ORPHAN POSITION DETECTED\n"
                     f"Asset: {asset}\n"
-                    f"Platform: {platform}\n"
+                    f"Platform: binance_futures\n"
                     f"Broker side: {on_broker['side']}\n"
                     f"Broker qty: {on_broker['qty']}\n"
                     f"Broker entry: {on_broker['entry_price']}\n"
@@ -247,7 +249,8 @@ def _reconcile_binance() -> dict:
                     f"(b) App-broker divergence from failed persist\n"
                     f"\n"
                     f"ACTION REQUIRED: Investigate in Binance/Alpaca web UI.\n"
-                    f"Asset {asset} is now BLOCKED from new trades for 1 hour."
+                    f"Asset {asset} is now BLOCKED from new trades for 1 hour.",
+                    level="CRITICAL", title="Orphan position",
                 )
             except Exception:
                 pass
@@ -545,17 +548,20 @@ def check_bracket_coverage(platform: str = "binance_futures") -> dict:
 
 def _auto_repair_brackets(pos, sl_live: bool, tp_live: bool):
     """Replace missing SL or TP bracket on a position where the other is still live."""
-    # Demo testnet doesn't support stop orders — skip repair
-    _is_demo = "demo" in BASE_URL.lower() or "testnet" in BASE_URL.lower()
-    _force = os.environ.get("BINANCE_BRACKETS_ENABLED", "").lower() in ("1", "true", "yes")
-    if _is_demo and not _force:
-        logger.debug("bracket_repair_skipped_demo", asset=pos.asset)
-        return
     try:
         from bahamut.execution.binance_futures import (
             SYMBOL_MAP, BASE_URL, _sign, _headers, _configured
         )
         import httpx
+
+        # Demo testnet doesn't support stop orders — skip repair.
+        # (This check used BASE_URL before the import above and NameError'd
+        # into the outer except, silently disabling auto-repair entirely.)
+        _is_demo = "demo" in BASE_URL.lower() or "testnet" in BASE_URL.lower()
+        _force = os.environ.get("BINANCE_BRACKETS_ENABLED", "").lower() in ("1", "true", "yes")
+        if _is_demo and not _force:
+            logger.debug("bracket_repair_skipped_demo", asset=pos.asset)
+            return
 
         if not _configured():
             return

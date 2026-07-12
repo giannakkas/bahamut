@@ -167,14 +167,21 @@ class OrderManager:
             from bahamut.database import sync_engine
             from sqlalchemy import text
             with sync_engine.connect() as conn:
-                # Clean stale intents before attempting insert.
-                # ANY existing intent with the same signal_id must be removed —
-                # terminal states (filled, rejected, canceled) still block the
-                # UNIQUE constraint. A new cycle = a new trade attempt.
+                # Clean stale intents before attempting insert — but ONLY those
+                # in states where no broker order can exist. The old version
+                # deleted ANY intent (including submitted/filled), which
+                # defeated the UNIQUE(signal_id) idempotency gate: a sequential
+                # retry within the same signal bucket would wipe the record of
+                # an already-submitted order and fire a duplicate at the broker.
+                # Active/uncertain states now survive, so the INSERT below hits
+                # the UNIQUE constraint and the duplicate is blocked.
                 try:
-                    # 1. Delete ANY intent with same signal_id (regardless of state/age)
+                    # 1. Delete same-signal intents ONLY in dead states
                     conn.execute(text("""
-                        DELETE FROM order_intents WHERE signal_id = :sid
+                        DELETE FROM order_intents
+                        WHERE signal_id = :sid
+                          AND order_state IN ('intent_created', 'rejected',
+                                              'canceled', 'error', 'closed')
                     """), {"sid": signal_id})
                     # 2. Delete stuck intents in intent_created state (> 2 min old)
                     #    These never progressed to submission — dead weight
