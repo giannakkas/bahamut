@@ -463,6 +463,21 @@ def run_trading_cycle():
             except Exception as _me:
                 logger.debug("macro_overlay_skipped", error=str(_me)[:100])
 
+            # ── HYBRID ALLOCATION: core (stock-long v9/v5, full size) vs research
+            # (crypto/short/v10, small size), + expectancy amplification on core. ──
+            try:
+                from bahamut.trading.allocation import strategic_risk_multiplier
+                _alloc = strategic_risk_multiplier(
+                    sig.strategy, sig.asset_class, sig.direction, sig.regime)
+                _am = float(_alloc.get("multiplier", 1.0))
+                if _am != 1.0:
+                    risk_amount = risk_amount * _am
+                    logger.info("strategic_size_applied", asset=sig.asset,
+                                tier=_alloc.get("tier"), mult=_am,
+                                expectancy=_alloc.get("expectancy"))
+            except Exception as _ae:
+                logger.debug("strategic_alloc_skipped", error=str(_ae)[:100])
+
             logger.info("training_execute_attempting",
                         asset=sig.asset, strategy=sig.strategy,
                         direction=sig.direction, entry_price=sig.entry_price,

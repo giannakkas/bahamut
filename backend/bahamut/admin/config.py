@@ -33,6 +33,12 @@ DEFAULTS = {
     # CRYPTO_TRADING_ENABLED env var — see config_assets.crypto_trading_enabled().
     "trading.crypto_enabled": False,
 
+    # ── Strategic allocation (hybrid core/research sleeves) ──
+    "allocation.research_risk_fraction": 0.30,   # research sleeve size vs core
+    "allocation.expectancy_sizing_enabled": True, # size core by learned expectancy
+    "allocation.expectancy_size_min": 0.80,       # floor for proven-marginal patterns
+    "allocation.expectancy_size_max": 1.30,       # cap for proven-strong patterns
+
     # ── Scenario weights ──
     "scenario.weight.risk_off": 0.30,
     "scenario.weight.volatility_spike": 0.25,
