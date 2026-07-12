@@ -461,14 +461,15 @@ export default function TrainingOperationsPage() {
           byDay[d].trades += 1;
           if ((t.pnl || 0) > 0.5) byDay[d].wins += 1;
         });
-        // Build continuous 30-day calendar ending today
-        const today = new Date();
+        // Build continuous 30-day calendar ending today — all in UTC so keys
+        // match the byDay keys (which come from UTC exit_time). Mixing local
+        // new Date() with UTC toISOString() shifts keys by a day near midnight.
+        const now = new Date();
         const allDays: { date: string; pnl: number; trades: number; wins: number; isWeekend: boolean }[] = [];
         for (let i = 29; i >= 0; i--) {
-          const d = new Date(today);
-          d.setDate(d.getDate() - i);
+          const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
           const key = d.toISOString().slice(0, 10);
-          const dow = d.getDay();
+          const dow = d.getUTCDay();
           const isWeekend = dow === 0 || dow === 6;
           const entry = byDay[key];
           allDays.push({
@@ -479,11 +480,13 @@ export default function TrainingOperationsPage() {
             isWeekend,
           });
         }
-        const tradingDays = allDays.filter(d => !d.isWeekend);
-        const maxAbs = Math.max(1, ...tradingDays.map(d => Math.abs(d.pnl)));
-        const totalRecent = tradingDays.reduce((s, d) => s + d.pnl, 0);
-        const tradingCount = tradingDays.filter(d => d.trades > 0).length;
-        const dowLabel = (ds: string) => { const d = new Date(ds + "T12:00:00"); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]; };
+        // Include weekend days that actually traded (crypto runs 24/7) — a
+        // Saturday/Sunday with crypto fills must show its P&L, not "CLOSED".
+        const activeOrWeekday = allDays.filter(d => !d.isWeekend || d.trades > 0);
+        const maxAbs = Math.max(1, ...activeOrWeekday.map(d => Math.abs(d.pnl)));
+        const totalRecent = allDays.reduce((s, d) => s + d.pnl, 0);
+        const tradingCount = allDays.filter(d => d.trades > 0).length;
+        const dowLabel = (ds: string) => { const d = new Date(ds + "T12:00:00Z"); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getUTCDay()]; };
         const reversedDays = [...allDays].reverse();
         const visibleDays = showMoreDaily ? reversedDays : reversedDays.slice(0, 5);
         return (
@@ -499,7 +502,7 @@ export default function TrainingOperationsPage() {
             </div>
             <div className="space-y-0.5">
               {visibleDays.map(d => {
-                if (d.isWeekend) {
+                if (d.isWeekend && d.trades === 0) {
                   return (
                     <div key={d.date} className="flex items-center gap-2 text-[11px] opacity-40">
                       <span className="text-bah-muted w-[70px] shrink-0 font-mono">{d.date.slice(5)}</span>
