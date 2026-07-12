@@ -148,6 +148,16 @@ DEFAULTS = {
     "notify.level.critical": True,      # Send CRITICAL alerts
     "notify.level.warning": True,       # Send WARNING alerts
     "notify.level.info": False,         # Send INFO alerts (trades/regime changes)
+
+    # ── Notifications: Which events push to Telegram ──
+    # Default posture: ONLY position closes (win/loss). Everything else is
+    # muted so the feed shows just "did we win or lose money" per trade.
+    # Flip any of these True via POST /admin/config to re-enable that stream.
+    "notify.category.trade_closed": True,    # ✅/❌ win-loss report on every close
+    "notify.category.trade_opened": False,   # position-opened notices
+    "notify.category.cycle_report": False,   # 4H cycle summaries
+    "notify.category.signals": False,        # signal-selection notices
+    "notify.category.system": False,         # orphan / reconciliation / risk / bracket ops
 }
 
 # Type constraints for validation

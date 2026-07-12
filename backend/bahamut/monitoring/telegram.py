@@ -70,12 +70,41 @@ def _check_level(level: str) -> bool:
     return True
 
 
+# Default posture: only trade-close (win/loss) notifications are on. Every
+# other stream (opens, cycle reports, signals, and all system/ops alerts such
+# as orphan-position and reconciliation) is muted unless explicitly enabled.
+_CATEGORY_DEFAULTS = {
+    "trade_closed": True,
+    "trade_opened": False,
+    "cycle_report": False,
+    "signals": False,
+    "system": False,
+}
+
+
+def _category_enabled(category: str) -> bool:
+    """Whether a notification category should push to Telegram."""
+    default = _CATEGORY_DEFAULTS.get(category, False)
+    try:
+        from bahamut.admin.config import get_config
+        return bool(get_config(f"notify.category.{category}", default))
+    except Exception:
+        return default
+
+
 # ═══════════════════════════════════════════════════════
 # ALERT TEMPLATES
 # ═══════════════════════════════════════════════════════
 
 def send_telegram_alert(message: str, level: str = "INFO", title: str = "") -> bool:
-    """Send a templated alert via Telegram."""
+    """Send a templated system/ops alert via Telegram.
+
+    Gated behind the 'system' category (orphan positions, reconciliation,
+    risk brakes, bracket failures, login alerts, etc.). Muted by default so
+    the feed carries only trade-close win/loss reports.
+    """
+    if not _category_enabled("system"):
+        return False
     if not _check_level(level):
         return False
 
@@ -104,6 +133,15 @@ def send_telegram_alert(message: str, level: str = "INFO", title: str = "") -> b
     return _send(text)
 
 
+def send_alert(message: str) -> bool:
+    """Plain system/ops alert. Previously imported across the codebase but
+    never defined (every call raised ImportError, swallowed by a try/except —
+    so these alerts were silently dead). Now a real function, still muted by
+    default via the 'system' category so behavior is unchanged unless enabled.
+    """
+    return send_telegram_alert(message, level="WARNING", title="System Alert")
+
+
 # ═══════════════════════════════════════════════════════
 # CYCLE REPORT
 # ═══════════════════════════════════════════════════════
@@ -111,6 +149,8 @@ def send_telegram_alert(message: str, level: str = "INFO", title: str = "") -> b
 def send_cycle_report(cycle: dict, portfolio: dict = None,
                       conditions: dict = None) -> bool:
     """Send 4H cycle report via Telegram."""
+    if not _category_enabled("cycle_report"):
+        return False
     status = cycle.get("status", "?")
     duration = cycle.get("duration_ms", 0)
     signals = cycle.get("signals_generated", 0)
@@ -199,6 +239,8 @@ def send_cycle_report(cycle: dict, portfolio: dict = None,
 
 def send_trade_opened(trade: dict) -> bool:
     """Send trade opened notification via Telegram."""
+    if not _category_enabled("trade_opened"):
+        return False
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", "LONG")
@@ -234,6 +276,8 @@ def send_trade_opened(trade: dict) -> bool:
 
 def send_trade_closed(trade: dict) -> bool:
     """Send trade closed notification via Telegram."""
+    if not _category_enabled("trade_closed"):
+        return False
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", "LONG")
@@ -276,6 +320,8 @@ def send_trade_closed(trade: dict) -> bool:
 
 def send_training_trade_opened(trade: dict) -> bool:
     """Send training trade opened notification via Telegram."""
+    if not _category_enabled("trade_opened"):
+        return False
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", "LONG")
@@ -310,6 +356,8 @@ def send_training_trade_opened(trade: dict) -> bool:
 
 def send_training_trade_closed(trade: dict) -> bool:
     """Send training trade closed notification via Telegram."""
+    if not _category_enabled("trade_closed"):
+        return False
     asset = trade.get("asset", "?")
     strategy = trade.get("strategy", "?")
     direction = trade.get("direction", "LONG")
@@ -344,6 +392,8 @@ def send_training_trade_closed(trade: dict) -> bool:
 
 def send_training_signal(signal: dict) -> bool:
     """Send training signal/execution decision notification."""
+    if not _category_enabled("signals"):
+        return False
     count = signal.get("selected", 0)
     total = signal.get("signals", 0)
     assets = signal.get("assets", [])
