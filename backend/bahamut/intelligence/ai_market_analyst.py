@@ -202,6 +202,47 @@ def _call_deepseek(prompt: str) -> tuple[dict | None, float, str]:
         return None, 0, f"DeepSeek {type(e).__name__}: {str(e)[:80]}"
 
 
+def _call_opus(prompt: str) -> tuple[dict | None, float, str]:
+    """Claude Opus 4.8 (Anthropic Messages API). Returns (result, cost_usd, error).
+
+    This is the model that actually drives live-trading posture when
+    ANTHROPIC_API_KEY is set. Opus 4.8 rejects `temperature`, so it's omitted;
+    the system prompt goes in the top-level `system` field."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None, 0, "ANTHROPIC_API_KEY not set"
+    try:
+        import httpx
+        start = time.time()
+        resp = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={
+                "model": "claude-opus-4-8",
+                "max_tokens": MAX_TOKENS,
+                "system": SYSTEM_PROMPT,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=TIMEOUT,
+        )
+        latency = round((time.time() - start) * 1000)
+        if resp.status_code != 200:
+            return None, 0, f"Opus HTTP {resp.status_code} at {latency}ms"
+        data = resp.json()
+        text = data["content"][0]["text"]
+        usage = data.get("usage", {})
+        cost = (usage.get("input_tokens", 0) * 5e-6
+                + usage.get("output_tokens", 0) * 25e-6)
+        result = _parse_json_response(text)
+        result["_latency_ms"] = latency
+        result["_provider"] = "claude-opus-4-8"
+        result["_cost_usd"] = round(cost, 6)
+        return result, cost, ""
+    except Exception as e:
+        return None, 0, f"Opus {type(e).__name__}: {str(e)[:80]}"
+
+
 def _call_gemini(prompt: str) -> tuple[dict | None, float, str]:
     """Gemini 2.5 Flash-Lite. Returns (result, cost_usd, error)."""
     api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -272,6 +313,38 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
     _call_count += 1
 
     result, cost, err = None, 0, ""
+
+    # ── PRIMARY: Claude Opus 4.8 (when ANTHROPIC_API_KEY set), gated by the
+    # shared $25/day Claude cap — NOT the local $0.75 DeepSeek cap. Falls
+    # through to DeepSeek/Gemini if the key is missing, the Claude cap is hit,
+    # or the call fails. This is what makes "Opus everywhere" reach live trades.
+    if os.environ.get("ANTHROPIC_API_KEY", ""):
+        try:
+            from bahamut.intelligence.llm import budget_exhausted, _record_cost
+            _claude_capped = budget_exhausted()
+        except Exception:
+            _claude_capped, _record_cost = True, None
+        if not _claude_capped:
+            result, cost, err = _call_opus(prompt)
+            if result:
+                if _record_cost:
+                    _record_cost(cost)  # shared Claude $25/day counter
+                result["_call_number"] = _call_count
+                _cache_write(result)
+                _last_error = ""
+                try:
+                    r = _r()
+                    if r: r.delete(_ERROR_KEY)
+                except Exception:
+                    pass
+                _sync_compat_ts()
+                logger.info("ai_posture_ok", provider="claude-opus-4-8",
+                            latency_ms=result.get("_latency_ms"),
+                            posture=result.get("posture"),
+                            cost_usd=round(cost, 6))
+                return result
+            logger.warning("ai_opus_failed", error=err)
+
     if has_deepseek:
         result, cost, err = _call_deepseek(prompt)
         if result:
@@ -396,9 +469,13 @@ def get_analysis_status() -> dict:
                 _effective_error = raw_err.decode() if isinstance(raw_err, bytes) else str(raw_err)
         except Exception:
             pass
+    _opus_active = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
+    _primary = "claude-opus-4-8" if _opus_active else _PRIMARY_MODEL
+    _chain = (f"claude-opus-4-8 -> {_PRIMARY_MODEL} -> {_FALLBACK_MODEL}"
+              if _opus_active else f"{_PRIMARY_MODEL} -> {_FALLBACK_MODEL}")
     return {
-        "model": f"{_PRIMARY_MODEL} -> {_FALLBACK_MODEL}",
-        "primary": _PRIMARY_MODEL,
+        "model": _chain,
+        "primary": _primary,
         "fallback": _FALLBACK_MODEL,
         "timeout_ms": int(TIMEOUT * 1000),
         "fresh_ttl": FRESH_TTL, "stale_ttl": STALE_TTL,
