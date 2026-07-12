@@ -124,7 +124,7 @@ def run_trading_cycle():
     #   Stock 4h bars: max_hold=30 → 300min → allow 8 trading days = 12 calendar days
     #   Crypto 15m bars: max_hold=20 → 200min → allow 2 calendar days
     try:
-        from bahamut.trading.engine import _load_positions, _remove_position
+        from bahamut.trading.engine import _load_positions, _remove_position, force_close_single_position
         from datetime import datetime, timezone
         _all_pos = _load_positions()
         _now = datetime.now(timezone.utc)
@@ -165,10 +165,22 @@ def run_trading_cycle():
                                max_cal_days=_max_cal_days,
                                asset_class=_asset_class,
                                reason=f"open {round(_age_days,1)}d >= {_max_cal_days}d limit")
+                # Route through the proper close path so the trade is RECORDED
+                # and FED TO LEARNING (force_close_single_position → update_positions
+                # _for_asset → TrainingTrade + update_trust_from_trade). Previously
+                # this called bare _remove_position, so zombie-closed trades vanished
+                # with no P&L record and no learning signal. Falls back to removal
+                # internally if the normal close can't run.
                 try:
-                    _remove_position(_zp.position_id)
+                    _zres = force_close_single_position(_zp.position_id, reason="ZOMBIE_TIMEOUT")
+                    if _zres.get("status") not in ("closed", "closed_fallback"):
+                        _remove_position(_zp.position_id)
                 except Exception as _ze:
                     logger.error("zombie_close_failed", asset=_zp.asset, error=str(_ze)[:100])
+                    try:
+                        _remove_position(_zp.position_id)
+                    except Exception:
+                        pass
     except Exception as e:
         logger.debug("zombie_cleanup_skipped", error=str(e)[:100])
     except Exception as _e:
