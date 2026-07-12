@@ -424,26 +424,18 @@ export default function TrainingOperationsPage() {
           const eq = k.equity || k.virtual_capital || 100000;
           const pnl = (k.net_pnl || 0) + (k.unrealized_pnl || 0);
           const ret = k.return_pct || 0;
-          // Calculate recent WR from closed trades (stocks only, last 30 days)
-          // Excludes crypto trades that drag down the overall WR
-          const recentTrades = (data.closed_trades || []).filter((t: any) => {
-            const exit = t.exit_time || t.closed_at || "";
-            const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-            const ac = (t.asset_class || "").toLowerCase();
-            const asset = t.asset || "";
-            const isStock = ac === "stock" || (ac === "" && !asset.endsWith("USD"));
-            return exit >= thirtyDaysAgo && isStock;
-          });
-          const recentWins = recentTrades.filter((t: any) => (t.pnl || 0) > 0.5).length;
-          const recentLosses = recentTrades.filter((t: any) => (t.pnl || 0) < -0.5).length;
-          const recentFlats = recentTrades.length - recentWins - recentLosses;
-          const recentWr = recentTrades.length > 0 ? (recentWins / recentTrades.length * 100) : 0;
-          const allWr = (k.win_rate || 0) * 100;
+          // Win rate comes from the backend KPI — era-aware since the
+          // baseline reset (kpi.win_rate counts only trades closed after
+          // the reset marker; lifetime preserved in win_rate_lifetime).
+          const wr = (k.win_rate || 0) * 100;
+          const wrSub = k.era_start
+            ? `${k.wins || 0}W ${k.losses || 0}L since reset`
+            : `${k.wins || 0}W ${k.losses || 0}L`;
           return [
             { l: "Equity", v: `$${eq.toLocaleString(undefined,{maximumFractionDigits:0})}`, c: "text-bah-heading" },
             { l: "P&L", v: `${pnl>=0?"+":""}$${Math.abs(pnl).toLocaleString(undefined,{maximumFractionDigits:0})}`, c: pnl>=0?"text-green-400":"text-red-400" },
             { l: "Return", v: `${ret>=0?"+":""}${ret.toFixed(2)}%`, c: ret>=0?"text-green-400":"text-red-400" },
-            { l: "Win Rate", v: `${recentWr.toFixed(1)}%`, c: recentWr>=60?"text-green-400":recentWr>=45?"text-amber-400":recentWr>0?"text-red-400":"text-bah-muted", sub: `${recentWins}W ${recentLosses}L ${recentFlats}F` },
+            { l: "Win Rate", v: `${wr.toFixed(1)}%`, c: wr>50?"text-green-400":wr>=45?"text-amber-400":wr>0?"text-red-400":"text-bah-muted", sub: wrSub },
             { l: "Risk/Trade", v: `$${(k.risk_per_trade||500).toLocaleString()}`, c: "text-bah-cyan", sub: `${k.risk_per_trade_pct||0.5}%` },
             { l: "Open", v: `${k.open_positions||0}`, c: (k.open_positions||0)>0?"text-bah-cyan":"text-bah-muted", sub: `of ${k.universe_size||40}` },
             { l: "Closed", v: `${k.closed_trades||0}`, c: (k.closed_trades||0)>0?"text-green-400":"text-bah-muted", sub: `${(k.avg_duration_bars||0).toFixed(1)} avg bars` },
