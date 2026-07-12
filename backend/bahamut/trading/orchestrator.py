@@ -132,16 +132,16 @@ def run_trading_cycle():
             _max = getattr(_zp, "max_hold_bars", 30) or 30
             _asset_class = getattr(_zp, "asset_class", "crypto") or "crypto"
 
-            # Calculate max calendar days based on asset class and max_hold
+            # Calculate max calendar days based on asset class and max_hold.
+            # Aging is now BAR-TIME (stocks 4H bars, crypto 15m bars), so the
+            # zombie backstop must allow the full designed hold plus buffer.
             if _asset_class == "stock":
-                # 10min cycles, only during 6.5h market day
-                # max_hold cycles × 10min / 390min per day = trading days
-                # Then ×1.8 for weekends/holidays → calendar days
-                # Minimum 4 calendar days to avoid premature close
-                _max_cal_days = max(4, int(_max * 10 / 390 * 1.8) + 2)
+                # max_hold 4H bars × 4h / 6.5h market day = trading days,
+                # ×1.8 for weekends/holidays, +2 buffer. max_hold=30 → ~35d.
+                _max_cal_days = max(6, int(_max * 4 / 6.5 * 1.8) + 2)
             else:
-                # Crypto: 24/7, 10min cycles → max_hold × 10min, +1 day buffer
-                _max_cal_days = max(2, int(_max * 10 / 1440) + 1)
+                # Crypto 24/7 on 15m bars: max_hold × 15min → days, +2 buffer.
+                _max_cal_days = max(3, int(_max * 15 / 1440) + 2)
 
             if not _zp.entry_time:
                 continue

@@ -85,6 +85,8 @@ class TrainingPosition:
     entry_time: str
     bars_held: int = 0
     max_hold_bars: int = 30
+    last_bar_time: str = ""   # datetime of last candle counted — bars_held only
+                              # increments when this changes (bar-time aging)
     current_price: float = 0.0
     execution_type: str = "standard"      # "standard" | "early"
     confidence_score: float = 0.0
@@ -276,7 +278,8 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                            execution_type, confidence_score, trigger_reason,
                            execution_platform, exchange_order_id,
                            COALESCE(substrategy, '') as substrategy,
-                           COALESCE(data_mode, 'live') as data_mode
+                           COALESCE(data_mode, 'live') as data_mode,
+                           COALESCE(last_bar_time, '') as last_bar_time
                     FROM training_positions WHERE status = 'OPEN'
                 """)).mappings().all()
         except Exception as _sel_err:
@@ -325,6 +328,7 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                 exchange_order_id=str(row.get("exchange_order_id") or ""),
                 substrategy=str(row.get("substrategy") or ""),
                 data_mode=str(row.get("data_mode") or "live"),
+                last_bar_time=str(row.get("last_bar_time") or ""),
             )
 
             # Invariant enforcement on DB reload
@@ -513,15 +517,17 @@ def _save_position(pos: TrainingPosition):
                      entry_price, stop_price, tp_price, size, risk_amount,
                      entry_time, bars_held, max_hold_bars, current_price,
                      execution_type, confidence_score, trigger_reason, status,
-                     substrategy, data_mode, execution_platform, exchange_order_id)
+                     substrategy, data_mode, execution_platform, exchange_order_id,
+                     last_bar_time)
                     VALUES (:pid, :a, :ac, :s, :d, :ep, :sp, :tp, :sz, :ra,
                             :et, :bh, :mhb, :cp, :ext, :cs, :tr, 'OPEN', :sub, :dm,
-                            :expl, :eoid)
+                            :expl, :eoid, :lbt)
                     ON CONFLICT (position_id) DO UPDATE SET
                         bars_held = EXCLUDED.bars_held,
                         current_price = EXCLUDED.current_price,
                         execution_platform = EXCLUDED.execution_platform,
                         exchange_order_id = EXCLUDED.exchange_order_id,
+                        last_bar_time = EXCLUDED.last_bar_time,
                         status = 'OPEN'
                 """), {
                     "pid": pos.position_id, "a": pos.asset, "ac": pos.asset_class,
@@ -536,6 +542,7 @@ def _save_position(pos: TrainingPosition):
                     "dm": pos.data_mode or "live",
                     "expl": pos.execution_platform or "",
                     "eoid": pos.exchange_order_id or "",
+                    "lbt": pos.last_bar_time or "",
                 })
             except Exception as _insert_err:
                 # Column missing or unknown — fall back to legacy INSERT
@@ -1774,7 +1781,22 @@ def update_positions_for_asset(asset: str, bar: dict, *,
         except Exception:
             pass
 
-        pos.bars_held += 1
+        # ── BAR-TIME AGING ──
+        # bars_held used to increment on EVERY 10-min cycle, so "bars" were
+        # cycles: stocks aged ~24x faster than their 4H-bar design (max_hold=30
+        # expired in ~5 market hours instead of ~10 days) and crypto 1.5x faster
+        # than 15m bars. TP levels sized for multi-day swings were unreachable →
+        # the 79%-flat-TIMEOUT churn. Now bars_held increments only when the
+        # candle timestamp actually changes; SL/TP checks still run every cycle
+        # (frequent exit monitoring is a feature, aging on it was the bug).
+        _bar_dt = str(bar.get("datetime", ""))
+        if _bar_dt and _bar_dt == pos.last_bar_time:
+            _new_bar_for_pos = False
+        else:
+            _new_bar_for_pos = True
+            pos.bars_held += 1
+            if _bar_dt:
+                pos.last_bar_time = _bar_dt
 
         # CRITICAL: persist bars_held immediately after increment.
         # Without this, if TIMEOUT fires but broker close fails,
