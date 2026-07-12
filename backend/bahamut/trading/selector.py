@@ -41,8 +41,9 @@ DEFAULT_CONFIG = {
 # and most V5 signals. Per-strategy thresholds fix this.
 STRATEGY_THRESHOLDS = {
     "v5_base": 65,              # realistic ceiling ~80, requires strong setup
-    "v9_breakout": 50,          # ceiling 75, confirmed breakout ≈ 65
-    "v10_mean_reversion": 80,   # keep current — v10 scoring has higher ceiling
+    "v9_breakout": 50,          # ceiling 75, confirmed breakout ≈ 65 — the proven edge (+$5,074)
+    "v10_mean_reversion": 85,   # raised 80→85: v10 is the weakest strat (PF 0.90) and
+                                # over-trades; trim marginal entries. Redis-overridable.
 }
 
 
@@ -589,9 +590,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         # A single global threshold of 80+ blocked V9 entirely.
         strat_thresholds = _get_strategy_thresholds()
         if sig.direction == "SHORT":
-            effective_threshold = 25
-        elif sig.regime == "CRASH":
-            effective_threshold = 35
+            # SHORTs lose money as a book: live data = SHORT −$4,003 (crypto
+            # −$4,171). The old flat bar of 25 waved through weak shorts. Require
+            # a genuine setup: 55 floor for standard shorts, 45 for CRASH-regime
+            # shorts (a distinct mean-reversion play). Still Redis-overridable.
+            if sig.regime == "CRASH":
+                effective_threshold = 45
+            else:
+                effective_threshold = 55
         else:
             effective_threshold = strat_thresholds.get(sig.strategy, threshold)
 

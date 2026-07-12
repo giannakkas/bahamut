@@ -1144,15 +1144,20 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
         # Canonical suppress check
         from bahamut.config_assets import TRADING_SUPPRESS
         _global_suppress = TRADING_SUPPRESS.get("*", set())
-        debug_enabled = True
-        debug_min_score = 20
+        # debug_exploration manufactures a trade when NO strategy signal fires,
+        # at a very low bar (score>=20). Live data: 79% of all trades drift to
+        # TIMEOUT near-flat (672 trades, −$125 + fees) — this churn is largely
+        # these forced trades. Default OFF now; re-enable via admin config
+        # exploration.debug_override only for deliberate learning-data gathering.
+        debug_enabled = False
+        debug_min_score = 45
         try:
             from bahamut.admin.config import get_config
-            debug_enabled = get_config("exploration.debug_override", True)
-            debug_min_score = get_config("exploration.debug_min_score", 20)
+            debug_enabled = get_config("exploration.debug_override", False)
+            debug_min_score = get_config("exploration.debug_min_score", 45)
         except Exception as e:
             logger.warning("debug_override_config_failed", error=str(e),
-                           msg="using defaults: enabled=True, min_score=20")
+                           msg="using defaults: enabled=False, min_score=45")
 
         # Force-disable for globally suppressed assets
         if asset in _global_suppress:

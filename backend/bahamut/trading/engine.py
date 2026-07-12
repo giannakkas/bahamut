@@ -1828,16 +1828,22 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                 exit_reason = "TP"
                 exit_price = pos.tp_price
 
-        # V10 early exit: if position isn't profitable by half its max hold,
-        # close early instead of waiting for TIMEOUT with near-zero P&L.
-        # V10 TIMEOUT trades average -$1 each — this cuts losses faster.
+        # V10 early exit: originally closed ANY position not yet green by half
+        # its max hold, on the assumption TIMEOUT trades averaged -$1. Live data
+        # disproved that: force-closed EARLY_EXIT trades averaged ~-$14 while
+        # trades left to run to TIMEOUT averaged ~+$16. Cutting flat/slightly-red
+        # positions was killing would-be winners. Now DEFAULT OFF (let v10 run to
+        # TP/SL/TIMEOUT); when explicitly enabled, only cut GENUINE losers that
+        # have given back >=50% of the distance to their stop.
         if not exit_reason and pos.strategy == "v10_mean_reversion":
-            _half_life = max(3, pos.max_hold_bars // 2)
-            if pos.bars_held >= _half_life:
-                _unreal = (close - pos.entry_price) if pos.direction == "LONG" else (pos.entry_price - close)
-                if _unreal <= 0:
-                    exit_reason = "EARLY_EXIT"
-                    exit_price = close
+            if os.environ.get("V10_EARLY_EXIT_ENABLED", "0") == "1":
+                _half_life = max(3, pos.max_hold_bars // 2)
+                if pos.bars_held >= _half_life:
+                    _unreal = (close - pos.entry_price) if pos.direction == "LONG" else (pos.entry_price - close)
+                    _stop_dist = abs(pos.entry_price - pos.stop_price)
+                    if _stop_dist > 0 and _unreal <= -0.5 * _stop_dist:
+                        exit_reason = "EARLY_EXIT"
+                        exit_price = close
 
         # Check timeout
         if not exit_reason and pos.bars_held >= pos.max_hold_bars:
