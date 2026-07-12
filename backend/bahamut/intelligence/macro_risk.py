@@ -95,11 +95,20 @@ def get_macro_state(force: bool = False) -> dict:
         except Exception:
             pass
 
+    # Key precedence: Railway env (settings.fred_api_key) → admin config
+    # (data.fred_api_key, runtime-settable, no redeploy).
+    api_key = ""
     try:
         from bahamut.config import get_settings
-        api_key = get_settings().fred_api_key
+        api_key = get_settings().fred_api_key or ""
     except Exception:
         api_key = ""
+    if not api_key:
+        try:
+            from bahamut.admin.config import get_config
+            api_key = get_config("data.fred_api_key", "") or ""
+        except Exception:
+            pass
 
     if not api_key:
         return dict(NEUTRAL, source="no_fred_key")

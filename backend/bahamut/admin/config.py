@@ -33,6 +33,11 @@ DEFAULTS = {
     # CRYPTO_TRADING_ENABLED env var — see config_assets.crypto_trading_enabled().
     "trading.crypto_enabled": False,
 
+    # ── Data providers ──
+    # FRED API key for the macro layer (VIX / Treasury yields). Falls back here
+    # when the FRED_API_KEY env var isn't set. Free key from fred.stlouisfed.org.
+    "data.fred_api_key": "",
+
     # ── Strategic allocation (hybrid core/research sleeves) ──
     "allocation.research_risk_fraction": 0.30,   # research sleeve size vs core
     "allocation.expectancy_sizing_enabled": True, # size core by learned expectancy
