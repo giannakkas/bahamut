@@ -167,6 +167,41 @@ def execute_close(asset: str, asset_class: str, direction: str,
     return result
 
 
+def get_execution_mode() -> dict:
+    """Report the ACTUAL execution mode, not a cosmetic label.
+
+    Precedence: shadow (no broker calls) > live crypto broker (testnet/mainnet)
+    > internal simulation. The crypto/Binance-Futures path is what places real
+    orders, so it drives the label. Returns {label, level, detail} where level
+    is one of: shadow | sim | testnet | live.
+    """
+    # 1. Shadow mode short-circuits everything — no broker calls at all.
+    try:
+        from bahamut.execution.shadow import is_shadow
+        if is_shadow():
+            return {"label": "SHADOW SIM", "level": "shadow",
+                    "detail": "Simulated fills — no broker calls"}
+    except Exception:
+        pass
+
+    # 2. Crypto broker (Binance Futures) — where real orders are placed.
+    try:
+        from bahamut.execution.binance_futures import _configured as fut_cfg, BASE_URL as FUT_URL
+        if fut_cfg():
+            _u = (FUT_URL or "").lower()
+            if "demo" in _u or "testnet" in _u:
+                return {"label": "LIVE · TESTNET", "level": "testnet",
+                        "detail": "Real orders on Binance Futures testnet — no real funds"}
+            return {"label": "LIVE · MAINNET", "level": "live",
+                    "detail": "REAL-MONEY orders on Binance Futures mainnet"}
+    except Exception:
+        pass
+
+    # 3. No crypto broker configured — internal simulation only.
+    return {"label": "PAPER SIM", "level": "sim",
+            "detail": "Internal simulation — no broker connected"}
+
+
 def get_execution_status() -> dict:
     """Get status of all execution platforms with detailed errors."""
     status = {"binance_spot": "not_configured", "binance_futures": "not_configured", "alpaca": "not_configured"}

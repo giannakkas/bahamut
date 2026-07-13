@@ -66,8 +66,17 @@ async def get_training_operations(user=Depends(get_current_user)):
     except Exception:
         pass
 
+    # Actual execution mode (shadow / paper-sim / testnet / live) — drives the
+    # header badge so it reflects reality instead of a hard-coded "PAPER TRADING".
+    try:
+        from bahamut.execution.router import get_execution_mode
+        _exec_mode = get_execution_mode()
+    except Exception:
+        _exec_mode = {"label": "UNKNOWN", "level": "sim", "detail": ""}
+
     result = {
         "generated_at": now.isoformat(),
+        "execution_mode": _exec_mode,
         "system_state": system_state,
         "cycle_status": _build_cycle_status(r, now),
         "kpi": _build_kpi(r, db_agg),

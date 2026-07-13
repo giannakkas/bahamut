@@ -353,7 +353,26 @@ export default function TrainingOperationsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 anim-slide">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-base sm:text-lg font-bold text-bah-heading tracking-tight">Trading Operations</h1>
-          <span className="px-2.5 py-0.5 text-[11px] rounded-full font-bold border bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40 tracking-wider">PAPER TRADING</span>
+          {(() => {
+            const em = data?.execution_mode || {};
+            const level = em.level || "sim";
+            const label = em.label || "PAPER SIM";
+            // Color by how "real" the mode is: sim/shadow = safe cyan,
+            // testnet = amber (real orders, fake money), live = red (real money).
+            const cls = level === "live"
+              ? "bg-red-500/15 text-red-400 border-red-500/40"
+              : level === "testnet"
+              ? "bg-amber-500/15 text-amber-300 border-amber-500/40"
+              : "bg-bah-cyan/15 text-bah-cyan border-bah-cyan/40";
+            return (
+              <span
+                title={em.detail || ""}
+                className={`px-2.5 py-0.5 text-[11px] rounded-full font-bold border tracking-wider ${cls}`}
+              >
+                {label}
+              </span>
+            );
+          })()}
           <span className="text-[12px] text-bah-muted">{cs.universe_size || k.universe_size || 0} assets</span>
           <span style={{fontSize: "8px", color: "#666"}}>v2.1</span>
         </div>
