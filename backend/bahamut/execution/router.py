@@ -286,9 +286,15 @@ def _binance_close(asset: str, direction: str, size: float) -> dict:
     try:
         from bahamut.execution.binance_futures import _configured, place_market_order
         if _configured():
-            # Close direction: opposite of the position direction we're closing
+            # Close direction: opposite of the position direction we're closing.
+            # reduce_only=True is CRITICAL: it guarantees the order can only
+            # REDUCE/flatten the existing position, never open a new one. Without
+            # it, a plain opposite-side market order opens a fresh position in
+            # hedge mode (leaving the original open → orphan) and can flip the
+            # position on any size mismatch. reduceOnly also makes Binance return
+            # a real fill (with polling) so the close is confirmed, not ambiguous.
             side = "SELL" if direction == "LONG" else "BUY"
-            result = place_market_order(asset, side, size)
+            result = place_market_order(asset, side, size, reduce_only=True)
             if result is None:
                 return ExecutionResult.error("binance_futures", asset, direction,
                                              size, "place_market_order returned None").as_dict()

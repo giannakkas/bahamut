@@ -1997,15 +1997,38 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                     continue  # DO NOT remove, DO NOT persist
 
                 else:
-                    trade.exit_price = round(exit_price, 6)
-                    if pos.direction == "LONG":
-                        trade.pnl = round((exit_price - canonical_entry) * pos.size, 2)
-                    else:
-                        trade.pnl = round((canonical_entry - exit_price) * pos.size, 2)
-                    trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
-                    trade.return_pct = round(trade.pnl / max(0.01, canonical_entry * pos.size), 4)
-                    trade.execution_platform = "paper"
-                    _close_succeeded = True
+                    # Broker close returned NO usable fill price and NO explicit
+                    # ERROR/REJECTED — the ambiguous case (common on Binance
+                    # testnet, where a reduce order doesn't confirm a fill
+                    # synchronously). Previously this branch booked a candle-based
+                    # PAPER P&L, marked the trade CLOSED, and removed it locally
+                    # while the REAL broker position stayed OPEN. That is the exact
+                    # cause of the recurring "orphan position" alerts: local books
+                    # closed, exchange still holding the position.
+                    #
+                    # An unconfirmed close on a real platform must be treated as a
+                    # FAILURE, identical to ERROR/REJECTED: keep the position open,
+                    # flag it for reconciliation, and do NOT persist a phantom
+                    # close. The position is retried next cycle until the broker
+                    # confirms a flat.
+                    logger.error("close_unconfirmed_position_remains_open",
+                                 asset=pos.asset, position_id=pos.position_id,
+                                 platform=trade.execution_platform,
+                                 lifecycle=_close_lifecycle,
+                                 fill_price=exec_result.get("fill_price"),
+                                 msg="No broker fill confirmation — refusing to book paper close")
+                    try:
+                        from bahamut.execution.order_manager import OrderManager, OrderState
+                        _intents = OrderManager().get_open_intents(pos.asset)
+                        for _it in _intents:
+                            if _it.get("direction") == pos.direction:
+                                OrderManager().transition(
+                                    _it["id"], OrderState.RECONCILE_REQUIRED,
+                                    {"error": f"close_unconfirmed: no fill_price, lifecycle={_close_lifecycle}"})
+                                break
+                    except Exception:
+                        pass
+                    continue  # DO NOT remove, DO NOT persist phantom PnL
 
             except Exception as e:
                 logger.error("close_failed_position_remains_open",
