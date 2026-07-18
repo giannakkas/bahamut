@@ -138,7 +138,38 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                 c["_data_mode"] = DATA_MODE_LIVE
         return cached
 
-    # 2. Try Twelve Data API (primary for all assets)
+    # 2. Stocks: Alpaca Market Data is PRIMARY.
+    # TwelveData returned zero candles for the entire 59-symbol stock universe
+    # ("Only 0 candles (need 50+)"), which halted all stock trading. Alpaca is
+    # already connected for execution and serves the same 4H bars, so stocks now
+    # try Alpaca first and fall through to TwelveData only if it comes back empty.
+    _asset_class = ""
+    try:
+        from bahamut.config_assets import ASSET_CLASS_MAP
+        _asset_class = ASSET_CLASS_MAP.get(asset, "")
+    except Exception:
+        pass
+
+    if _asset_class == "stock":
+        try:
+            candles = _fetch_from_alpaca(asset, count)
+            if candles and len(candles) >= 50:
+                valid, reason = validate_candles(candles, asset=asset)
+                if valid:
+                    _tag_candles(candles, DATA_MODE_LIVE)
+                    _cache_set(asset, candles)
+                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
+                    logger.info("data_live", asset=asset, candles=len(candles),
+                                last=candles[-1].get("datetime", ""),
+                                close=candles[-1].get("close", 0),
+                                data_mode=DATA_MODE_LIVE, source="alpaca_primary")
+                    return candles
+                logger.warning("data_validation_failed", asset=asset,
+                               reason=reason, source="alpaca")
+        except Exception as e:
+            logger.error("data_fetch_error", asset=asset, error=str(e), source="alpaca")
+
+    # 3. Try Twelve Data API (primary for crypto/other, fallback for stocks)
     td_symbol = SUPPORTED_ASSETS.get(asset)
     if not td_symbol:
         # Training assets: fall through to the full symbol map
@@ -186,33 +217,6 @@ def fetch_candles(asset: str, count: int = CANDLE_COUNT) -> list[dict]:
                     logger.warning("data_validation_failed", asset=asset, reason=reason)
         except Exception as e:
             logger.error("data_fetch_error", asset=asset, error=str(e))
-
-    # 3. Try Alpaca Market Data (fallback for stocks when TwelveData fails)
-    _asset_class = ""
-    try:
-        from bahamut.config_assets import ASSET_CLASS_MAP
-        _asset_class = ASSET_CLASS_MAP.get(asset, "")
-    except Exception:
-        pass
-
-    if _asset_class == "stock":
-        try:
-            candles = _fetch_from_alpaca(asset, count)
-            if candles and len(candles) >= 50:
-                valid, reason = validate_candles(candles, asset=asset)
-                if valid:
-                    _tag_candles(candles, DATA_MODE_LIVE)
-                    _cache_set(asset, candles)
-                    _record_data_status(asset, "OK", len(candles), candles[-1].get("datetime", ""))
-                    logger.info("data_live", asset=asset, candles=len(candles),
-                                last=candles[-1].get("datetime", ""),
-                                close=candles[-1].get("close", 0),
-                                data_mode=DATA_MODE_LIVE, source="alpaca_fallback")
-                    return candles
-                else:
-                    logger.warning("data_validation_failed", asset=asset, reason=reason, source="alpaca")
-        except Exception as e:
-            logger.error("data_fetch_error", asset=asset, error=str(e), source="alpaca")
 
     # 4. Try last known good data from Redis
     last_good = _cache_get(asset, key_suffix=":last_good")
@@ -279,47 +283,68 @@ def _fetch_from_alpaca(symbol: str, count: int) -> list[dict]:
         "APCA-API-KEY-ID": api_key,
         "APCA-API-SECRET-KEY": api_secret,
     }
-    params = {
-        "timeframe": "4Hour",
-        "limit": min(count, 10000),
-        "start": start_iso,
-        "feed": "iex",
-        "adjustment": "split",
-        "sort": "asc",
-    }
-
     data_url = "https://data.alpaca.markets"
+
+    # Feed fallback. The free "iex" feed only covers IEX-routed volume and
+    # routinely returns ZERO historical bars — which is what silently starved
+    # the entire stock universe ("Only 0 candles" on all 59 symbols). Try the
+    # configured feed first, then the broader SIP feed. ALPACA_DATA_FEED pins
+    # one explicitly if the account's subscription requires it.
+    _pinned = os.environ.get("ALPACA_DATA_FEED", "").strip()
+    _feeds = [_pinned] if _pinned else ["iex", "sip"]
+
     all_bars = []
-    page_token = None
-    max_pages = 5  # safety limit
+    _last_err = ""
 
-    for _ in range(max_pages):
-        if page_token:
-            params["page_token"] = page_token
+    for _feed in _feeds:
+        params = {
+            "timeframe": "4Hour",
+            "limit": min(count, 10000),
+            "start": start_iso,
+            "feed": _feed,
+            "adjustment": "split",
+            "sort": "asc",
+        }
+        _bars = []
+        page_token = None
+        _failed = False
 
-        try:
-            with httpx.Client(timeout=15) as client:
-                r = client.get(f"{data_url}/v2/stocks/{symbol}/bars",
-                               headers=headers, params=params)
-            if r.status_code != 200:
-                logger.warning("alpaca_data_error", symbol=symbol,
-                               status=r.status_code, body=r.text[:200])
-                return []
+        for _ in range(5):  # page safety limit
+            if page_token:
+                params["page_token"] = page_token
+            try:
+                with httpx.Client(timeout=15) as client:
+                    r = client.get(f"{data_url}/v2/stocks/{symbol}/bars",
+                                   headers=headers, params=params)
+                if r.status_code != 200:
+                    _last_err = f"feed={_feed} status={r.status_code} {r.text[:150]}"
+                    logger.warning("alpaca_data_error", symbol=symbol, feed=_feed,
+                                   status=r.status_code, body=r.text[:200])
+                    _failed = True
+                    break
 
-            resp = r.json()
-            bars = resp.get("bars") or []
-            all_bars.extend(bars)
+                resp = r.json()
+                _bars.extend(resp.get("bars") or [])
+                page_token = resp.get("next_page_token")
+                if not page_token or len(_bars) >= count:
+                    break
 
-            page_token = resp.get("next_page_token")
-            if not page_token or len(all_bars) >= count:
+            except Exception as e:
+                _last_err = f"feed={_feed} exception={str(e)[:120]}"
+                logger.error("alpaca_data_exception", symbol=symbol, feed=_feed, error=str(e))
+                _failed = True
                 break
 
-        except Exception as e:
-            logger.error("alpaca_data_exception", symbol=symbol, error=str(e))
-            return []
+        if _bars:
+            all_bars = _bars
+            logger.info("alpaca_data_feed_used", symbol=symbol, feed=_feed, bars=len(_bars))
+            break
+        if not _failed:
+            _last_err = f"feed={_feed} returned 0 bars"
+            logger.warning("alpaca_data_empty_feed", symbol=symbol, feed=_feed)
 
     if not all_bars:
-        logger.warning("alpaca_data_empty", symbol=symbol)
+        logger.warning("alpaca_data_empty", symbol=symbol, detail=_last_err[:200])
         return []
 
     # Convert Alpaca format to orchestrator candle format

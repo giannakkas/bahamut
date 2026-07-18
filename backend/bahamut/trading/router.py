@@ -1080,6 +1080,73 @@ async def get_adaptive_state(user=Depends(get_current_user)):
         return {"profile": {}, "metrics": {}, "history": []}
 
 
+@router.get("/data-probe")
+async def data_probe(symbol: str = "AAPL", user=Depends(get_current_user)):
+    """Probe every market-data source for one symbol and report what each returns.
+
+    Diagnostic for the stock-data outage: shows per-feed Alpaca results and the
+    TwelveData result with raw failure reasons, plus what the app's own
+    fetch_candles() ultimately produces.
+    """
+    import os as _os
+    import httpx as _httpx
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    out = {"symbol": symbol, "alpaca": {}, "twelvedata": {}, "fetch_candles": {}}
+
+    key = _os.environ.get("ALPACA_API_KEY", "")
+    sec = _os.environ.get("ALPACA_API_SECRET", "")
+    out["alpaca"]["configured"] = bool(key and sec)
+    if key and sec:
+        start_iso = (_dt.now(_tz.utc) - _td(days=300)).strftime("%Y-%m-%dT00:00:00Z")
+        for feed in ("iex", "sip"):
+            try:
+                with _httpx.Client(timeout=15) as c:
+                    r = c.get(f"https://data.alpaca.markets/v2/stocks/{symbol}/bars",
+                              headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec},
+                              params={"timeframe": "4Hour", "limit": 100,
+                                      "start": start_iso, "feed": feed,
+                                      "adjustment": "split", "sort": "asc"})
+                bars = []
+                try:
+                    bars = (r.json() or {}).get("bars") or []
+                except Exception:
+                    pass
+                out["alpaca"][feed] = {
+                    "status": r.status_code,
+                    "bars": len(bars),
+                    "newest": (bars[-1].get("t") if bars else None),
+                    "error": (r.text[:200] if r.status_code != 200 else None),
+                }
+            except Exception as e:
+                out["alpaca"][feed] = {"error": str(e)[:200]}
+
+    try:
+        from bahamut.data.live_data import _fetch_from_twelvedata
+        try:
+            from bahamut.ingestion.adapters.twelvedata import TWELVE_SYMBOL_MAP
+            td_sym = TWELVE_SYMBOL_MAP.get(symbol, symbol)
+        except Exception:
+            td_sym = symbol
+        _c = _fetch_from_twelvedata(td_sym, 100)
+        out["twelvedata"] = {"symbol": td_sym, "candles": len(_c or []),
+                             "newest": (_c[-1].get("datetime") if _c else None)}
+    except Exception as e:
+        out["twelvedata"] = {"error": str(e)[:200]}
+
+    try:
+        from bahamut.data.live_data import fetch_candles as _fc
+        _c = _fc(symbol)
+        out["fetch_candles"] = {"candles": len(_c or []),
+                                "newest": (_c[-1].get("datetime") if _c else None),
+                                "mode": (_c[-1].get("_data_mode") if _c else None),
+                                "source": (_c[-1].get("source") if _c else None)}
+    except Exception as e:
+        out["fetch_candles"] = {"error": str(e)[:200]}
+
+    return out
+
+
 @router.get("/diagnostics")
 async def get_training_diagnostics(user=Depends(get_current_user)):
     """Structured diagnostic logs for AI analysis."""
