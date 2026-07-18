@@ -303,7 +303,13 @@ def _fetch_from_alpaca(symbol: str, count: int) -> list[dict]:
             "start": start_iso,
             "feed": _feed,
             "adjustment": "split",
-            "sort": "asc",
+            # MUST be desc. With sort=asc + limit, Alpaca returns the OLDEST
+            # bars from `start` and pagination stops as soon as `count` bars are
+            # collected — so it never walks forward to the present and every
+            # symbol came back ~9 months stale (newest bar 2025-10-27 while live
+            # date was 2026-07-18), failing validation for 0 usable candles.
+            # Fetching newest-first and reversing below guarantees fresh data.
+            "sort": "desc",
         }
         _bars = []
         page_token = None
@@ -346,6 +352,12 @@ def _fetch_from_alpaca(symbol: str, count: int) -> list[dict]:
     if not all_bars:
         logger.warning("alpaca_data_empty", symbol=symbol, detail=_last_err[:200])
         return []
+
+    # Bars arrive newest-first (sort=desc). Everything downstream — forming-candle
+    # trimming, candles[-1] as "latest", indicator windows — assumes chronological
+    # order, so flip to oldest-first. Sort by timestamp rather than reversing so
+    # the order is correct even if pages overlap or arrive out of order.
+    all_bars.sort(key=lambda b: b.get("t", ""))
 
     # Convert Alpaca format to orchestrator candle format
     # Alpaca bar: {"t": "2026-06-02T09:30:00Z", "o": 150.0, "h": 151.0, "l": 149.0, "c": 150.5, "v": 1234567}
