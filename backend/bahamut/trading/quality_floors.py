@@ -103,8 +103,25 @@ def check_quality_floors(
         from bahamut.trading.learning_engine import get_pattern_trust
         trust = get_pattern_trust(strategy, _trust_regime, asset_class)
 
-        effective_trust = trust["blended_trust"] * trust["blended_confidence"]
+        _blended = trust["blended_trust"]
+        _conf = trust["blended_confidence"]
         maturity = trust["maturity"]
+
+        # Effective trust = confidence-weighted blend of the learned trust and a
+        # NEUTRAL PRIOR. Previously this was trust × confidence, which crushed
+        # every low-sample "developing" pattern toward zero: a healthy 0.45 trust
+        # at 0.32 confidence became 0.14 and failed even the 0.15 floor. That
+        # deadlocked ALL trading after the 07-12 reset + data outage — you can't
+        # earn confidence without trading, and can't trade without confidence,
+        # and a 6-sample pattern was treated as worse than a 0-sample one.
+        #
+        # Shrinking toward a 0.30 neutral prior gives an unproven pattern the
+        # benefit of the doubt; as confidence rises the effective trust converges
+        # to the real learned value, so a MATURE genuinely-bad pattern (high
+        # confidence, low trust) still fails the floor and stays blocked. This
+        # self-heals after any reset/outage instead of bricking execution.
+        NEUTRAL_PRIOR = 0.30
+        effective_trust = _blended * _conf + NEUTRAL_PRIOR * (1.0 - _conf)
 
         # Only apply trust floor to developing+ patterns (provisional gets a pass)
         if maturity != "provisional" and effective_trust < min_trust:

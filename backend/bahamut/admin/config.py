@@ -52,7 +52,7 @@ DEFAULTS = {
     "meta_model.enabled": False,
 
     # ── Strategic allocation (hybrid core/research sleeves) ──
-    "allocation.research_risk_fraction": 0.30,   # research sleeve size vs core
+    "allocation.research_risk_fraction": 0.20,   # research sleeve size vs core (0.30→0.20: research is the bleed)
     "allocation.expectancy_sizing_enabled": True, # size core by learned expectancy
     "allocation.expectancy_size_min": 0.80,       # floor for proven-marginal patterns
     "allocation.expectancy_size_max": 1.30,       # cap for proven-strong patterns

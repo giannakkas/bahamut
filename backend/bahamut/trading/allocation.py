@@ -27,13 +27,17 @@ logger = structlog.get_logger()
 CORE_STRATEGIES = {"v9_breakout", "v5_base"}
 
 # Config keys (registered in admin/config.py DEFAULTS)
-_K_RESEARCH_FRAC = "allocation.research_risk_fraction"   # default 0.30
+_K_RESEARCH_FRAC = "allocation.research_risk_fraction"   # default 0.20
 _K_EXP_ENABLED = "allocation.expectancy_sizing_enabled"  # default True
 _K_EXP_MIN = "allocation.expectancy_size_min"            # default 0.80
 _K_EXP_MAX = "allocation.expectancy_size_max"            # default 1.30
 
 _DEFAULTS = {
-    _K_RESEARCH_FRAC: 0.30,
+    # Research sleeve (crypto, shorts, v10) sized at 20% of core risk. Lowered
+    # from 0.30 → 0.20: lifetime data shows the research book is the bleed
+    # (crypto −$2,842, v10 −$1,273) while stock-LONG core is the entire edge
+    # (+$8,463). Keep research on for learning but let it risk less capital.
+    _K_RESEARCH_FRAC: 0.20,
     _K_EXP_ENABLED: True,
     _K_EXP_MIN: 0.80,
     _K_EXP_MAX: 1.30,

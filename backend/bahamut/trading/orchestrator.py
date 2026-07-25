@@ -363,6 +363,35 @@ def run_trading_cycle():
                 watchlisted=len(decisions.get("watchlist", [])),
                 rejected=len(decisions.get("rejected", [])))
 
+    # ── Deadlock watchdog ──
+    # A silent "signals generated but 0 selected" state is exactly what bricked
+    # trading for two weeks (cold-start trust deadlock). Track consecutive cycles
+    # where signals existed but nothing was selected; alert once past a threshold
+    # so it can never go unnoticed again. Reset the moment anything executes.
+    try:
+        from bahamut.trading.engine import _get_redis
+        _r = _get_redis()
+        if _r:
+            _k = "bahamut:trading:zero_selected_streak"
+            if selected:
+                _r.delete(_k)
+            elif signals_generated > 0:
+                _streak = _r.incr(_k)
+                _r.expire(_k, 86400)
+                # ~6 cycles ≈ 1h of "signals but nothing executes"
+                if _streak == 6:
+                    rb = decisions.get("summary", {}).get("rejection_breakdown", {})
+                    top = sorted(rb.items(), key=lambda kv: -kv[1])[:3]
+                    from bahamut.monitoring.telegram import send_alert
+                    send_alert(
+                        f"🚨 TRADING STALLED: {signals_generated} signals but 0 selected "
+                        f"for {_streak} cycles.\nTop blockers: "
+                        + ", ".join(f"{k}={v}" for k, v in top)
+                        + "\nCheck /training/execution-decisions."
+                    )
+    except Exception:
+        pass
+
     # Telegram: notify on new execution decisions
     if selected:
         try:
