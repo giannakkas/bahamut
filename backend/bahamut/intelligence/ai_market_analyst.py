@@ -206,15 +206,21 @@ def _call_deepseek(prompt: str) -> tuple[dict | None, float, str]:
         return None, 0, f"DeepSeek {type(e).__name__}: {str(e)[:80]}"
 
 
-def _call_opus(prompt: str) -> tuple[dict | None, float, str]:
-    """Claude Opus 4.8 (Anthropic Messages API). Returns (result, cost_usd, error).
+def _call_claude(prompt: str) -> tuple[dict | None, float, str]:
+    """Active Claude model (Anthropic Messages API). Returns (result, cost, error).
 
-    This is the model that actually drives live-trading posture when
-    ANTHROPIC_API_KEY is set. Opus 4.8 rejects `temperature`, so it's omitted;
-    the system prompt goes in the top-level `system` field."""
+    This drives live-trading posture when ANTHROPIC_API_KEY is set. The model is
+    resolved from admin config `llm.model` (default Haiku 4.5) so cost can be
+    tuned live without redeploy. `temperature` is omitted (some models reject
+    it); the system prompt goes in the top-level `system` field."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None, 0, "ANTHROPIC_API_KEY not set"
+    try:
+        from bahamut.intelligence.llm import resolve_model, model_pricing
+        model = resolve_model()
+    except Exception:
+        model, model_pricing = "claude-haiku-4-5", lambda m: (1.0, 5.0)
     try:
         import httpx
         start = time.time()
@@ -223,7 +229,7 @@ def _call_opus(prompt: str) -> tuple[dict | None, float, str]:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={
-                "model": "claude-opus-4-8",
+                "model": model,
                 "max_tokens": MAX_TOKENS,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": prompt}],
@@ -232,19 +238,24 @@ def _call_opus(prompt: str) -> tuple[dict | None, float, str]:
         )
         latency = round((time.time() - start) * 1000)
         if resp.status_code != 200:
-            return None, 0, f"Opus HTTP {resp.status_code}: {resp.text[:150]} at {latency}ms"
+            return None, 0, f"Claude HTTP {resp.status_code}: {resp.text[:150]} at {latency}ms"
         data = resp.json()
         text = data["content"][0]["text"]
         usage = data.get("usage", {})
-        cost = (usage.get("input_tokens", 0) * 5e-6
-                + usage.get("output_tokens", 0) * 25e-6)
+        _pin, _pout = model_pricing(model)
+        cost = (usage.get("input_tokens", 0) / 1e6 * _pin
+                + usage.get("output_tokens", 0) / 1e6 * _pout)
         result = _parse_json_response(text)
         result["_latency_ms"] = latency
-        result["_provider"] = "claude-opus-4-8"
+        result["_provider"] = model
         result["_cost_usd"] = round(cost, 6)
         return result, cost, ""
     except Exception as e:
-        return None, 0, f"Opus {type(e).__name__}: {str(e)[:80]}"
+        return None, 0, f"Claude {type(e).__name__}: {str(e)[:80]}"
+
+
+# Back-compat alias — callers still reference _call_opus.
+_call_opus = _call_claude
 
 
 def _call_gemini(prompt: str) -> tuple[dict | None, float, str]:
@@ -342,7 +353,7 @@ def call_opus_analysis(sentiment: dict, headlines: list, events: list,
                 except Exception:
                     pass
                 _sync_compat_ts()
-                logger.info("ai_posture_ok", provider="claude-opus-4-8",
+                logger.info("ai_posture_ok", provider=result.get("_provider", "claude"),
                             latency_ms=result.get("_latency_ms"),
                             posture=result.get("posture"),
                             cost_usd=round(cost, 6))
@@ -476,8 +487,13 @@ def get_analysis_status() -> dict:
         except Exception:
             pass
     _opus_active = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
-    _primary = "claude-opus-4-8" if _opus_active else _PRIMARY_MODEL
-    _chain = (f"claude-opus-4-8 -> {_PRIMARY_MODEL} -> {_FALLBACK_MODEL}"
+    try:
+        from bahamut.intelligence.llm import resolve_model
+        _claude_model = resolve_model()
+    except Exception:
+        _claude_model = "claude-haiku-4-5"
+    _primary = _claude_model if _opus_active else _PRIMARY_MODEL
+    _chain = (f"{_claude_model} -> {_PRIMARY_MODEL} -> {_FALLBACK_MODEL}"
               if _opus_active else f"{_PRIMARY_MODEL} -> {_FALLBACK_MODEL}")
     return {
         "model": _chain,

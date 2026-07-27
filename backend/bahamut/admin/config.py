@@ -43,6 +43,7 @@ DEFAULTS = {
     # spend hits this, agents fall back to Gemini/deterministic paths. This is
     # what makes "Opus everywhere" safe — set to your tolerance.
     "llm.daily_cost_cap_usd": 25.0,
+    "llm.model": "claude-haiku-4-5",   # active Claude model (haiku=cheap, sonnet-5, opus-4-8); live-switchable
 
     # ── Meta-labeling model (AI accuracy layer) ──
     # Predictions influence sizing/filtering ONLY when true AND the model's

@@ -26,12 +26,38 @@ from datetime import datetime, timezone
 
 logger = structlog.get_logger()
 
-LLM_MODEL = "claude-opus-4-8"
 _ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-# Opus 4.8 pricing (USD per 1M tokens)
-_PRICE_IN_PER_M = 5.0
-_PRICE_OUT_PER_M = 25.0
+# Pricing (USD per 1M tokens) per model — used for the daily-cap accounting.
+_MODEL_PRICING = {
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-sonnet-5":  (3.0, 15.0),
+    "claude-opus-4-8":  (5.0, 25.0),
+    "claude-opus-4-7":  (5.0, 25.0),
+}
+# Default LLM = Haiku 4.5: 5× cheaper than Opus ($1/$5 vs $5/$25). The analyst
+# is a soft overlay with full rule-based fallback, so the cost saving is worth
+# the reduced nuance. Change live via admin config `llm.model` (no redeploy).
+_DEFAULT_MODEL = "claude-haiku-4-5"
+
+
+def resolve_model() -> str:
+    """The active Claude model, from admin config `llm.model` (validated)."""
+    try:
+        from bahamut.admin.config import get_config
+        m = get_config("llm.model", _DEFAULT_MODEL)
+        return m if m in _MODEL_PRICING else _DEFAULT_MODEL
+    except Exception:
+        return _DEFAULT_MODEL
+
+
+def model_pricing(model: str) -> tuple[float, float]:
+    """(input_$/1M, output_$/1M) for a model; falls back to the default."""
+    return _MODEL_PRICING.get(model, _MODEL_PRICING[_DEFAULT_MODEL])
+
+
+# Back-compat module constant (some callers import LLM_MODEL directly).
+LLM_MODEL = _DEFAULT_MODEL
 
 _DEFAULT_DAILY_CAP_USD = 25.0
 
@@ -128,7 +154,9 @@ def wrap_news_block(clean_headlines: list[str]) -> str:
 
 
 async def call_claude(prompt: str, max_tokens: int = 500) -> str | None:
-    """Call Claude Opus 4.8. Returns the text, or None if no key, cap hit, or error."""
+    """Call the active Claude model (admin config `llm.model`, default Haiku 4.5).
+    Returns the text, or None if no key, cap hit, or error."""
+    _model = resolve_model()
     try:
         from bahamut.config import get_settings
         api_key = get_settings().anthropic_api_key
@@ -150,14 +178,15 @@ async def call_claude(prompt: str, max_tokens: int = 500) -> str | None:
                 headers={"x-api-key": api_key,
                          "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
-                json={"model": LLM_MODEL, "max_tokens": max_tokens,
+                json={"model": _model, "max_tokens": max_tokens,
                       "messages": [{"role": "user", "content": prompt}]},
             )
             resp.raise_for_status()
             data = resp.json()
         usage = data.get("usage", {})
-        cost = (usage.get("input_tokens", 0) / 1e6 * _PRICE_IN_PER_M
-                + usage.get("output_tokens", 0) / 1e6 * _PRICE_OUT_PER_M)
+        _pin, _pout = model_pricing(_model)
+        cost = (usage.get("input_tokens", 0) / 1e6 * _pin
+                + usage.get("output_tokens", 0) / 1e6 * _pout)
         _record_cost(cost)
         return data["content"][0]["text"]
     except Exception as e:
@@ -167,7 +196,7 @@ async def call_claude(prompt: str, max_tokens: int = 500) -> str | None:
 
 def get_llm_status() -> dict:
     return {
-        "model": LLM_MODEL,
+        "model": resolve_model(),
         "daily_cap_usd": _daily_cap(),
         "spent_today_usd": round(_spent_today(), 4),
         "budget_exhausted": budget_exhausted(),
