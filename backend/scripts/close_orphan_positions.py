@@ -20,7 +20,13 @@ USAGE
     python scripts/close_orphan_positions.py --execute    # actually close
 """
 import argparse
+import os
 import sys
+
+# Python puts THIS file's directory (scripts/) on sys.path, not the backend root,
+# so `import bahamut` fails when run as `python scripts/close_orphan_positions.py`.
+# Add the backend root explicitly so the script works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main() -> int:
