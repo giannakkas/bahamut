@@ -129,23 +129,25 @@ for a in TRADING_STOCKS:
 def crypto_trading_enabled() -> bool:
     """Single source of truth for whether crypto trading is on.
 
-    True if EITHER the CRYPTO_TRADING_ENABLED env var is "1" (Railway) OR the
-    admin-config key `trading.crypto_enabled` is set true (runtime toggle, no
-    redeploy). Env wins as an always-on override; config allows live flips.
+    The admin-config key `trading.crypto_enabled` is AUTHORITATIVE; the
+    CRYPTO_TRADING_ENABLED env var only supplies the default when no config
+    value is stored. Precedence used to be "env OR config", which made the env
+    var an always-on override — there was no way to turn crypto OFF at runtime
+    while it was set, so the kill switch didn't actually kill anything.
 
-    NOTE: crypto has no proven edge in our data (LONG ~breakeven, SHORT/v10
-    net-negative). It is enabled here for LEARNING — the trust engine will
-    down-weight and auto-suppress losing crypto patterns over time. The raised
-    SHORT (55/45) and v10 (85) thresholds remain as quality guardrails.
+    DEFAULT NOW OFF. Crypto was enabled for LEARNING; after 761 trades the
+    experiment is conclusive: crypto −$2,849 @ 46% WR vs stock +$8,463 @ 55%.
+    It also generated ~94% of trade volume, drowning the stock edge in churn.
+    The tuition is paid — capital now concentrates on the proven stock book.
+    Re-enable any time with: POST /admin/config {"trading.crypto_enabled": true}
     """
     import os as _os
-    if _os.environ.get("CRYPTO_TRADING_ENABLED", "0") == "1":
-        return True
+    _env_default = _os.environ.get("CRYPTO_TRADING_ENABLED", "0") == "1"
     try:
         from bahamut.admin.config import get_config
-        return bool(get_config("trading.crypto_enabled", False))
+        return bool(get_config("trading.crypto_enabled", _env_default))
     except Exception:
-        return False
+        return _env_default
 
 
 def get_asset_mode(asset: str) -> str:

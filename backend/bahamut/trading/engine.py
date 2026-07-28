@@ -1597,6 +1597,36 @@ def force_close_all_training_positions(reason: str = "KILL_SWITCH") -> dict:
     }
 
 
+def _broker_position_is_flat(asset: str, asset_class: str, platform: str) -> bool:
+    """True only if the broker AUTHORITATIVELY reports no position for `asset`.
+
+    Used to resolve stuck positions whose close never confirms. Correctness is
+    critical here: wrongly reporting "flat" would book a phantom close on a
+    still-open position (the exact bug that produced the orphan alerts). Both
+    broker helpers return an empty list/None on API errors too, so an empty
+    result alone is NOT proof of flat — connectivity is verified first, and any
+    uncertainty returns False (keep the position open and retry).
+    """
+    try:
+        if platform in ("binance", "binance_futures") or asset_class == "crypto":
+            from bahamut.execution.binance_futures import (
+                get_positions, get_account, _to_symbol, _configured)
+            if not _configured() or get_account() is None:
+                return False          # can't verify → assume still open
+            sym = _to_symbol(asset)
+            return not any(p.get("symbol") == sym and abs(float(p.get("qty", 0))) > 0
+                           for p in get_positions())
+        if platform == "alpaca" or asset_class == "stock":
+            from bahamut.execution.alpaca_adapter import (
+                get_position, get_account as _acc, _configured)
+            if not _configured() or _acc() is None:
+                return False
+            return get_position(asset) is None
+    except Exception:
+        return False
+    return False
+
+
 def get_open_positions() -> list[TrainingPosition]:
     """Return all currently open training positions."""
     return _load_positions()
@@ -1995,6 +2025,34 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                     except Exception:
                         pass
                     continue  # DO NOT remove, DO NOT persist
+
+                elif (pos.bars_held >= pos.max_hold_bars + max(10, pos.max_hold_bars)
+                      and _broker_position_is_flat(pos.asset, pos.asset_class,
+                                                   trade.execution_platform)):
+                    # ── STUCK-POSITION RESOLUTION ──
+                    # The position is far past its max hold (retried for many
+                    # cycles) AND the broker authoritatively reports no position
+                    # for this symbol. The close DID happen broker-side (or the
+                    # position never really existed there) — the fill just never
+                    # confirmed back to us. Without this branch such positions
+                    # retry forever: they hit TIMEOUT every cycle, the close is
+                    # never confirmed, so they are never booked and never freed
+                    # (observed live: WIFUSD 124 bars vs max 24, INJUSD 112 vs 10).
+                    # Book the close from candle price and release the slot.
+                    trade.exit_price = round(exit_price, 6)
+                    if pos.direction == "LONG":
+                        trade.pnl = round((exit_price - canonical_entry) * pos.size, 2)
+                    else:
+                        trade.pnl = round((canonical_entry - exit_price) * pos.size, 2)
+                    trade.pnl_pct = round(trade.pnl / max(0.01, pos.risk_amount), 4)
+                    trade.return_pct = round(trade.pnl / max(0.01, canonical_entry * pos.size), 4)
+                    trade.execution_platform = "reconciled_flat"
+                    _close_succeeded = True
+                    logger.warning("stuck_position_resolved_broker_flat",
+                                   asset=pos.asset, position_id=pos.position_id,
+                                   bars_held=pos.bars_held, max_hold=pos.max_hold_bars,
+                                   pnl=trade.pnl,
+                                   msg="Broker reports flat — booking close, freeing slot")
 
                 else:
                     # Broker close returned NO usable fill price and NO explicit
