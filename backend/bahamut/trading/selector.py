@@ -30,6 +30,7 @@ DEFAULT_CONFIG = {
     "execution_threshold": 80,      # Minimum readiness score to be eligible
     "max_new_per_cycle": 8,         # Max new positions opened per cycle (was 5)
     "max_per_class": 8,             # Max new positions per asset class per cycle (was 5)
+    "max_per_setup": 3,             # Max new positions per class+strategy per cycle
     "max_total_positions": 25,      # Hard cap on total open positions (headroom above 20)
 }
 
@@ -784,15 +785,26 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             continue
 
         # 8. Near-duplicate (same class + strategy)
-        same_class_same_strat = any(
-            e["asset_class"] == cls and e["strategy"] == sig.strategy
-            for e in execute
+        # Was a hard limit of ONE position per class+strategy per cycle. That was
+        # sensible across 5 asset classes, but with crypto disabled EVERYTHING is
+        # 'stock', so it capped the book at 3 new positions per cycle (one each
+        # for v9/v5/v10) regardless of how many setups passed every quality gate —
+        # signals were rejected as "duplicate_setup" AFTER clearing thresholds.
+        # Now allows up to max_per_setup per class+strategy. Candidates are
+        # processed in priority order, so this admits the BEST N, never random
+        # ones, and no quality threshold is relaxed to achieve it.
+        _same_count = sum(
+            1 for e in execute
+            if e["asset_class"] == cls and e["strategy"] == sig.strategy
         )
-        if same_class_same_strat:
-            reasons.append(f"Similar setup already selected ({cls}/{sig.strategy})")
+        if _same_count >= config["max_per_setup"]:
+            reasons.append(
+                f"Setup cap reached ({cls}/{sig.strategy}: "
+                f"{config['max_per_setup']} max per cycle)")
             gate_history.append({
                 "stage": "eligibility", "gate": "near_duplicate",
-                "verdict": "watchlist", "detail": f"{cls}/{sig.strategy}",
+                "verdict": "watchlist",
+                "detail": f"{cls}/{sig.strategy} {_same_count}/{config['max_per_setup']}",
             })
             watchlist.append(_fmt_decision(sig, pri, "WATCHLIST", reasons, gate_history))
             _track_rejection("duplicate_setup")

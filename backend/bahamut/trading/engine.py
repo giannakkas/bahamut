@@ -943,7 +943,11 @@ def open_training_position(
             return None
 
         # Per-strategy position limit (prevent one strategy from hogging all slots)
-        MAX_PER_STRATEGY = 6
+        # Raised 6 -> 8: with crypto off the book is stock-only and concentrated in
+        # v9_breakout/v5_base, so 6 apiece capped the portfolio near 12 and would
+        # bind before a 10-position target was reached. Pure capacity headroom —
+        # every quality gate still applies to each individual entry.
+        MAX_PER_STRATEGY = 8
         strat_count = sum(1 for p in existing if p.strategy == strategy)
         if strat_count >= MAX_PER_STRATEGY:
             logger.warning("training_position_rejected",
