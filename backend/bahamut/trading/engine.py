@@ -1597,6 +1597,73 @@ def force_close_all_training_positions(reason: str = "KILL_SWITCH") -> dict:
     }
 
 
+def _trade_exists(position_id: str) -> bool:
+    """True if a TrainingTrade has already been recorded for this position.
+
+    Guard against silently discarding a position whose outcome was never
+    persisted. Returns True on error so an unrelated DB failure can never cause
+    a duplicate trade to be written.
+    """
+    try:
+        from bahamut.database import sync_engine
+        from sqlalchemy import text
+        with sync_engine.connect() as conn:
+            n = conn.execute(
+                text("SELECT COUNT(*) FROM training_trades WHERE position_id = :pid"),
+                {"pid": position_id}).scalar()
+        return bool(n and int(n) > 0)
+    except Exception as e:
+        logger.warning("trade_exists_check_failed",
+                       position_id=position_id, error=str(e)[:120])
+        return True   # fail safe: assume recorded, never double-book
+
+
+def _book_recovered_trade(pos: "TrainingPosition", exit_price: float,
+                          exit_reason: str) -> bool:
+    """Persist a TrainingTrade for a position that was closed without one.
+
+    Recovery path only — used when the exchange-side close happened but the
+    trade row was never written. Keeps the learning loop whole.
+    """
+    try:
+        canonical_entry = pos.avg_fill_price if pos.avg_fill_price > 0 else pos.entry_price
+        if pos.direction == "LONG":
+            pnl = (exit_price - canonical_entry) * pos.size
+        else:
+            pnl = (canonical_entry - exit_price) * pos.size
+        trade = TrainingTrade(
+            trade_id=str(uuid.uuid4())[:12],
+            position_id=pos.position_id,
+            asset=pos.asset, asset_class=pos.asset_class,
+            strategy=pos.strategy, direction=pos.direction,
+            entry_price=canonical_entry, exit_price=round(exit_price, 6),
+            stop_price=pos.stop_price, tp_price=pos.tp_price,
+            size=pos.size, risk_amount=pos.risk_amount,
+            pnl=round(pnl, 2),
+            pnl_pct=round(pnl / max(0.01, pos.risk_amount), 4),
+            return_pct=round(pnl / max(0.01, canonical_entry * pos.size), 4),
+            entry_time=pos.entry_time,
+            exit_time=datetime.now(timezone.utc).isoformat(),
+            exit_reason=exit_reason,
+            bars_held=pos.bars_held,
+            execution_type=pos.execution_type,
+            confidence_score=pos.confidence_score,
+            trigger_reason="recovered_missing_trade",
+            entry_features=pos.entry_features,
+            regime=pos.regime, substrategy=pos.substrategy,
+            data_mode=pos.data_mode,
+        )
+        _persist_trade(trade)
+        logger.warning("recovered_trade_booked", asset=pos.asset,
+                       position_id=pos.position_id, pnl=trade.pnl,
+                       exit_reason=exit_reason)
+        return True
+    except Exception as e:
+        logger.error("recover_trade_failed", asset=pos.asset,
+                     position_id=pos.position_id, error=str(e)[:150])
+        return False
+
+
 def _broker_position_is_flat(asset: str, asset_class: str, platform: str) -> bool:
     """True only if the broker AUTHORITATIVELY reports no position for `asset`.
 
@@ -1811,8 +1878,28 @@ def update_positions_for_asset(asset: str, bar: dict, *,
             if _r:
                 _stream_flag = _r.get(f"bahamut:stream_closed:{pos.position_id}")
                 if _stream_flag:
-                    logger.info("position_already_closed_by_stream",
-                                asset=pos.asset, position_id=pos.position_id)
+                    # The stream normally persists the TrainingTrade itself. If its
+                    # insert failed, dropping the position here would discard the
+                    # outcome entirely — the trade is never recorded and the
+                    # learning engine never sees it (observed: WIFUSD/INJUSD went
+                    # OPEN -> CLOSED with no trade row). Verify the trade exists
+                    # before discarding; if it is missing, book it from the stream
+                    # payload so no outcome can be lost silently.
+                    if not _trade_exists(pos.position_id):
+                        try:
+                            _sf = json.loads(_stream_flag)
+                        except Exception:
+                            _sf = {}
+                        _fill = float(_sf.get("fill_price") or 0) or close
+                        _reason = _sf.get("exit_reason") or "STREAM_CLOSE"
+                        logger.error("stream_close_missing_trade_recovering",
+                                     asset=pos.asset, position_id=pos.position_id,
+                                     exit_reason=_reason, fill_price=_fill,
+                                     msg="Stream closed position but no trade row — booking now")
+                        _book_recovered_trade(pos, _fill, _reason)
+                    else:
+                        logger.info("position_already_closed_by_stream",
+                                    asset=pos.asset, position_id=pos.position_id)
                     _remove_position(pos.position_id)
                     continue
         except Exception:
@@ -2169,6 +2256,31 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                             cd_time = max(cd_time, 7200)
                     elif pos.execution_type == "crash_short" and trade.pnl > 0:
                         r.delete(f"bahamut:crash_short:losses:{pos.asset}")
+
+                    # ── Stop-out re-entry cooldown (escalating) ──
+                    # A stop-out means the setup was invalidated, yet the default
+                    # 30-min cooldown let the same asset be re-entered almost
+                    # immediately: NVDA was stopped out 3x in ~90 minutes on
+                    # 2026-07-27 (-$0.91, -$0.06, +$0.77), each after 1 bar —
+                    # pure churn paying spread/fees. Escalate per consecutive
+                    # stop-out so repeated failures on one asset back off hard:
+                    # 1st -> 4h (one full 4H bar, forcing a genuinely new setup),
+                    # 2nd -> 8h, 3rd+ -> 24h. Any win clears the streak.
+                    if exit_reason == "SL":
+                        _sl_key = f"bahamut:training:sl_streak:{pos.asset}"
+                        try:
+                            _sl_n = int(r.get(_sl_key) or 0) + 1
+                        except Exception:
+                            _sl_n = 1
+                        r.setex(_sl_key, 86400, str(_sl_n))
+                        cd_time = max(cd_time, 14400 if _sl_n <= 1
+                                      else 28800 if _sl_n == 2 else 86400)
+                        logger.info("stop_out_cooldown_applied",
+                                    asset=pos.asset, sl_streak=_sl_n,
+                                    cooldown_seconds=cd_time)
+                    elif trade.pnl > 0:
+                        r.delete(f"bahamut:training:sl_streak:{pos.asset}")
+
                     r.setex(f"bahamut:training:cooldown:{pos.asset}", cd_time, "1")
                     r.setex(f"bahamut:training:cooldown:{pos.asset}:{pos.strategy}", cd_time, "1")
             except Exception:
