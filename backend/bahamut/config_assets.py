@@ -67,13 +67,23 @@ TRADING_INDICES = []
 TRADING_COMMODITIES = []
 
 TRADING_STOCKS = [
-    # Core performers (proven profitable)
-    # COIN removed — globally suppressed (-$380 over 9 trades), could never trade.
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL",
-    "META", "TSLA", "AMD", "NFLX",
+    # ── Removed 2026-08-01 for net-negative realized P&L (adequate sample) ──
+    #   COIN  -$380 / 9 trades   (also globally suppressed)
+    #   AMD   -$279 / 7
+    #   META   -$74 / 34
+    #   ORCL   -$66 / 14
+    #   GOOGL  -$64 / 21
+    #   SHOP   -$13 / 2
+    # Deliberately KEPT despite appearing in a naive "10 worst" list — they are
+    # PROFITABLE and only rank low because just 18 stocks have ever traded:
+    #   NVDA +$518 / 17 · GS +$287 / 17 · TSLA +$98 / 31 · UBER +$8 / 3
+    # Caveat: per-stock samples are small (median 20 trades) and losers showed no
+    # persistence across periods, so this prune is a modest cleanup, not an edge.
+    "AAPL", "MSFT", "NVDA", "AMZN",
+    "TSLA", "NFLX",
     "SPY", "QQQ", "JPM", "BAC", "GS",
     # Batch 1 — high-volume stocks that move well on 4H
-    "CRM", "ORCL", "UBER", "SQ", "SHOP",
+    "CRM", "UBER", "SQ",
     # Batch 2 — sector diversification (added 2026-05-12)
     # Healthcare
     "UNH", "JNJ", "LLY", "ABBV",
@@ -100,6 +110,28 @@ TRADING_STOCKS = [
     "C", "AXP", "BLK",
     # Transportation + Cybersecurity
     "FDX", "UPS", "PANW", "T",
+
+    # ── Batch 4 — universe expansion (added 2026-08-01) ──
+    # Only 18 of the previous 59 stocks had EVER produced a trade, so the
+    # effective universe was tiny — the real reason the book could not fill more
+    # than ~5 concurrent positions. These are all mega/large-cap, high-liquidity
+    # names (tight spreads, deep volume) chosen on STRUCTURAL grounds — liquidity
+    # and sector spread — never on back-fitted P&L. More qualifying candidates for
+    # v9_breakout without lowering any quality threshold.
+    # Tech / semis / software
+    "TXN", "AMAT", "LRCX", "NOW", "INTU", "IBM", "CSCO", "ACN", "CRWD", "ANET",
+    # Financials
+    "WFC", "SCHW", "SPGI", "CME", "ICE",
+    # Healthcare
+    "TMO", "ABT", "DHR", "BMY", "AMGN", "ISRG", "VRTX",
+    # Consumer staples / discretionary
+    "PG", "KO", "PEP", "PM", "TGT", "TJX", "CMG",
+    # Industrials
+    "GE", "BA", "RTX", "DE", "UNP", "ETN",
+    # Energy
+    "COP", "SLB", "EOG",
+    # Telecom + broad-market ETF
+    "TMUS", "IWM",
 ]
 
 # Flatten all training assets
