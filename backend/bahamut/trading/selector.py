@@ -449,6 +449,35 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
         PATTERN_HARD_BLOCKS = {
             "v10_mean_reversion:RANGE:crypto": "expectancy=-0.30, 173 mature samples",
         }
+        # 0.4b. DIRECTIONAL HARD BLOCKS — strategy:class:direction combos with a
+        # confirmed negative record. PATTERN_HARD_BLOCKS above is keyed by regime
+        # and cannot express "this strategy must never short this asset class".
+        DIRECTION_HARD_BLOCKS = {
+            # Every stock loss in the current era came from this one combination:
+            # GOOGL -$44.83, GS -$35.41, TSLA -$29.59 (all SL) and NVDA -$10.06
+            # = 0 wins in 4, -$119.89 — which is ~100% of the -$110.82 stock era
+            # P&L (the sole winner was v9_breakout LONG, +$9.27). The same
+            # strategy also lost -$2,695.84 shorting crypto over 207 trades.
+            # Shorting is where this system consistently loses money.
+            "v10_mean_reversion:stock:SHORT": "0W/4L, -$119.89 era; same strat -$2,696 on crypto shorts",
+        }
+        _dir_key = f"{sig.strategy}:{sig.asset_class}:{sig.direction}"
+        if _dir_key in DIRECTION_HARD_BLOCKS:
+            _dblock = DIRECTION_HARD_BLOCKS[_dir_key]
+            reasons.append(f"Directional hard block: {_dir_key} ({_dblock})")
+            gate_history.append({
+                "stage": "hard_safety", "gate": "direction_hard_block",
+                "verdict": "block", "detail": f"{_dir_key}: {_dblock}",
+            })
+            rejected.append(_fmt_decision(sig, pri, "REJECT", reasons, gate_history))
+            _track_rejection("direction_hard_block")
+            _track_rejection(f"direction_hard_block_{sig.strategy}")
+            logger.info("selector_direction_blocked",
+                        asset=sig.asset, strategy=sig.strategy,
+                        direction=sig.direction, asset_class=sig.asset_class,
+                        reason=_dblock)
+            continue
+
         _pattern_key = f"{sig.strategy}:{sig.regime}:{sig.asset_class}"
         if _pattern_key in PATTERN_HARD_BLOCKS:
             _block_reason = PATTERN_HARD_BLOCKS[_pattern_key]
