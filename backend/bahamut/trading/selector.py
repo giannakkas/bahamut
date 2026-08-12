@@ -460,6 +460,14 @@ def select_candidates(signals: list[PendingSignal]) -> dict:
             # strategy also lost -$2,695.84 shorting crypto over 207 trades.
             # Shorting is where this system consistently loses money.
             "v10_mean_reversion:stock:SHORT": "0W/4L, -$119.89 era; same strat -$2,696 on crypto shorts",
+            # v10 LONG on stocks looks profitable lifetime (+$1,879 / 180 trades)
+            # but that is entirely the Mar-Apr window. Since 2026-05-01 it is
+            # NEGATIVE: 64 trades, 40.6% WR, -$109.23 (avg -$1.71/trade). It is
+            # also ~80% of all stock trade volume at the worst hit rate of the
+            # three strategies (30.6% lifetime vs v9's 61.3%), so it both loses
+            # money and drags the headline win rate. Blocked until it re-earns
+            # its place on fresh data.
+            "v10_mean_reversion:stock:LONG": "May+ 64 trades 40.6% WR -$109.23; 30.6% WR lifetime",
         }
         _dir_key = f"{sig.strategy}:{sig.asset_class}:{sig.direction}"
         if _dir_key in DIRECTION_HARD_BLOCKS:

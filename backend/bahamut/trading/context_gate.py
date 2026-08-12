@@ -37,7 +37,12 @@ CRASH_LONG_BLOCKED = True
 
 # Soft penalties: strategy+regime combos that are allowed but penalized
 SOFT_PENALTY_COMBOS = {
-    ("v9_breakout", "RANGE"): 10,  # v9 in RANGE = 10pt penalty
+    # ("v9_breakout", "RANGE") penalty REMOVED 2026-08-12 — it was suppressing the
+    # single best bucket in the entire system. Realized stock-LONG results:
+    #   v9 RANGE: n=42  61.9% WR  +$2,741.45  avg +$65.27   <- BEST
+    #   v9 TREND: n=43  58.1% WR  +$2,261.45  avg +$52.59
+    # RANGE outperforms TREND on both win rate and expectancy, so penalising it
+    # 10pts (and blocking it outright in PRODUCTION) was costing money.
     ("v10_mean_reversion", "CRASH"): 5,  # v10 SHORT in CRASH = 5pt penalty (slightly risky)
 }
 
@@ -89,16 +94,12 @@ def validate_strategy_context(strategy: str, regime: str, direction: str = "LONG
         result["penalty"] = SOFT_PENALTY_COMBOS[combo]
         result["gate"] = "soft_regime_penalty"
 
-    # 4. Production mode is stricter
-    if mode == "PRODUCTION":
-        # In production, v9 in RANGE is blocked, not just penalized
-        if strategy == "v9_breakout" and regime == "RANGE":
-            return {
-                "valid": False,
-                "reason": "v9_breakout blocked in RANGE in production mode",
-                "penalty": 0,
-                "gate": "production_regime_block",
-            }
+    # 4. Production mode
+    # The v9_breakout+RANGE production block was REMOVED 2026-08-12. It assumed
+    # breakouts fail in range-bound markets, but the realized data says the
+    # opposite: v9 stock LONG in RANGE is the best bucket in the system
+    # (n=42, 61.9% WR, +$65.27/trade) — ahead of TREND (n=43, 58.1%, +$52.59).
+    # Blocking it in production would have removed the strongest edge available.
 
     return result
 
