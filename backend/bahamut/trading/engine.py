@@ -290,8 +290,15 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                            reason=str(_sel_err)[:200])
             rows = None
 
+        _used_legacy_select = False
         if rows is None:
-            # Fallback: legacy columns only, fresh connection
+            # Fallback: legacy columns only, fresh connection.
+            # NOTE: this SELECT omits execution_platform/exchange_order_id, which
+            # are then coerced to 'internal'/'' below. Those values are NOT real —
+            # they are missing data. They must never be written back (see the
+            # write-back guard further down), or a genuine broker-backed position
+            # is permanently downgraded to "internal" in both Redis and Postgres.
+            _used_legacy_select = True
             try:
                 with sync_engine.connect() as conn2:
                     rows = conn2.execute(text("""
@@ -373,8 +380,16 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                 except Exception:
                     pass
 
-        # Repopulate Redis cache from DB
-        if positions:
+        # Repopulate Redis cache from DB.
+        # SKIPPED when the legacy SELECT was used: those rows have no
+        # execution_platform/exchange_order_id, so persisting them would
+        # overwrite real broker metadata with 'internal'/'' in BOTH Redis and
+        # Postgres (via _save_position's upsert) — permanently, surviving
+        # restarts. A position mislabelled 'internal' can then be closed on the
+        # paper path while live shares sit unprotected on the exchange. Serving
+        # this call from memory without persisting is strictly safer than
+        # writing known-incomplete data.
+        if positions and not _used_legacy_select:
             r = _get_redis()
             if r:
                 try:
@@ -386,6 +401,11 @@ def _load_positions_from_db() -> list[TrainingPosition]:
                     _save_position(pos)
                 except Exception:
                     pass
+        elif positions and _used_legacy_select:
+            logger.error("training_positions_legacy_load_not_persisted",
+                         count=len(positions),
+                         msg="Legacy SELECT lacks broker metadata — refusing to "
+                             "overwrite execution_platform/exchange_order_id")
 
         logger.info("training_positions_loaded_from_db", count=len(positions))
         return positions
@@ -2046,8 +2066,25 @@ def update_positions_for_asset(asset: str, bar: dict, *,
                 # execution_platform='internal' and an empty exchange_order_id.
                 # If there is no broker order behind this position, close it
                 # internally instead of asking a broker to flatten thin air.
-                _no_broker_order = (pos.execution_platform in ("", "internal")
-                                    or not pos.exchange_order_id)
+                #
+                # SAFETY (2026-08-17): local metadata alone is NOT proof that no
+                # broker position exists. _load_positions_from_db()'s legacy
+                # fallback drops execution_platform/exchange_order_id and coerces
+                # them to 'internal'/'' — then persists that back — so a REAL
+                # Alpaca position can look internal. Routing such a position to an
+                # internal close would book a paper win, delete the local record,
+                # and leave live shares on the exchange with no stop and no TP:
+                # precisely the phantom-close/orphan bug. So the broker must
+                # CONFIRM it is flat before we take the internal path.
+                # _broker_position_is_flat() fails safe (False) when it cannot
+                # verify, which routes back to the real broker close — the
+                # conservative direction. The `not exchange_order_id` disjunct is
+                # deliberately gone: a blank id is a metadata smell, not evidence.
+                _no_broker_order = (
+                    pos.execution_platform in ("", "internal")
+                    and _broker_position_is_flat(pos.asset, pos.asset_class,
+                                                 pos.execution_platform)
+                )
                 if _no_broker_order:
                     from bahamut.execution.canonical import ExecutionResult
                     exec_result = ExecutionResult.internal_sim(
