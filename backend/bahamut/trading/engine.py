@@ -1763,27 +1763,45 @@ def force_close_single_position(position_id: str, reason: str = "MANUAL_CLOSE") 
         # Close via normal path
         trades = update_positions_for_asset(target.asset, bar)
         if trades:
+            # NOTE: update_positions_for_asset returns TrainingTrade DATACLASSES,
+            # not dicts. The previous code called .get("pnl") on them, which
+            # raises AttributeError and was swallowed by the outer except —
+            # reporting a successful close as an error.
+            _pnl = getattr(trades[0], "pnl", 0)
             logger.warning("manual_close_position",
                            asset=target.asset, position_id=position_id,
-                           reason=reason, pnl=trades[0].get("pnl", 0) if trades else 0)
+                           reason=reason, pnl=_pnl)
             return {
                 "status": "closed",
                 "asset": target.asset,
                 "position_id": position_id,
                 "close_price": close_price,
-                "pnl": trades[0].get("pnl", 0) if trades else 0,
+                "pnl": _pnl,
                 "reason": reason,
             }
         else:
-            # Fallback: direct removal
+            # No trade came back — the close did not complete (e.g. the broker
+            # rejected it, or the market-hours gate skipped the exit check).
+            # This branch used to call _remove_position() straight away, which
+            # DELETED THE POSITION AND BOOKED NOTHING: the trade vanished, its
+            # P&L was discarded, and the learning engine never saw the outcome.
+            # Observed live: a manually-closed NVDA (+$50.59 unrealized) was
+            # erased — closed_trades stayed at 1167 and the era win rate stayed
+            # 0% instead of recording a win.
+            # Book the outcome from the forced close price BEFORE removing, so a
+            # manual close can never silently lose a trade.
+            _booked = _book_recovered_trade(target, close_price, reason)
             _remove_position(position_id)
             logger.warning("manual_close_fallback_removal",
-                           asset=target.asset, position_id=position_id)
+                           asset=target.asset, position_id=position_id,
+                           trade_booked=_booked,
+                           msg="Close produced no trade — booked from forced close price")
             return {
                 "status": "closed_fallback",
                 "asset": target.asset,
                 "position_id": position_id,
                 "close_price": close_price,
+                "trade_booked": _booked,
                 "reason": reason,
             }
     except Exception as e:
