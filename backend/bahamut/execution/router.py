@@ -394,14 +394,47 @@ def _alpaca_close(asset: str, direction: str, size: float) -> dict:
             reference_price = float(c[-1].get("close", 0) or 0)
     except Exception:
         pass
+    # ── Close the quantity the BROKER actually holds, not the local size ──
+    # Local size can exceed the broker's holding (partial fill on entry, or a
+    # fractional-share rounding difference). Alpaca then rejects the whole order
+    # with 403 "insufficient qty available for order", the close never succeeds,
+    # and the position is stranded open FOREVER — retried and rejected every
+    # cycle. Observed live: AMZN local 9.201209 vs Alpaca 8.304917, stuck 8 bars
+    # past TIMEOUT. Clamp to the broker's available quantity; if the broker holds
+    # nothing, report success-as-flat so the caller can book the close instead of
+    # retrying an order that can never fill.
+    _close_qty = size
+    try:
+        from bahamut.execution.alpaca_adapter import get_position as _apos
+        _bp = _apos(asset)
+        if _bp is None:
+            logger.warning("alpaca_close_broker_already_flat",
+                           asset=asset, local_size=size,
+                           msg="Broker holds no position — nothing to close")
+            return ExecutionResult.internal_sim(
+                asset, direction, size, reference_price).as_dict()
+        _avail = abs(float(_bp.get("qty", 0) or 0))
+        if _avail <= 0:
+            return ExecutionResult.internal_sim(
+                asset, direction, size, reference_price).as_dict()
+        if _avail < size:
+            logger.warning("alpaca_close_qty_clamped",
+                           asset=asset, local_size=size, broker_qty=_avail,
+                           msg="Local size exceeds broker holding — closing broker qty")
+            _close_qty = _avail
+    except Exception as _qe:
+        logger.warning("alpaca_close_qty_lookup_failed",
+                       asset=asset, error=str(_qe)[:120])
+
     try:
         # Close direction: opposite of position direction
-        result = place_market_sell(asset, size) if direction == "LONG" else place_market_buy(asset, quantity=size)
+        result = (place_market_sell(asset, _close_qty) if direction == "LONG"
+                  else place_market_buy(asset, quantity=_close_qty))
         if result is None:
             return ExecutionResult.error("alpaca", asset, direction,
                                          size, "place_market returned None").as_dict()
         canonical = ExecutionResult.from_alpaca(
-            asset=asset, direction=direction, submitted_qty=size,
+            asset=asset, direction=direction, submitted_qty=_close_qty,
             raw=result, reference_price=reference_price,
         )
         if not canonical.is_success() and canonical.lifecycle != "SUBMITTED":
