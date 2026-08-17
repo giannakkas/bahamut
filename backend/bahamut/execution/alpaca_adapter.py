@@ -23,12 +23,30 @@ IS_PAPER = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
 
 BASE_URL = PAPER_URL if IS_PAPER else LIVE_URL
 
-# Assets supported on Alpaca (stocks + ETFs)
-SUPPORTED_ASSETS = {
+# Assets supported on Alpaca (stocks + ETFs).
+#
+# DERIVED FROM THE TRADING UNIVERSE — do not hardcode.
+# This used to be a frozen 20-symbol list while the universe grew to 94 stocks,
+# so 80 of them (85%) could generate a signal, clear EVERY quality gate, and then
+# be silently rejected here with "alpaca_unsupported_asset" -> place_market
+# returns None -> execution_failed_position_aborted. Only the 20 legacy names
+# could ever actually trade, which is why GS/JPM/NVDA/TSLA were the only assets
+# appearing in results and why 40 newly added tickers produced zero trades.
+# Observed live: CVX v9_breakout LONG passed ALL_GATES_PASSED (risk $189.25) and
+# was then aborted here.
+# Alpaca supports thousands of US equities, so the universe — not this file — is
+# the correct source of truth. The legacy names are unioned in so nothing that
+# previously executed can regress.
+_LEGACY_SUPPORTED = {
     "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AMD",
     "NFLX", "COIN", "SPY", "QQQ", "JPM", "BAC", "GS",
     "CRM", "ORCL", "UBER", "SQ", "SHOP",
 }
+try:
+    from bahamut.config_assets import TRADING_STOCKS as _UNIVERSE_STOCKS
+    SUPPORTED_ASSETS = set(_UNIVERSE_STOCKS) | _LEGACY_SUPPORTED
+except Exception:  # pragma: no cover - config import must never break execution
+    SUPPORTED_ASSETS = set(_LEGACY_SUPPORTED)
 
 
 def _configured() -> bool:
