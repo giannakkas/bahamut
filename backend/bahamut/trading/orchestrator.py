@@ -293,6 +293,18 @@ def run_trading_cycle():
     except Exception:
         pass
 
+    # Assets that currently hold an OPEN position. A disabled asset class must
+    # still be scanned while it holds a position, otherwise that position never
+    # receives price updates and can never hit SL/TP/TIMEOUT — it would be
+    # stranded open forever (the same stuck-position failure mode that left AMZN
+    # 8 bars past TIMEOUT). Computed once per cycle; empty set on any failure so
+    # the skip degrades to scanning MORE, never less.
+    try:
+        from bahamut.trading.engine import _load_positions as _lp
+        _assets_with_open_positions = {p.asset for p in _lp()}
+    except Exception:
+        _assets_with_open_positions = set()
+
     # Phase 1: Scan all assets — collect signals, update positions, DO NOT execute yet
     batch_size = 8
     for i in range(0, len(TRADING_ASSETS), batch_size):
@@ -301,10 +313,16 @@ def run_trading_cycle():
         for asset in batch:
             try:
                 _ac = ASSET_CLASS_MAP.get(asset, "unknown")
-                # Skip crypto assets entirely when crypto trading is disabled
-                # Saves ~30 Binance API calls per cycle (every 10 min)
+                # Skip crypto assets when crypto trading is disabled — saves ~28
+                # Binance API calls per cycle. BUT never skip an asset that still
+                # holds an OPEN position: _scan_training_asset() has dedicated
+                # logic to keep managing existing crypto positions (SL/TP/TIMEOUT)
+                # while suppressing new signals, and this `continue` was
+                # short-circuiting before that logic could run — making it dead
+                # code and stranding any open crypto position permanently.
                 from bahamut.config_assets import crypto_trading_enabled
-                if _ac == "crypto" and not crypto_trading_enabled():
+                if (_ac == "crypto" and not crypto_trading_enabled()
+                        and asset not in _assets_with_open_positions):
                     processed += 1
                     continue
 
