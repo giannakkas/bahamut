@@ -62,10 +62,21 @@ def _get_stale_threshold(asset: str = "") -> int:
         asset_class = ""
 
     if asset_class in ("stock", "index"):
-        if _is_us_market_open():
-            return 10 * 3600     # 10h during market hours (> 2× 4h bar interval)
-        else:
-            return 90 * 3600     # 90h covers Fri 9:30am bar → Mon 9:30am ET (includes holidays)
+        # 90h regardless of market state. The old rule dropped to 10h the moment
+        # the market opened, which is UNSATISFIABLE for 4h stock bars: the
+        # overnight gap alone is ~17.5h (last bar 20:00 UTC → open 13:30 UTC),
+        # and Monday's gap is ~69.7h. So from every open until the first new 4h
+        # bar closed (~13:30–16:00 UTC), perfectly good Alpaca data was rejected
+        # as "stale" and the fetch fell through to TwelveData, which returns only
+        # 100 candles — under the 200 needed for EMA-200. That set
+        # _ema200_degraded, and v5_base / v9_breakout / v10_mean_reversion ALL
+        # refuse to emit signals when it is set. Net effect: the entire stock
+        # universe was silently unable to trade for the first 2.5h of every
+        # session, and all Monday morning. Observed live: AMZN rejected at
+        # "69.7h old (stale) source=alpaca", then all 3 strategies blocked.
+        # 90h still catches a genuinely frozen feed (days without an update)
+        # while tolerating weekends and holidays.
+        return 90 * 3600
     elif asset_class == "forex":
         return 8 * 3600          # Forex is nearly 24h on weekdays
     elif asset_class == "commodity":
