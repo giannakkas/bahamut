@@ -390,15 +390,32 @@ def _load_positions_from_db() -> list[TrainingPosition]:
         # this call from memory without persisting is strictly safer than
         # writing known-incomplete data.
         if positions and not _used_legacy_select:
-            r = _get_redis()
-            if r:
-                try:
-                    r.delete(REDIS_KEY_POSITIONS)
-                except Exception:
-                    pass
+            # WRITE-THEN-PRUNE, never delete-then-rewrite.
+            # This used to r.delete() the whole positions hash and re-add entries
+            # one at a time. Between the delete and the end of that loop, any
+            # concurrent reader (Celery runs several workers) saw an EMPTY or
+            # PARTIAL position set — observed live: two snapshots seconds apart
+            # reported open=4 while listing only 3 assets, then only 1, exactly
+            # while training_positions_loaded_from_db was running. A position
+            # missing from that read skips its SL/TP/TIMEOUT check for the cycle,
+            # which can delay a stop. Upsert every position first, then remove
+            # only keys that are genuinely gone, so the hash is never empty.
             for pos in positions:
                 try:
                     _save_position(pos)
+                except Exception:
+                    pass
+            r = _get_redis()
+            if r:
+                try:
+                    _live = {p.position_id for p in positions}
+                    _stale = [k.decode() if isinstance(k, bytes) else str(k)
+                              for k in (r.hkeys(REDIS_KEY_POSITIONS) or [])]
+                    _drop = [k for k in _stale if k not in _live]
+                    if _drop:
+                        r.hdel(REDIS_KEY_POSITIONS, *_drop)
+                        logger.info("training_positions_pruned_stale",
+                                    removed=len(_drop))
                 except Exception:
                     pass
         elif positions and _used_legacy_select:
