@@ -1212,6 +1212,25 @@ def _scan_training_asset(asset: str, asset_class: str) -> dict:
                     logger.info("v5_non_new_bar_allowed",
                                 asset=asset, readiness=readiness,
                                 reason="V5 cross bypasses is_new_bar gate")
+                elif strat_name == "v9_breakout" and readiness >= 65:
+                    # v9_breakout is the strongest bucket in the system
+                    # (stock LONG: n=93, 61.3% WR, +$54.56/trade) yet it was the
+                    # ONLY strategy with no non-new-bar path: v5 bypassed this
+                    # gate outright and shorts had the crash bypass, while v9
+                    # needed readiness >= 90 for early execution — a bar almost
+                    # nothing reaches. Confirmed breakouts scoring 75 ("held
+                    # above X for 3 bars") were being discarded every cycle,
+                    # contributing to a 231-hour trade drought.
+                    # A confirmed breakout is a PERSISTENT state, not a
+                    # one-tick event, so it is still valid between bar closes.
+                    # Floor of 65 keeps this well above v9's own 50 threshold so
+                    # only high-conviction setups take the off-bar path;
+                    # DUPLICATE_ASSET plus the post-close cooldown bound re-entry.
+                    exec_type = "standard"
+                    trigger = "v9_breakout_confirmed"
+                    logger.info("v9_non_new_bar_allowed",
+                                asset=asset, readiness=readiness,
+                                reason="Confirmed breakout is persistent — bypasses is_new_bar gate")
                 else:
                     logger.debug("training_signal_skipped_not_new_bar",
                                  asset=asset, strategy=strat_name, readiness=readiness)

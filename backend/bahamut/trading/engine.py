@@ -2035,11 +2035,34 @@ def update_positions_for_asset(asset: str, bar: dict, *,
             _close_succeeded = False
             try:
                 from bahamut.execution.router import execute_close as exec_close
-                exec_result = exec_close(
-                    asset=pos.asset, asset_class=pos.asset_class,
-                    direction=pos.direction, size=pos.size,
-                    entry_price=pos.entry_price,
-                )
+                # ── Close must match how the position was OPENED ──
+                # execute_close() routes purely on asset_class, so a position
+                # opened INTERNALLY (paper — no broker order) was being closed
+                # against Alpaca/Binance, which never held it. The broker
+                # reported nothing to close, the close never confirmed, and the
+                # position stayed open FOREVER, blocking its slot and never
+                # booking a trade. Observed live: AMZN v9_breakout sat at 28/20
+                # bars (8 past TIMEOUT) at -$141 unrealized with
+                # execution_platform='internal' and an empty exchange_order_id.
+                # If there is no broker order behind this position, close it
+                # internally instead of asking a broker to flatten thin air.
+                _no_broker_order = (pos.execution_platform in ("", "internal")
+                                    or not pos.exchange_order_id)
+                if _no_broker_order:
+                    from bahamut.execution.canonical import ExecutionResult
+                    exec_result = ExecutionResult.internal_sim(
+                        pos.asset, pos.direction, pos.size, exit_price).as_dict()
+                    logger.info("close_routed_internal_no_broker_order",
+                                asset=pos.asset, position_id=pos.position_id,
+                                opened_platform=pos.execution_platform or "(blank)",
+                                bars_held=pos.bars_held,
+                                msg="Position had no broker order — closing internally")
+                else:
+                    exec_result = exec_close(
+                        asset=pos.asset, asset_class=pos.asset_class,
+                        direction=pos.direction, size=pos.size,
+                        entry_price=pos.entry_price,
+                    )
                 _close_lifecycle = exec_result.get("lifecycle", exec_result.get("status", ""))
                 trade.execution_platform = exec_result.get("platform", "internal")
                 trade.exchange_order_id = exec_result.get("order_id", "")
