@@ -784,8 +784,23 @@ def _build_alerts(r) -> list[dict]:
             last = parse_bar_timestamp(row["last_close"])
             if last:
                 hours_ago = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-                if hours_ago > 24:
-                    alerts.append({"level": "WARNING", "message": f"No training trades closed in {hours_ago:.0f}h"})
+                # A 24h threshold is meaningless now that bar-time aging lets a
+                # position hold 20-30 4h bars (~10 trading days / ~14 calendar
+                # days), so it fired permanently and trained everyone to ignore
+                # it — which is how the 231h drought went unnoticed.
+                # The real drought symptom is IDLE: nothing closing AND nothing
+                # open. If positions are open and aging, the system is working.
+                try:
+                    from bahamut.trading.engine import get_open_position_count
+                    _open_now = get_open_position_count()
+                except Exception:
+                    _open_now = 0
+                if hours_ago > 48 and _open_now == 0:
+                    alerts.append({"level": "WARNING",
+                                   "message": f"IDLE: no trades closed in {hours_ago:.0f}h and no open positions"})
+                elif hours_ago > 336:
+                    alerts.append({"level": "WARNING",
+                                   "message": f"No training trades closed in {hours_ago:.0f}h ({_open_now} open)"})
     except Exception:
         pass
 
